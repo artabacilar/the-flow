@@ -1,0 +1,16 @@
+# Render Blueprint — one-click-ish deploy of your Life OS app.
+# Render reads this automatically when you deploy from your repo.
+services:
+  - type: web
+    name: life-os
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node life-os-server.js
+    healthCheckPath: /healthz
+    envVars:
+      # Paste these two from your Upstash Redis database (Step 1 of DEPLOY-CLOUD.md)
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

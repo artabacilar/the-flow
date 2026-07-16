@@ -1,0 +1,15 @@
+{
+  "name": "artur-life-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal Life OS dashboard — app server with local + cloud database",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node life-os-server.js"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.8.1"
+  }
+}
