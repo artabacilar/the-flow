@@ -401,6 +401,80 @@ canvas{width:100%;height:120px;}
 .backupbtns button,.backupbtns label{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
 .backupbtns button:hover,.backupbtns label:hover{border-color:var(--accent);color:var(--text);}
 
+/* ── Mobile bottom navigation (webapp) ── */
+.mobilenav{display:none;}
+.moresheet,.morebackdrop{display:none;}
+@media(max-width:760px){
+  body{padding:14px 14px calc(74px + env(safe-area-inset-bottom));}
+  .tabs{display:none;}                 /* top pill tabs hidden on phone */
+  .header{margin-bottom:14px;}
+  .header h1{font-size:22px;}
+  .header .sub{display:none;}
+  .header .datebadge{display:none;}
+  .section-header{font-size:19px;}
+  .mobilenav{
+    display:flex;position:fixed;left:0;right:0;bottom:0;z-index:900;
+    background:rgba(16,18,23,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--border);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .mobilenav button{
+    flex:1;background:none;border:none;color:var(--muted);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:6px 2px;font-family:inherit;min-height:52px;border-radius:12px;
+  }
+  .mobilenav button .mn-ico{font-size:21px;line-height:1;}
+  .mobilenav button .mn-lbl{font-size:10px;font-weight:700;letter-spacing:.2px;}
+  .mobilenav button.active{color:var(--green);}
+  .mobilenav button.active .mn-ico{transform:translateY(-1px);}
+  /* More sheet */
+  .morebackdrop{display:block;position:fixed;inset:0;z-index:950;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s;}
+  .morebackdrop.open{opacity:1;pointer-events:auto;}
+  .moresheet{
+    display:block;position:fixed;left:0;right:0;bottom:0;z-index:960;
+    background:var(--card);border-top:1px solid var(--border);
+    border-radius:22px 22px 0 0;padding:10px 16px calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    max-height:80vh;overflow-y:auto;
+  }
+  .moresheet.open{transform:translateY(0);}
+  .moresheet .grabber{width:38px;height:4px;border-radius:4px;background:var(--border);margin:2px auto 12px;}
+  .moresheet h4{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;font-weight:700;text-align:center;}
+  .moregrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .moregrid button{
+    background:var(--card2);border:1px solid var(--border);border-radius:16px;color:var(--text);
+    cursor:pointer;padding:16px 6px;display:flex;flex-direction:column;align-items:center;gap:8px;font-family:inherit;
+  }
+  .moregrid button .mg-ico{font-size:26px;}
+  .moregrid button .mg-lbl{font-size:12px;font-weight:600;text-align:center;line-height:1.2;}
+  .moregrid button.active{border-color:var(--green);color:var(--green);}
+}
+
+/* ── Mobile polish: touch, inputs, transitions ── */
+@media(max-width:760px){
+  /* Stop iOS from zooming when you tap a field (needs >=16px) */
+  input, select, textarea{ font-size:16px !important; }
+  /* Comfortable tap targets */
+  .btn{ padding:12px 18px; }
+  .mobilenav button:active{ transform:scale(.9); }
+  .mobilenav button.active{ background:rgba(0,232,138,.10); }
+  /* Smooth section change */
+  .section.active{ animation:secIn .24s ease; }
+  @keyframes secIn{ from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:none;} }
+  /* Stack cramped form rows into clean full-width fields */
+  .form-row, .ws-add, .rockform, .qadd, .wform, .habit-add-row{ flex-direction:column; align-items:stretch; gap:10px; }
+  .form-row > *, .ws-add > *, .rockform > *, .wform > *, .habit-add-row > *, .qadd > *{ width:100%; }
+  .form-row label{ width:auto; }
+  /* Easier sliders & checkboxes */
+  input[type=range]{ padding:10px 0; }
+  .ex input[type=checkbox], .wc-ai input[type=checkbox], .checklist li input, .habit-day{ min-width:20px; }
+  .ex input[type=checkbox]{ width:20px; height:20px; }
+  .wc-btn{ padding:7px 11px; }
+  /* Cards a touch roomier */
+  .day, .panel, .stat{ border-radius:16px; }
+  body{ overscroll-behavior-y:contain; }
+}
+
 /* ── Work workspaces (ABKO / DTC) ── */
 .ws-north{background:linear-gradient(135deg,#141a24,#12141b);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:18px;}
 .ws-north h4{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin-bottom:10px;}
@@ -1256,6 +1330,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='journal') renderJournal();
     if(t.dataset.tab==='abko') wsABKO.render();
     if(t.dataset.tab==='dtc') wsDTC.render();
+    if(typeof syncMobileNav==='function') syncMobileNav();
   });
 });
 
@@ -2940,6 +3015,83 @@ if(!S.ok){ document.getElementById('storageBanner').style.display='block'; }
 updateDbIndicator();
 renderQuad(); renderDiet(); renderCompass(); renderJournal(); wsABKO.render(); wsDTC.render(); S.saved();
 
+</script>
+
+<!-- ═══ Mobile bottom navigation ═══ -->
+<nav class="mobilenav" id="mobileNav">
+  <button data-mtab="compass"><span class="mn-ico">🧭</span><span class="mn-lbl">Plan</span></button>
+  <button data-mtab="training"><span class="mn-ico">🏋️</span><span class="mn-lbl">Train</span></button>
+  <button data-mtab="diet"><span class="mn-ico">🥗</span><span class="mn-lbl">Diet</span></button>
+  <button data-mtab="sleep"><span class="mn-ico">😴</span><span class="mn-lbl">Recover</span></button>
+  <button id="moreBtn"><span class="mn-ico">⋯</span><span class="mn-lbl">More</span></button>
+</nav>
+<div class="morebackdrop" id="moreBackdrop"></div>
+<div class="moresheet" id="moreSheet">
+  <div class="grabber"></div>
+  <h4>All sections</h4>
+  <div class="moregrid" id="moreGrid"></div>
+</div>
+
+<script>
+(function(){
+  const NAV_ALL=[
+    ['compass','🧭','Week Compass'],['quad','🎯','Priorities'],['abko','🏢','ABKO'],['dtc','🛒','DTC Business'],
+    ['training','🏋️','Training'],['diet','🥗','Diet'],['habits','✅','Habits'],['sleep','😴','Sleep & Recovery'],
+    ['mood','🧠','Mood & Energy'],['finance','💰','Finances'],['time','⏱️','Time'],['journal','📓','Journal']
+  ];
+  const BOTTOM=['compass','training','diet','sleep']; // items with their own bottom-bar slot
+  const sheet=document.getElementById('moreSheet'), backdrop=document.getElementById('moreBackdrop');
+  function openSheet(){ syncMobileNav(); sheet.classList.add('open'); backdrop.classList.add('open'); }
+  function closeSheet(){ sheet.classList.remove('open'); backdrop.classList.remove('open'); }
+  function goTab(name){ const t=document.querySelector('.tab[data-tab="'+name+'"]'); if(t){ t.click(); window.scrollTo({top:0,behavior:'smooth'}); } }
+
+  // Build the "More" grid (all sections)
+  const grid=document.getElementById('moreGrid');
+  grid.innerHTML=NAV_ALL.map(([k,ic,lbl])=>`<button data-goto="${k}"><span class="mg-ico">${ic}</span><span class="mg-lbl">${lbl}</span></button>`).join('');
+  grid.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>{ goTab(b.dataset.goto); closeSheet(); }));
+
+  // Bottom-bar buttons
+  document.querySelectorAll('#mobileNav [data-mtab]').forEach(b=>b.addEventListener('click',()=>{ goTab(b.dataset.mtab); closeSheet(); }));
+  document.getElementById('moreBtn').addEventListener('click',()=>{ sheet.classList.contains('open')?closeSheet():openSheet(); });
+  backdrop.addEventListener('click',closeSheet);
+
+  // Keep the active highlight in sync with whatever tab is showing
+  window.syncMobileNav=function(){
+    const active=(document.querySelector('.tab.active')||{}).dataset?.tab||'compass';
+    document.querySelectorAll('#mobileNav [data-mtab]').forEach(b=>b.classList.toggle('active', b.dataset.mtab===active));
+    // If current section isn't one of the 4 bottom slots, light up "More"
+    document.getElementById('moreBtn').classList.toggle('active', !BOTTOM.includes(active));
+    document.querySelectorAll('#moreGrid [data-goto]').forEach(b=>b.classList.toggle('active', b.dataset.goto===active));
+  };
+  syncMobileNav();
+
+  // ── Swipe left/right to move between sections (phone only) ──
+  const ORDER=NAV_ALL.map(x=>x[0]);
+  let sx=0, sy=0, tracking=false;
+  document.addEventListener('touchstart',e=>{
+    if(window.innerWidth>760 || sheet.classList.contains('open')){ tracking=false; return; }
+    // don't hijack swipes that begin on something interactive/scrollable
+    if(e.target.closest('input,textarea,select,button,a,canvas,[contenteditable],.moresheet,.mobilenav')){ tracking=false; return; }
+    const t=e.touches[0]; sx=t.clientX; sy=t.clientY; tracking=true;
+  },{passive:true});
+  document.addEventListener('touchend',e=>{
+    if(!tracking || window.innerWidth>760) return; tracking=false;
+    const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
+    if(Math.abs(dx)<70 || Math.abs(dx)<Math.abs(dy)*1.8) return; // clear horizontal swipe only
+    const cur=(document.querySelector('.tab.active')||{}).dataset?.tab||'compass';
+    let i=ORDER.indexOf(cur); if(i<0) i=0;
+    if(dx<0 && i<ORDER.length-1) goTab(ORDER[i+1]);   // left → next
+    else if(dx>0 && i>0) goTab(ORDER[i-1]);           // right → prev
+  },{passive:true});
+
+  // ── Swipe the More sheet down to close ──
+  let shStart=0;
+  sheet.addEventListener('touchstart',e=>{ shStart=e.touches[0].clientY; },{passive:true});
+  sheet.addEventListener('touchend',e=>{
+    const dy=e.changedTouches[0].clientY-shStart;
+    if(dy>90 && sheet.scrollTop<=2) closeSheet();
+  },{passive:true});
+})();
 </script>
 </body>
 </html>
