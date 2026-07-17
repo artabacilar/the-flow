@@ -2789,11 +2789,23 @@ document.getElementById('hdrExport').addEventListener('click',exportBackup);
 document.getElementById('jnImportFile').addEventListener('change',function(){
   const f=this.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>{ try{
+  rd.onload=async ()=>{ try{
       const obj=JSON.parse(rd.result); const data=obj.data||obj;
       let n=0; const pushed={}; Object.keys(data).forEach(k=>{ if(k.indexOf('ld_')===0){ const val=typeof data[k]==='string'?data[k]:JSON.stringify(data[k]); localStorage.setItem(k, val); pushed[k]=val; n++; } });
-      dbBulk(pushed); // also save the restore into the local database
-      alert('Restored '+n+' data sets. Reloading…'); location.reload();
+      // CRITICAL: wait for the cloud database to actually confirm the save
+      // BEFORE reloading — otherwise the reload re-reads the old cloud data
+      // and overwrites the restore (the bug that made Restore "get stuck").
+      if(window.__DB_ON){
+        const si=document.getElementById('saveInd'); if(si) si.innerHTML='<b>⏳ Restoring to cloud…</b> please wait';
+        try{
+          const res=await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:pushed})});
+          if(!res.ok) throw new Error('bad status '+res.status);
+        }catch(e){
+          alert('Saved on this device, but the cloud upload failed ('+e.message+').\nCheck your connection / that the app shows 🟢 Database, then try Restore again.');
+          return;
+        }
+      }
+      alert('✅ Restored '+n+' data sets to '+(window.__DB_ON?'the cloud':'this device')+'. Reloading…'); location.reload();
     }catch(err){ alert('Could not read that backup file.'); } };
   rd.readAsText(f);
 });
