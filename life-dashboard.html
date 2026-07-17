@@ -401,6 +401,25 @@ canvas{width:100%;height:120px;}
 .backupbtns button,.backupbtns label{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
 .backupbtns button:hover,.backupbtns label:hover{border-color:var(--accent);color:var(--text);}
 
+/* ── Restore progress overlay ── */
+.restore-ov{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:24px;}
+.restore-ov.open{display:flex;}
+.restore-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px 26px;max-width:400px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.restore-card .ic{font-size:44px;line-height:1;margin-bottom:14px;}
+.restore-card h3{font-size:19px;font-weight:800;margin-bottom:8px;letter-spacing:-0.02em;}
+.restore-card p{font-size:14px;color:var(--muted);line-height:1.55;}
+.restore-steps{text-align:left;margin:18px 0 4px;display:flex;flex-direction:column;gap:10px;}
+.restore-steps .rs{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);}
+.restore-steps .rs .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;}
+.restore-steps .rs.active{color:var(--text);}
+.restore-steps .rs.active .dot{border-color:var(--accent);}
+.restore-steps .rs.done{color:var(--green);}
+.restore-steps .rs.done .dot{border-color:var(--green);background:rgba(0,232,138,.15);}
+.restore-spin{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:rspin .7s linear infinite;}
+@keyframes rspin{to{transform:rotate(360deg);}}
+.restore-card .r-btn{margin-top:18px;background:var(--accent);color:#fff;border:none;border-radius:100px;padding:11px 24px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;}
+.restore-card .r-btn.ghost{background:var(--card2);border:1px solid var(--border);color:var(--text);}
+
 /* ── Mobile bottom navigation (webapp) ── */
 .mobilenav{display:none;}
 .moresheet,.morebackdrop{display:none;}
@@ -2786,27 +2805,53 @@ function exportBackup(){
 }
 document.getElementById('jnExport').addEventListener('click',exportBackup);
 document.getElementById('hdrExport').addEventListener('click',exportBackup);
+// ── Restore with a clear live progress screen (no confusing popups) ──
+function rovStep(name,state){ const el=document.querySelector('#rovSteps .rs[data-step="'+name+'"]'); if(!el) return; el.className='rs '+state; const dot=el.querySelector('.dot'); if(state==='active') dot.innerHTML='<span class="restore-spin"></span>'; else if(state==='done') dot.textContent='✓'; }
+function rovShow(){ document.getElementById('restoreOv').classList.add('open'); }
+function rovHide(){ document.getElementById('restoreOv').classList.remove('open'); }
 document.getElementById('jnImportFile').addEventListener('change',function(){
   const f=this.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=async ()=>{ try{
+  rd.onload=async ()=>{
+    const ov=document.getElementById('restoreOv'), ic=document.getElementById('rovIc'), title=document.getElementById('rovTitle'), msg=document.getElementById('rovMsg'), btn=document.getElementById('rovBtn');
+    rovShow(); btn.style.display='none'; ic.textContent='🔄';
+    ['read','cloud','done'].forEach(s=>rovStep(s,''));
+    try{
+      rovStep('read','active');
       const obj=JSON.parse(rd.result); const data=obj.data||obj;
-      let n=0; const pushed={}; Object.keys(data).forEach(k=>{ if(k.indexOf('ld_')===0){ const val=typeof data[k]==='string'?data[k]:JSON.stringify(data[k]); localStorage.setItem(k, val); pushed[k]=val; n++; } });
-      // CRITICAL: wait for the cloud database to actually confirm the save
-      // BEFORE reloading — otherwise the reload re-reads the old cloud data
-      // and overwrites the restore (the bug that made Restore "get stuck").
+      let n=0, jn=0; const pushed={};
+      Object.keys(data).forEach(k=>{ if(k.indexOf('ld_')===0){ const val=typeof data[k]==='string'?data[k]:JSON.stringify(data[k]); localStorage.setItem(k, val); pushed[k]=val; n++; if(k==='ld_journal'){ try{ jn=JSON.parse(val).length; }catch(_){} } } });
+      rovStep('read','done');
+      // Save to cloud and WAIT for confirmation before refreshing
       if(window.__DB_ON){
-        const si=document.getElementById('saveInd'); if(si) si.innerHTML='<b>⏳ Restoring to cloud…</b> please wait';
+        rovStep('cloud','active');
+        title.textContent='Saving to your cloud…';
+        msg.textContent='Uploading '+n+' data sets. On the free plan the server can take a moment to wake — this is normal.';
         try{
           const res=await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:pushed})});
-          if(!res.ok) throw new Error('bad status '+res.status);
+          if(!res.ok) throw new Error('server responded '+res.status);
+          rovStep('cloud','done');
         }catch(e){
-          alert('Saved on this device, but the cloud upload failed ('+e.message+').\nCheck your connection / that the app shows 🟢 Database, then try Restore again.');
+          ic.textContent='⚠️'; title.textContent='Cloud save didn’t finish';
+          msg.textContent='Your data is safe on this device, but it didn’t reach the cloud ('+e.message+'). Make sure the top shows 🟢 Database, then tap Try again.';
+          btn.textContent='Try again'; btn.className='r-btn'; btn.style.display='inline-block';
+          btn.onclick=()=>{ rovHide(); document.getElementById('jnImportFile').value=''; document.getElementById('jnImportFile').click(); };
           return;
         }
+      } else {
+        rovStep('cloud','done');
       }
-      alert('✅ Restored '+n+' data sets to '+(window.__DB_ON?'the cloud':'this device')+'. Reloading…'); location.reload();
-    }catch(err){ alert('Could not read that backup file.'); } };
+      // Success → refresh automatically
+      rovStep('done','active');
+      ic.textContent='✅'; title.textContent='Restored!';
+      msg.textContent='Recovered '+jn+' journal entries and all your sections. Refreshing now…';
+      setTimeout(()=>{ rovStep('done','done'); location.reload(); }, 1100);
+    }catch(err){
+      ic.textContent='⚠️'; title.textContent='Couldn’t read that file';
+      msg.textContent='That doesn’t look like a valid backup file. Pick your RECOVERmydata.json and try again.';
+      btn.textContent='Close'; btn.className='r-btn ghost'; btn.style.display='inline-block'; btn.onclick=rovHide;
+    }
+  };
   rd.readAsText(f);
 });
 
@@ -3028,6 +3073,21 @@ updateDbIndicator();
 renderQuad(); renderDiet(); renderCompass(); renderJournal(); wsABKO.render(); wsDTC.render(); S.saved();
 
 </script>
+
+<!-- ═══ Restore progress overlay ═══ -->
+<div class="restore-ov" id="restoreOv">
+  <div class="restore-card">
+    <div class="ic" id="rovIc">🔄</div>
+    <h3 id="rovTitle">Restoring your data…</h3>
+    <div class="restore-steps" id="rovSteps">
+      <div class="rs" data-step="read"><span class="dot">1</span><span>Reading your backup</span></div>
+      <div class="rs" data-step="cloud"><span class="dot">2</span><span>Saving to your cloud database</span></div>
+      <div class="rs" data-step="done"><span class="dot">3</span><span>Refreshing the app</span></div>
+    </div>
+    <p id="rovMsg">This can take a few seconds — please keep this open.</p>
+    <button class="r-btn" id="rovBtn" style="display:none;"></button>
+  </div>
+</div>
 
 <!-- ═══ Mobile bottom navigation ═══ -->
 <nav class="mobilenav" id="mobileNav">
