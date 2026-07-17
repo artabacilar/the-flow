@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LinguaCoach — German & Spanish</title>
+<style>
+  :root{
+    --bg:#0e1117; --bg2:#151a23; --card:#1b2230; --card2:#212a3a;
+    --line:#2a3446; --txt:#e8edf5; --mut:#93a1b8; --acc:#5b8cff; --acc2:#7c5cff;
+    --de:#f0b24a; --es:#ff6d5a; --ok:#37d399; --warn:#ffb547; --bad:#ff5d6c;
+    --shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  body{max-width:560px;margin:0 auto;min-height:100vh;padding-bottom:88px}
+  h1,h2,h3{margin:0 0 .3em}
+  .app{padding:18px 16px}
+  .hidden{display:none!important}
+  button{font-family:inherit;cursor:pointer;border:none;color:inherit}
+  .row{display:flex;gap:10px;align-items:center}
+  .between{justify-content:space-between}
+  .wrap{flex-wrap:wrap}
+  .muted{color:var(--mut)}
+  .small{font-size:13px}
+  .tiny{font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+  .center{text-align:center}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.de{background:rgba(240,178,74,.15);color:var(--de)}
+  .pill.es{background:rgba(255,109,90,.15);color:var(--es)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .card.tight{padding:14px}
+  .btn{background:var(--acc);color:#fff;padding:13px 16px;border-radius:14px;font-weight:700;font-size:15px;width:100%;transition:transform .05s,filter .15s}
+  .btn:active{transform:scale(.98)}
+  .btn.sec{background:var(--card2);border:1px solid var(--line)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  .btn.grad{background:linear-gradient(120deg,var(--acc),var(--acc2))}
+  .btn.sm{width:auto;padding:9px 14px;font-size:14px;border-radius:11px}
+  .btn.icon{width:auto;padding:12px 15px;border-radius:14px}
+  .chip{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;flex:1;text-align:center;font-weight:600}
+  .chip.on{border-color:var(--acc);background:rgba(91,140,255,.14);color:#cfe0ff}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .bar{height:9px;border-radius:999px;background:var(--card2);overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .stat{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center;flex:1}
+  .stat b{font-size:22px;display:block}
+  .big{font-size:30px;font-weight:800}
+  .xl{font-size:40px;font-weight:800;line-height:1.1}
+  .nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,17,23,.92);backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);display:flex;max-width:560px;margin:0 auto}
+  .nav button{flex:1;background:none;padding:11px 4px 14px;color:var(--mut);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .nav button.on{color:var(--acc)}
+  .nav .ic{font-size:20px}
+  .feedback{border-radius:14px;padding:14px;margin-top:12px;font-weight:600}
+  .fb-ok{background:rgba(55,211,153,.13);border:1px solid rgba(55,211,153,.4);color:#9df0cf}
+  .fb-bad{background:rgba(255,93,108,.12);border:1px solid rgba(255,93,108,.4);color:#ffb3ba}
+  .fb-warn{background:rgba(255,181,71,.12);border:1px solid rgba(255,181,71,.4);color:#ffe0a8}
+  input[type=text]{width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
+    border-radius:12px;padding:13px;font-size:16px;outline:none}
+  input[type=text]:focus{border-color:var(--acc)}
+  .word{font-size:32px;font-weight:800;text-align:center;margin:6px 0}
+  .sub{font-size:17px;text-align:center;color:var(--mut)}
+  .kbd{display:inline-block;background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:1px 7px;font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .listen-btn{width:74px;height:74px;border-radius:50%;background:linear-gradient(120deg,var(--acc),var(--acc2));
+    display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto;box-shadow:0 6px 20px rgba(91,140,255,.4)}
+  .mic{width:88px;height:88px;border-radius:50%;background:var(--card2);border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto;transition:.2s}
+  .mic.live{background:rgba(255,93,108,.18);border-color:var(--bad);animation:pulse 1.1s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,93,108,.45)}70%{box-shadow:0 0 0 18px rgba(255,93,108,0)}100%{box-shadow:0 0 0 0 rgba(255,93,108,0)}}
+  .segbar{display:flex;gap:5px;margin-bottom:16px}
+  .segbar > i{flex:1;height:5px;border-radius:999px;background:var(--card2)}
+  .segbar > i.done{background:var(--acc)}
+  .tag{font-size:11px;padding:2px 8px;border-radius:8px;background:var(--card2);border:1px solid var(--line);color:var(--mut)}
+  .coach{background:linear-gradient(120deg,rgba(124,92,255,.16),rgba(91,140,255,.10));border:1px solid rgba(124,92,255,.35)}
+  .avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(120deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+  a.link{color:var(--acc);text-decoration:none}
+  .weak{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .weak:last-child{border:none}
+  .heat{height:26px;border-radius:7px;flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  select{background:var(--bg2);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:9px;font-size:14px}
+  .fade{animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .diff{font-weight:800}
+  .diff .g{color:var(--ok)} .diff .b{color:var(--bad);text-decoration:underline}
+  .lvlbadge{font-size:34px;font-weight:800;background:linear-gradient(120deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  code{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12px}
+</style>
+</head>
+<body>
+<a href="/" style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;gap:8px;background:#0a0b0d;color:#00e88a;font-family:-apple-system,Inter,sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:calc(8px + env(safe-area-inset-top)) 16px 8px;border-bottom:1px solid #262a33;">← The Flow<span style="color:#7e8493;font-weight:500;">· Languages</span></a>
+<div style="height:calc(38px + env(safe-area-inset-top));"></div>
+<div class="app" id="root"></div>
+
+<div class="nav hidden" id="nav">
+  <button data-nav="dashboard" class="on"><span class="ic">🏠</span>Coach</button>
+  <button data-nav="learn"><span class="ic">🎧</span>Learn</button>
+  <button data-nav="progress"><span class="ic">📈</span>Progress</button>
+  <button data-nav="settings"><span class="ic">⚙️</span>Settings</button>
+</div>
+
+<script>
+/* ============================================================
+   LinguaCoach — single-file adaptive language app
+   German (B1) + Spanish (A2). Listening & speaking first.
+   v2: placement quizzes, expanded banks, dashboard bridge.
+   ============================================================ */
+
+/* ---------- CONTENT ---------- */
+const CONTENT = {
+  de: {
+    name:"German", flag:"🇩🇪", pill:"de", lang:"de-DE", level:"B1",
+    vocab:[
+      {t:"die Erfahrung",e:"experience",ex:"Ich habe viel Erfahrung mit dieser Arbeit.",theme:"work"},
+      {t:"die Umgebung",e:"surroundings / environment",ex:"Die Umgebung hier ist sehr ruhig.",theme:"places"},
+      {t:"der Vorschlag",e:"suggestion / proposal",ex:"Das ist ein guter Vorschlag.",theme:"work"},
+      {t:"die Entscheidung",e:"decision",ex:"Ich habe eine wichtige Entscheidung getroffen.",theme:"abstract"},
+      {t:"verhandeln",e:"to negotiate",ex:"Wir müssen über den Preis verhandeln.",theme:"work"},
+      {t:"sich verhalten",e:"to behave",ex:"Er hat sich merkwürdig verhalten.",theme:"people"},
+      {t:"zuverlässig",e:"reliable",ex:"Sie ist eine zuverlässige Kollegin.",theme:"adjectives"},
+      {t:"anspruchsvoll",e:"demanding / sophisticated",ex:"Das Projekt ist ziemlich anspruchsvoll.",theme:"adjectives"},
+      {t:"die Gewohnheit",e:"habit",ex:"Rauchen ist eine schlechte Gewohnheit.",theme:"daily"},
+      {t:"beeindrucken",e:"to impress",ex:"Der Film hat mich sehr beeindruckt.",theme:"feelings"},
+      {t:"die Voraussetzung",e:"prerequisite / requirement",ex:"Gute Deutschkenntnisse sind eine Voraussetzung.",theme:"work"},
+      {t:"vermeiden",e:"to avoid",ex:"Wir sollten Fehler vermeiden.",theme:"abstract"},
+      {t:"der Zusammenhang",e:"context / connection",ex:"In diesem Zusammenhang ist das wichtig.",theme:"abstract"},
+      {t:"erledigen",e:"to get done / handle",ex:"Ich muss noch ein paar Dinge erledigen.",theme:"daily"},
+      {t:"nachhaltig",e:"sustainable",ex:"Wir suchen eine nachhaltige Lösung.",theme:"adjectives"},
+      {t:"die Herausforderung",e:"challenge",ex:"Das war eine echte Herausforderung.",theme:"abstract"},
+      {t:"überzeugen",e:"to convince",ex:"Du musst mich noch überzeugen.",theme:"people"},
+      {t:"der Eindruck",e:"impression",ex:"Sie macht einen guten Eindruck.",theme:"feelings"},
+      {t:"ausdrücken",e:"to express",ex:"Ich kann das schwer ausdrücken.",theme:"communication"},
+      {t:"gemütlich",e:"cozy / comfortable",ex:"Das Café ist sehr gemütlich.",theme:"adjectives"},
+      {t:"die Verspätung",e:"delay",ex:"Der Zug hat zwanzig Minuten Verspätung.",theme:"travel"},
+      {t:"empfehlen",e:"to recommend",ex:"Kannst du mir ein Restaurant empfehlen?",theme:"communication"},
+      {t:"der Fortschritt",e:"progress",ex:"Ich mache gute Fortschritte im Deutschen.",theme:"learning"},
+      {t:"sich gewöhnen an",e:"to get used to",ex:"Ich habe mich an das Wetter gewöhnt.",theme:"daily"},
+      {t:"die Bedeutung",e:"meaning / importance",ex:"Was ist die Bedeutung dieses Wortes?",theme:"communication"},
+      {t:"unbedingt",e:"absolutely / definitely",ex:"Du musst das unbedingt sehen.",theme:"adverbs"},
+      {t:"die Erinnerung",e:"memory",ex:"Das ist eine schöne Erinnerung.",theme:"feelings"},
+      {t:"vorschlagen",e:"to suggest / propose",ex:"Ich schlage vor, dass wir früher anfangen.",theme:"work"},
+      {t:"selbstverständlich",e:"of course / self-evident",ex:"Selbstverständlich helfe ich dir.",theme:"adverbs"},
+      {t:"die Ausnahme",e:"exception",ex:"Heute mache ich eine Ausnahme.",theme:"abstract"},
+      {t:"der Termin",e:"appointment",ex:"Ich habe morgen einen Termin beim Arzt.",theme:"daily"},
+      {t:"die Rechnung",e:"bill / invoice",ex:"Die Rechnung, bitte.",theme:"money"},
+      {t:"kündigen",e:"to quit / cancel (a contract)",ex:"Ich möchte mein Abo kündigen.",theme:"work"},
+      {t:"die Bewerbung",e:"job application",ex:"Ich habe meine Bewerbung abgeschickt.",theme:"work"},
+      {t:"sich beschweren",e:"to complain",ex:"Ich möchte mich über den Lärm beschweren.",theme:"communication"},
+      {t:"die Verantwortung",e:"responsibility",ex:"Er übernimmt die Verantwortung.",theme:"work"},
+      {t:"verschieben",e:"to postpone",ex:"Wir müssen das Treffen verschieben.",theme:"work"},
+      {t:"der Zufall",e:"coincidence / chance",ex:"So ein Zufall!",theme:"abstract"},
+      {t:"die Möglichkeit",e:"possibility",ex:"Es gibt mehrere Möglichkeiten.",theme:"abstract"},
+      {t:"ausreichend",e:"sufficient / enough",ex:"Das Geld ist ausreichend.",theme:"adjectives"},
+      {t:"die Gesundheit",e:"health",ex:"Gesundheit ist das Wichtigste.",theme:"health"},
+      {t:"sich erholen",e:"to recover / relax",ex:"Ich muss mich vom Stress erholen.",theme:"health"},
+      {t:"der Vorteil",e:"advantage",ex:"Das hat viele Vorteile.",theme:"abstract"},
+      {t:"der Nachteil",e:"disadvantage",ex:"Der Nachteil ist der hohe Preis.",theme:"abstract"},
+      {t:"zunehmen",e:"to increase / gain weight",ex:"Die Preise nehmen ständig zu.",theme:"abstract"},
+      {t:"die Umwelt",e:"the environment",ex:"Wir müssen die Umwelt schützen.",theme:"nature"},
+      {t:"der Verkehr",e:"traffic",ex:"Der Verkehr ist heute schlimm.",theme:"travel"},
+      {t:"die Gelegenheit",e:"opportunity / occasion",ex:"Nutze die Gelegenheit!",theme:"abstract"},
+      {t:"neugierig",e:"curious",ex:"Ich bin neugierig auf das Ergebnis.",theme:"adjectives"},
+      {t:"ehrlich",e:"honest",ex:"Um ehrlich zu sein, gefällt es mir nicht.",theme:"adjectives"},
+      {t:"der Vertrag",e:"contract",ex:"Ich habe den Vertrag unterschrieben.",theme:"work"},
+      {t:"die Ahnung",e:"idea / clue",ex:"Ich habe keine Ahnung.",theme:"communication"},
+      {t:"vorbereiten",e:"to prepare",ex:"Ich bereite das Essen vor.",theme:"daily"},
+      {t:"der Unterschied",e:"difference",ex:"Was ist der Unterschied zwischen den beiden?",theme:"abstract"},
+      {t:"beantragen",e:"to apply for (officially)",ex:"Ich muss ein Visum beantragen.",theme:"work"},
+      {t:"die Stimmung",e:"mood / atmosphere",ex:"Die Stimmung im Team ist gut.",theme:"feelings"}
+    ],
+    sentences:[
+      {t:"Könntest du mir bitte helfen, diesen Text zu übersetzen?",e:"Could you please help me translate this text?",theme:"requests"},
+      {t:"Wenn ich mehr Zeit hätte, würde ich öfter reisen.",e:"If I had more time, I would travel more often.",theme:"conditional"},
+      {t:"Obwohl es geregnet hat, sind wir spazieren gegangen.",e:"Although it rained, we went for a walk.",theme:"connectors"},
+      {t:"Ich bin mir nicht sicher, ob das eine gute Idee ist.",e:"I'm not sure whether that's a good idea.",theme:"opinion"},
+      {t:"Je mehr ich übe, desto besser verstehe ich.",e:"The more I practice, the better I understand.",theme:"comparison"},
+      {t:"Es tut mir leid, dass ich mich verspätet habe.",e:"I'm sorry that I was late.",theme:"apology"},
+      {t:"Der Grund, warum ich anrufe, ist folgender.",e:"The reason I'm calling is the following.",theme:"phone"},
+      {t:"Nachdem wir gegessen hatten, gingen wir ins Kino.",e:"After we had eaten, we went to the cinema.",theme:"past"},
+      {t:"Ich würde gern wissen, wie viel das kostet.",e:"I'd like to know how much that costs.",theme:"requests"},
+      {t:"Trotz des schlechten Wetters war der Ausflug schön.",e:"Despite the bad weather, the trip was nice.",theme:"connectors"},
+      {t:"Es könnte sein, dass ich morgen etwas später komme.",e:"It could be that I'll come a bit later tomorrow.",theme:"possibility"},
+      {t:"Meiner Meinung nach sollten wir das anders machen.",e:"In my opinion, we should do that differently.",theme:"opinion"},
+      {t:"Falls du Fragen hast, ruf mich einfach an.",e:"In case you have questions, just call me.",theme:"conditional"},
+      {t:"Ich habe vergessen, den Termin zu bestätigen.",e:"I forgot to confirm the appointment.",theme:"work"},
+      {t:"Das hängt davon ab, wie das Wetter wird.",e:"That depends on what the weather will be like.",theme:"opinion"},
+      {t:"Seitdem ich in Berlin wohne, spreche ich mehr Deutsch.",e:"Since I've been living in Berlin, I speak more German.",theme:"connectors"},
+      {t:"Es wäre besser, wenn wir früher losfahren würden.",e:"It would be better if we set off earlier.",theme:"conditional"},
+      {t:"Ich hätte gern einen Tisch für zwei Personen.",e:"I'd like a table for two people.",theme:"requests"},
+      {t:"Weißt du, ob der Laden noch geöffnet ist?",e:"Do you know whether the shop is still open?",theme:"requests"},
+      {t:"Mir ist aufgefallen, dass du müde aussiehst.",e:"I noticed that you look tired.",theme:"opinion"},
+      {t:"Bevor du gehst, könntest du das Fenster schließen?",e:"Before you leave, could you close the window?",theme:"requests"},
+      {t:"Ich bin gespannt, wie es weitergeht.",e:"I'm curious how it will continue.",theme:"feelings"},
+      {t:"Das lässt sich leider nicht ändern.",e:"Unfortunately, that can't be changed.",theme:"opinion"},
+      {t:"Um ehrlich zu sein, gefällt mir das nicht besonders.",e:"To be honest, I don't like that much.",theme:"opinion"},
+      {t:"Sobald ich zu Hause bin, rufe ich dich an.",e:"As soon as I'm home, I'll call you.",theme:"connectors"},
+      {t:"Es lohnt sich, diese Stadt zu besuchen.",e:"It's worth visiting this city.",theme:"opinion"},
+      {t:"Ich habe mich entschieden, einen Kurs zu machen.",e:"I decided to take a course.",theme:"past"},
+      {t:"Können Sie mir sagen, wie ich zum Bahnhof komme?",e:"Can you tell me how to get to the station?",theme:"travel"},
+      {t:"Ich würde dir raten, mehr zu üben.",e:"I would advise you to practice more.",theme:"advice"},
+      {t:"Das ist mir noch nie passiert.",e:"That has never happened to me before.",theme:"past"}
+    ],
+    grammar:[
+      {q:"Ich gebe ___ Mann das Buch. (the man, dative)",a:"dem",opts:["dem","den","der","das"],why:"Dative masculine article is 'dem'. The man is the indirect object."},
+      {q:"Wir warten auf ___ Bus. (the bus, accusative)",a:"den",opts:["den","dem","der","das"],why:"'warten auf' takes accusative; masculine acc. is 'den'."},
+      {q:"Das ist das Auto ___ Bruders. (my brother's, genitive)",a:"meines",opts:["meines","meinem","meiner","mein"],why:"Genitive masculine: 'meines Bruders'."},
+      {q:"Wenn ich reich ___, würde ich ein Haus kaufen.",a:"wäre",opts:["wäre","war","bin","werde"],why:"Konjunktiv II of 'sein' is 'wäre' for hypothetical situations."},
+      {q:"Ich freue mich ___ das Wochenende.",a:"auf",opts:["auf","über","für","an"],why:"'sich freuen auf' = to look forward to (future)."},
+      {q:"Er fährt ___ dem Fahrrad zur Arbeit.",a:"mit",opts:["mit","auf","in","zu"],why:"'mit dem Fahrrad' = by bike; 'mit' takes dative."},
+      {q:"___ ich Zeit habe, lese ich gern.",a:"Wenn",opts:["Wenn","Als","Ob","Dass"],why:"'Wenn' for repeated/present conditions; 'Als' only for one past event."},
+      {q:"Ich habe den Film ___. (to see, perfect)",a:"gesehen",opts:["gesehen","geseht","gesah","sehen"],why:"Past participle of 'sehen' is 'gesehen'."},
+      {q:"Sie interessiert sich ___ Kunst.",a:"für",opts:["für","auf","an","über"],why:"'sich interessieren für' = to be interested in."},
+      {q:"Der Kaffee, ___ ich getrunken habe, war kalt.",a:"den",opts:["den","der","dem","das"],why:"Relative pronoun, masculine accusative object = 'den'."},
+      {q:"Ich bleibe zu Hause, ___ ich krank bin.",a:"weil",opts:["weil","denn","obwohl","dass"],why:"'weil' gives a reason and sends the verb to the end."},
+      {q:"Kannst du lauter sprechen? Ich kann dich kaum ___.",a:"hören",opts:["hören","hörst","gehört","höre"],why:"Infinitive after the modal 'kann'."},
+      {q:"Ich helfe ___ Kindern. (dative plural)",a:"den",opts:["den","die","der","dem"],why:"Dative plural article is 'den' (and the noun adds -n)."},
+      {q:"___ du mir bitte helfen? (können, du)",a:"Kannst",opts:["Kannst","Kann","Könnt","Kannen"],why:"2nd person singular of 'können' is 'kannst'."},
+      {q:"Wenn er Zeit ___, käme er mit. (haben, Konj. II)",a:"hätte",opts:["hätte","hat","habe","hatte"],why:"Konjunktiv II of 'haben' is 'hätte'."},
+      {q:"Das Buch, ___ auf dem Tisch liegt, ist meins.",a:"das",opts:["das","der","dem","die"],why:"Neuter nominative relative pronoun = 'das'."},
+      {q:"Ich denke oft ___ dich.",a:"an",opts:["an","auf","über","für"],why:"'denken an' = to think of/about someone."},
+      {q:"Wir gehen ___ Kino. (into the cinema)",a:"ins",opts:["ins","im","in der","zum"],why:"Movement into (accusative): 'in das' = 'ins'."},
+      {q:"Trotz ___ Regens gehen wir raus. (genitive)",a:"des",opts:["des","dem","der","den"],why:"'trotz' takes genitive; masculine/neuter is 'des'."},
+      {q:"Ich habe keine Zeit, dich ___ besuchen.",a:"zu",opts:["zu","um","für","auf"],why:"Infinitive clause needs 'zu': 'zu besuchen'."},
+      {q:"Je später es wird, ___ müder werde ich.",a:"desto",opts:["desto","als","wie","umso mehr"],why:"'je … desto …' comparative construction."},
+      {q:"Er tut so, ___ ob er alles wüsste.",a:"als",opts:["als","wie","dass","wenn"],why:"'als ob' + Konjunktiv = as if."}
+    ]
+  },
+  es: {
+    name:"Spanish", flag:"🇪🇸", pill:"es", lang:"es-ES", level:"A2",
+    vocab:[
+      {t:"el horario",e:"schedule / timetable",ex:"¿Cuál es el horario del museo?",theme:"daily"},
+      {t:"acordarse de",e:"to remember",ex:"No me acuerdo de su nombre.",theme:"daily"},
+      {t:"el barrio",e:"neighborhood",ex:"Vivo en un barrio tranquilo.",theme:"places"},
+      {t:"conseguir",e:"to get / achieve",ex:"Por fin conseguí el trabajo.",theme:"work"},
+      {t:"la reunión",e:"meeting",ex:"La reunión es a las tres.",theme:"work"},
+      {t:"probar",e:"to try / taste",ex:"¿Quieres probar la comida?",theme:"food"},
+      {t:"aunque",e:"although / even though",ex:"Voy a salir aunque llueva.",theme:"connectors"},
+      {t:"la factura",e:"invoice / bill",ex:"Tengo que pagar la factura hoy.",theme:"money"},
+      {t:"quedar con",e:"to meet up with",ex:"He quedado con Ana a las seis.",theme:"social"},
+      {t:"el consejo",e:"advice",ex:"¿Me puedes dar un consejo?",theme:"communication"},
+      {t:"parecer",e:"to seem",ex:"Me parece una buena idea.",theme:"opinion"},
+      {t:"enterarse de",e:"to find out about",ex:"Me enteré de la noticia ayer.",theme:"communication"},
+      {t:"el ambiente",e:"atmosphere / environment",ex:"El ambiente del bar es muy agradable.",theme:"places"},
+      {t:"aprovechar",e:"to make the most of",ex:"Hay que aprovechar el buen tiempo.",theme:"abstract"},
+      {t:"tener ganas de",e:"to feel like",ex:"Tengo ganas de ir a la playa.",theme:"feelings"},
+      {t:"el desarrollo",e:"development",ex:"El desarrollo del proyecto va bien.",theme:"work"},
+      {t:"echar de menos",e:"to miss (someone)",ex:"Echo de menos a mi familia.",theme:"feelings"},
+      {t:"disponible",e:"available",ex:"¿Estás disponible mañana?",theme:"adjectives"},
+      {t:"la costumbre",e:"custom / habit",ex:"Es una costumbre española cenar tarde.",theme:"culture"},
+      {t:"soler",e:"to usually (do)",ex:"Suelo levantarme temprano.",theme:"daily"},
+      {t:"el retraso",e:"delay",ex:"El vuelo tiene un retraso de una hora.",theme:"travel"},
+      {t:"recomendar",e:"to recommend",ex:"Te recomiendo este restaurante.",theme:"communication"},
+      {t:"el logro",e:"achievement",ex:"Hablar español es un gran logro.",theme:"learning"},
+      {t:"acostumbrarse a",e:"to get used to",ex:"Me he acostumbrado al calor.",theme:"daily"},
+      {t:"el significado",e:"meaning",ex:"¿Cuál es el significado de esta palabra?",theme:"communication"},
+      {t:"sin duda",e:"without a doubt",ex:"Sin duda es la mejor opción.",theme:"adverbs"},
+      {t:"el recuerdo",e:"memory / souvenir",ex:"Guardo un buen recuerdo de ese viaje.",theme:"feelings"},
+      {t:"proponer",e:"to propose / suggest",ex:"Propongo que empecemos antes.",theme:"work"},
+      {t:"por supuesto",e:"of course",ex:"Por supuesto que te ayudo.",theme:"adverbs"},
+      {t:"la excepción",e:"exception",ex:"Hoy hago una excepción.",theme:"abstract"},
+      {t:"la cita",e:"appointment / date",ex:"Tengo una cita con el médico.",theme:"daily"},
+      {t:"la cuenta",e:"bill / account",ex:"La cuenta, por favor.",theme:"money"},
+      {t:"cancelar",e:"to cancel",ex:"Quiero cancelar la reserva.",theme:"work"},
+      {t:"la entrevista",e:"interview",ex:"Tengo una entrevista de trabajo.",theme:"work"},
+      {t:"quejarse de",e:"to complain about",ex:"Se queja del ruido.",theme:"communication"},
+      {t:"la responsabilidad",e:"responsibility",ex:"Es tu responsabilidad.",theme:"work"},
+      {t:"aplazar",e:"to postpone",ex:"Vamos a aplazar la reunión.",theme:"work"},
+      {t:"la casualidad",e:"coincidence",ex:"¡Qué casualidad!",theme:"abstract"},
+      {t:"la posibilidad",e:"possibility",ex:"Hay varias posibilidades.",theme:"abstract"},
+      {t:"suficiente",e:"enough / sufficient",ex:"No tengo tiempo suficiente.",theme:"adjectives"},
+      {t:"la salud",e:"health",ex:"La salud es lo más importante.",theme:"health"},
+      {t:"descansar",e:"to rest",ex:"Necesito descansar un poco.",theme:"health"},
+      {t:"la ventaja",e:"advantage",ex:"Tiene muchas ventajas.",theme:"abstract"},
+      {t:"la desventaja",e:"disadvantage",ex:"La desventaja es el precio.",theme:"abstract"},
+      {t:"aumentar",e:"to increase",ex:"Los precios aumentan cada año.",theme:"abstract"},
+      {t:"el medio ambiente",e:"the environment",ex:"Hay que cuidar el medio ambiente.",theme:"nature"},
+      {t:"el tráfico",e:"traffic",ex:"Hay mucho tráfico hoy.",theme:"travel"},
+      {t:"la oportunidad",e:"opportunity",ex:"Aprovecha la oportunidad.",theme:"abstract"},
+      {t:"curioso",e:"curious / strange",ex:"Tengo curiosidad por el resultado.",theme:"adjectives"},
+      {t:"sincero",e:"honest / sincere",ex:"Para ser sincero, no me gusta.",theme:"adjectives"},
+      {t:"el contrato",e:"contract",ex:"Firmé el contrato ayer.",theme:"work"},
+      {t:"ni idea",e:"no idea / no clue",ex:"No tengo ni idea.",theme:"communication"},
+      {t:"preparar",e:"to prepare",ex:"Preparo la cena.",theme:"daily"},
+      {t:"la diferencia",e:"difference",ex:"¿Cuál es la diferencia?",theme:"abstract"},
+      {t:"darse cuenta de",e:"to realize",ex:"Me di cuenta del error.",theme:"abstract"},
+      {t:"soñar con",e:"to dream of",ex:"Sueño con viajar por el mundo.",theme:"feelings"}
+    ],
+    sentences:[
+      {t:"¿Podrías ayudarme a traducir este texto, por favor?",e:"Could you help me translate this text, please?",theme:"requests"},
+      {t:"Si tuviera más tiempo, viajaría más a menudo.",e:"If I had more time, I would travel more often.",theme:"conditional"},
+      {t:"Aunque llovió, salimos a caminar.",e:"Although it rained, we went for a walk.",theme:"connectors"},
+      {t:"No estoy seguro de si es una buena idea.",e:"I'm not sure whether it's a good idea.",theme:"opinion"},
+      {t:"Cuanto más practico, mejor lo entiendo.",e:"The more I practice, the better I understand it.",theme:"comparison"},
+      {t:"Siento haber llegado tarde.",e:"I'm sorry for arriving late.",theme:"apology"},
+      {t:"La razón por la que llamo es la siguiente.",e:"The reason I'm calling is the following.",theme:"phone"},
+      {t:"Después de comer, fuimos al cine.",e:"After eating, we went to the cinema.",theme:"past"},
+      {t:"Me gustaría saber cuánto cuesta.",e:"I'd like to know how much it costs.",theme:"requests"},
+      {t:"A pesar del mal tiempo, el viaje fue bonito.",e:"Despite the bad weather, the trip was nice.",theme:"connectors"},
+      {t:"Puede que llegue un poco más tarde mañana.",e:"I might arrive a bit later tomorrow.",theme:"possibility"},
+      {t:"En mi opinión, deberíamos hacerlo de otra manera.",e:"In my opinion, we should do it differently.",theme:"opinion"},
+      {t:"Si tienes preguntas, llámame sin problema.",e:"If you have questions, just call me.",theme:"conditional"},
+      {t:"Se me olvidó confirmar la cita.",e:"I forgot to confirm the appointment.",theme:"work"},
+      {t:"Eso depende de cómo esté el tiempo.",e:"That depends on how the weather is.",theme:"opinion"},
+      {t:"Desde que vivo en Madrid, hablo más español.",e:"Since I've been living in Madrid, I speak more Spanish.",theme:"connectors"},
+      {t:"Sería mejor si saliéramos más temprano.",e:"It would be better if we left earlier.",theme:"conditional"},
+      {t:"Quisiera una mesa para dos personas.",e:"I'd like a table for two people.",theme:"requests"},
+      {t:"¿Sabes si la tienda sigue abierta?",e:"Do you know whether the shop is still open?",theme:"requests"},
+      {t:"Me he dado cuenta de que estás cansado.",e:"I've realized that you're tired.",theme:"opinion"},
+      {t:"Antes de irte, ¿podrías cerrar la ventana?",e:"Before you leave, could you close the window?",theme:"requests"},
+      {t:"Tengo curiosidad por saber cómo sigue.",e:"I'm curious to know how it continues.",theme:"feelings"},
+      {t:"Eso no se puede cambiar, por desgracia.",e:"That can't be changed, unfortunately.",theme:"opinion"},
+      {t:"Para ser sincero, no me gusta mucho.",e:"To be honest, I don't like it much.",theme:"opinion"},
+      {t:"En cuanto llegue a casa, te llamo.",e:"As soon as I get home, I'll call you.",theme:"connectors"},
+      {t:"Vale la pena visitar esta ciudad.",e:"It's worth visiting this city.",theme:"opinion"},
+      {t:"He decidido apuntarme a un curso.",e:"I've decided to sign up for a course.",theme:"past"},
+      {t:"¿Me puede decir cómo llego a la estación?",e:"Can you tell me how to get to the station?",theme:"travel"},
+      {t:"Te aconsejaría practicar más.",e:"I would advise you to practice more.",theme:"advice"},
+      {t:"Eso nunca me había pasado antes.",e:"That had never happened to me before.",theme:"past"}
+    ],
+    grammar:[
+      {q:"La casa ___ bonita. (permanent quality)",a:"es",opts:["es","está","son","hay"],why:"Ser for inherent/permanent characteristics."},
+      {q:"El café ___ frío. (temporary state)",a:"está",opts:["está","es","son","hay"],why:"Estar for temporary states and conditions."},
+      {q:"Ayer ___ al cine. (yo, ir, preterite)",a:"fui",opts:["fui","iba","voy","fue"],why:"Preterite of 'ir' (yo) is 'fui' — a completed past action."},
+      {q:"Cuando era niño, ___ mucho. (jugar, imperfect)",a:"jugaba",opts:["jugaba","jugué","juego","jugado"],why:"Imperfect for repeated/habitual past actions."},
+      {q:"Espero que ___ bien. (tú, estar, subjunctive)",a:"estés",opts:["estés","estás","estar","estarás"],why:"'Esperar que' triggers the subjunctive: 'estés'."},
+      {q:"___ las ocho de la mañana.",a:"Son",opts:["Son","Es","Está","Hay"],why:"Telling time uses ser: 'Son las ocho'."},
+      {q:"¿Me ___ pasar la sal? (poder, tú)",a:"puedes",opts:["puedes","podes","puede","podrás"],why:"Second person 'tú' present of poder = 'puedes'."},
+      {q:"Le ___ el libro a María. (dar, yo present)",a:"doy",opts:["doy","das","da","dé"],why:"'dar' (yo) present = 'doy'; 'le' is the indirect object."},
+      {q:"Hace dos años que ___ español. (estudiar, yo)",a:"estudio",opts:["estudio","estudié","estudiaba","estudiar"],why:"'Hace + time + que + present' for ongoing duration."},
+      {q:"No hay ___ en la nevera.",a:"nada",opts:["nada","nadie","algo","ninguno"],why:"Double negative: 'no hay nada' = there's nothing."},
+      {q:"Este libro es ___ que ese.",a:"mejor",opts:["mejor","más bueno","bueno","el mejor"],why:"Irregular comparative: 'mejor' (better)."},
+      {q:"Me lavo ___ manos antes de comer.",a:"las",opts:["las","mis","los","unas"],why:"With body parts + reflexive, Spanish uses the definite article 'las'."},
+      {q:"___ mucho calor hoy. (weather)",a:"Hace",opts:["Hace","Está","Es","Tiene"],why:"Weather with 'hacer': 'hace calor'."},
+      {q:"No conozco a ___. (nobody)",a:"nadie",opts:["nadie","nada","alguien","ninguno"],why:"'a nadie' = (to) nobody, for people."},
+      {q:"Quiero que ___ conmigo. (tú, venir, subjunctive)",a:"vengas",opts:["vengas","vienes","venir","vendrás"],why:"'querer que' + subjunctive: 'vengas'."},
+      {q:"Llevo dos años ___ aquí. (vivir)",a:"viviendo",opts:["viviendo","vivo","vivir","vivido"],why:"'llevar + gerundio' for ongoing duration."},
+      {q:"___ gusta el café. (a mí)",a:"Me",opts:["Me","Yo","Mi","A me"],why:"'gustar' uses indirect object pronouns: 'Me gusta'."},
+      {q:"Es el libro ___ compré ayer.",a:"que",opts:["que","cual","quien","lo que"],why:"'que' is the standard relative pronoun for things."},
+      {q:"Voy ___ playa. (a + la)",a:"a la",opts:["a la","a","en la","al"],why:"'a la playa'; 'al' is only a+el."},
+      {q:"Acabo ___ llegar. (just arrived)",a:"de",opts:["de","a","que","en"],why:"'acabar de + infinitivo' = to have just done."},
+      {q:"Hace frío, ___ que ponte el abrigo.",a:"así",opts:["así","aún","tan","ya"],why:"'así que' = so / therefore."},
+      {q:"No es que no ___, es que no puedo. (querer, subj.)",a:"quiera",opts:["quiera","quiero","quería","querer"],why:"'no es que' triggers the subjunctive: 'quiera'."}
+    ]
+  }
+};
+
+/* ---------- PLACEMENT QUIZZES (A1→B2) ---------- */
+const PLACEMENT = {
+  de:[
+    {q:"'the house' —",opts:["das Haus","die Haus","der Haus","den Haus"],a:"das Haus",lvl:1},
+    {q:"Ich ___ Student. (to be)",opts:["bin","bist","ist","sein"],a:"bin",lvl:1},
+    {q:"Wir ___ jeden Tag Kaffee. (to drink)",opts:["trinken","trinkt","trinkst","getrunken"],a:"trinken",lvl:1},
+    {q:"Gestern ___ ich ins Kino gegangen.",opts:["bin","habe","war","werde"],a:"bin",lvl:2},
+    {q:"'I would like a coffee.' —",opts:["Ich möchte einen Kaffee","Ich will Kaffee gut","Ich mag Kaffee bitte","Ich habe Kaffee gern"],a:"Ich möchte einen Kaffee",lvl:2},
+    {q:"Ich interessiere mich ___ Musik.",opts:["für","auf","an","über"],a:"für",lvl:2},
+    {q:"Wenn ich Zeit ___, würde ich kommen.",opts:["hätte","habe","hatte","haben"],a:"hätte",lvl:3},
+    {q:"Der Mann, ___ ich geholfen habe, ist mein Chef.",opts:["dem","den","der","das"],a:"dem",lvl:3},
+    {q:"Trotz ___ schlechten Wetters gingen wir raus.",opts:["des","dem","der","den"],a:"des",lvl:4},
+    {q:"'to make a decision' — eine Entscheidung ___.",opts:["treffen","machen","nehmen","tun"],a:"treffen",lvl:4},
+    {q:"___ ich das nur früher gewusst hätte!",opts:["Hätte","Wenn","Als","Ob"],a:"Hätte",lvl:4}
+  ],
+  es:[
+    {q:"'the book' (masc.) —",opts:["el libro","la libro","los libro","el libra"],a:"el libro",lvl:1},
+    {q:"Yo ___ español. (to speak)",opts:["hablo","hablas","habla","hablar"],a:"hablo",lvl:1},
+    {q:"Nosotros ___ en Madrid. (to live)",opts:["vivimos","vivo","viven","vivir"],a:"vivimos",lvl:1},
+    {q:"Ayer ___ al parque. (ir, yo)",opts:["fui","voy","iba","fue"],a:"fui",lvl:2},
+    {q:"Me ___ el fútbol. (gustar)",opts:["gusta","gusto","gustan","gusté"],a:"gusta",lvl:2},
+    {q:"'one must study more' —",opts:["Hay que estudiar más","Tiene estudiar más","Es estudiar más","Debe de estudia más"],a:"Hay que estudiar más",lvl:2},
+    {q:"Espero que ___ bien. (tú, estar)",opts:["estés","estás","estar","estarás"],a:"estés",lvl:3},
+    {q:"Si tuviera dinero, ___ un coche.",opts:["compraría","compro","compré","comprara"],a:"compraría",lvl:3},
+    {q:"Por más que lo ___, no lo entiendo. (intentar)",opts:["intente","intento","intenté","intentar"],a:"intente",lvl:4},
+    {q:"De haberlo sabido, ___ antes. (venir)",opts:["habría venido","vine","venía","vendré"],a:"habría venido",lvl:4},
+    {q:"No es que no ___, es que no puedo. (querer)",opts:["quiera","quiero","quería","querer"],a:"quiera",lvl:4}
+  ]
+};
+const LEVEL_LABEL={1:"A1",2:"A2",3:"B1",4:"B2"};
+const LEVEL_BASE={1:0.22,2:0.40,3:0.56,4:0.72};
+
+/* ---------- STATE ---------- */
+const LS_KEY = "linguacoach_v1";
+const SHARED_KEY = "lifeDashboard:linguacoach";     // life-dashboard reads this
+const todayStr = () => new Date().toISOString().slice(0,10);
+const now = () => Date.now();
+
+// ── Cloud sync — same database as The Flow (key: ld_linguacoach) ──
+const LC_DB_API = (location.protocol === 'file:') ? 'http://localhost:4000/api' : (location.origin + '/api');
+let LC_DB_ON = false;
+(function hydrateLinguaFromCloud(){
+  try{
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', LC_DB_API + '/get?key=ld_linguacoach', false); // sync so it's ready before load()
+    xhr.send();
+    if(xhr.status !== 200) return;
+    LC_DB_ON = true;
+    const j = JSON.parse(xhr.responseText);
+    if(j && j.value != null){
+      localStorage.setItem(LS_KEY, j.value);           // cloud is source of truth
+    } else {
+      const local = localStorage.getItem(LS_KEY);      // first run: push local progress up
+      if(local){ const x=new XMLHttpRequest(); x.open('POST', LC_DB_API+'/set', false); x.setRequestHeader('Content-Type','application/json'); x.send(JSON.stringify({key:'ld_linguacoach', value:local})); }
+    }
+  }catch(e){ /* no server reachable — works from localStorage as before */ }
+})();
+function lcCloudSave(str){ if(!LC_DB_ON) return; try{ fetch(LC_DB_API+'/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:'ld_linguacoach', value:str})}).catch(()=>{}); }catch(e){} }
+
+let S = load();
+
+function blankState(){
+  return {
+    onboarded:false,
+    profile:{ styles:[], minutes:15, dailyGoalItems:20 },
+    active:"de",
+    streak:0, lastActive:null, bestStreak:0,
+    xp:0, sessions:0,
+    lang:{ de:newLangState(), es:newLangState() }
+  };
+}
+function newLangState(){
+  return {
+    cards:{},
+    skill:{ listening:0.5, speaking:0.5, vocab:0.5, grammar:0.5 },
+    themeErr:{},
+    placement:null,   // {level, label, score, of, date}
+    doneToday:{date:null, items:0, byType:{}}
+  };
+}
+function load(){
+  try{ const raw=localStorage.getItem(LS_KEY); if(raw){ const s=JSON.parse(raw);
+    if(!s.lang) return blankState();
+    for(const l of ["de","es"]){ if(!s.lang[l]) s.lang[l]=newLangState();
+      if(s.lang[l].placement===undefined) s.lang[l].placement=null; }
+    return s; } }catch(e){}
+  return blankState();
+}
+function save(){ try{ const str=JSON.stringify(S); localStorage.setItem(LS_KEY, str); lcCloudSave(str); }catch(e){} publishSummary(); }
+
+/* ---------- DASHBOARD BRIDGE ---------- */
+function buildSummary(){
+  const langs={};
+  for(const l of ["de","es"]){
+    const L=S.lang[l], C=CONTENT[l];
+    const total=C.vocab.length+C.sentences.length+C.grammar.length;
+    const learned=Object.values(L.cards).filter(c=>c.reps>=2).length;
+    langs[l]={
+      name:C.name,
+      targetLevel:C.level,
+      placementLevel:L.placement?L.placement.label:null,
+      itemsLearned:learned,
+      itemsTotal:total,
+      masteryPct:Math.round(learned/total*100),
+      skills:{ listening:round2(L.skill.listening), speaking:round2(L.skill.speaking),
+               vocab:round2(L.skill.vocab), grammar:round2(L.skill.grammar) },
+      doneToday:L.doneToday.date===todayStr()?L.doneToday.items:0
+    };
+  }
+  return {
+    app:"LinguaCoach", schema:1, updated:new Date().toISOString(),
+    active:S.active,
+    streak:S.streak, bestStreak:S.bestStreak, xp:S.xp, sessions:S.sessions,
+    dailyGoal:S.profile.dailyGoalItems,
+    todayItems:(S.lang[S.active].doneToday.date===todayStr()?S.lang[S.active].doneToday.items:0),
+    languages:langs
+  };
+}
+function round2(n){ return Math.round(n*100)/100; }
+let bc=null;
+try{ if(typeof BroadcastChannel!=="undefined") bc=new BroadcastChannel("life-dashboard"); }catch(e){}
+function publishSummary(){
+  try{
+    const sum=buildSummary();
+    localStorage.setItem(SHARED_KEY, JSON.stringify(sum));
+    if(bc) bc.postMessage({type:"linguacoach.update", payload:sum});
+    if(typeof window!=="undefined" && window.parent && window.parent!==window)
+      window.parent.postMessage({source:"linguacoach", type:"update", payload:sum}, "*");
+  }catch(e){}
+}
+function exportJSON(){
+  const blob=new Blob([JSON.stringify({ progress:S, summary:buildSummary() },null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download="linguacoach-progress-"+todayStr()+".json"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },100);
+}
+function importJSONFile(file){
+  const r=new FileReader();
+  r.onload=()=>{ try{ const obj=JSON.parse(r.result); const p=obj.progress||obj;
+    if(p&&p.lang&&p.profile){ S=p; save(); alert("Progress imported ✓"); VIEW="settings"; render(); }
+    else alert("That file doesn't look like a LinguaCoach backup."); }
+    catch(e){ alert("Couldn't read that file."); } };
+  r.readAsText(file);
+}
+
+/* ---------- SRS (SM-2 lite) ---------- */
+function cardId(type,lang,i){ return `${lang}:${type}:${i}`; }
+function getCard(id){
+  const L=S.lang[S.active];
+  if(!L.cards[id]) L.cards[id]={ease:2.3,interval:0,due:0,reps:0,lapses:0,seen:0};
+  return L.cards[id];
+}
+function reviewCard(id,grade){
+  const c=getCard(id); c.seen++;
+  if(grade===0){ c.reps=0; c.interval=0; c.lapses++; c.ease=Math.max(1.3,c.ease-0.2); }
+  else{
+    c.ease=Math.max(1.3, c.ease + (0.1 - (3-grade)*(0.08+(3-grade)*0.02)));
+    c.reps++;
+    if(c.reps===1) c.interval=grade===1?0.5:1;
+    else if(c.reps===2) c.interval=grade===1?2:3;
+    else c.interval=Math.round(c.interval*c.ease*(grade===3?1.3:1));
+  }
+  const dayMs=86400000;
+  c.due = now() + Math.max(0.02, c.interval)*dayMs;
+  save();
+}
+function dueCount(type){
+  const L=S.lang[S.active], list=CONTENT[S.active][type];
+  let n=0; for(let i=0;i<list.length;i++){ const c=L.cards[cardId(type,S.active,i)]; if(!c||c.due<=now()) n++; }
+  return n;
+}
+function pickItems(type,count){
+  const L=S.lang[S.active], list=CONTENT[S.active][type];
+  const arr=list.map((it,i)=>({it,i,c:L.cards[cardId(type,S.active,i)]}));
+  arr.sort((a,b)=>{
+    const ad=a.c?a.c.due:0, bd=b.c?b.c.due:0;
+    const aov=(!a.c||ad<=now())?0:1, bov=(!b.c||bd<=now())?0:1;
+    if(aov!==bov) return aov-bov;
+    return ad-bd;
+  });
+  return arr.slice(0,count);
+}
+
+/* ---------- skill / theme tracking ---------- */
+function recordResult(skill,theme,correct){
+  const L=S.lang[S.active];
+  L.skill[skill] = clamp(L.skill[skill]*0.82 + (correct?1:0)*0.18, 0, 1);
+  if(theme){ const te=L.themeErr[theme]||(L.themeErr[theme]={right:0,wrong:0});
+    correct?te.right++:te.wrong++; }
+  if(L.doneToday.date!==todayStr()) L.doneToday={date:todayStr(),items:0,byType:{}};
+  L.doneToday.items++;
+  save();
+}
+function bumpXP(n){ S.xp+=n; save(); }
+function touchStreak(){
+  const t=todayStr();
+  if(S.lastActive===t) return;
+  const y=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if(S.lastActive===y) S.streak++; else S.streak=1;
+  S.lastActive=t; S.bestStreak=Math.max(S.bestStreak,S.streak); save();
+}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+/* ---------- adaptive daily plan ---------- */
+function buildPlan(){
+  const L=S.lang[S.active];
+  const styles=S.profile.styles;
+  let w={listening:3, speaking:3, vocab:2, grammar:2};
+  if(styles.includes("auditory")){ w.listening+=1; w.speaking+=1; }
+  if(styles.includes("reading")){ w.vocab+=1; w.grammar+=1; }
+  if(styles.includes("kinesthetic")){ w.speaking+=1; }
+  const weakest=Object.entries(L.skill).sort((a,b)=>a[1]-b[1])[0][0];
+  w[weakest]+=2;
+  const target=Math.max(3, Math.round(S.profile.minutes/4));
+  const order=Object.entries(w).sort((a,b)=>b[1]-a[1]);
+  const plan=[]; let i=0;
+  while(plan.length<target){ plan.push(order[i%order.length][0]); i++; if(i>40)break; }
+  const modMap={listening:"dictation",speaking:"shadow",vocab:"vocab",grammar:"grammar"};
+  return plan.map(sk=>({skill:sk,mod:modMap[sk]}));
+}
+
+/* ---------- speech ---------- */
+let VOICES=[];
+function loadVoices(){ VOICES=(typeof window!=="undefined"&&window.speechSynthesis)?speechSynthesis.getVoices():[]; }
+if(typeof window!=="undefined" && window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+function speak(text,lang,rate){
+  if(typeof window==="undefined" || !window.speechSynthesis){ return; }
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang=lang; u.rate=rate||0.9;
+  const v=VOICES.find(v=>v.lang===lang)||VOICES.find(v=>v.lang&&v.lang.slice(0,2)===lang.slice(0,2));
+  if(v) u.voice=v;
+  speechSynthesis.speak(u);
+}
+const SR = (typeof window!=="undefined") ? (window.SpeechRecognition||window.webkitSpeechRecognition||null) : null;
+function recognize(lang,onResult,onErr){
+  if(!SR){ onErr&&onErr("nosr"); return null; }
+  const r=new SR(); r.lang=lang; r.interimResults=false; r.maxAlternatives=3;
+  r.onresult=e=>{ const alts=[]; for(let i=0;i<e.results[0].length;i++) alts.push(e.results[0][i].transcript);
+    onResult(alts); };
+  r.onerror=e=>onErr&&onErr(e.error);
+  try{ r.start(); }catch(e){ onErr&&onErr("start"); }
+  return r;
+}
+function norm(s){ return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+  .replace(/[^a-zñäöüß ]/gi,"").replace(/\s+/g," ").trim(); }
+function lev(a,b){ const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+  for(let j=0;j<=n;j++)d[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[m][n]; }
+function similarity(a,b){ a=norm(a); b=norm(b); if(!a&&!b)return 1; const L=Math.max(a.length,b.length)||1;
+  return clamp(1-lev(a,b)/L,0,1); }
+function wordDiff(target,said){
+  const tw=norm(target).split(" "), sw=new Set(norm(said).split(" "));
+  return tw.map(w=>({w, ok:sw.has(w)}));
+}
+
+/* ============================================================
+   RENDERING
+   ============================================================ */
+const root=(typeof document!=="undefined")?document.getElementById("root"):null;
+const navEl=(typeof document!=="undefined")?document.getElementById("nav"):null;
+let VIEW="dashboard";
+
+function render(){
+  if(!S.onboarded){ navEl&&navEl.classList.add("hidden"); renderOnboard(); return; }
+  if(VIEW==="placement_offer"){ navEl&&navEl.classList.add("hidden"); renderPlacementOffer(); return; }
+  if(VIEW==="placement"){ navEl&&navEl.classList.add("hidden"); renderPlacement(); return; }
+  navEl&&navEl.classList.remove("hidden");
+  if(navEl)[...navEl.children].forEach(b=>b.classList.toggle("on",b.dataset.nav===VIEW));
+  if(VIEW==="dashboard") renderDashboard();
+  else if(VIEW==="learn") renderLearnMenu();
+  else if(VIEW==="progress") renderProgress();
+  else if(VIEW==="settings") renderSettings();
+}
+if(navEl) navEl.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return;
+  VIEW=b.dataset.nav; window.scrollTo(0,0); render(); });
+
+/* ---------- ONBOARDING ---------- */
+let onbStep=0, onbData={styles:[],minutes:15};
+function renderOnboard(){
+  const steps=[stepWelcome,stepStyle,stepTime,stepDone];
+  root.innerHTML=`<div class="segbar">${steps.map((_,i)=>`<i class="${i<=onbStep?'done':''}"></i>`).join("")}</div>
+    <div id="ob" class="fade"></div>`;
+  steps[onbStep]();
+}
+function stepWelcome(){
+  document.getElementById("ob").innerHTML=`
+    <div class="card center">
+      <div class="xl">🎧🗣️</div>
+      <h1>LinguaCoach</h1>
+      <p class="muted">Your personal coach for <span class="pill de">German B1</span> &amp; <span class="pill es">Spanish A2</span>. Listening &amp; speaking first — with a coach that adapts to how you learn and tracks every session.</p>
+      <p class="small muted">Russian and a piano-composition companion come later. This is your German + Spanish trainer.</p>
+      <button class="btn grad" onclick="obNext()">Let's set it up →</button>
+    </div>
+    <p class="tiny muted center">Everything is saved on this device. No account, works offline.</p>`;
+}
+function stepStyle(){
+  const opts=[
+    {k:"auditory",ic:"👂",t:"By ear",d:"Hearing & repeating aloud sticks best"},
+    {k:"reading",ic:"📖",t:"By reading",d:"Seeing words written helps me most"},
+    {k:"kinesthetic",ic:"✍️",t:"By doing",d:"Speaking, typing, active practice"},
+    {k:"visual",ic:"🧩",t:"By patterns",d:"Rules, structure, and connections"}
+  ];
+  document.getElementById("ob").innerHTML=`
+    <div class="card">
+      <h2>How do you learn best?</h2>
+      <p class="muted small">Pick any that fit. Your coach weights exercises toward these.</p>
+      <div class="grid2" id="styleGrid">
+        ${opts.map(o=>`<button class="chip ${onbData.styles.includes(o.k)?'on':''}" data-k="${o.k}" style="flex-direction:column;padding:16px 10px">
+          <div style="font-size:24px">${o.ic}</div><div>${o.t}</div>
+          <div class="tiny muted" style="text-transform:none;margin-top:3px">${o.d}</div></button>`).join("")}
+      </div>
+      <button class="btn grad" style="margin-top:14px" onclick="obNext()">Continue →</button>
+    </div>`;
+  document.getElementById("styleGrid").addEventListener("click",e=>{
+    const b=e.target.closest("button[data-k]"); if(!b)return; const k=b.dataset.k;
+    if(onbData.styles.includes(k)) onbData.styles=onbData.styles.filter(x=>x!==k);
+    else onbData.styles.push(k);
+    stepStyle();
+  });
+}
+function stepTime(){
+  const mins=[10,15,20,30];
+  document.getElementById("ob").innerHTML=`
+    <div class="card">
+      <h2>How much time per day?</h2>
+      <p class="muted small">Your daily plan scales to this. Change it anytime.</p>
+      <div class="grid2" id="timeGrid">
+        ${mins.map(m=>`<button class="chip ${onbData.minutes===m?'on':''}" data-m="${m}" style="padding:18px">
+          <div class="big">${m}</div><div class="tiny muted" style="text-transform:none">min / day</div></button>`).join("")}
+      </div>
+      <button class="btn grad" style="margin-top:14px" onclick="obNext()">Continue →</button>
+    </div>`;
+  document.getElementById("timeGrid").addEventListener("click",e=>{
+    const b=e.target.closest("button[data-m]"); if(!b)return; onbData.minutes=+b.dataset.m; stepTime();
+  });
+}
+function stepDone(){
+  document.getElementById("ob").innerHTML=`
+    <div class="card coach">
+      <div class="row"><div class="avatar">🤖</div><div>
+        <b>You're all set, Artur.</b>
+        <p class="small muted" style="margin:.3em 0 0">Next I'll give you a quick 2-minute placement test so I pitch every lesson at exactly the right level. German first, Spanish whenever you like.</p>
+      </div></div>
+      <button class="btn grad" style="margin-top:14px" onclick="finishOnboard()">Continue →</button>
+    </div>`;
+}
+window.obNext=()=>{ onbStep++; renderOnboard(); };
+window.finishOnboard=()=>{
+  S.onboarded=true; S.profile.styles=onbData.styles.length?onbData.styles:["auditory","kinesthetic"];
+  S.profile.minutes=onbData.minutes; S.active="de"; save(); VIEW="placement_offer"; render();
+};
+
+/* ---------- PLACEMENT ---------- */
+function renderPlacementOffer(){
+  const C=CONTENT[S.active];
+  root.innerHTML=`<div class="fade"><div class="card center coach">
+    <div class="xl">🎯</div>
+    <h1>Quick placement</h1>
+    <p class="muted">${C.flag} <b>${C.name}</b> · 11 questions, easy to hard. It takes ~2 minutes and lets me tune your level (A1–B2) and starting difficulty.</p>
+    <button class="btn grad" onclick="startPlacement('${S.active}')">Start ${C.name} placement</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="skipPlacement()">Skip for now</button>
+  </div>
+  <p class="tiny muted center">You can (re)take a placement anytime from Settings.</p></div>`;
+}
+window.skipPlacement=()=>{ VIEW="dashboard"; render(); };
+let PLC=null;
+window.startPlacement=(lang)=>{ PLC={lang,idx:0,correct:0,byLvl:{1:{c:0,n:0},2:{c:0,n:0},3:{c:0,n:0},4:{c:0,n:0}}};
+  S.active=lang; save(); VIEW="placement"; render(); };
+function renderPlacement(){
+  if(!PLC){ VIEW="dashboard"; renderDashboard(); return; }
+  const q=PLACEMENT[PLC.lang][PLC.idx]; const C=CONTENT[PLC.lang];
+  root.innerHTML=`<div class="fade">
+    <div class="row between" style="margin-bottom:10px">
+      <button class="btn ghost sm" onclick="skipPlacement()">✕</button>
+      <div class="small muted">Placement · ${PLC.idx+1}/${PLACEMENT[PLC.lang].length}</div>
+      <span class="pill ${C.pill}">${C.flag}</span></div>
+    <div class="segbar">${PLACEMENT[PLC.lang].map((_,i)=>`<i class="${i<PLC.idx?'done':''}"></i>`).join("")}</div>
+    <div class="card">
+      <span class="tag">Level check</span>
+      <h2 style="margin:12px 0 16px;font-size:20px;line-height:1.4">${q.q}</h2>
+      <div id="plopts">
+        ${q.opts.map(o=>`<button class="btn sec" style="margin-bottom:8px" onclick="answerPlacement('${esc(o)}')">${o}</button>`).join("")}
+      </div>
+    </div></div>`;
+}
+window.answerPlacement=(choice)=>{
+  const q=PLACEMENT[PLC.lang][PLC.idx];
+  const ok=choice===q.a; if(ok)PLC.correct++;
+  PLC.byLvl[q.lvl].n++; if(ok)PLC.byLvl[q.lvl].c++;
+  PLC.idx++;
+  if(PLC.idx>=PLACEMENT[PLC.lang].length) finishPlacement();
+  else renderPlacement();
+};
+function finishPlacement(){
+  // estimate level: highest level with >=50% correct, requiring the level below to also be reasonable
+  let est=1;
+  for(let v=1;v<=4;v++){ const b=PLC.byLvl[v]; const rate=b.n? b.c/b.n : 0;
+    if(rate>=0.5) est=v; else break; }
+  const label=LEVEL_LABEL[est];
+  const L=S.lang[PLC.lang];
+  L.placement={ level:est, label, score:PLC.correct, of:PLACEMENT[PLC.lang].length, date:todayStr() };
+  const base=LEVEL_BASE[est];
+  // seed skills (keep listening/speaking a touch lower to reflect focus area)
+  L.skill.listening=clamp(base-0.05,0,1); L.skill.speaking=clamp(base-0.08,0,1);
+  L.skill.vocab=clamp(base,0,1); L.skill.grammar=clamp(base+0.02,0,1);
+  save();
+  const C=CONTENT[PLC.lang];
+  const msg = est>=3 ? "Strong foundation — we'll push toward fluency with richer sentences and speaking work."
+            : est===2 ? "Solid basics. We'll consolidate and steadily raise the difficulty."
+            : "Great starting point — we'll build core vocab and structures fast.";
+  root.innerHTML=`<div class="fade"><div class="card center coach">
+    <div class="tiny muted">Your ${C.name} level</div>
+    <div class="lvlbadge">${label}</div>
+    <p class="muted">${PLC.correct}/${PLACEMENT[PLC.lang].length} correct · target ${C.level}</p>
+    <p class="small" style="color:#dfe6f5">${msg}</p>
+    <button class="btn grad" onclick="afterPlacement()">Open my coach →</button>
+    ${PLC.lang==="de" && !S.lang.es.placement ? `<button class="btn ghost" style="margin-top:8px" onclick="startPlacement('es')">Take Spanish placement too</button>`:""}
+  </div></div>`;
+  PLC=null;
+}
+window.afterPlacement=()=>{ VIEW="dashboard"; render(); };
+
+/* ---------- DASHBOARD ---------- */
+function coachMessage(){
+  const L=S.lang[S.active], C=CONTENT[S.active];
+  const done=L.doneToday.date===todayStr()?L.doneToday.items:0;
+  const goal=S.profile.dailyGoalItems;
+  const weakest=Object.entries(L.skill).sort((a,b)=>a[1]-b[1])[0];
+  const nameMap={listening:"listening",speaking:"speaking",vocab:"vocabulary",grammar:"grammar"};
+  const lvl=L.placement?` (you tested ${L.placement.label})`:"";
+  if(done===0){
+    if(S.streak>=2) return `You're on a ${S.streak}-day streak 🔥 — let's keep it alive. I lined up ${C.name} practice${lvl} weighted toward your ${nameMap[weakest[0]]}, which needs the most love right now.`;
+    return `Ready when you are. Today's ${C.name} plan${lvl} leans on ${nameMap[weakest[0]]} and speaking out loud. Ten minutes moves the needle.`;
+  }
+  if(done>=goal) return `Daily goal smashed — ${done} items done. 💪 Anything extra now is pure momentum. Your ${nameMap[weakest[0]]} is already looking sharper.`;
+  return `${done}/${goal} done today — nice pace. A couple more blocks and you hit your goal. I'm still nudging you on ${nameMap[weakest[0]]}.`;
+}
+function renderDashboard(){
+  const L=S.lang[S.active], C=CONTENT[S.active];
+  const done=L.doneToday.date===todayStr()?L.doneToday.items:0;
+  const goal=S.profile.dailyGoalItems;
+  const pct=clamp(Math.round(done/goal*100),0,100);
+  const plan=buildPlan();
+  const modLabel={shadow:"🗣️ Shadowing",dictation:"🎧 Listening / dictation",vocab:"🃏 Vocabulary",grammar:"🧠 Grammar"};
+  const skLabel={listening:"Listening",speaking:"Speaking",vocab:"Vocabulary",grammar:"Grammar"};
+  root.innerHTML=`
+  <div class="fade">
+    <div class="row between" style="margin-bottom:14px">
+      <div><div class="tiny muted">Coaching</div><h1 style="margin:0">${S.active==='de'?'Guten Tag':'¡Hola!'} 👋</h1></div>
+      ${langSwitch()}
+    </div>
+    <div class="card coach">
+      <div class="row" style="align-items:flex-start"><div class="avatar">🤖</div>
+        <div><b>Coach</b><p class="small" style="margin:.3em 0 0;color:#dfe6f5">${coachMessage()}</p></div></div>
+    </div>
+    <div class="row" style="gap:10px;margin-bottom:14px">
+      <div class="stat"><b>${S.streak}</b><span class="tiny muted">day streak</span></div>
+      <div class="stat"><b>${S.xp}</b><span class="tiny muted">XP</span></div>
+      <div class="stat"><b>${done}</b><span class="tiny muted">today</span></div>
+    </div>
+    <div class="card">
+      <div class="row between"><b>Today's goal</b><span class="small muted">${done}/${goal} items</span></div>
+      <div class="bar" style="margin-top:10px"><i style="width:${pct}%"></i></div>
+    </div>
+    <div class="card">
+      <div class="row between" style="margin-bottom:6px"><b>Your plan for today</b>
+        <span class="pill ${C.pill}">${C.flag} ${L.placement?L.placement.label:C.level}</span></div>
+      <p class="tiny muted" style="text-transform:none;margin:0 0 12px">Built from your time (${S.profile.minutes} min), learning style, and where you're weakest.</p>
+      <div id="planList">
+        ${plan.map(p=>`<button class="btn sec" style="margin-bottom:8px;text-align:left" onclick="startModule('${p.mod}')">
+          <div class="row between"><span>${modLabel[p.mod]}</span><span class="tag">${skLabel[p.skill]}</span></div></button>`).join("")}
+      </div>
+      <button class="btn grad" onclick="startModule('${plan[0].mod}')" style="margin-top:6px">▶ Start guided session</button>
+    </div>
+    <div class="card">
+      <b>Where to focus</b>
+      <div style="margin-top:10px">
+        ${Object.entries(L.skill).sort((a,b)=>a[1]-b[1]).map(([k,v])=>{
+          const p=Math.round(v*100); const col=v<0.45?'var(--bad)':v<0.7?'var(--warn)':'var(--ok)';
+          return `<div class="weak"><span style="width:92px" class="small">${skLabel[k]}</span>
+            <div class="bar" style="flex:1"><i style="width:${p}%;background:${col}"></i></div>
+            <span class="small muted" style="width:34px;text-align:right">${p}%</span></div>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+function langSwitch(){
+  return `<div class="row" style="gap:6px">
+    ${["de","es"].map(l=>`<button class="chip ${S.active===l?'on':''}" style="padding:8px 12px;flex:0" onclick="switchLang('${l}')">${CONTENT[l].flag}</button>`).join("")}
+  </div>`;
+}
+window.switchLang=l=>{ S.active=l; save(); render(); };
+
+/* ---------- LEARN MENU ---------- */
+function renderLearnMenu(){
+  const C=CONTENT[S.active], L=S.lang[S.active];
+  const mods=[
+    {m:"shadow",ic:"🗣️",t:"Shadowing",d:"Listen, then repeat aloud. I score your pronunciation.",tag:"Speaking"},
+    {m:"dictation",ic:"🎧",t:"Listening / Dictation",d:"Hear a sentence, type what you caught.",tag:"Listening"},
+    {m:"vocab",ic:"🃏",t:"Vocabulary (SRS)",d:"Spaced repetition — reviews what you're about to forget.",tag:"Memory"},
+    {m:"grammar",ic:"🧠",t:"Grammar drills",d:"Cases & Konjunktiv (DE), ser/estar & tenses (ES).",tag:"Accuracy"},
+    {m:"pronounce",ic:"🔊",t:"Pronunciation lab",d:"Single-word playback + record & compare.",tag:"Speaking"}
+  ];
+  root.innerHTML=`<div class="fade">
+    <div class="row between" style="margin-bottom:14px"><h1 style="margin:0">Learn</h1>${langSwitch()}</div>
+    <p class="muted small">${C.flag} ${C.name}${L.placement?` · you're at ${L.placement.label}`:""} · targeting ${C.level}. Due now:
+      <b>${dueCount('vocab')}</b> words · <b>${dueCount('grammar')}</b> grammar · <b>${dueCount('sentences')}</b> sentences.</p>
+    ${mods.map(o=>`<button class="card tight" style="display:block;width:100%;text-align:left" onclick="startModule('${o.m}')">
+      <div class="row"><div style="font-size:26px">${o.ic}</div>
+      <div style="flex:1"><div class="row between"><b>${o.t}</b><span class="tag">${o.tag}</span></div>
+      <div class="small muted">${o.d}</div></div></div></button>`).join("")}
+  </div>`;
+}
+
+/* ---------- SESSION ENGINE ---------- */
+let SESSION=null;
+window.startModule=(mod)=>{
+  let items, type;
+  const per=Math.max(4,Math.round(S.profile.minutes/3));
+  if(mod==="vocab"||mod==="pronounce"){ type="vocab"; items=pickItems("vocab",per); }
+  else if(mod==="grammar"){ type="grammar"; items=pickItems("grammar",Math.max(4,Math.round(per*0.8))); }
+  else { type="sentences"; items=pickItems("sentences",Math.max(4,Math.round(per*0.7))); }
+  SESSION={mod,type,items,idx:0,correct:0,total:items.length};
+  renderSession();
+};
+function endSession(){
+  const {correct,total,mod}=SESSION;
+  touchStreak(); S.sessions++; save();
+  const pctv=Math.round(correct/Math.max(1,total)*100);
+  const msg = pctv>=80?"Strong session. That's how fluency compounds. 🚀":
+              pctv>=55?"Solid work — I'll resurface the tricky ones sooner.":
+              "Tough set. No worries — I'll bring these back in smaller doses.";
+  root.innerHTML=`<div class="fade"><div class="card center coach">
+    <div class="xl">${pctv>=80?'🎉':pctv>=55?'👏':'💪'}</div>
+    <h1>Session complete</h1>
+    <div class="row" style="gap:10px;margin:12px 0">
+      <div class="stat"><b>${correct}/${total}</b><span class="tiny muted">correct</span></div>
+      <div class="stat"><b>+${correct*5+total}</b><span class="tiny muted">XP</span></div>
+      <div class="stat"><b>${S.streak}🔥</b><span class="tiny muted">streak</span></div>
+    </div>
+    <p class="small" style="color:#dfe6f5">${msg}</p>
+    <button class="btn grad" onclick="VIEW='dashboard';render()">Back to coach</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="startModule('${mod}')">Another round</button>
+  </div></div>`;
+  bumpXP(correct*5+total);
+  SESSION=null;
+}
+function sessionHeader(){
+  const s=SESSION;
+  return `<div class="row between" style="margin-bottom:10px">
+    <button class="btn ghost sm" onclick="quitSession()">✕ Exit</button>
+    <div class="small muted">${s.idx+1} / ${s.total}</div>
+    <span class="pill ${CONTENT[S.active].pill}">${CONTENT[S.active].flag}</span></div>
+    <div class="segbar">${s.items.map((_,i)=>`<i class="${i<s.idx?'done':''}"></i>`).join("")}</div>`;
+}
+window.quitSession=()=>{ SESSION=null; VIEW="dashboard"; render(); };
+function renderSession(){
+  const s=SESSION; if(!s) return;
+  if(s.idx>=s.total){ endSession(); return; }
+  if(s.mod==="vocab") renderVocab();
+  else if(s.mod==="grammar") renderGrammar();
+  else if(s.mod==="shadow") renderShadow();
+  else if(s.mod==="dictation") renderDictation();
+  else if(s.mod==="pronounce") renderPronounce();
+}
+function advance(correct){ SESSION.idx++; renderSession(); }
+
+/* --- VOCAB (SRS) --- */
+function renderVocab(){
+  const s=SESSION, {it}=s.items[s.idx]; const C=CONTENT[S.active];
+  root.innerHTML=`<div class="fade">${sessionHeader()}
+    <div class="card center">
+      <span class="tag">${it.theme}</span>
+      <div class="word" style="margin-top:14px">${it.t}</div>
+      <button class="btn sec sm" style="margin:6px auto 0" onclick="speak('${esc(it.t)}','${C.lang}',0.85)">🔊 Hear it</button>
+      <div id="rev" style="margin-top:18px">
+        <button class="btn grad" onclick="revealVocab()">Show meaning</button>
+      </div>
+    </div></div>`;
+}
+window.revealVocab=()=>{
+  const s=SESSION, {it}=s.items[s.idx];
+  document.getElementById("rev").innerHTML=`
+    <div class="sub" style="margin-bottom:6px">${it.e}</div>
+    <div class="small muted" style="margin-bottom:14px">“${it.ex}”</div>
+    <p class="tiny muted">How well did you know it?</p>
+    <div class="grid2" style="gap:8px">
+      <button class="btn" style="background:var(--bad)" onclick="gradeVocab(0)">Again</button>
+      <button class="btn" style="background:var(--warn);color:#1a1200" onclick="gradeVocab(1)">Hard</button>
+      <button class="btn" style="background:var(--acc)" onclick="gradeVocab(2)">Good</button>
+      <button class="btn" style="background:var(--ok);color:#052318" onclick="gradeVocab(3)">Easy</button>
+    </div>`;
+};
+window.gradeVocab=(g)=>{
+  const s=SESSION, {it,i}=s.items[s.idx];
+  reviewCard(cardId("vocab",S.active,i),g);
+  const ok=g>=2; if(ok)s.correct++;
+  recordResult("vocab",it.theme,ok);
+  advance(ok);
+};
+
+/* --- GRAMMAR --- */
+function renderGrammar(){
+  const s=SESSION, {it}=s.items[s.idx];
+  root.innerHTML=`<div class="fade">${sessionHeader()}
+    <div class="card">
+      <span class="tag">Grammar</span>
+      <h2 style="margin:12px 0 16px;font-size:20px;line-height:1.4">${it.q}</h2>
+      <div id="opts">
+        ${it.opts.map(o=>`<button class="btn sec" style="margin-bottom:8px" onclick="answerGrammar('${esc(o)}')">${o}</button>`).join("")}
+      </div>
+      <div id="gfb"></div>
+    </div></div>`;
+}
+window.answerGrammar=(choice)=>{
+  const s=SESSION, {it,i}=s.items[s.idx];
+  const ok=choice===it.a;
+  if(ok)s.correct++;
+  reviewCard(cardId("grammar",S.active,i), ok?2:0);
+  recordResult("grammar",null,ok);
+  document.querySelectorAll("#opts button").forEach(b=>{ b.disabled=true;
+    if(b.textContent===it.a){ b.style.background="var(--ok)"; b.style.color="#052318"; }
+    else if(b.textContent===choice) b.style.background="var(--bad)"; });
+  document.getElementById("gfb").innerHTML=`<div class="feedback ${ok?'fb-ok':'fb-bad'}">
+    ${ok?'✓ Correct.':'✗ Answer: <b>'+it.a+'</b>'}<div class="small" style="margin-top:6px;font-weight:400">${it.why}</div></div>
+    <button class="btn grad" style="margin-top:12px" onclick="advance(${ok})">Next →</button>`;
+};
+
+/* --- SHADOWING --- */
+function renderShadow(){
+  const s=SESSION, {it}=s.items[s.idx]; const C=CONTENT[S.active];
+  root.innerHTML=`<div class="fade">${sessionHeader()}
+    <div class="card center">
+      <span class="tag">Shadowing · ${it.theme}</span>
+      <p class="tiny muted" style="margin-top:12px">Listen, then repeat it out loud</p>
+      <div class="word" style="font-size:22px;line-height:1.4;margin:10px 0">${it.t}</div>
+      <div class="small muted" style="margin-bottom:16px">${it.e}</div>
+      <div class="row" style="justify-content:center;gap:14px;margin-bottom:20px">
+        <button class="btn sec icon" onclick="speak('${esc(it.t)}','${C.lang}',0.8)">🐢 Slow</button>
+        <div class="listen-btn" onclick="speak('${esc(it.t)}','${C.lang}',0.95)">🔊</div>
+        <button class="btn sec icon" onclick="speak('${esc(it.t)}','${C.lang}',1)">Normal</button>
+      </div>
+      <div class="mic" id="mic" onclick="recShadow()">🎤</div>
+      <p class="small muted" id="micHint" style="margin-top:12px">Tap the mic and say it</p>
+      <div id="sfb"></div>
+    </div></div>`;
+  if(!SR){ document.getElementById("micHint").innerHTML=`<span class="muted">Speech scoring needs Chrome/Edge. On this browser you can still listen &amp; self-rate.</span>`; }
+}
+window.recShadow=()=>{
+  const s=SESSION, {it,i}=s.items[s.idx]; const C=CONTENT[S.active];
+  const mic=document.getElementById("mic"), hint=document.getElementById("micHint");
+  if(!SR){ selfRate("sfb",it,i,"speaking"); return; }
+  mic.classList.add("live"); hint.textContent="Listening… speak now";
+  recognize(C.lang, (alts)=>{
+    mic.classList.remove("live");
+    let best=0,bestT=alts[0]; alts.forEach(a=>{const sc=similarity(it.t,a); if(sc>best){best=sc;bestT=a;}});
+    const pctv=Math.round(best*100);
+    const ok=best>=0.7; if(ok)s.correct++;
+    reviewCard(cardId("sentences",S.active,i), best>=0.85?3:best>=0.7?2:best>=0.5?1:0);
+    recordResult("speaking",it.theme,ok);
+    const diff=wordDiff(it.t,bestT).map(w=>`<span class="${w.ok?'g':'b'}">${w.w}</span>`).join(" ");
+    hint.textContent="";
+    document.getElementById("sfb").innerHTML=`
+      <div class="feedback ${ok?'fb-ok':pctv>=50?'fb-warn':'fb-bad'}">
+        <div class="row between"><span>${ok?'Great pronunciation!':pctv>=50?'Close — keep at it':'Try again slower'}</span><b>${pctv}%</b></div>
+        <div class="diff small" style="margin-top:8px;font-weight:400">I heard: ${diff}</div>
+        <div class="tiny muted" style="margin-top:6px">Green = matched · red = missed/unclear</div>
+      </div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn ghost" onclick="recShadow()">↻ Retry</button>
+        <button class="btn grad" onclick="advance(${ok})">Next →</button></div>`;
+  }, (err)=>{
+    mic.classList.remove("live");
+    hint.innerHTML=`<span class="muted">${err==='not-allowed'?'Mic blocked — allow microphone access.':'Didn’t catch that.'}</span>`;
+    selfRate("sfb",it,i,"speaking");
+  });
+};
+function selfRate(fbId,it,i,skill){
+  document.getElementById(fbId).innerHTML=`
+    <p class="tiny muted" style="margin-top:14px">Rate yourself:</p>
+    <div class="row" style="gap:8px">
+      <button class="btn sec" onclick="manualGrade(${i},'${skill}',0)">Struggled</button>
+      <button class="btn sec" onclick="manualGrade(${i},'${skill}',2)">OK</button>
+      <button class="btn grad" onclick="manualGrade(${i},'${skill}',3)">Nailed it</button></div>`;
+}
+window.manualGrade=(i,skill,g)=>{
+  const s=SESSION, {it}=s.items[s.idx]; const ok=g>=2; if(ok)s.correct++;
+  reviewCard(cardId(s.type,S.active,i),g); recordResult(skill,it.theme,ok); advance(ok);
+};
+
+/* --- DICTATION --- */
+function renderDictation(){
+  const s=SESSION, {it}=s.items[s.idx]; const C=CONTENT[S.active];
+  root.innerHTML=`<div class="fade">${sessionHeader()}
+    <div class="card center">
+      <span class="tag">Dictation · ${it.theme}</span>
+      <p class="tiny muted" style="margin-top:12px">Listen and type what you hear</p>
+      <div class="row" style="justify-content:center;gap:14px;margin:16px 0 18px">
+        <button class="btn sec icon" onclick="speak('${esc(it.t)}','${C.lang}',0.75)">🐢 Slow</button>
+        <div class="listen-btn" onclick="speak('${esc(it.t)}','${C.lang}',0.9)">🔊</div>
+      </div>
+      <input type="text" id="dic" placeholder="Type what you heard…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="btn grad" style="margin-top:12px" onclick="checkDictation()">Check</button>
+      <button class="btn ghost sm" style="margin:8px auto 0" onclick="revealDict()">Show answer</button>
+      <div id="dfb"></div>
+    </div></div>`;
+  setTimeout(()=>speak(it.t,C.lang,0.9),350);
+  const inp=document.getElementById("dic"); inp.focus();
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")checkDictation();});
+}
+window.checkDictation=()=>{
+  const s=SESSION, {it,i}=s.items[s.idx];
+  const val=document.getElementById("dic").value;
+  const sc=similarity(it.t,val); const pctv=Math.round(sc*100);
+  const ok=sc>=0.82; if(ok)s.correct++;
+  reviewCard(cardId("sentences",S.active,i), sc>=0.95?3:sc>=0.82?2:sc>=0.6?1:0);
+  recordResult("listening",it.theme,ok);
+  const diff=wordDiff(it.t,val).map(w=>`<span class="${w.ok?'g':'b'}">${w.w}</span>`).join(" ");
+  document.getElementById("dfb").innerHTML=`
+    <div class="feedback ${ok?'fb-ok':pctv>=60?'fb-warn':'fb-bad'}">
+      <div class="row between"><span>${ok?'Spot on!':pctv>=60?'Almost':'Listen again'}</span><b>${pctv}%</b></div>
+      <div class="diff" style="margin-top:8px">${diff}</div>
+      <div class="small muted" style="margin-top:6px">${it.e}</div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="btn ghost" onclick="renderDictation()">↻ Retry</button>
+      <button class="btn grad" onclick="advance(${ok})">Next →</button></div>`;
+};
+window.revealDict=()=>{
+  const s=SESSION, {it,i}=s.items[s.idx];
+  reviewCard(cardId("sentences",S.active,i),1); recordResult("listening",it.theme,false);
+  document.getElementById("dfb").innerHTML=`<div class="feedback fb-warn">${it.t}<div class="small muted" style="margin-top:6px;font-weight:400">${it.e}</div></div>
+    <button class="btn grad" style="margin-top:12px" onclick="advance(false)">Next →</button>`;
+};
+
+/* --- PRONUNCIATION LAB --- */
+function renderPronounce(){
+  const s=SESSION, {it}=s.items[s.idx]; const C=CONTENT[S.active];
+  const word=it.t;
+  root.innerHTML=`<div class="fade">${sessionHeader()}
+    <div class="card center">
+      <span class="tag">Pronunciation lab</span>
+      <div class="word" style="margin:14px 0 4px">${word}</div>
+      <div class="small muted" style="margin-bottom:16px">${it.e}</div>
+      <div class="listen-btn" onclick="speak('${esc(word)}','${C.lang}',0.85)">🔊</div>
+      <div class="mic" id="mic" style="margin-top:18px" onclick="recPron()">🎤</div>
+      <p class="small muted" id="micHint" style="margin-top:12px">Tap, then say the word</p>
+      <div id="pfb"></div>
+    </div></div>`;
+  if(!SR) document.getElementById("micHint").innerHTML=`<span class="muted">Recording needs Chrome/Edge — you can still listen &amp; self-rate.</span>`;
+}
+window.recPron=()=>{
+  const s=SESSION, {it,i}=s.items[s.idx]; const C=CONTENT[S.active];
+  const mic=document.getElementById("mic"),hint=document.getElementById("micHint");
+  if(!SR){ selfRate("pfb",it,i,"speaking"); return; }
+  mic.classList.add("live"); hint.textContent="Listening…";
+  recognize(C.lang,(alts)=>{
+    mic.classList.remove("live");
+    let best=0; alts.forEach(a=>{const sc=similarity(it.t,a); if(sc>best)best=sc;});
+    const pctv=Math.round(best*100); const ok=best>=0.75; if(ok)s.correct++;
+    reviewCard(cardId("vocab",S.active,i), best>=0.9?3:best>=0.75?2:best>=0.5?1:0);
+    recordResult("speaking",it.theme,ok); hint.textContent="";
+    document.getElementById("pfb").innerHTML=`<div class="feedback ${ok?'fb-ok':pctv>=50?'fb-warn':'fb-bad'}">
+      <div class="row between"><span>${ok?'Clean!':'Keep shaping it'}</span><b>${pctv}%</b></div></div>
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost" onclick="recPron()">↻</button>
+      <button class="btn grad" onclick="advance(${ok})">Next →</button></div>`;
+  },(err)=>{ mic.classList.remove("live"); selfRate("pfb",it,i,"speaking"); });
+};
+
+/* ---------- PROGRESS ---------- */
+function renderProgress(){
+  const L=S.lang[S.active], C=CONTENT[S.active];
+  const totalCards=C.vocab.length+C.sentences.length+C.grammar.length;
+  const learned=Object.values(L.cards).filter(c=>c.reps>=2).length;
+  const themes=Object.entries(L.themeErr).map(([t,v])=>({t,acc:v.right/Math.max(1,v.right+v.wrong),n:v.right+v.wrong}))
+    .filter(x=>x.n>=1).sort((a,b)=>a.acc-b.acc);
+  root.innerHTML=`<div class="fade">
+    <div class="row between" style="margin-bottom:14px"><h1 style="margin:0">Progress</h1>${langSwitch()}</div>
+    <div class="row" style="gap:10px">
+      <div class="stat"><b>${learned}</b><span class="tiny muted">items learned</span></div>
+      <div class="stat"><b>${S.sessions}</b><span class="tiny muted">sessions</span></div>
+      <div class="stat"><b>${S.bestStreak}</b><span class="tiny muted">best streak</span></div>
+    </div>
+    <div class="card">
+      <div class="row between"><b>${C.flag} ${C.name} mastery</b><span class="small muted">${learned}/${totalCards}</span></div>
+      <div class="bar" style="margin-top:10px"><i style="width:${Math.round(learned/totalCards*100)}%"></i></div>
+      <p class="tiny muted" style="text-transform:none;margin-top:10px">${L.placement?`Placement: <b>${L.placement.label}</b> (${L.placement.score}/${L.placement.of}) · `:""}An item counts as "learned" once you've recalled it correctly twice; spaced repetition keeps it fresh.</p>
+    </div>
+    <div class="card">
+      <b>Skill balance</b>
+      <div style="margin-top:10px">
+      ${Object.entries(L.skill).map(([k,v])=>{const p=Math.round(v*100);const col=v<0.45?'var(--bad)':v<0.7?'var(--warn)':'var(--ok)';
+        return `<div class="weak"><span class="small" style="width:92px;text-transform:capitalize">${k}</span>
+        <div class="bar" style="flex:1"><i style="width:${p}%;background:${col}"></i></div>
+        <span class="small muted" style="width:34px;text-align:right">${p}%</span></div>`;}).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <b>Topics that trip you up</b>
+      ${themes.length? `<div class="grid3" style="margin-top:12px">${themes.slice(0,6).map(x=>{
+        const col=x.acc<0.5?'rgba(255,93,108,.25)':x.acc<0.75?'rgba(255,181,71,.25)':'rgba(55,211,153,.25)';
+        const bc =x.acc<0.5?'var(--bad)':x.acc<0.75?'var(--warn)':'var(--ok)';
+        return `<div class="heat" style="background:${col};border:1px solid ${bc};color:${bc};flex-direction:column">
+          <span style="text-transform:capitalize">${x.t}</span><b>${Math.round(x.acc*100)}%</b></div>`;}).join("")}</div>`
+        : `<p class="small muted" style="margin-top:10px">Do a few sessions and I'll map your weak topics here.</p>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- SETTINGS ---------- */
+function renderSettings(){
+  const styleNames={auditory:"By ear",reading:"By reading",kinesthetic:"By doing",visual:"By patterns"};
+  const de=S.lang.de.placement, es=S.lang.es.placement;
+  root.innerHTML=`<div class="fade"><h1>Settings</h1>
+    <div class="card">
+      <b>Main language</b>
+      <div class="row" style="gap:8px;margin-top:10px">
+        ${["de","es"].map(l=>`<button class="chip ${S.active===l?'on':''}" onclick="switchLang('${l}')">${CONTENT[l].flag} ${CONTENT[l].name}</button>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <b>Placement level</b>
+      <p class="small muted" style="margin:.4em 0 10px">German: <b>${de?de.label+" ("+de.score+"/"+de.of+")":"not taken"}</b> · Spanish: <b>${es?es.label+" ("+es.score+"/"+es.of+")":"not taken"}</b></p>
+      <div class="row" style="gap:8px">
+        <button class="btn sec sm" onclick="startPlacement('de')">${de?"Retake":"Take"} 🇩🇪</button>
+        <button class="btn sec sm" onclick="startPlacement('es')">${es?"Retake":"Take"} 🇪🇸</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row between"><b>Daily time</b><span class="small muted">${S.profile.minutes} min</span></div>
+      <div class="grid2" style="margin-top:10px">
+        ${[10,15,20,30].map(m=>`<button class="chip ${S.profile.minutes===m?'on':''}" onclick="setMin(${m})">${m} min</button>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <b>Learning style</b>
+      <p class="small muted">${S.profile.styles.map(s=>styleNames[s]).join(" · ")||"—"}</p>
+      <p class="tiny muted" style="text-transform:none">Your coach weights exercises toward these.</p>
+    </div>
+    <div class="card">
+      <b>Daily item goal</b>
+      <div class="row" style="gap:8px;margin-top:10px">
+        ${[12,20,30].map(g=>`<button class="chip ${S.profile.dailyGoalItems===g?'on':''}" onclick="setGoal(${g})">${g}</button>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <b>📊 Life dashboard &amp; data</b>
+      <p class="small muted" style="margin:.4em 0 10px">This app publishes a live progress summary that your life dashboard can read (key <code>${SHARED_KEY}</code> + a <code>life-dashboard</code> broadcast channel). Export a full backup anytime.</p>
+      <div class="row" style="gap:8px">
+        <button class="btn sec sm" onclick="exportJSON()">⬇ Export backup</button>
+        <button class="btn sec sm" onclick="document.getElementById('imp').click()">⬆ Import</button>
+        <button class="btn sec sm" onclick="publishSummary();alert('Progress pushed to dashboard feed ✓')">↻ Push now</button>
+      </div>
+      <input id="imp" type="file" accept="application/json" style="display:none" onchange="if(this.files[0])importJSONFile(this.files[0])">
+    </div>
+    <div class="card">
+      <b>Voice check</b>
+      <p class="small muted">${(typeof window!=='undefined'&&window.speechSynthesis)?"Text-to-speech ready.":"⚠️ TTS unavailable."} ${SR?"Speech recognition ready (pronunciation scoring on).":"⚠️ Speech recognition needs Chrome or Edge — you'll self-rate speaking."}</p>
+      <button class="btn sec sm" onclick="speak(S.active==='de'?'Hallo, sprichst du Deutsch?':'Hola, ¿hablas español?',CONTENT[S.active].lang,0.9)">🔊 Test voice</button>
+    </div>
+    <div class="card">
+      <b>Coming later</b>
+      <p class="small muted">Russian (once German &amp; Spanish are cruising) and a piano-composition coach for rhythms, melodies &amp; writing your own music. Ask anytime to start those.</p>
+    </div>
+    <button class="btn ghost" onclick="resetAll()" style="color:var(--bad);border-color:rgba(255,93,108,.4)">Reset all progress</button>
+  </div>`;
+}
+window.setMin=m=>{S.profile.minutes=m;save();renderSettings();};
+window.setGoal=g=>{S.profile.dailyGoalItems=g;save();renderSettings();};
+window.resetAll=()=>{ if(confirm("Erase all progress and start over?")){ localStorage.removeItem(LS_KEY); localStorage.removeItem(SHARED_KEY); S=blankState(); lcCloudSave(JSON.stringify(S)); onbStep=0; onbData={styles:[],minutes:15}; VIEW="dashboard"; render(); } };
+
+/* ---------- utils ---------- */
+function esc(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/\n/g," "); }
+
+/* boot */
+if(typeof document!=="undefined"){ render(); publishSummary(); }
+</script>
+</body>
+</html>

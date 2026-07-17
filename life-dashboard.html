@@ -516,6 +516,11 @@ canvas{width:100%;height:120px;}
 .ws-card.p-med{border-left:3px solid var(--orange);}
 .ws-card.p-low{border-left:3px solid var(--muted);}
 .ws-card .wc-top{display:flex;align-items:flex-start;gap:8px;}
+.ws-card .wc-grip{flex:none;color:var(--muted);cursor:grab;font-size:15px;line-height:1.2;padding:0 2px;touch-action:none;user-select:none;-webkit-user-select:none;opacity:.5;}
+.ws-card .wc-grip:hover{opacity:1;color:var(--accent);}
+.ws-card .wc-grip:active{cursor:grabbing;}
+.ws-card.dragging{box-shadow:0 12px 32px rgba(0,0,0,.55);border-color:var(--accent);opacity:.96;transform:scale(1.02);}
+.wc-ph{border:2px dashed var(--accent);border-radius:10px;margin-bottom:8px;background:rgba(0,147,231,.06);}
 .ws-card .wc-text{flex:1;line-height:1.4;cursor:text;}
 .ws-card.done .wc-text{text-decoration:line-through;color:var(--muted);}
 .ws-card .wc-edit{background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;width:100%;}
@@ -720,6 +725,7 @@ canvas{width:100%;height:120px;}
 <div class="section" id="tab-quad">
   <div class="section-header">🎯 Priorities — Importance × Urgency</div>
   <div class="section-sub">Pre-filled from your whiteboard. Effectiveness = living in Q2. Do Q1 now, schedule Q2 deliberately, minimize & batch Q3, keep Q4 as earned rewards. "→ Rock" sends an item to the week you're viewing in the Compass.</div>
+  <a href="languages" class="btn btn-green" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px;">🗣️ Study Languages — open LinguaCoach</a>
   <div class="qwrap">
     <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
     <div class="qbox q2"><h3>🌱 Q2 — Not Urgent & Important</h3><div class="qsub">SCHEDULE — this is where you win</div><div id="qlist2"></div><div class="qadd"><input type="text" id="qin2" placeholder="Add..."><button data-q="2">+</button></div></div>
@@ -2955,8 +2961,8 @@ function makeWorkspace(cfg){
               </div>
             </div>`;
           }
-          cards+=`<div class="ws-card ${st==='done'?'done':''} p-${it.prio||'med'}">
-            <div class="wc-top"><div class="wc-text" data-edittask="${it.id}" title="Click to edit">${esc(it.text)}</div></div>
+          cards+=`<div class="ws-card ${st==='done'?'done':''} p-${it.prio||'med'}" data-taskid="${it.id}">
+            <div class="wc-top"><div class="wc-grip" title="Drag to reorder">⠿</div><div class="wc-text" data-edittask="${it.id}" title="Click to edit">${esc(it.text)}</div></div>
             <div class="wc-meta">
               <select class="wc-prio" data-prio="${it.id}"><option value="high"${it.prio==='high'?' selected':''}>High</option><option value="med"${(it.prio||'med')==='med'?' selected':''}>Med</option><option value="low"${it.prio==='low'?' selected':''}>Low</option></select>
               ${it.due?`<span class="wc-due ${overdue?'overdue':''}">📅 ${it.due}</span>`:''}
@@ -2968,7 +2974,7 @@ function makeWorkspace(cfg){
             </div>${detail}</div>`;
         }
       });
-      cols+=`<div class="ws-col ${st}"><h4>${label}<span class="cnt">${items.length}</span></h4>${cards||'<div style="color:var(--muted);font-size:12px;">—</div>'}</div>`;
+      cols+=`<div class="ws-col ${st}" data-status="${st}"><h4>${label}<span class="cnt">${items.length}</span></h4>${cards||'<div class="ws-empty" style="color:var(--muted);font-size:12px;">—</div>'}</div>`;
     });
 
     m.innerHTML=`
@@ -3061,6 +3067,59 @@ function makeWorkspace(cfg){
     m.querySelectorAll('[data-lkaddbtn]').forEach(b=>b.addEventListener('click',()=>addLK(b.dataset.lkaddbtn)));
     m.querySelectorAll('[data-lkadd]').forEach(f=>f.addEventListener('keydown',e=>{ if(e.key==='Enter') addLK(f.dataset.lkadd); }));
     m.querySelectorAll('[data-lkdel]').forEach(b=>b.addEventListener('click',()=>{ const [id,i]=b.dataset.lkdel.split('|'); const it=findTask(id); if(it&&it.links){ it.links.splice(parseInt(i),1); save(); render(); } }));
+
+    // ── Drag-and-drop reordering (works with finger on phone + mouse) ──
+    let drag=null, ph=null, col=null, offY=0, offX=0, scrollTimer=null;
+    function autoScroll(y){
+      clearInterval(scrollTimer);
+      const edge=70;
+      if(y<edge) scrollTimer=setInterval(()=>window.scrollBy(0,-12),16);
+      else if(y>window.innerHeight-edge) scrollTimer=setInterval(()=>window.scrollBy(0,12),16);
+    }
+    function commitOrder(){
+      // Rebuild data.tasks to match the on-screen order across all three columns
+      const ids=[...m.querySelectorAll('.ws-card[data-taskid]')].map(c=>c.dataset.taskid);
+      const byId={}; data.tasks.forEach(t=>byId[t.id]=t);
+      const reordered=ids.map(id=>byId[id]).filter(Boolean);
+      // keep any tasks not currently shown (safety)
+      data.tasks.forEach(t=>{ if(!ids.includes(t.id)) reordered.push(t); });
+      data.tasks=reordered; save();
+    }
+    m.querySelectorAll('.wc-grip').forEach(h=>{
+      h.addEventListener('pointerdown',e=>{
+        const card=h.closest('.ws-card'); if(!card) return;
+        e.preventDefault();
+        drag=card; col=card.closest('.ws-col');
+        const r=card.getBoundingClientRect(); offY=e.clientY-r.top; offX=e.clientX-r.left;
+        ph=document.createElement('div'); ph.className='wc-ph'; ph.style.height=r.height+'px';
+        card.parentNode.insertBefore(ph, card.nextSibling);
+        card.style.width=r.width+'px'; card.style.position='fixed'; card.style.left=r.left+'px'; card.style.top=r.top+'px';
+        card.style.zIndex='3000'; card.classList.add('dragging');
+        try{ h.setPointerCapture(e.pointerId); }catch(_){}
+        document.body.style.overflow='hidden';
+      });
+      h.addEventListener('pointermove',e=>{
+        if(!drag) return; e.preventDefault();
+        drag.style.top=(e.clientY-offY)+'px'; drag.style.left=(e.clientX-offX)+'px';
+        autoScroll(e.clientY);
+        const others=[...col.querySelectorAll('.ws-card[data-taskid]')].filter(c=>c!==drag);
+        let placed=false;
+        for(const c of others){ const cr=c.getBoundingClientRect(); if(e.clientY<cr.top+cr.height/2){ col.insertBefore(ph,c); placed=true; break; } }
+        if(!placed) col.appendChild(ph);
+        const empty=col.querySelector('.ws-empty'); if(empty) empty.remove();
+      });
+      const finish=e=>{
+        if(!drag) return; clearInterval(scrollTimer);
+        ph.parentNode.insertBefore(drag, ph); ph.remove();
+        drag.style.position=''; drag.style.top=''; drag.style.left=''; drag.style.width=''; drag.style.zIndex='';
+        drag.classList.remove('dragging'); document.body.style.overflow='';
+        commitOrder();
+        drag=null; ph=null; col=null;
+        render();
+      };
+      h.addEventListener('pointerup',finish);
+      h.addEventListener('pointercancel',finish);
+    });
   }
   return { render };
 }
@@ -3119,8 +3178,10 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); wsABKO.render(); w
 
   // Build the "More" grid (all sections)
   const grid=document.getElementById('moreGrid');
-  grid.innerHTML=NAV_ALL.map(([k,ic,lbl])=>`<button data-goto="${k}"><span class="mg-ico">${ic}</span><span class="mg-lbl">${lbl}</span></button>`).join('');
+  grid.innerHTML=NAV_ALL.map(([k,ic,lbl])=>`<button data-goto="${k}"><span class="mg-ico">${ic}</span><span class="mg-lbl">${lbl}</span></button>`).join('')
+    + `<button data-ext="languages" style="border-color:rgba(0,232,138,.35);"><span class="mg-ico">🗣️</span><span class="mg-lbl">Languages</span></button>`;
   grid.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>{ goTab(b.dataset.goto); closeSheet(); }));
+  grid.querySelectorAll('[data-ext]').forEach(b=>b.addEventListener('click',()=>{ location.href = b.dataset.ext; }));
 
   // Bottom-bar buttons
   document.querySelectorAll('#mobileNav [data-mtab]').forEach(b=>b.addEventListener('click',()=>{ goTab(b.dataset.mtab); closeSheet(); }));
@@ -3143,7 +3204,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); wsABKO.render(); w
   document.addEventListener('touchstart',e=>{
     if(window.innerWidth>760 || sheet.classList.contains('open')){ tracking=false; return; }
     // don't hijack swipes that begin on something interactive/scrollable
-    if(e.target.closest('input,textarea,select,button,a,canvas,[contenteditable],.moresheet,.mobilenav')){ tracking=false; return; }
+    if(e.target.closest('input,textarea,select,button,a,canvas,[contenteditable],.moresheet,.mobilenav,.wc-grip')){ tracking=false; return; }
     const t=e.touches[0]; sx=t.clientX; sy=t.clientY; tracking=true;
   },{passive:true});
   document.addEventListener('touchend',e=>{

@@ -150,6 +150,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── App shell + PWA ──
     if (p === '/' || p === '/index.html') return sendFile(res, 'life-dashboard.html', 'text/html; charset=utf-8');
+    if (p === '/languages' || p === '/languages.html' || p === '/lingua') return sendFile(res, 'LinguaCoach.html', 'text/html; charset=utf-8');
     if (p === '/manifest.webmanifest') { res.writeHead(200, { 'Content-Type': 'application/manifest+json' }); return res.end(MANIFEST); }
     if (p === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(SW); }
     if (p === '/icon-192.png') return sendFile(res, 'icon-192.png', 'image/png');
