@@ -58,6 +58,14 @@
   .fb-ok{background:rgba(55,211,153,.13);border:1px solid rgba(55,211,153,.4);color:#9df0cf}
   .fb-bad{background:rgba(255,93,108,.12);border:1px solid rgba(255,93,108,.4);color:#ffb3ba}
   .fb-warn{background:rgba(255,181,71,.12);border:1px solid rgba(255,181,71,.4);color:#ffe0a8}
+  .rev-item{border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:10px;background:var(--bg2)}
+  .rev-kind{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--acc)}
+  .rev-q{font-size:15px;font-weight:600;margin:6px 0 9px;line-height:1.4}
+  .rev-line{display:flex;gap:9px;align-items:baseline;font-size:14px;margin:3px 0;line-height:1.4}
+  .rev-lbl{flex:0 0 58px;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;padding:2px 0}
+  .rev-x{color:#ffb3ba}
+  .rev-ok{color:#9df0cf}
+  .rev-note{font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line);line-height:1.45}
   input[type=text]{width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
     border-radius:12px;padding:13px;font-size:16px;outline:none}
   input[type=text]:focus{border-color:var(--acc)}
@@ -872,16 +880,41 @@ window.startModule=(mod)=>{
   if(mod==="vocab"||mod==="pronounce"){ type="vocab"; items=pickItems("vocab",per); }
   else if(mod==="grammar"){ type="grammar"; items=pickItems("grammar",Math.max(4,Math.round(per*0.8))); }
   else { type="sentences"; items=pickItems("sentences",Math.max(4,Math.round(per*0.7))); }
-  SESSION={mod,type,items,idx:0,correct:0,total:items.length};
+  SESSION={mod,type,items,idx:0,correct:0,total:items.length,review:[]};
   renderSession();
 };
+// Record a missed item so we can review it at the end. Only misses are stored.
+function logMiss(entry){ if(SESSION && !entry.ok) SESSION.review.push(entry); }
 function endSession(){
-  const {correct,total,mod}=SESSION;
+  const {correct,total,mod,review}=SESSION;
   touchStreak(); S.sessions++; save();
   const pctv=Math.round(correct/Math.max(1,total)*100);
   const msg = pctv>=80?"Strong session. That's how fluency compounds. 🚀":
               pctv>=55?"Solid work — I'll resurface the tricky ones sooner.":
               "Tough set. No worries — I'll bring these back in smaller doses.";
+  const miss=(review||[]);
+  const reviewHTML = miss.length ? `
+    <div class="card" style="text-align:left;margin-top:14px">
+      <div class="row between" style="margin-bottom:4px">
+        <b>Where you slipped</b><span class="tag">${miss.length} to review</span></div>
+      <p class="tiny muted" style="margin:0 0 12px">These are back in your queue — here's the fix for each.</p>
+      ${miss.map(m=>`
+        <div class="rev-item">
+          <div class="row between" style="align-items:flex-start;gap:8px">
+            <span class="rev-kind">${m.kind}</span>
+            ${m.score!=null?`<span class="tiny muted">${m.score}%</span>`:''}
+          </div>
+          ${m.prompt&&m.prompt!=="(dictation)"?`<div class="rev-q">${m.prompt}</div>`:''}
+          <div class="rev-line"><span class="rev-lbl rev-x">You</span><span>${m.yours||"—"}</span></div>
+          <div class="rev-line"><span class="rev-lbl rev-ok">Answer</span><span><b>${m.answer}</b></span></div>
+          ${m.note?`<div class="rev-note">${m.note}</div>`:''}
+        </div>`).join("")}
+    </div>` : `
+    <div class="card center" style="margin-top:14px">
+      <div style="font-size:26px">✅</div>
+      <b>Clean sweep — nothing missed.</b>
+      <p class="tiny muted" style="margin:6px 0 0">No corrections this round. Keep the streak going.</p>
+    </div>`;
   root.innerHTML=`<div class="fade"><div class="card center coach">
     <div class="xl">${pctv>=80?'🎉':pctv>=55?'👏':'💪'}</div>
     <h1>Session complete</h1>
@@ -891,9 +924,11 @@ function endSession(){
       <div class="stat"><b>${S.streak}🔥</b><span class="tiny muted">streak</span></div>
     </div>
     <p class="small" style="color:#dfe6f5">${msg}</p>
-    <button class="btn grad" onclick="VIEW='dashboard';render()">Back to coach</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="startModule('${mod}')">Another round</button>
-  </div></div>`;
+  </div>
+  ${reviewHTML}
+  <button class="btn grad" style="margin-top:14px" onclick="VIEW='dashboard';render()">Back to coach</button>
+  <button class="btn ghost" style="margin-top:8px" onclick="startModule('${mod}')">Another round</button>
+  </div>`;
   bumpXP(correct*5+total);
   SESSION=null;
 }
@@ -948,6 +983,7 @@ window.gradeVocab=(g)=>{
   reviewCard(cardId("vocab",S.active,i),g);
   const ok=g>=2; if(ok)s.correct++;
   recordResult("vocab",it.theme,ok);
+  logMiss({ok,kind:"Vocabulary",prompt:it.t,answer:it.e,yours:(g===0?"Didn't know it":"Found it hard"),note:it.ex?`e.g. “${it.ex}”`:""});
   advance(ok);
 };
 
@@ -970,6 +1006,7 @@ window.answerGrammar=(choice)=>{
   if(ok)s.correct++;
   reviewCard(cardId("grammar",S.active,i), ok?2:0);
   recordResult("grammar",null,ok);
+  logMiss({ok,kind:"Grammar",prompt:it.q,answer:it.a,yours:choice,note:it.why||""});
   document.querySelectorAll("#opts button").forEach(b=>{ b.disabled=true;
     if(b.textContent===it.a){ b.style.background="var(--ok)"; b.style.color="#052318"; }
     else if(b.textContent===choice) b.style.background="var(--bad)"; });
@@ -1010,6 +1047,7 @@ window.recShadow=()=>{
     const ok=best>=0.7; if(ok)s.correct++;
     reviewCard(cardId("sentences",S.active,i), best>=0.85?3:best>=0.7?2:best>=0.5?1:0);
     recordResult("speaking",it.theme,ok);
+    logMiss({ok,kind:"Speaking",prompt:it.t,answer:it.t,yours:bestT||"(unclear)",note:it.e?`Means: ${it.e}`:"",score:pctv});
     const diff=wordDiff(it.t,bestT).map(w=>`<span class="${w.ok?'g':'b'}">${w.w}</span>`).join(" ");
     hint.textContent="";
     document.getElementById("sfb").innerHTML=`
@@ -1037,7 +1075,9 @@ function selfRate(fbId,it,i,skill){
 }
 window.manualGrade=(i,skill,g)=>{
   const s=SESSION, {it}=s.items[s.idx]; const ok=g>=2; if(ok)s.correct++;
-  reviewCard(cardId(s.type,S.active,i),g); recordResult(skill,it.theme,ok); advance(ok);
+  reviewCard(cardId(s.type,S.active,i),g); recordResult(skill,it.theme,ok);
+  logMiss({ok,kind:skill==="speaking"?"Speaking":"Practice",prompt:it.t,answer:it.t,yours:(g===0?"Struggled":"Self-rated OK"),note:it.e?`Means: ${it.e}`:""});
+  advance(ok);
 };
 
 /* --- DICTATION --- */
@@ -1067,6 +1107,7 @@ window.checkDictation=()=>{
   const ok=sc>=0.82; if(ok)s.correct++;
   reviewCard(cardId("sentences",S.active,i), sc>=0.95?3:sc>=0.82?2:sc>=0.6?1:0);
   recordResult("listening",it.theme,ok);
+  logMiss({ok,kind:"Listening",prompt:"(dictation)",answer:it.t,yours:val||"(blank)",note:it.e?`Means: ${it.e}`:"",score:pctv});
   const diff=wordDiff(it.t,val).map(w=>`<span class="${w.ok?'g':'b'}">${w.w}</span>`).join(" ");
   document.getElementById("dfb").innerHTML=`
     <div class="feedback ${ok?'fb-ok':pctv>=60?'fb-warn':'fb-bad'}">
@@ -1081,6 +1122,7 @@ window.checkDictation=()=>{
 window.revealDict=()=>{
   const s=SESSION, {it,i}=s.items[s.idx];
   reviewCard(cardId("sentences",S.active,i),1); recordResult("listening",it.theme,false);
+  logMiss({ok:false,kind:"Listening",prompt:"(dictation)",answer:it.t,yours:"Revealed answer",note:it.e?`Means: ${it.e}`:""});
   document.getElementById("dfb").innerHTML=`<div class="feedback fb-warn">${it.t}<div class="small muted" style="margin-top:6px;font-weight:400">${it.e}</div></div>
     <button class="btn grad" style="margin-top:12px" onclick="advance(false)">Next →</button>`;
 };
@@ -1112,6 +1154,7 @@ window.recPron=()=>{
     const pctv=Math.round(best*100); const ok=best>=0.75; if(ok)s.correct++;
     reviewCard(cardId("vocab",S.active,i), best>=0.9?3:best>=0.75?2:best>=0.5?1:0);
     recordResult("speaking",it.theme,ok); hint.textContent="";
+    logMiss({ok,kind:"Pronunciation",prompt:it.t,answer:it.t,yours:pctv+"% match",note:it.e?`Means: ${it.e}`:"",score:pctv});
     document.getElementById("pfb").innerHTML=`<div class="feedback ${ok?'fb-ok':pctv>=50?'fb-warn':'fb-bad'}">
       <div class="row between"><span>${ok?'Clean!':'Keep shaping it'}</span><b>${pctv}%</b></div></div>
       <div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost" onclick="recPron()">↻</button>

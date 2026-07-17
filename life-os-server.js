@@ -22,7 +22,31 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { URL } = require('url');
+
+// ── Auth ────────────────────────────────────────────────────
+// One password protects the whole app. First login on a device sets a
+// long-lived cookie, so you never log in again on that device (phone or
+// computer) until you clear it or ~10 years pass.
+//   Set APP_PASSWORD in the environment. If unset, the app is OPEN (no login).
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
+// A secret used to sign the auth cookie so it can't be forged. Falls back to
+// a value derived from the password so it's stable across restarts.
+const AUTH_SECRET = process.env.AUTH_SECRET || (APP_PASSWORD ? 'flow$' + APP_PASSWORD : 'flow-open');
+const COOKIE_NAME = 'flow_auth';
+const COOKIE_MAXAGE = 60 * 60 * 24 * 3650; // ~10 years, in seconds
+
+function authToken() { return crypto.createHmac('sha256', AUTH_SECRET).update('ok').digest('hex'); }
+function parseCookies(req) {
+  const h = req.headers.cookie || ''; const o = {};
+  h.split(';').forEach((p) => { const i = p.indexOf('='); if (i > -1) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
+  return o;
+}
+function isAuthed(req) {
+  if (!APP_PASSWORD) return true; // no password configured → open
+  return parseCookies(req)[COOKIE_NAME] === authToken();
+}
 
 // Find this machine's local network IP (so a phone on the same WiFi can reach it)
 function lanIP() {
@@ -132,10 +156,57 @@ self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
   if(u.pathname.startsWith('/api')) return; // never cache data — always live
   e.respondWith(
-    fetch(e.request).then(r=>{ const cp=r.clone(); caches.open(CACHE).then(c=>c.put(e.request,cp)); return r; })
-      .catch(()=>caches.match(e.request).then(m=>m||caches.match('./')))
+    fetch(e.request).then(r=>{
+      // only cache clean, same-origin 200s — never redirects (login gate) or errors
+      if(r.ok && r.status===200 && r.type==='basic'){ const cp=r.clone(); caches.open(CACHE).then(c=>c.put(e.request,cp)); }
+      return r;
+    }).catch(()=>caches.match(e.request).then(m=>m||caches.match('./')))
   );
 });`;
+
+// ── Login page ──────────────────────────────────────────────
+function loginPage(err) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d"><title>The Flow — Sign in</title>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-192.png">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(1200px 600px at 50% -10%,#12303a 0%,#0a0b0d 60%);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#e8eef7;padding:24px}
+.box{width:100%;max-width:360px;text-align:center}
+.logo{width:78px;height:78px;margin:0 auto 18px;display:block}
+h1{font-size:26px;font-weight:800;margin:0 0 4px;letter-spacing:-.5px}
+p{color:#8b97a8;font-size:14px;margin:0 0 26px}
+form{display:flex;flex-direction:column;gap:12px}
+input{width:100%;background:#151922;border:1px solid #2a313d;color:#e8eef7;border-radius:14px;
+  padding:15px 16px;font-size:16px;outline:none;text-align:center}
+input:focus{border-color:#00d1a6}
+button{width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;
+  color:#052318;background:linear-gradient(135deg,#00e88a,#00b7e0)}
+.err{color:#ffb3ba;font-size:13px;min-height:18px;margin-top:2px}
+</style></head><body>
+<div class="box">
+  <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="f" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00e88a"/><stop offset=".55" stop-color="#00d1a6"/><stop offset="1" stop-color="#00b7e0"/>
+    </linearGradient></defs>
+    <rect width="512" height="512" rx="118" fill="#12161d"/>
+    <g fill="none" stroke-linecap="round">
+      <path d="M96 256 q 59 -70 118 0 t 118 0 t 118 0" stroke="url(#f)" stroke-width="34"/>
+      <path d="M110 190 q 59 -66 118 0 t 118 0 t 118 0" stroke="url(#f)" stroke-width="24" opacity=".3"/>
+      <path d="M110 322 q 59 66 118 0 t 118 0 t 118 0" stroke="url(#f)" stroke-width="24" opacity=".3"/>
+    </g></svg>
+  <h1>The Flow</h1>
+  <p>Enter your password to continue</p>
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <div class="err">${err ? 'Wrong password — try again.' : ''}</div>
+  </form>
+</div></body></html>`;
+}
 
 // ── Server ──────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
@@ -148,17 +219,53 @@ const server = http.createServer(async (req, res) => {
   try {
     const p = u.pathname;
 
-    // ── App shell + PWA ──
-    if (p === '/' || p === '/index.html') return sendFile(res, 'life-dashboard.html', 'text/html; charset=utf-8');
-    if (p === '/languages' || p === '/languages.html' || p === '/lingua') return sendFile(res, 'LinguaCoach.html', 'text/html; charset=utf-8');
+    // ── Auth: login / logout ──
+    if (p === '/login' && req.method === 'GET') {
+      if (isAuthed(req)) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(loginPage(u.searchParams.get('e')));
+    }
+    if (p === '/login' && req.method === 'POST') {
+      const body = await readBody(req);
+      let pw = '';
+      const ct = req.headers['content-type'] || '';
+      if (ct.includes('application/json')) { try { pw = (JSON.parse(body) || {}).password || ''; } catch (_) {} }
+      else { pw = new URLSearchParams(body).get('password') || ''; }
+      if (APP_PASSWORD && pw === APP_PASSWORD) {
+        res.writeHead(302, {
+          Location: '/',
+          'Set-Cookie': `${COOKIE_NAME}=${authToken()}; Path=/; Max-Age=${COOKIE_MAXAGE}; SameSite=Lax; HttpOnly`,
+        });
+        return res.end();
+      }
+      res.writeHead(302, { Location: '/login?e=1' });
+      return res.end();
+    }
+    if (p === '/logout') {
+      res.writeHead(302, { Location: '/login', 'Set-Cookie': `${COOKIE_NAME}=; Path=/; Max-Age=0` });
+      return res.end();
+    }
+
+    // ── Health check (for cloud hosts) — always open ──
+    if (p === '/healthz') return json(res, 200, { ok: true });
+
+    // ── PWA assets (must be reachable pre-login so the icon/manifest work) ──
     if (p === '/manifest.webmanifest') { res.writeHead(200, { 'Content-Type': 'application/manifest+json' }); return res.end(MANIFEST); }
     if (p === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(SW); }
     if (p === '/icon-192.png') return sendFile(res, 'icon-192.png', 'image/png');
     if (p === '/icon-512.png') return sendFile(res, 'icon-512.png', 'image/png');
     if (p === '/favicon.ico') return sendFile(res, 'icon-192.png', 'image/png');
 
-    // ── Health check (for cloud hosts) ──
-    if (p === '/healthz') return json(res, 200, { ok: true });
+    // ── Everything below requires login ──
+    if (!isAuthed(req)) {
+      if (p.startsWith('/api/')) return json(res, 401, { error: 'auth required' });
+      res.writeHead(302, { Location: '/login' });
+      return res.end();
+    }
+
+    // ── App shell ──
+    if (p === '/' || p === '/index.html') return sendFile(res, 'life-dashboard.html', 'text/html; charset=utf-8');
+    if (p === '/languages' || p === '/languages.html' || p === '/lingua') return sendFile(res, 'LinguaCoach.html', 'text/html; charset=utf-8');
 
     // ── Data API ──
     if (p === '/api/status') return json(res, 200, { ok: true, engine: store.engine, file: store.file, keys: await store.count() });
@@ -187,6 +294,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('─────────────────────────────────────────────');
   console.log('  🌊 The Flow running');
   console.log('  Engine: ' + store.engine);
+  console.log('  Login:  ' + (APP_PASSWORD ? 'password ON (set via APP_PASSWORD)' : 'OPEN — no password set'));
   console.log('');
   console.log('  On THIS computer:      http://localhost:' + PORT);
   if (ip) {
