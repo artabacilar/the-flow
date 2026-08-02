@@ -3587,7 +3587,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 })();
 </script>
 
-<!-- ===== The Flow · Upgrade Pack v1.4.0 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
+<!-- ===== The Flow · Upgrade Pack v1.4.1 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
 <style>
 /* ==========================================================================
    The Flow — Upgrade Pack v1.0  ·  stylesheet
@@ -4166,7 +4166,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 'use strict';
 
 if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
-window.__FLOW_UPGRADE__ = '1.4.0';
+window.__FLOW_UPGRADE__ = '1.4.1';
 
 /* =========================================================================
  * 0 · Small utilities
@@ -5707,7 +5707,8 @@ const Notes = {
             </div>
             <div class="flow-sub" style="margin:6px 0 0">Exports with an alarm to Apple Calendar, Google Calendar and iOS Reminders.</div>` : ''}
           <div class="bactions">
-            ${b.remind ? '<button class="flow-btn sm" data-act="oneCalendar" title="Download this one as a calendar event with an alarm">📅 Add to calendar</button>' : ''}
+            ${b.remind ? '<button class="flow-btn sm" data-act="oneCalendar" title="Download this section as a calendar event with an alarm">📅 To calendar</button>' : ''}
+            ${b.remind ? '<button class="flow-btn sm" data-act="oneReminder" title="Download this section as an iOS reminder with an alarm">🔔 To reminders</button>' : ''}
             <button class="flow-btn sm" data-act="addChild">+ Sub-section</button>
             ${depth === 0 ? '<button class="flow-btn sm" data-act="addSibling">+ Section below</button>' : ''}
           </div>
@@ -5779,6 +5780,11 @@ const Notes = {
         const recs = Notes.asReminders().filter(r => r.key === 'note::' + b.id);
         if (!recs.length) { toast('Turn the 🔔 on first.', 'warn'); return; }
         Notes.exportCalendar(recs, norm(b.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32) || 'reminder');
+      }
+      else if (act === 'oneReminder' && b) {
+        const recs = Notes.asReminders().filter(r => r.key === 'note::' + b.id);
+        if (!recs.length) { toast('Turn the 🔔 on first.', 'warn'); return; }
+        Reminders.exportICS(recs);
       }
     });
 
