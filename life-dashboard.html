@@ -3586,5 +3586,3458 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   },{passive:true});
 })();
 </script>
+
+<!-- ===== The Flow · Upgrade Pack v1.1.3 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
+<style>
+/* ==========================================================================
+   The Flow — Upgrade Pack v1.0  ·  stylesheet
+   Scoped under .flow-x / .flow-* so nothing here can clobber existing rules.
+   ========================================================================== */
+
+.flow-x {
+  --f-surface:      #141b1e;
+  --f-surface-2:    #1b2427;
+  --f-plane:        #0a0d0e;
+  --f-ink:          #ffffff;
+  --f-ink-2:        #b9c6cc;
+  --f-muted:        #8a98a0;
+  --f-line:         rgba(255,255,255,0.09);
+  --f-grid:         rgba(255,255,255,0.06);
+
+  --f-accent:       #17bb92;   /* validated: contrast 3:1+ on #151c1f */
+  --f-accent-soft:  rgba(23,187,146,0.14);
+  --f-accent-2:     #3987e5;   /* categorical slot 1, dark  */
+
+  /* sequential aqua ramp — ordinal-validated, monotone L, single hue */
+  --f-seq-1: #0b5f4a; --f-seq-2: #0e7a5f; --f-seq-3: #129a78;
+  --f-seq-4: #17bb92; --f-seq-5: #2fd4a8;
+
+  /* status — fixed, never themed, always paired with icon + label */
+  --f-good:     #0ca30c;
+  --f-warning:  #fab219;
+  --f-serious:  #ec835a;
+  --f-critical: #d03b3b;
+
+  --f-radius: 12px;
+  --f-radius-sm: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--f-ink);
+}
+
+/* ---------- sections we own ------------------------------------------- */
+.flow-section { display: none; }
+.flow-section.active { display: block; }
+
+/* ---------- layout primitives ----------------------------------------- */
+.flow-card {
+  background: var(--f-surface);
+  border: 1px solid var(--f-line);
+  border-radius: var(--f-radius);
+  padding: 18px 20px;
+  margin: 14px 0;
+}
+.flow-card > h3 {
+  margin: 0 0 4px; font-size: 15px; font-weight: 700; letter-spacing: .01em;
+}
+.flow-card > .flow-sub { margin: 0 0 14px; color: var(--f-muted); font-size: 12.5px; line-height: 1.5; }
+
+.flow-grid { display: grid; gap: 14px; }
+.flow-grid.c2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.flow-grid.c3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.flow-grid.c4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+@media (max-width: 900px){ .flow-grid.c2,.flow-grid.c3,.flow-grid.c4{ grid-template-columns: 1fr; } }
+
+.flow-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.flow-row.between { justify-content: space-between; }
+.flow-spacer { flex: 1 1 auto; }
+
+/* ---------- controls --------------------------------------------------- */
+.flow-btn {
+  appearance: none; cursor: pointer;
+  background: var(--f-surface-2); color: var(--f-ink);
+  border: 1px solid var(--f-line); border-radius: 999px;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 600;
+  font-family: inherit; line-height: 1.2;
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.flow-btn:hover { background: #232e32; border-color: rgba(255,255,255,.18); }
+.flow-btn:active { transform: translateY(1px); }
+.flow-btn.primary { background: var(--f-accent); color: #05231b; border-color: transparent; }
+.flow-btn.primary:hover { background: var(--f-seq-5); }
+.flow-btn.ghost { background: transparent; }
+.flow-btn.danger { color: #ffbdbd; border-color: rgba(208,59,59,.45); }
+.flow-btn.danger:hover { background: rgba(208,59,59,.16); }
+.flow-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.flow-btn.sm { padding: 4px 10px; font-size: 11.5px; }
+
+.flow-in, .flow-x select, .flow-x textarea {
+  background: var(--f-plane); color: var(--f-ink);
+  border: 1px solid var(--f-line); border-radius: var(--f-radius-sm);
+  padding: 8px 10px; font-size: 13px; font-family: inherit;
+  outline: none; min-width: 0;
+}
+.flow-in:focus, .flow-x select:focus, .flow-x textarea:focus { border-color: var(--f-accent); }
+.flow-in::placeholder { color: #5d6a71; }
+.flow-in.grow { flex: 1 1 220px; }
+.flow-x textarea { width: 100%; resize: vertical; min-height: 80px; line-height: 1.55; }
+.flow-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--f-muted); font-weight: 700; }
+.flow-field { display: flex; flex-direction: column; gap: 6px; }
+
+.flow-switch { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--f-grid); }
+.flow-switch:last-child { border-bottom: 0; }
+.flow-switch .t { flex: 1; }
+.flow-switch .t b { display: block; font-size: 13px; font-weight: 600; }
+.flow-switch .t span { display: block; font-size: 11.5px; color: var(--f-muted); margin-top: 2px; line-height: 1.45; }
+.flow-switch input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--f-accent); cursor: pointer; }
+
+/* ---------- stat tiles -------------------------------------------------- */
+.flow-stat {
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius); padding: 16px 18px;
+}
+.flow-stat .v { font-size: 30px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; }
+.flow-stat .l { margin-top: 6px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--f-muted); font-weight: 700; }
+.flow-stat .d { margin-top: 6px; font-size: 11.5px; color: var(--f-ink-2); }
+.flow-hero { font-size: 52px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+
+/* ---------- timeline ---------------------------------------------------- */
+.flow-tl { list-style: none; margin: 0; padding: 0; }
+.flow-tl li {
+  display: grid; grid-template-columns: 62px 1fr auto; gap: 12px; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--f-grid);
+}
+.flow-tl li:last-child { border-bottom: 0; }
+.flow-tl .tm { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: var(--f-accent); }
+.flow-tl .tm.none { color: var(--f-muted); font-weight: 500; }
+.flow-tl .tx { font-size: 13.5px; line-height: 1.4; }
+.flow-tl .tx small { display: block; color: var(--f-muted); font-size: 11px; margin-top: 2px; }
+.flow-tl li.done .tx { text-decoration: line-through; opacity: .5; }
+
+.flow-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--f-surface-2); border: 1px solid var(--f-line);
+  border-radius: 999px; padding: 2px 9px; font-size: 11px; color: var(--f-ink-2);
+  white-space: nowrap;
+}
+.flow-chip.accent { background: var(--f-accent-soft); border-color: rgba(23,187,146,.35); color: #7ff0cd; }
+
+.flow-empty { color: var(--f-muted); font-size: 12.5px; padding: 14px 0; line-height: 1.55; }
+
+/* ---------- schedule chip injected into existing task rows -------------- */
+.flow-time-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; padding: 1px 8px;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  border-radius: 999px; cursor: pointer; user-select: none;
+  background: transparent; border: 1px dashed rgba(255,255,255,.22); color: #7c8b93;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  vertical-align: middle; line-height: 1.6;
+}
+/* Label comes from a pseudo-element, so it never appears in the row's
+   textContent and can never be picked up by the host app's own saves. */
+.flow-time-chip::after { content: attr(data-label); }
+.flow-time-chip:hover { border-color: var(--f-accent); color: var(--f-accent); }
+.flow-time-chip.set {
+  border-style: solid; border-color: rgba(23,187,146,.45);
+  background: rgba(23,187,146,.14); color: #7ff0cd;
+}
+
+.flow-pop {
+  position: absolute; z-index: 99999; width: 288px;
+  background: var(--f-surface); border: 1px solid rgba(255,255,255,.16);
+  border-radius: var(--f-radius); padding: 14px;
+  box-shadow: 0 18px 48px rgba(0,0,0,.6);
+}
+.flow-pop h4 { margin: 0 0 10px; font-size: 12.5px; font-weight: 700; line-height: 1.4; }
+.flow-pop .g { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.flow-pop .flow-in { width: 100%; }
+
+/* ---------- toast ------------------------------------------------------- */
+#flow-toasts { position: fixed; right: 18px; bottom: 18px; z-index: 100000; display: flex; flex-direction: column; gap: 8px; }
+.flow-toast {
+  background: var(--f-surface); border: 1px solid var(--f-line); border-left: 3px solid var(--f-accent);
+  color: var(--f-ink); padding: 10px 14px; border-radius: 10px; font-size: 12.5px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.5); max-width: 340px; line-height: 1.45;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  animation: flow-in .18s ease;
+}
+.flow-toast.err { border-left-color: var(--f-critical); }
+.flow-toast.warn { border-left-color: var(--f-warning); }
+@keyframes flow-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------- notes: bracket tree ---------------------------------------- */
+.flow-bracket {
+  border: 1px solid var(--f-line); border-left: 3px solid var(--f-seq-3);
+  border-radius: 10px; padding: 10px 12px; margin: 8px 0;
+  background: rgba(255,255,255,.015);
+}
+.flow-bracket .bh { display: flex; align-items: center; gap: 8px; }
+.flow-bracket .bh .tw {
+  background: none; border: 0; color: var(--f-muted); cursor: pointer;
+  font-size: 11px; width: 18px; padding: 0; font-family: inherit;
+}
+.flow-bracket .bh .bt {
+  flex: 1; background: transparent; border: 0; color: var(--f-ink);
+  font-size: 13.5px; font-weight: 700; padding: 3px 0; outline: none; font-family: inherit;
+}
+.flow-bracket .bh .bt:focus { border-bottom: 1px solid var(--f-accent); }
+.flow-bracket .bb { margin-top: 8px; }
+.flow-bracket.collapsed .bb { display: none; }
+.flow-bracket .kids { margin-left: 16px; padding-left: 10px; border-left: 1px dashed var(--f-line); }
+.flow-bracket .bactions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.flow-note-status { font-size: 11.5px; color: var(--f-muted); }
+.flow-note-status.ok { color: var(--f-good); }
+.flow-note-status.pending { color: var(--f-warning); }
+
+/* ---------- tables ------------------------------------------------------ */
+.flow-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.flow-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--f-muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--f-line);
+  white-space: nowrap;
+}
+.flow-table td { padding: 8px 10px; border-bottom: 1px solid var(--f-grid); vertical-align: middle; }
+.flow-table tr:last-child td { border-bottom: 0; }
+.flow-table td.num, .flow-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.flow-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.flow-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- charts ------------------------------------------------------ */
+.flow-chart { width: 100%; display: block; overflow: visible; }
+.flow-chart .grid { stroke: var(--f-grid); stroke-width: 1; }
+.flow-chart .axis { stroke: rgba(255,255,255,.14); stroke-width: 1; }
+.flow-chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.flow-chart .lbl { fill: var(--f-ink-2); font-size: 11.5px; }
+.flow-chart .val { fill: var(--f-ink); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.flow-chart .tick { fill: var(--f-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.flow-chart .bar { fill: var(--f-accent); }
+.flow-chart .bar:hover { fill: var(--f-seq-5); }
+.flow-chart .line { fill: none; stroke: var(--f-accent-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.flow-chart .dot { fill: var(--f-accent-2); stroke: var(--f-surface); stroke-width: 2; }
+
+.flow-tip {
+  position: fixed; z-index: 100001; pointer-events: none;
+  background: #0b1113; border: 1px solid rgba(255,255,255,.18); border-radius: 8px;
+  padding: 7px 10px; font-size: 11.5px; color: #fff; white-space: nowrap;
+  box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ---------- receipt preview -------------------------------------------- */
+.flow-receipt { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.flow-receipt img {
+  max-width: 190px; max-height: 250px; border-radius: 10px;
+  border: 1px solid var(--f-line); display: block;
+}
+.flow-drop {
+  border: 1.5px dashed rgba(255,255,255,.2); border-radius: var(--f-radius);
+  padding: 26px 18px; text-align: center; cursor: pointer; color: var(--f-muted);
+  font-size: 13px; transition: border-color .15s ease, background .15s ease; line-height: 1.55;
+}
+.flow-drop:hover, .flow-drop.over { border-color: var(--f-accent); background: var(--f-accent-soft); color: var(--f-ink); }
+.flow-prog { height: 4px; background: var(--f-surface-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+.flow-prog i { display: block; height: 100%; background: var(--f-accent); width: 0%; transition: width .2s ease; }
+
+.flow-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; }
+.flow-kv dt { color: var(--f-muted); }
+.flow-kv dd { margin: 0; }
+
+.flow-code {
+  background: var(--f-plane); border: 1px solid var(--f-line); border-radius: 8px;
+  padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; color: var(--f-ink-2); overflow-x: auto; white-space: pre; line-height: 1.6;
+}
+.flow-ol { margin: 8px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--f-ink-2); line-height: 1.7; }
+.flow-ol li { margin-bottom: 4px; }
+
+/* ==========================================================================
+   Visual language — breakdowns, empty states, journal
+   ========================================================================== */
+
+/* ---------- designed empty state (replaces the stretched grey blob) ------ */
+.flow-nodata {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 30px 18px; text-align: center; gap: 4px; min-height: 190px;
+}
+.flow-nodata svg { opacity: .8; margin-bottom: 10px; }
+.flow-nodata .t { font-size: 13.5px; font-weight: 600; color: var(--f-ink-2); }
+.flow-nodata .s { font-size: 12px; color: var(--f-muted); max-width: 300px; line-height: 1.55; }
+
+/* ---------- donut ------------------------------------------------------- */
+.flow-donut-wrap {
+  display: flex; align-items: center; gap: 26px; flex-wrap: wrap;
+  padding: 6px 0 2px;
+}
+.flow-donut {
+  position: relative; flex: 0 0 auto;
+  width: 210px; height: 210px;          /* square in BOTH axes — the whole fix */
+}
+.flow-donut svg { width: 100%; height: 100%; display: block; }
+.flow-donut-mid {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none; text-align: center;
+}
+.flow-donut-mid .v {
+  font-size: clamp(17px, 2.1vw, 24px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1;
+  max-width: 128px; white-space: nowrap;
+}
+.flow-donut-mid .l {
+  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 700; margin-top: 4px;
+}
+.flow-chart .slice {
+  transition: stroke-dasharray .5s cubic-bezier(.22,.61,.36,1), opacity .15s ease;
+  animation: flow-arc .55s cubic-bezier(.22,.61,.36,1) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.flow-chart .slice:hover { opacity: .82; }
+@keyframes flow-arc { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .flow-chart .slice { animation: none; transition: none; } }
+
+/* Capped so the legend reads as one block beside the ring instead of
+   stretching its values to the far edge of a wide card. */
+.flow-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 260px; min-width: 210px; max-width: 440px; }
+.flow-legend li {
+  display: grid; grid-template-columns: 10px 1fr auto auto; gap: 10px; align-items: center;
+  padding: 7px 0; border-bottom: 1px solid var(--f-grid); font-size: 12.5px;
+}
+.flow-legend li:last-child { border-bottom: 0; }
+.flow-legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.flow-legend .n { color: var(--f-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-legend .p { color: var(--f-muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.flow-legend .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- segmented control ------------------------------------------- */
+.flow-seg {
+  display: inline-flex; background: var(--f-plane); border: 1px solid var(--f-line);
+  border-radius: 999px; padding: 2px;
+}
+.flow-seg button {
+  appearance: none; border: 0; background: transparent; color: var(--f-muted);
+  font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer; transition: all .14s ease;
+}
+.flow-seg button.on { background: var(--f-accent); color: #05231b; }
+.flow-seg button:not(.on):hover { color: var(--f-ink); }
+
+.flow-viz { margin-top: 6px; }
+.flow-chart .bar { transition: fill .14s ease; }
+
+/* ---------- journal ------------------------------------------------------ */
+.flow-log-collapsed > *:not(.flow-x) { display: none !important; }
+
+.flow-jentry {
+  border: 1px solid var(--f-line); border-radius: var(--f-radius);
+  padding: 15px 17px; margin: 10px 0; background: rgba(255,255,255,.014);
+  transition: border-color .15s ease;
+}
+.flow-jentry:hover { border-color: rgba(255,255,255,.16); }
+.flow-jbody {
+  margin: 10px 0 0; font-size: 13.5px; line-height: 1.68; color: var(--f-ink-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.flow-jprompt {
+  margin-top: 9px; padding-left: 11px; border-left: 2px solid var(--f-seq-2);
+  font-size: 12.5px; line-height: 1.6;
+}
+.flow-jprompt b { display: block; color: var(--f-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+.flow-jprompt span { color: var(--f-ink-2); }
+
+.flow-x .jr-mood, .flow-x .jr-energy { padding: 4px 9px; font-size: 13px; line-height: 1.2; }
+.flow-x #jr-body { font-size: 14px; line-height: 1.7; }
+
+@media print { .flow-btn, .flow-time-chip, .flow-seg { display: none !important; } }
+
+</style>
+<script>
+/* ==========================================================================
+ * The Flow — Upgrade Pack v1.0.1
+ * Adds: Artur tab · Settings · time-on-every-task · Apple/Google calendar
+ *       export · receipt OCR + statement import · bracketed notes ·
+ *       iOS Reminders sync.
+ *
+ * Designed as a pure add-on: it never rewrites existing markup, it only
+ * decorates it. Safe to remove by deleting the <script> block.
+ * ========================================================================== */
+(function () {
+'use strict';
+
+if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
+window.__FLOW_UPGRADE__ = '1.1.3';
+
+/* =========================================================================
+ * 0 · Small utilities
+ * ====================================================================== */
+const $  = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+const pad = n => String(n).padStart(2, '0');
+const uid = (p) => (p || 'f') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+
+const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => isoDate(new Date());
+const parseISO = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const addDays = (d, n) => { const x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; };
+
+function startOfWeek(d, weekStart) {
+  const x = new Date(d.getTime()); x.setHours(0, 0, 0, 0);
+  const diff = (x.getDay() - (weekStart == null ? 1 : weekStart) + 7) % 7;
+  x.setDate(x.getDate() - diff); return x;
+}
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return { year: t.getUTCFullYear(), week: Math.ceil(((t - y0) / 86400000 + 1) / 7) };
+}
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const prettyDate = (s) => { const d = parseISO(s); return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`; };
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+
+function debounce(fn, ms) {
+  let t; return function () { const a = arguments, c = this; clearTimeout(t); t = setTimeout(() => fn.apply(c, a), ms); };
+}
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.rel = 'noopener';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+}
+function money(n, cur) {
+  const v = Number(n) || 0;
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'TRY', maximumFractionDigits: 2 }).format(v); }
+  catch (e) { return v.toFixed(2) + ' ' + (cur || ''); }
+}
+
+/** Short form for tight spots — the middle of a ring, a stat tile. */
+function moneyCompact(n, cur) {
+  const v = Number(n) || 0;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: cur || 'TRY',
+      notation: 'compact', maximumFractionDigits: 1
+    }).format(v);
+  } catch (e) {
+    const a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (a >= 1e4) return (v / 1e3).toFixed(1) + 'K';
+    return String(Math.round(v));
+  }
+}
+
+/* =========================================================================
+ * 1 · Toasts
+ * ====================================================================== */
+function toast(msg, kind, ms) {
+  let host = $('#flow-toasts');
+  if (!host) { host = document.createElement('div'); host.id = 'flow-toasts'; document.body.appendChild(host); }
+  const el = document.createElement('div');
+  el.className = 'flow-toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  host.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, ms || 2600);
+}
+
+/* =========================================================================
+ * 2 · Storage — wraps the existing /api/get + /api/set key-value API,
+ *     mirrors to localStorage, and queues writes made while offline.
+ * ====================================================================== */
+const DB = {
+  _mem: new Map(),
+  _lsKey: (k) => 'flowpack:' + k,
+
+  async get(key, fallback) {
+    if (DB._mem.has(key)) return DB._mem.get(key);
+    let val = null;
+    try {
+      const r = await fetch('/api/get?key=' + encodeURIComponent(key), { credentials: 'same-origin' });
+      if (r.ok) {
+        const j = await r.json().catch(() => null);
+        if (j && typeof j === 'object' && 'value' in j) val = j.value;
+        else if (j !== null && j !== undefined) val = j;
+      }
+    } catch (e) { /* offline — fall through to localStorage */ }
+
+    /* The host server normalises every write with
+         typeof value === 'string' ? value : JSON.stringify(value)
+       so anything we stored as an object or array comes back as TEXT. Parse it
+       back into the shape we wrote, or Schedule.map and Settings.data end up as
+       strings on any browser without our localStorage mirror. Only text that
+       actually looks like JSON is parsed, so a receipt data URL — which is
+       genuinely a string — is left exactly as it is. */
+    if (typeof val === 'string') {
+      const t = val.trim();
+      if (t && (t.charAt(0) === '{' || t.charAt(0) === '[')) {
+        try { val = JSON.parse(t); } catch (e) { /* not JSON — keep the string */ }
+      }
+    }
+
+    if (val === null || val === undefined) {
+      const raw = localStorage.getItem(DB._lsKey(key));
+      if (raw != null) { try { val = JSON.parse(raw); } catch (e) { val = null; } }
+    }
+    if (val === null || val === undefined) val = (fallback === undefined ? null : fallback);
+    DB._mem.set(key, val);
+    return val;
+  },
+
+  /* localStorage is shared with the host app, which auto-saves there too.
+     We must never be the reason one of ITS writes hits the quota, so:
+       · anything big (receipt photos) is not mirrored at all — it already
+         lives in the database, and an offline copy of a JPEG is not worth
+         spending shared quota on;
+       · on a quota error we evict our OWN mirror entries, oldest-looking
+         first, and retry once. We never touch a key that is not ours. */
+  MIRROR_MAX: 50000,
+
+  _mirror(key, value) {
+    let json;
+    try { json = JSON.stringify(value); } catch (e) { return; }
+    if (json.length > DB.MIRROR_MAX) {
+      try { localStorage.removeItem(DB._lsKey(key)); } catch (e) {}
+      return;
+    }
+    try {
+      localStorage.setItem(DB._lsKey(key), json);
+    } catch (e) {
+      // Reclaim only our own space, then try once more.
+      try {
+        Object.keys(localStorage)
+          .filter(k => k.indexOf('flowpack:flow:receipt:') === 0)
+          .forEach(k => localStorage.removeItem(k));
+        localStorage.setItem(DB._lsKey(key), json);
+      } catch (e2) {
+        console.warn('[Flow] local mirror skipped for', key, '— storage is full. The value is still saved to the database.');
+      }
+    }
+  },
+
+  async set(key, value) {
+    DB._mem.set(key, value);
+    DB._mirror(key, value);
+    try {
+      const r = await fetch('/api/set', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: value })
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      Queue.drop(key);
+      return true;
+    } catch (e) {
+      Queue.add(key);
+      return false;
+    }
+  },
+
+  /** Write-through helper that returns the value so callers can chain. */
+  async update(key, fallback, mutator) {
+    const cur = await DB.get(key, fallback);
+    const next = mutator(cur);
+    await DB.set(key, next);
+    return next;
+  }
+};
+
+const Queue = {
+  key: 'flowpack:__queue',
+  list() { try { return JSON.parse(localStorage.getItem(Queue.key) || '[]'); } catch (e) { return []; } },
+  save(l) { try { localStorage.setItem(Queue.key, JSON.stringify(l)); } catch (e) {} },
+  add(k) { const l = Queue.list(); if (l.indexOf(k) < 0) { l.push(k); Queue.save(l); } },
+  drop(k) { Queue.save(Queue.list().filter(x => x !== k)); },
+  async flush() {
+    const l = Queue.list();
+    if (!l.length) return;
+    let ok = 0;
+    for (const k of l) {
+      const raw = localStorage.getItem(DB._lsKey(k));
+      if (raw == null) { Queue.drop(k); continue; }
+      try {
+        const r = await fetch('/api/set', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: k, value: JSON.parse(raw) })
+        });
+        if (r.ok) { Queue.drop(k); ok++; }
+      } catch (e) { break; }
+    }
+    if (ok) toast(`Synced ${ok} offline change${ok > 1 ? 's' : ''} ✓`);
+  }
+};
+window.addEventListener('online', () => Queue.flush());
+
+/* =========================================================================
+ * 3 · Settings
+ * ====================================================================== */
+const DEFAULT_CATEGORIES = [
+  'Groceries', 'Dining', 'Transport', 'Fuel', 'Health', 'Fitness', 'Supplements',
+  'Rent & Bills', 'Subscriptions', 'Shopping', 'Travel', 'Business', 'Music', 'Education', 'Other'
+];
+
+/* merchant keyword → category. Turkish + English, tuned for TR receipts. */
+const DEFAULT_RULES = [
+  ['Groceries',     ['migros', 'bim', 'a101', 'sok market', 'şok', 'carrefour', 'macrocenter', 'metro market', 'file market', 'market', 'bakkal', 'manav', 'kasap', 'grocery', 'whole foods', 'rewe', 'aldi', 'lidl']],
+  ['Dining',        ['restoran', 'restaurant', 'cafe', 'kafe', 'kahve', 'starbucks', 'burger', 'pizza', 'kebap', 'lokanta', 'bistro', 'yemeksepeti', 'getir yemek', 'trendyol yemek', 'coffee', 'bar ']],
+  ['Transport',     ['uber', 'bitaksi', 'taksi', 'taxi', 'metro istanbul', 'istanbulkart', 'iett', 'bolt', 'marti', 'martı', 'parking', 'otopark', 'hgs', 'ogs', 'köprü']],
+  ['Fuel',          ['shell', 'opet', 'petrol ofisi', 'bp ', 'total', 'aytemiz', 'lukoil', 'benzin', 'akaryakit', 'akaryakıt', 'fuel', 'gas station']],
+  ['Health',        ['eczane', 'pharmacy', 'hastane', 'hospital', 'klinik', 'clinic', 'doktor', 'dr.', 'medical', 'laboratuvar', 'dis ', 'diş ']],
+  ['Fitness',       ['gym', 'spor salonu', 'macfit', 'fitness', 'crossfit', 'pilates', 'yoga', 'sporium', 'b-fit']],
+  ['Supplements',   ['supplement', 'protein', 'whey', 'creatine', 'kolajen', 'collagen', 'omega', 'vitamin', 'probiyotik', 'takviye']],
+  ['Rent & Bills',  ['kira', 'rent', 'elektrik', 'dogalgaz', 'doğalgaz', 'su faturasi', 'su faturası', 'turkcell', 'vodafone', 'turk telekom', 'türk telekom', 'superonline', 'iski', 'i̇ski', 'aidat', 'utility']],
+  ['Subscriptions', ['netflix', 'spotify', 'youtube premium', 'icloud', 'apple.com/bill', 'google one', 'adobe', 'microsoft', 'openai', 'anthropic', 'notion', 'figma', 'canva', 'dropbox', 'render.com', 'aws', 'godaddy', 'namecheap']],
+  ['Shopping',      ['trendyol', 'hepsiburada', 'amazon', 'n11', 'zara', 'lcw', 'lc waikiki', 'defacto', 'mango', 'decathlon', 'ikea', 'koctas', 'koçtaş', 'teknosa', 'vatan', 'mediamarkt', 'apple store']],
+  ['Travel',        ['thy', 'turkish airlines', 'pegasus', 'ajet', 'booking.com', 'airbnb', 'hotel', 'otel', 'rentacar', 'rent a car', 'havas', 'havaist']],
+  ['Business',      ['abko', 'fatura', 'invoice', 'noter', 'muhasebe', 'consult', 'danisman', 'danışman', 'kargo', 'aras kargo', 'yurtici', 'yurtiçi', 'mng', 'ups', 'dhl', 'fedex', 'alibaba', 'fba', 'shopify', 'stripe', 'iyzico']],
+  ['Music',         ['thomann', 'muzik', 'müzik', 'zuzi', 'distrokid', 'ableton', 'splice', 'native instruments', 'guitar', 'gitar', 'piano', 'piyano', 'studio', 'stüdyo']],
+  ['Education',     ['udemy', 'coursera', 'kitap', 'book', 'dr kitap', 'kitapyurdu', 'course', 'kurs', 'italki', 'babbel', 'duolingo']]
+];
+
+const SETTINGS_KEY = 'flow:settings';
+const SETTINGS_DEFAULTS = {
+  displayName: 'Artur',
+  timezone: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return 'Europe/Istanbul'; } })(),
+  currency: 'TRY',
+  weekStart: 1,
+  defaultDurationMin: 60,
+  showTimeChips: true,
+  chipTabs: '',                  // blank = all tabs
+  gcalClientId: '',
+  gcalCalendarId: 'primary',
+  remindersEnabled: true,
+  remindersListName: 'The Flow',
+  remindersSources: { schedule: true, training: true, notes: true },
+  ocrLangs: 'eng+tur',
+  ocrAutoFill: true,
+  bankProvider: 'none',
+  statementDateFormat: 'auto',
+  upgradeVisuals: true,
+  breakdownForm: 'donut',
+  categories: DEFAULT_CATEGORIES.slice(),
+  merchantMemory: {},            // learned merchant → category
+  budgetMonthly: 0
+};
+
+const Settings = {
+  data: Object.assign({}, SETTINGS_DEFAULTS),
+  async load() {
+    const saved = await DB.get(SETTINGS_KEY, null);
+    Settings.data = Object.assign({}, SETTINGS_DEFAULTS, saved || {});
+    Settings.data.remindersSources = Object.assign({}, SETTINGS_DEFAULTS.remindersSources, (saved && saved.remindersSources) || {});
+    return Settings.data;
+  },
+  get(k) { return Settings.data[k]; },
+  async set(k, v) { Settings.data[k] = v; await DB.set(SETTINGS_KEY, Settings.data); },
+  async save() { await DB.set(SETTINGS_KEY, Settings.data); }
+};
+
+/* =========================================================================
+ * 4 · Schedule store — the single source of truth for "things with a time".
+ *
+ *   record = { key, text, tab, date, time, dur, done, remind, note, source }
+ *
+ *   Rows that already exist in the app are keyed by  <tab>::<normalised text>
+ *   so the schedule survives the app re-rendering its own lists.
+ *   Items created inside the Artur planner are keyed  planner::<uid>
+ * ====================================================================== */
+const SCHEDULE_KEY = 'flow:schedule';
+const Schedule = {
+  map: {},
+  async load() { Schedule.map = (await DB.get(SCHEDULE_KEY, {})) || {}; return Schedule.map; },
+  save: debounce(() => { DB.set(SCHEDULE_KEY, Schedule.map); }, 250),
+  saveNow() { return DB.set(SCHEDULE_KEY, Schedule.map); },
+
+  keyFor(tab, text) { return tab + '::' + norm(text).toLowerCase().slice(0, 140); },
+  get(key) { return Schedule.map[key] || null; },
+
+  put(key, patch) {
+    const cur = Schedule.map[key] || { key: key, created: new Date().toISOString() };
+    Schedule.map[key] = Object.assign(cur, patch, { updated: new Date().toISOString() });
+    Schedule.save();
+    return Schedule.map[key];
+  },
+  remove(key) { delete Schedule.map[key]; Schedule.save(); },
+
+  all() { return Object.keys(Schedule.map).map(k => Schedule.map[k]); },
+
+  /** Everything that has a date, sorted chronologically. */
+  scheduled() {
+    return Schedule.all()
+      .filter(r => r && r.date)
+      .sort((a, b) => (a.date + (a.time || '99:99')).localeCompare(b.date + (b.time || '99:99')));
+  },
+  onDate(d) { return Schedule.scheduled().filter(r => r.date === d); },
+  between(from, to) { return Schedule.scheduled().filter(r => r.date >= from && r.date <= to); }
+};
+
+/* =========================================================================
+ * 5 · iCalendar generation (VEVENT for calendars, VTODO for Reminders)
+ * ====================================================================== */
+const ICS = {
+  esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,')
+      .replace(/\r?\n/g, '\\n');
+  },
+  fold(line) {
+    // RFC 5545: fold at 75 octets, continuation lines start with a space.
+    if (line.length <= 73) return line;
+    const out = []; let i = 0;
+    while (i < line.length) { out.push((i ? ' ' : '') + line.substr(i, i ? 72 : 73)); i += i ? 72 : 73; }
+    return out.join('\r\n');
+  },
+  stampUTC(d) {
+    d = d || new Date();
+    return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) + 'T' +
+           pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
+  },
+  /** Floating local date-time: "same wall clock in every client". */
+  local(dateStr, timeStr) {
+    const [h, m] = String(timeStr || '09:00').split(':').map(Number);
+    return String(dateStr).replace(/-/g, '') + 'T' + pad(h || 0) + pad(m || 0) + '00';
+  },
+  plus(dateStr, timeStr, minutes) {
+    const [h, m] = String(timeStr || '09:00').split(':').map(Number);
+    const d = parseISO(dateStr);
+    d.setHours(h || 0, m || 0, 0, 0);
+    d.setMinutes(d.getMinutes() + (minutes || 60));
+    return isoDate(d).replace(/-/g, '') + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+  },
+  uidFor(r) { return 'flow-' + String(r.key || r.id || uid()).replace(/[^a-zA-Z0-9]/g, '-').slice(0, 60) + '@the-flow'; },
+
+  header(name, tz) {
+    return [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//The Flow//Upgrade Pack 1.0//EN',
+      'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'X-WR-CALNAME:' + ICS.esc(name),
+      'X-WR-TIMEZONE:' + (tz || 'Europe/Istanbul'),
+      'X-APPLE-CALENDAR-COLOR:#17BB92'
+    ];
+  },
+
+  event(r, opts) {
+    const dur = r.dur || (opts && opts.defaultDuration) || 60;
+    const L = ['BEGIN:VEVENT',
+      'UID:' + ICS.uidFor(r),
+      'DTSTAMP:' + ICS.stampUTC(),
+      'SEQUENCE:' + Math.floor(Date.now() / 60000 % 65535),
+      'DTSTART:' + ICS.local(r.date, r.time || '09:00'),
+      'DTEND:' + ICS.plus(r.date, r.time || '09:00', dur),
+      'SUMMARY:' + ICS.esc(r.text),
+      'DESCRIPTION:' + ICS.esc((r.note ? r.note + '\n\n' : '') + 'From The Flow · ' + (r.tab || 'planner')),
+      'CATEGORIES:' + ICS.esc((r.tab || 'flow').toUpperCase()),
+      'STATUS:CONFIRMED', 'TRANSP:OPAQUE'
+    ];
+    if (r.remind) {
+      L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + ICS.esc(r.text),
+             'TRIGGER:-PT' + (r.remindMin || 15) + 'M', 'END:VALARM');
+    }
+    L.push('END:VEVENT');
+    return L;
+  },
+
+  todo(r) {
+    const L = ['BEGIN:VTODO',
+      'UID:' + ICS.uidFor(r) + '-todo',
+      'DTSTAMP:' + ICS.stampUTC(),
+      'SUMMARY:' + ICS.esc(r.text),
+      'STATUS:' + (r.done ? 'COMPLETED' : 'NEEDS-ACTION'),
+      'PERCENT-COMPLETE:' + (r.done ? 100 : 0)
+    ];
+    if (r.date) L.push('DUE:' + ICS.local(r.date, r.time || '09:00'));
+    if (r.note) L.push('DESCRIPTION:' + ICS.esc(r.note));
+    if (r.tab) L.push('CATEGORIES:' + ICS.esc(r.tab.toUpperCase()));
+    if (r.done) L.push('COMPLETED:' + ICS.stampUTC());
+    if (r.date && r.time) {
+      L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + ICS.esc(r.text),
+             'TRIGGER;VALUE=DATE-TIME:' + ICS.local(r.date, r.time) , 'END:VALARM');
+    }
+    L.push('END:VTODO');
+    return L;
+  },
+
+  build(records, opts) {
+    opts = opts || {};
+    const lines = ICS.header(opts.name || 'The Flow', opts.tz);
+    records.forEach(r => {
+      if (!r || !r.text) return;
+      if (opts.kind === 'todo') lines.push.apply(lines, ICS.todo(r));
+      else if (r.date) lines.push.apply(lines, ICS.event(r, opts));
+    });
+    lines.push('END:VCALENDAR');
+    return lines.map(ICS.fold).join('\r\n') + '\r\n';
+  }
+};
+
+/* =========================================================================
+ * 6 · Google Calendar — OAuth via Google Identity Services, then an
+ *     idempotent upsert so re-exporting updates instead of duplicating.
+ * ====================================================================== */
+const GCAL = {
+  _token: null,
+  _tokenExp: 0,
+  _client: null,
+
+  loadGIS() {
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+    if (GCAL._gisPromise) return GCAL._gisPromise;
+    GCAL._gisPromise = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true; s.defer = true;
+      s.onload = res; s.onerror = () => rej(new Error('Could not load Google sign-in'));
+      document.head.appendChild(s);
+    });
+    return GCAL._gisPromise;
+  },
+
+  async token() {
+    if (GCAL._token && Date.now() < GCAL._tokenExp - 60000) return GCAL._token;
+    const cid = Settings.get('gcalClientId');
+    if (!cid) throw new Error('Add your Google OAuth Client ID in Settings → Integrations first.');
+    await GCAL.loadGIS();
+    return new Promise((resolve, reject) => {
+      try {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: cid,
+          scope: 'https://www.googleapis.com/auth/calendar.events',
+          callback: (resp) => {
+            if (resp && resp.access_token) {
+              GCAL._token = resp.access_token;
+              GCAL._tokenExp = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+              resolve(GCAL._token);
+            } else reject(new Error('Google did not return an access token'));
+          },
+          error_callback: (err) => reject(new Error((err && err.message) || 'Google sign-in was cancelled'))
+        });
+        client.requestAccessToken();
+      } catch (e) { reject(e); }
+    });
+  },
+
+  /* Google event ids must be base32hex (0-9, a-v), 5–1024 chars. */
+  idFor(key) {
+    const CH = '0123456789abcdefghijklmnopqrstuv';
+    let h1 = 0x811c9dc5, h2 = 0x01000193, s = String(key);
+    for (let i = 0; i < s.length; i++) {
+      h1 ^= s.charCodeAt(i); h1 = (h1 * 0x01000193) >>> 0;
+      h2 = ((h2 << 5) - h2 + s.charCodeAt(i)) >>> 0;
+    }
+    let out = 'flow';
+    let acc = (BigInt(h1) << 32n) | BigInt(h2 >>> 0);
+    for (let i = 0; i < 16; i++) { out += CH[Number(acc & 31n)]; acc >>= 5n; }
+    return out;
+  },
+
+  body(r, tz) {
+    const dur = r.dur || Settings.get('defaultDurationMin') || 60;
+    const startLocal = ICS.local(r.date, r.time || '09:00');
+    const endLocal = ICS.plus(r.date, r.time || '09:00', dur);
+    const fmt = (s) => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:00`;
+    return {
+      id: GCAL.idFor(r.key || r.id),
+      summary: r.text,
+      description: (r.note ? r.note + '\n\n' : '') + 'From The Flow · ' + (r.tab || 'planner'),
+      start: { dateTime: fmt(startLocal), timeZone: tz },
+      end:   { dateTime: fmt(endLocal),   timeZone: tz },
+      reminders: r.remind
+        ? { useDefault: false, overrides: [{ method: 'popup', minutes: r.remindMin || 15 }] }
+        : { useDefault: true },
+      status: 'confirmed'
+    };
+  },
+
+  async push(records, onProgress) {
+    const tok = await GCAL.token();
+    const cal = encodeURIComponent(Settings.get('gcalCalendarId') || 'primary');
+    const tz = Settings.get('timezone');
+    const base = `https://www.googleapis.com/calendar/v3/calendars/${cal}/events`;
+    let created = 0, updated = 0, failed = 0, i = 0;
+
+    for (const r of records) {
+      i++;
+      if (!r.date) continue;
+      const body = GCAL.body(r, tz);
+      const headers = { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' };
+      try {
+        let res = await fetch(`${base}/${body.id}`, { method: 'PUT', headers, body: JSON.stringify(body) });
+        if (res.status === 404 || res.status === 400) {
+          res = await fetch(base, { method: 'POST', headers, body: JSON.stringify(body) });
+          if (res.ok) created++; else if (res.status === 409) updated++; else failed++;
+        } else if (res.ok) updated++;
+        else failed++;
+      } catch (e) { failed++; }
+      if (onProgress) onProgress(i, records.length);
+    }
+    return { created, updated, failed, total: records.length };
+  }
+};
+
+/* =========================================================================
+ * 7 · iOS Reminders
+ *
+ *  Three routes, in order of how well they work:
+ *   a) .ics with VTODO   — open on iPhone, "Add All", lands in Reminders.
+ *   b) Apple Shortcuts   — a Shortcut fetches /api/flow/reminders.json and
+ *                          loops "Add New Reminder". Fully automatic, and
+ *                          it can post completions back.
+ *   c) CalDAV to iCloud  — server-side, credentials live in Render env vars
+ *                          and never touch the browser.
+ * ====================================================================== */
+const Reminders = {
+  collect() {
+    const src = Settings.get('remindersSources') || {};
+    let out = [];
+    if (src.schedule !== false) out = out.concat(Schedule.scheduled().filter(r => !r.done));
+    if (src.notes !== false && window.Flow && Flow.Notes) out = out.concat(Flow.Notes.asReminders());
+    // de-duplicate on text+date
+    const seen = {};
+    return out.filter(r => {
+      const k = norm(r.text).toLowerCase() + '|' + (r.date || '');
+      if (seen[k]) return false; seen[k] = 1; return true;
+    });
+  },
+
+  exportICS(records) {
+    const recs = records || Reminders.collect();
+    if (!recs.length) { toast('Nothing to send — schedule something first.', 'warn'); return; }
+    const ics = ICS.build(recs, { kind: 'todo', name: Settings.get('remindersListName') || 'The Flow', tz: Settings.get('timezone') });
+    download(`the-flow-reminders-${today()}.ics`, ics, 'text/calendar');
+    toast(`${recs.length} reminders exported — open the file on your iPhone`, null, 4200);
+  },
+
+  async publishForShortcut() {
+    const recs = Reminders.collect().map(r => ({
+      id: r.key, title: r.text, notes: (r.note || '') + ' · The Flow',
+      list: Settings.get('remindersListName') || 'The Flow',
+      dueDate: r.date && r.time ? `${r.date}T${r.time}:00` : (r.date || null),
+      priority: r.tab === 'quad' ? 1 : 0, tab: r.tab || 'planner'
+    }));
+    await DB.set('flow:reminders:outbox', { updated: new Date().toISOString(), items: recs });
+    return recs;
+  },
+
+  async caldavPush(records) {
+    const recs = records || Reminders.collect();
+    const res = await fetch('/api/flow/caldav/push', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listName: Settings.get('remindersListName'), items: recs })
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(t || ('CalDAV push failed (HTTP ' + res.status + ')'));
+    }
+    return res.json();
+  }
+};
+
+/* =========================================================================
+ * 8 · Calendar export facade used by the UI
+ * ====================================================================== */
+const Calendar = {
+  rangeRecords(range) {
+    const now = new Date();
+    const ws = startOfWeek(now, Settings.get('weekStart'));
+    let from = isoDate(ws), to;
+    if (range === 'today') { from = today(); to = today(); }
+    else if (range === 'week') to = isoDate(addDays(ws, 6));
+    else if (range === '2weeks') to = isoDate(addDays(ws, 13));
+    else if (range === '4weeks') to = isoDate(addDays(ws, 27));
+    else if (range === '12weeks') to = isoDate(addDays(ws, 83));
+    else { from = '0000-01-01'; to = '9999-12-31'; }
+    return Schedule.between(from, to);
+  },
+
+  exportApple(range) {
+    const recs = Calendar.rangeRecords(range);
+    if (!recs.length) { toast('No scheduled items in that range yet.', 'warn'); return; }
+    const ics = ICS.build(recs, {
+      name: 'The Flow', tz: Settings.get('timezone'),
+      defaultDuration: Settings.get('defaultDurationMin')
+    });
+    download(`the-flow-${range}-${today()}.ics`, ics, 'text/calendar');
+    toast(`${recs.length} events exported. Open the file to add them to Calendar.`, null, 4200);
+  },
+
+  async exportGoogle(range, statusEl) {
+    const recs = Calendar.rangeRecords(range);
+    if (!recs.length) { toast('No scheduled items in that range yet.', 'warn'); return; }
+    if (statusEl) statusEl.textContent = 'Waiting for Google sign-in…';
+    try {
+      const res = await GCAL.push(recs, (i, n) => { if (statusEl) statusEl.textContent = `Syncing ${i}/${n}…`; });
+      const msg = `Google Calendar: ${res.created} added, ${res.updated} updated` + (res.failed ? `, ${res.failed} failed` : '');
+      if (statusEl) statusEl.textContent = msg;
+      toast(msg, res.failed ? 'warn' : null, 4200);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = e.message;
+      toast(e.message, 'err', 5000);
+    }
+  },
+
+  subscribeURL() { return location.origin + '/api/flow/feed.ics'; }
+};
+
+/* =========================================================================
+ * 9 · Tab + section injection
+ *    We add our own pills next to the existing ones. Our sections use the
+ *    class .flow-section (our own CSS) so we never depend on how the host
+ *    app shows and hides its own .section elements.
+ * ====================================================================== */
+const Tabs = {
+  mine: {},
+  hostTabsEl: null,
+
+  init() {
+    Tabs.hostTabsEl = $('.tabs') || (function () {
+      const anyTab = $('[data-tab]');
+      return anyTab ? anyTab.parentElement : null;
+    })();
+
+    // Any click on a host tab hides our sections again.
+    document.addEventListener('click', (e) => {
+      const t = e.target && e.target.closest && e.target.closest('[data-tab]');
+      if (!t) return;
+      const name = t.getAttribute('data-tab');
+      if (Tabs.mine[name]) return;             // ours — handled by its own listener
+      setTimeout(() => Tabs.deactivateMine(), 0);
+    }, true);
+  },
+
+  add(name, label, buildFn) {
+    const host = Tabs.hostTabsEl;
+    const pill = document.createElement('div');
+    pill.className = 'tab';
+    pill.setAttribute('data-tab', name);
+    pill.textContent = label;
+    pill.style.cursor = 'pointer';
+    if (host) host.appendChild(pill);
+
+    const section = document.createElement('div');
+    section.id = 'tab-' + name;
+    section.className = 'flow-section flow-x';
+
+    // Place our section beside the app's own sections so page flow matches.
+    const anchor = $('.section') ? $$('.section').pop() : null;
+    if (anchor && anchor.parentElement) anchor.parentElement.appendChild(section);
+    else document.body.appendChild(section);
+
+    Tabs.mine[name] = { pill, section, build: buildFn, built: false };
+    pill.addEventListener('click', () => Tabs.activate(name));
+
+    /* On a phone the host hides .tabs entirely (@media max-width:760px) and
+       navigates from a bottom bar plus a "More" sheet, whose grid is built
+       once from a hardcoded list. Without this, every tab we add is
+       unreachable on mobile. The grid is never re-rendered — syncMobileNav
+       only toggles classes — so appending to it is stable. */
+    Tabs.addToMobileSheet(name, label);
+    return section;
+  },
+
+  addToMobileSheet(name, label) {
+    const grid = document.getElementById('moreGrid');
+    if (!grid || grid.querySelector('[data-flow-goto="' + name + '"]')) return;
+    const parts = String(label).trim().split(/\s+/);
+    let icon = '\u2022';
+    if (parts.length > 1 && !/[a-z0-9]/i.test(parts[0])) icon = parts.shift();
+    const btn = document.createElement('button');
+    /* data-goto as well, so the host's own syncMobileNav() lights this button
+       up when our tab is showing. The host attached its click handlers once at
+       boot, before we existed, so it cannot double-fire on ours. */
+    btn.setAttribute('data-goto', name);
+    btn.setAttribute('data-flow-goto', name);
+    btn.innerHTML = '<span class="mg-ico">' + esc(icon) + '</span>' +
+                    '<span class="mg-lbl">' + esc(parts.join(' ') || name) + '</span>';
+    btn.addEventListener('click', () => {
+      Tabs.activate(name);
+      const sh = document.getElementById('moreSheet');
+      const bd = document.getElementById('moreBackdrop');
+      if (sh) sh.classList.remove('open');
+      if (bd) bd.classList.remove('open');
+    });
+    grid.appendChild(btn);
+  },
+
+  deactivateMine() {
+    Object.keys(Tabs.mine).forEach(n => {
+      Tabs.mine[n].section.classList.remove('active');
+      Tabs.mine[n].pill.classList.remove('active');
+    });
+  },
+
+  activate(name) {
+    const entry = Tabs.mine[name];
+    if (!entry) return;
+    // Hide everything the host owns without touching how it does it.
+    $$('[data-tab]').forEach(el => el.classList.remove('active'));
+    $$('.section').forEach(el => el.classList.remove('active'));
+    Tabs.deactivateMine();
+    entry.pill.classList.add('active');
+    entry.section.classList.add('active');
+    try { entry.build(entry.section); entry.built = true; }
+    catch (e) { console.error('[Flow] tab build failed', e); entry.section.innerHTML = '<div class="flow-card"><h3>Something broke rendering this tab</h3><p class="flow-sub">' + esc(e.message) + '</p></div>'; }
+    try { if (typeof window.syncMobileNav === 'function') window.syncMobileNav(); } catch (e) {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+/* =========================================================================
+ * 10 · The time decorator — puts a date/time/duration control on every
+ *      checkbox row that already exists anywhere in the app.
+ * ====================================================================== */
+const GLYPHS = /[✏️🗑️✕×→⨯⋯…]|\+\s*Rock|→\s*Rock|Q[1-4]\s*$/gu;
+
+const TimeChips = {
+  observer: null,
+  busy: false,
+
+  sectionOf(el) {
+    const sec = el.closest ? el.closest('.section, .flow-section, [id^="tab-"]') : null;
+    if (sec && sec.id && sec.id.indexOf('tab-') === 0) return sec.id.slice(4);
+    return 'app';
+  },
+
+  rowFor(cb) {
+    let el = cb.parentElement, hops = 0;
+    while (el && hops < 4) {
+      const t = norm(el.textContent);
+      if (t.length >= 2) return el;
+      el = el.parentElement; hops++;
+    }
+    return cb.parentElement;
+  },
+
+  textOf(row) {
+    const clone = row.cloneNode(true);
+    $$('.flow-time-chip, button, select, option, input', clone).forEach(n => n.remove());
+    let t = norm(clone.textContent).replace(GLYPHS, '').trim();
+    return t.replace(/\s{2,}/g, ' ').slice(0, 140);
+  },
+
+  scan(root) {
+    if (!Settings.get('showTimeChips')) return;
+    const only = norm(Settings.get('chipTabs'));
+    const allow = only ? only.split(',').map(s => s.trim()).filter(Boolean) : null;
+
+    const boxes = $$('input[type=checkbox]', root || document);
+    if (!boxes.length) return;
+    TimeChips.busy = true;
+    try {
+      boxes.forEach(cb => {
+        if (cb.closest('.flow-x')) return;                 // our own UI
+        const row = TimeChips.rowFor(cb);
+        if (!row || row.getAttribute('data-flow-timed')) return;
+        const tab = TimeChips.sectionOf(cb);
+        if (allow && allow.indexOf(tab) < 0) return;
+        const text = TimeChips.textOf(row);
+        if (!text || text.length < 2) return;
+
+        row.setAttribute('data-flow-timed', '1');
+        const key = Schedule.keyFor(tab, text);
+        const chip = TimeChips.makeChip(key, text, tab, cb);
+        row.appendChild(chip);
+
+        // keep "done" in sync so exported reminders reflect reality
+        cb.addEventListener('change', () => {
+          const rec = Schedule.get(key);
+          if (rec) Schedule.put(key, { done: !!cb.checked });
+        });
+      });
+    } finally { TimeChips.busy = false; }
+  },
+
+  makeChip(key, text, tab, cb) {
+    const chip = document.createElement('span');
+    chip.className = 'flow-time-chip';
+    chip.setAttribute('data-flow-key', key);
+    chip.title = 'Schedule this — adds a date, time and duration you can export to your calendar';
+    TimeChips.paint(chip, Schedule.get(key));
+    chip.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      Popover.open(chip, key, text, tab, cb);
+    });
+    return chip;
+  },
+
+  /* The label is rendered by CSS ::after from data-label, never as a text
+     node. That keeps the chip out of the row's textContent, so if the host
+     app ever serialises a row's text to save it, our label cannot leak into
+     your data. */
+  paint(chip, rec) {
+    if (rec && rec.date) {
+      chip.classList.add('set');
+      const isToday = rec.date === today();
+      chip.setAttribute('data-label', (rec.time ? rec.time : 'all-day') + (isToday ? '' : ' · ' + prettyDate(rec.date)));
+    } else {
+      chip.classList.remove('set');
+      chip.setAttribute('data-label', '🕘 time');
+    }
+  },
+
+  repaintAll() {
+    $$('.flow-time-chip').forEach(chip => TimeChips.paint(chip, Schedule.get(chip.getAttribute('data-flow-key'))));
+  },
+
+  watch() {
+    const rescan = debounce(() => {
+      if (TimeChips.busy) return;
+      TimeChips.scan(document);
+      try { Visuals.upgradeAll(); } catch (e) { /* never let a repaint break the app */ }
+    }, 300);
+    TimeChips.observer = new MutationObserver((muts) => {
+      if (TimeChips.busy) return;
+      for (const m of muts) {
+        if (m.type === 'childList' && m.addedNodes.length) {
+          for (const n of m.addedNodes) {
+            if (n.nodeType === 1 && !n.classList.contains('flow-time-chip') && !n.closest('.flow-x')) { rescan(); return; }
+          }
+        }
+      }
+    });
+    TimeChips.observer.observe(document.body, { childList: true, subtree: true });
+  }
+};
+
+/* ---------- the scheduling popover ---------- */
+const Popover = {
+  el: null,
+  open(anchor, key, text, tab, cb) {
+    Popover.close();
+    const rec = Schedule.get(key) || {};
+    const el = document.createElement('div');
+    el.className = 'flow-pop flow-x';
+    el.innerHTML = `
+      <h4>${esc(text.slice(0, 70))}${text.length > 70 ? '…' : ''}</h4>
+      <div class="g">
+        <div class="flow-field"><label class="flow-label">Date</label>
+          <input class="flow-in" type="date" id="fp-date" value="${esc(rec.date || today())}"></div>
+        <div class="flow-field"><label class="flow-label">Time</label>
+          <input class="flow-in" type="time" id="fp-time" value="${esc(rec.time || '')}"></div>
+      </div>
+      <div class="g">
+        <div class="flow-field"><label class="flow-label">Minutes</label>
+          <input class="flow-in" type="number" min="5" step="5" id="fp-dur" value="${esc(rec.dur || Settings.get('defaultDurationMin'))}"></div>
+        <div class="flow-field"><label class="flow-label">Alert</label>
+          <select class="flow-in" id="fp-rem">
+            <option value="">none</option>
+            <option value="5">5 min before</option>
+            <option value="15">15 min before</option>
+            <option value="30">30 min before</option>
+            <option value="60">1 hour before</option>
+          </select></div>
+      </div>
+      <div class="flow-field" style="margin-bottom:10px">
+        <label class="flow-label">Note (optional)</label>
+        <input class="flow-in" id="fp-note" placeholder="context, link, location…" value="${esc(rec.note || '')}">
+      </div>
+      <div class="flow-row">
+        <button class="flow-btn primary" id="fp-save">Save</button>
+        <button class="flow-btn" id="fp-ics">↓ .ics</button>
+        <span class="flow-spacer"></span>
+        <button class="flow-btn danger sm" id="fp-clear">Clear</button>
+      </div>`;
+    document.body.appendChild(el);
+    Popover.el = el;
+
+    const r = anchor.getBoundingClientRect();
+    const top = window.scrollY + r.bottom + 8;
+    const left = clamp(window.scrollX + r.left - 100, 8, window.scrollX + window.innerWidth - 300);
+    el.style.top = top + 'px'; el.style.left = left + 'px';
+
+    if (rec.remindMin) $('#fp-rem', el).value = String(rec.remindMin);
+
+    $('#fp-save', el).addEventListener('click', () => {
+      const date = $('#fp-date', el).value || today();
+      const time = $('#fp-time', el).value || '';
+      const dur = Number($('#fp-dur', el).value) || Settings.get('defaultDurationMin');
+      const remMin = $('#fp-rem', el).value;
+      Schedule.put(key, {
+        text, tab, date, time, dur,
+        remind: !!remMin, remindMin: remMin ? Number(remMin) : 0,
+        note: $('#fp-note', el).value || '',
+        done: cb ? !!cb.checked : false,
+        source: 'row'
+      });
+      Schedule.saveNow();
+      TimeChips.paint(anchor, Schedule.get(key));
+      toast('Scheduled ✓');
+      Popover.close();
+    });
+
+    $('#fp-ics', el).addEventListener('click', () => {
+      const date = $('#fp-date', el).value || today();
+      const time = $('#fp-time', el).value || '09:00';
+      const one = { key, text, tab, date, time, dur: Number($('#fp-dur', el).value) || 60, note: $('#fp-note', el).value };
+      download(`flow-${norm(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32)}.ics`,
+        ICS.build([one], { name: 'The Flow', tz: Settings.get('timezone') }), 'text/calendar');
+    });
+
+    $('#fp-clear', el).addEventListener('click', () => {
+      Schedule.remove(key); Schedule.saveNow();
+      TimeChips.paint(anchor, null); toast('Schedule cleared'); Popover.close();
+    });
+
+    setTimeout(() => document.addEventListener('mousedown', Popover._outside), 0);
+  },
+
+  _outside(e) {
+    if (Popover.el && !Popover.el.contains(e.target) && !(e.target.classList && e.target.classList.contains('flow-time-chip'))) Popover.close();
+  },
+  close() {
+    document.removeEventListener('mousedown', Popover._outside);
+    if (Popover.el) { Popover.el.remove(); Popover.el = null; }
+  }
+};
+
+/* =========================================================================
+ * 11 · Charts — single-hue magnitude bars + a trend line.
+ *      Sequential encoding, thin marks, 4px rounded data-ends, 2px gaps,
+ *      recessive grid, direct value labels, hover tooltip. No dual axes.
+ * ====================================================================== */
+const Tip = {
+  el: null,
+  show(x, y, html) {
+    if (!Tip.el) { Tip.el = document.createElement('div'); Tip.el.className = 'flow-tip'; document.body.appendChild(Tip.el); }
+    Tip.el.innerHTML = html;
+    Tip.el.style.left = Math.min(x + 12, window.innerWidth - 200) + 'px';
+    Tip.el.style.top = (y - 34) + 'px';
+    Tip.el.style.display = 'block';
+  },
+  hide() { if (Tip.el) Tip.el.style.display = 'none'; }
+};
+
+const Chart = {
+  /** Horizontal bars, sorted by caller. data = [{label, value, sub}] */
+  bars(data, opts) {
+    opts = opts || {};
+    if (!data.length) return '<p class="flow-empty">Nothing to chart yet.</p>';
+    const rowH = 30, gap = 2, padL = opts.labelWidth || 132, padR = 76, padT = 6;
+    const w = 720, h = padT + data.length * rowH;
+    const max = Math.max.apply(null, data.map(d => d.value)) || 1;
+    const bw = w - padL - padR;
+    const fmt = opts.format || (v => String(v));
+
+    let svg = `<svg class="flow-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(opts.title || 'bar chart')}" preserveAspectRatio="xMinYMin meet">`;
+    data.forEach((d, i) => {
+      const y = padT + i * rowH;
+      const bh = rowH - 8 - gap;
+      const len = Math.max(3, (d.value / max) * bw);
+      const r = Math.min(4, len / 2);
+      const x0 = padL, x1 = padL + len, yt = y + 4;
+      const path = `M${x0},${yt} H${x1 - r} A${r},${r} 0 0 1 ${x1},${yt + r} V${yt + bh - r} A${r},${r} 0 0 1 ${x1 - r},${yt + bh} H${x0} Z`;
+      svg += `<text class="lbl" x="${padL - 10}" y="${yt + bh / 2 + 4}" text-anchor="end">${esc(String(d.label).slice(0, 22))}</text>`;
+      svg += `<path class="bar" d="${path}" data-tip="${esc(d.label + ': ' + fmt(d.value))}"></path>`;
+      svg += `<text class="val" x="${x1 + 8}" y="${yt + bh / 2 + 4}">${esc(fmt(d.value))}</text>`;
+    });
+    svg += '</svg>';
+    return svg;
+  },
+
+  /** Single-series trend. points = [{label, value}] */
+  line(points, opts) {
+    opts = opts || {};
+    if (points.length < 2) return '<p class="flow-empty">Two or more periods needed for a trend.</p>';
+    const w = 720, h = 190, padL = 54, padR = 16, padT = 14, padB = 30;
+    const max = Math.max.apply(null, points.map(p => p.value)) || 1;
+    const min = 0;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const X = i => padL + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
+    const Y = v => padT + ih - ((v - min) / (max - min || 1)) * ih;
+    const fmt = opts.format || (v => String(v));
+
+    let svg = `<svg class="flow-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(opts.title || 'trend')}" preserveAspectRatio="xMinYMin meet">`;
+    for (let g = 0; g <= 3; g++) {
+      const v = min + (max - min) * (g / 3), y = Y(v);
+      svg += `<line class="grid" x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}"/>`;
+      svg += `<text class="tick" x="${padL - 8}" y="${y + 4}" text-anchor="end">${esc(fmt(v))}</text>`;
+    }
+    svg += `<line class="axis" x1="${padL}" y1="${padT + ih}" x2="${w - padR}" y2="${padT + ih}"/>`;
+    svg += `<path class="line" d="${points.map((p, i) => (i ? 'L' : 'M') + X(i) + ',' + Y(p.value)).join(' ')}"/>`;
+    points.forEach((p, i) => {
+      svg += `<circle class="dot" cx="${X(i)}" cy="${Y(p.value)}" r="5" data-tip="${esc(p.label + ': ' + fmt(p.value))}"></circle>`;
+      if (points.length <= 14 || i % 2 === 0)
+        svg += `<text class="tick" x="${X(i)}" y="${h - 9}" text-anchor="middle">${esc(p.label)}</text>`;
+    });
+    svg += '</svg>';
+    return svg;
+  },
+
+  /** A designed empty state. Never a stretched grey blob. */
+  empty(msg, sub) {
+    return `<div class="flow-nodata">
+        <svg viewBox="0 0 120 120" width="104" height="104" aria-hidden="true">
+          <circle cx="60" cy="60" r="44" fill="none" stroke="var(--f-line)" stroke-width="10" stroke-dasharray="3 9" stroke-linecap="round"/>
+          <circle cx="60" cy="60" r="44" fill="none" stroke="var(--f-accent)" stroke-width="10" stroke-linecap="round"
+                  stroke-dasharray="34 242" transform="rotate(-90 60 60)" opacity=".55"/>
+        </svg>
+        <div class="t">${esc(msg || 'Nothing here yet')}</div>
+        ${sub ? `<div class="s">${esc(sub)}</div>` : ''}
+      </div>`;
+  },
+
+  /** Part-to-whole. Square by construction, so it can never be squashed.
+   *  Ordered single-hue ramp (magnitude reads off the ramp, not a rainbow),
+   *  2px surface gaps, rounded segment ends, direct labels, total in the hole. */
+  donut(data, opts) {
+    opts = opts || {};
+    const fmt = opts.format || (v => String(v));
+    const clean = (data || []).filter(d => Number(d.value) > 0).sort((a, b) => b.value - a.value);
+    if (!clean.length) return Chart.empty(opts.emptyMsg || 'No data yet', opts.emptySub);
+
+    /* Five slices is the ceiling: the ramp is a validated 5-step single-hue
+       ordinal scale (monotone lightness, every adjacent gap ΔL ≥ 0.06, the
+       dark end still clearing the surface at 2.26:1). A sixth step would
+       have to be a different hue, and a neutral grey "Other" breaks the
+       single-hue gate — so the tail folds into the darkest step instead. */
+    let slices = clean;
+    if (clean.length > 5) {
+      const rest = clean.slice(4).reduce((a, d) => a + d.value, 0);
+      slices = clean.slice(0, 4).concat([{ label: 'Other', value: rest, isOther: true }]);
+    }
+    const total = slices.reduce((a, d) => a + d.value, 0) || 1;
+    const RAMP = ['--f-seq-5', '--f-seq-4', '--f-seq-3', '--f-seq-2', '--f-seq-1'];
+
+    /* Thin marks: a 24px band on a 100px radius. A thick band plus round caps
+       reads as a row of lozenges rather than a ring. */
+    const S = 260, cx = S / 2, cy = S / 2, rOuter = 112, rInner = 88;
+    const r = (rOuter + rInner) / 2, sw = rOuter - rInner;
+    const C = 2 * Math.PI * r;
+    const gapPx = slices.length > 1 ? 4 : 0;
+
+    /* A round linecap paints an extra sw/2 beyond each end of the dash, so a
+       naive dash length makes neighbouring segments overlap — which is what
+       makes a ring look like the slices are sliding under each other. Shorten
+       the dash by the two half-caps and shift the offset by one half-cap, and
+       the painted arc lands exactly where a butt cap would, gap intact. */
+    let off = 0, arcs = '';
+    slices.forEach((d, i) => {
+      const span = (d.value / total) * C;
+      let len = span - gapPx - sw;
+      let dashOff = off + gapPx / 2 + sw / 2;
+      if (len <= 0.5) { len = 0.5; dashOff = off + span / 2; }   // slice thinner than the cap
+      arcs += `<circle class="slice" cx="${cx}" cy="${cy}" r="${r}" fill="none"
+        stroke="var(${RAMP[Math.min(i, RAMP.length - 1)]})" stroke-width="${sw}" stroke-linecap="round"
+        stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}"
+        stroke-dashoffset="${(-dashOff).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"
+        data-tip="${esc(d.label + ': ' + fmt(d.value) + ' · ' + Math.round(d.value / total * 100) + '%')}"
+        style="--i:${i}"></circle>`;
+      off += span;
+    });
+
+    return `<div class="flow-donut-wrap">
+        <div class="flow-donut">
+          <svg viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" class="flow-chart"
+               role="img" aria-label="${esc(opts.title || 'breakdown')}">
+            <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--f-grid)" stroke-width="${sw}"/>
+            ${arcs}
+          </svg>
+          <div class="flow-donut-mid">
+            <div class="v" title="${esc(fmt(total))}">${esc((opts.centerFormat || fmt)(total))}</div>
+            <div class="l">${esc(opts.centerLabel || 'total')}</div>
+          </div>
+        </div>
+        <ul class="flow-legend">
+          ${slices.map((d, i) => `<li>
+            <i style="background:var(${RAMP[Math.min(i, RAMP.length - 1)]})"></i>
+            <span class="n">${esc(String(d.label).slice(0, 26))}</span>
+            <span class="p">${Math.round(d.value / total * 100)}%</span>
+            <span class="v">${esc(fmt(d.value))}</span>
+          </li>`).join('')}
+        </ul>
+      </div>`;
+  },
+
+  /** Hover layer. Called after any container that holds charts is painted. */
+  hydrate(root) {
+    $$('[data-tip]', root).forEach(el => {
+      if (el.__tipBound) return;
+      el.__tipBound = true;
+      el.style.cursor = 'default';
+      el.addEventListener('mousemove', (e) => Tip.show(e.clientX, e.clientY, esc(el.getAttribute('data-tip'))));
+      el.addEventListener('mouseleave', () => Tip.hide());
+    });
+  },
+
+  /** A ratio against a limit — same-ramp track, never a two-slice pie. */
+  meter(value, limit, opts) {
+    opts = opts || {};
+    const pct = limit > 0 ? clamp(value / limit, 0, 1.35) : 0;
+    const over = value > limit && limit > 0;
+    const fmt = opts.format || (v => String(v));
+    return `<div style="margin-top:10px">
+      <div class="flow-row between" style="margin-bottom:6px">
+        <span class="flow-label">${esc(opts.label || 'Budget')}</span>
+        <span style="font-size:12.5px;font-variant-numeric:tabular-nums">${esc(fmt(value))} / ${esc(fmt(limit))}</span>
+      </div>
+      <div style="height:8px;border-radius:999px;background:var(--f-surface-2);overflow:hidden">
+        <i style="display:block;height:100%;width:${(Math.min(pct, 1) * 100).toFixed(1)}%;background:${over ? 'var(--f-critical)' : 'var(--f-accent)'}"></i>
+      </div>
+      <div style="margin-top:6px;font-size:11.5px;color:${over ? 'var(--f-critical)' : 'var(--f-muted)'}">
+        ${over ? '⚠ Over budget by ' + esc(fmt(value - limit)) : esc((limit ? Math.round(pct * 100) : 0) + '% of budget used')}
+      </div></div>`;
+  }
+};
+/* =========================================================================
+ * 12 · Finance — receipt photos + OCR, statement import, spending analysis
+ * ====================================================================== */
+const EXPENSE_KEY = 'flow:expenses';
+
+function parseAmount(s) {
+  if (typeof s === 'number') return s;
+  let t = String(s == null ? '' : s).replace(/[^\d.,\-()]/g, '').trim();
+  if (!t) return NaN;
+  const neg = /^\(.*\)$/.test(String(s)) || t.indexOf('-') >= 0;
+  t = t.replace(/[()\-]/g, '');
+  const lastC = t.lastIndexOf(','), lastD = t.lastIndexOf('.');
+  if (lastC > lastD) t = t.replace(/\./g, '').replace(',', '.');       // 1.234,56
+  else if (lastD > lastC) t = t.replace(/,/g, '');                      // 1,234.56
+  else t = t.replace(/[.,]/g, '');
+  const v = parseFloat(t);
+  if (isNaN(v)) return NaN;
+  return neg ? -v : v;
+}
+
+function parseDateGuess(s, prefer) {
+  if (!s) return null;
+  const t = String(s).trim();
+  let m = t.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (m) return `${m[1]}-${pad(+m[2])}-${pad(+m[3])}`;
+  m = t.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})/);
+  if (m) {
+    let a = +m[1], b = +m[2], y = +m[3];
+    if (y < 100) y += 2000;
+    let d = a, mo = b;
+    if (prefer === 'mdy' || (a <= 12 && b > 12)) { mo = a; d = b; }
+    if (mo > 12) { const tmp = mo; mo = d; d = tmp; }
+    return `${y}-${pad(mo)}-${pad(d)}`;
+  }
+  const d2 = new Date(t);
+  return isNaN(d2.getTime()) ? null : isoDate(d2);
+}
+
+function splitCSV(text) {
+  const delim = (() => {
+    const head = text.split(/\r?\n/)[0] || '';
+    const counts = { ',': (head.match(/,/g) || []).length, ';': (head.match(/;/g) || []).length, '\t': (head.match(/\t/g) || []).length };
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || ',';
+  })();
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (c === '\r') { /* skip */ }
+    else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => norm(c)));
+}
+
+const Finance = {
+  items: [],
+  async load() { Finance.items = (await DB.get(EXPENSE_KEY, [])) || []; return Finance.items; },
+  save() { return DB.set(EXPENSE_KEY, Finance.items); },
+
+  categorise(merchant, note) {
+    const hay = (norm(merchant) + ' ' + norm(note)).toLowerCase();
+    const mem = Settings.get('merchantMemory') || {};
+    for (const m in mem) if (m && hay.indexOf(m) >= 0) return mem[m];
+    for (const [cat, keys] of DEFAULT_RULES) for (const k of keys) if (hay.indexOf(k) >= 0) return cat;
+    return 'Other';
+  },
+
+  async learn(merchant, category) {
+    const key = norm(merchant).toLowerCase().slice(0, 40);
+    if (!key || !category) return;
+    const mem = Object.assign({}, Settings.get('merchantMemory') || {});
+    mem[key] = category;
+    await Settings.set('merchantMemory', mem);
+  },
+
+  async add(rec) {
+    const item = Object.assign({
+      id: uid('e'), date: today(), time: '', amount: 0,
+      currency: Settings.get('currency'), merchant: '', category: '',
+      method: '', note: '', receiptId: null, source: 'manual',
+      created: new Date().toISOString()
+    }, rec);
+    if (!item.category) item.category = Finance.categorise(item.merchant, item.note);
+    Finance.items.push(item);
+    await Finance.save();
+    return item;
+  },
+
+  async remove(id) {
+    const it = Finance.items.find(x => x.id === id);
+    Finance.items = Finance.items.filter(x => x.id !== id);
+    if (it && it.receiptId) await DB.set('flow:receipt:' + it.receiptId, null);
+    await Finance.save();
+  },
+
+  inMonth(ym) { return Finance.items.filter(x => String(x.date).slice(0, 7) === ym); },
+
+  byCategory(items) {
+    const m = {};
+    items.forEach(x => { const c = x.category || 'Other'; m[c] = (m[c] || 0) + Math.abs(Number(x.amount) || 0); });
+    return Object.keys(m).map(k => ({ label: k, value: m[k] })).sort((a, b) => b.value - a.value);
+  },
+
+  byMonth(n) {
+    const out = [], now = new Date();
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+      const total = Finance.inMonth(ym).reduce((s, x) => s + Math.abs(Number(x.amount) || 0), 0);
+      out.push({ label: MON[d.getMonth()], value: Math.round(total) });
+    }
+    return out;
+  },
+
+  /* ---------- image handling ---------- */
+  compress(file, maxPx, quality) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('Could not read that file'));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('That file is not an image'));
+        img.onload = () => {
+          const scale = Math.min(1, (maxPx || 1400) / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', quality || 0.72));
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  },
+
+  /* ---------- OCR ---------- */
+  loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (Finance._tess) return Finance._tess;
+    Finance._tess = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
+      s.onload = () => res(window.Tesseract);
+      s.onerror = () => rej(new Error('Could not load the OCR engine (offline?)'));
+      document.head.appendChild(s);
+    });
+    return Finance._tess;
+  },
+
+  async ocr(dataUrl, onProgress) {
+    const T = await Finance.loadTesseract();
+    const langs = Settings.get('ocrLangs') || 'eng';
+    const res = await T.recognize(dataUrl, langs, {
+      logger: (m) => { if (m.status === 'recognizing text' && onProgress) onProgress(m.progress || 0); }
+    });
+    return (res && res.data && res.data.text) || '';
+  },
+
+  /** Pull merchant / total / date / time / VAT out of raw receipt text. */
+  parseReceipt(text) {
+    const lines = String(text).split(/\r?\n/).map(l => norm(l)).filter(Boolean);
+    const up = lines.map(l => l.toUpperCase());
+    const out = { merchant: '', amount: NaN, date: null, time: '', vat: NaN, raw: text };
+
+    const TOTAL_KEYS = ['GENEL TOPLAM', 'TOPLAM TUTAR', 'TOPLAM', 'TOTAL', 'AMOUNT DUE', 'TUTAR', 'ODENECEK', 'ÖDENECEK', 'GRAND TOTAL', 'SUM', 'NET TOPLAM'];
+    const VAT_KEYS = ['KDV', 'VAT', 'TAX'];
+    const numRe = /(-?[\d.,]{2,})/g;
+
+    // total: prefer the LAST line that mentions a total keyword
+    for (let i = up.length - 1; i >= 0 && isNaN(out.amount); i--) {
+      if (!TOTAL_KEYS.some(k => up[i].indexOf(k) >= 0)) continue;
+      const nums = (lines[i].match(numRe) || []).map(parseAmount).filter(n => !isNaN(n) && Math.abs(n) > 0);
+      if (nums.length) out.amount = Math.abs(nums[nums.length - 1]);
+      else if (lines[i + 1]) {
+        const n2 = (lines[i + 1].match(numRe) || []).map(parseAmount).filter(n => !isNaN(n) && n > 0);
+        if (n2.length) out.amount = Math.abs(n2[n2.length - 1]);
+      }
+    }
+    // fallback: biggest plausible money-looking number on the receipt
+    if (isNaN(out.amount)) {
+      const all = [];
+      lines.forEach(l => (l.match(numRe) || []).forEach(t => {
+        if (!/[.,]\d{2}\b/.test(t)) return;
+        const v = parseAmount(t);
+        if (!isNaN(v) && v > 0 && v < 1e7) all.push(Math.abs(v));
+      }));
+      if (all.length) out.amount = Math.max.apply(null, all);
+    }
+
+    for (let i = 0; i < up.length && isNaN(out.vat); i++) {
+      if (!VAT_KEYS.some(k => up[i].indexOf(k) >= 0)) continue;
+      const nums = (lines[i].match(numRe) || []).map(parseAmount).filter(n => !isNaN(n) && n > 0);
+      if (nums.length) out.vat = Math.abs(nums[nums.length - 1]);
+    }
+
+    for (const l of lines) {
+      const dm = l.match(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})|(\d{4}-\d{2}-\d{2})/);
+      if (dm && !out.date) out.date = parseDateGuess(dm[0]);
+      const tm = l.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+      if (tm && !out.time) out.time = pad(+tm[1]) + ':' + tm[2];
+      if (out.date && out.time) break;
+    }
+
+    for (const l of lines.slice(0, 6)) {
+      const letters = (l.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/g) || []).length;
+      if (letters >= 4 && l.length <= 44 && !/FIS|FİŞ|RECEIPT|TARIH|TARİH|SAAT|NO:/i.test(l)) { out.merchant = l; break; }
+    }
+    if (!out.merchant && lines.length) out.merchant = lines[0].slice(0, 44);
+    return out;
+  },
+
+  /* ---------- statement import ---------- */
+  mapColumns(header) {
+    const h = header.map(x => norm(x).toLowerCase());
+    const find = (cands) => {
+      for (let i = 0; i < h.length; i++) for (const c of cands) if (h[i].indexOf(c) >= 0) return i;
+      return -1;
+    };
+    return {
+      date: find(['tarih', 'date', 'işlem tarihi', 'islem tarihi', 'valör', 'valor', 'booking']),
+      desc: find(['açıklama', 'aciklama', 'description', 'detay', 'işlem', 'islem', 'narrative', 'merchant', 'payee', 'memo', 'title']),
+      amount: find(['tutar', 'amount', 'miktar', 'işlem tutarı', 'islem tutari', 'value', 'debit/credit', 'betrag']),
+      debit: find(['borç', 'borc', 'debit', 'çıkan', 'cikan', 'withdrawal', 'harcama']),
+      credit: find(['alacak', 'credit', 'giren', 'deposit', 'yatan']),
+      currency: find(['para birimi', 'currency', 'döviz', 'doviz', 'pb'])
+    };
+  },
+
+  parseStatement(text, opts) {
+    opts = opts || {};
+    const rows = splitCSV(text);
+    if (rows.length < 2) return { items: [], skipped: 0, header: [] };
+    const header = rows[0];
+    const map = opts.map || Finance.mapColumns(header);
+    const out = []; let skipped = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const dateRaw = map.date >= 0 ? r[map.date] : '';
+      const date = parseDateGuess(dateRaw, opts.prefer);
+      if (!date) { skipped++; continue; }
+
+      let amount = NaN;
+      if (map.amount >= 0) amount = parseAmount(r[map.amount]);
+      if (isNaN(amount) && map.debit >= 0) { const d = parseAmount(r[map.debit]); if (!isNaN(d) && d !== 0) amount = -Math.abs(d); }
+      if (isNaN(amount) && map.credit >= 0) { const c = parseAmount(r[map.credit]); if (!isNaN(c) && c !== 0) amount = Math.abs(c); }
+      if (isNaN(amount) || amount === 0) { skipped++; continue; }
+      if (opts.spendOnly !== false && amount > 0) { skipped++; continue; }   // keep money going out
+
+      const desc = map.desc >= 0 ? norm(r[map.desc]) : '';
+      out.push({
+        date, amount: Math.abs(amount), merchant: desc.slice(0, 80),
+        currency: (map.currency >= 0 ? norm(r[map.currency]) : '') || Settings.get('currency'),
+        note: 'Imported from statement', source: 'statement',
+        category: Finance.categorise(desc, '')
+      });
+    }
+    return { items: out, skipped, header, map };
+  },
+
+  async importItems(items) {
+    // de-duplicate against what is already stored: date + amount + merchant
+    const seen = {};
+    Finance.items.forEach(x => { seen[`${x.date}|${Math.abs(x.amount).toFixed(2)}|${norm(x.merchant).toLowerCase().slice(0, 24)}`] = 1; });
+    let added = 0, dupes = 0;
+    for (const it of items) {
+      const k = `${it.date}|${Math.abs(it.amount).toFixed(2)}|${norm(it.merchant).toLowerCase().slice(0, 24)}`;
+      if (seen[k]) { dupes++; continue; }
+      seen[k] = 1;
+      Finance.items.push(Object.assign({ id: uid('e'), created: new Date().toISOString(), time: '', method: '', receiptId: null }, it));
+      added++;
+    }
+    await Finance.save();
+    return { added, dupes };
+  }
+};
+
+/* =========================================================================
+ * 13 · Notes — nested bracket sections, explicit save + autosave
+ * ====================================================================== */
+const NOTES_KEY = 'flow:notes';
+
+function newBracket(title) {
+  return { id: uid('b'), title: title || 'New section', content: '', collapsed: false, children: [], remind: false, due: '' };
+}
+function walkBrackets(list, fn, parent) {
+  (list || []).forEach(b => { fn(b, parent); walkBrackets(b.children, fn, b); });
+}
+function findBracket(list, id) {
+  let hit = null;
+  walkBrackets(list, (b) => { if (b.id === id) hit = b; });
+  return hit;
+}
+function removeBracket(list, id) {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].id === id) { list.splice(i, 1); return true; }
+    if (removeBracket(list[i].children || [], id)) return true;
+  }
+  return false;
+}
+
+const Notes = {
+  book: {},           // notebookId -> { id, title, brackets:[], updated }
+  dirty: {},
+
+  async load() { Notes.book = (await DB.get(NOTES_KEY, {})) || {}; return Notes.book; },
+
+  get(id, title) {
+    if (!Notes.book[id]) Notes.book[id] = { id, title: title || id, brackets: [newBracket('Notes')], updated: null };
+    if (!Notes.book[id].brackets) Notes.book[id].brackets = [];
+    return Notes.book[id];
+  },
+
+  async saveAll(silent) {
+    const ok = await DB.set(NOTES_KEY, Notes.book);
+    Notes.dirty = {};
+    if (!silent) toast(ok ? 'Notes saved ✓' : 'Saved on this device — will sync when back online', ok ? null : 'warn');
+    $$('.flow-note-status').forEach(el => {
+      el.textContent = ok ? 'Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Saved locally (offline)';
+      el.className = 'flow-note-status ' + (ok ? 'ok' : 'pending');
+    });
+    return ok;
+  },
+
+  autosave: debounce(() => { Notes.saveAll(true); }, 1400),
+
+  markDirty(id) {
+    Notes.dirty[id] = true;
+    $$('.flow-note-status[data-book="' + id + '"]').forEach(el => {
+      el.textContent = 'Unsaved changes…'; el.className = 'flow-note-status pending';
+    });
+    Notes.autosave();
+  },
+
+  /** Brackets flagged "remind" become iOS reminders. */
+  asReminders() {
+    const out = [];
+    Object.keys(Notes.book).forEach(id => {
+      walkBrackets(Notes.book[id].brackets, (b) => {
+        if (!b.remind) return;
+        out.push({
+          key: 'note::' + b.id, text: b.title, tab: id,
+          date: b.due || today(), time: '', dur: 30,
+          note: (b.content || '').slice(0, 400), done: false, source: 'note'
+        });
+      });
+    });
+    return out;
+  },
+
+  /* ---------- rendering ---------- */
+  renderBracket(b, bookId, depth) {
+    return `
+      <div class="flow-bracket${b.collapsed ? ' collapsed' : ''}" data-b="${b.id}" data-book="${bookId}">
+        <div class="bh">
+          <button class="tw" data-act="toggle" title="Collapse / expand">${b.collapsed ? '▶' : '▼'}</button>
+          <input class="bt" data-act="title" value="${esc(b.title)}" placeholder="Section title…">
+          <span class="flow-chip${b.remind ? ' accent' : ''}" data-act="remind" style="cursor:pointer"
+                title="Send this section to iOS Reminders">${b.remind ? '🔔 reminder' : '🔕'}</span>
+          <button class="flow-btn ghost sm" data-act="del" title="Delete section">✕</button>
+        </div>
+        <div class="bb">
+          <textarea data-act="content" placeholder="Write here — it saves automatically and when you press Save notes.">${esc(b.content)}</textarea>
+          ${b.remind ? `<div class="flow-row" style="margin-top:8px">
+              <span class="flow-label">Remind on</span>
+              <input class="flow-in" type="date" data-act="due" value="${esc(b.due || today())}">
+            </div>` : ''}
+          <div class="bactions">
+            <button class="flow-btn sm" data-act="addChild">+ Sub-section</button>
+            ${depth === 0 ? '<button class="flow-btn sm" data-act="addSibling">+ Section below</button>' : ''}
+          </div>
+          <div class="kids">${(b.children || []).map(c => Notes.renderBracket(c, bookId, depth + 1)).join('')}</div>
+        </div>
+      </div>`;
+  },
+
+  renderBook(bookId, title) {
+    const bk = Notes.get(bookId, title);
+    return `
+      <div class="flow-row between" style="margin-bottom:10px">
+        <span class="flow-label">${esc(bk.title)} · notes</span>
+        <span class="flow-row">
+          <span class="flow-note-status" data-book="${bookId}">${bk.updated ? 'Saved ' + esc(String(bk.updated).slice(11, 16)) : 'Not saved yet'}</span>
+          <button class="flow-btn primary sm" data-act="save" data-book="${bookId}">💾 Save notes</button>
+        </span>
+      </div>
+      <div data-notes-body="${bookId}">
+        ${bk.brackets.map(b => Notes.renderBracket(b, bookId, 0)).join('') || '<p class="flow-empty">No sections yet.</p>'}
+      </div>
+      <div class="flow-row" style="margin-top:10px">
+        <button class="flow-btn" data-act="addRoot" data-book="${bookId}">+ Add bracket section</button>
+        <button class="flow-btn" data-act="toReminders" data-book="${bookId}">🔔 Send flagged → Reminders</button>
+      </div>`;
+  },
+
+  /** One delegated handler serves every notes editor on the page. */
+  bind(root) {
+    if (root.__flowNotesBound) return;
+    root.__flowNotesBound = true;
+
+    root.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const act = btn.getAttribute('data-act');
+      const host = btn.closest('[data-b]');
+      const bookId = (host && host.getAttribute('data-book')) || btn.getAttribute('data-book');
+      if (!bookId) return;
+      const bk = Notes.get(bookId);
+      const b = host ? findBracket(bk.brackets, host.getAttribute('data-b')) : null;
+
+      if (act === 'toggle' && b) { b.collapsed = !b.collapsed; Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'del' && b) {
+        if (!confirm('Delete "' + b.title + '" and everything inside it?')) return;
+        removeBracket(bk.brackets, b.id); Notes.markDirty(bookId); Notes.repaint(root, bookId);
+      }
+      else if (act === 'addChild' && b) { b.children = b.children || []; b.children.push(newBracket('Sub-section')); b.collapsed = false; Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'addSibling') { bk.brackets.push(newBracket('New section')); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'addRoot') { bk.brackets.push(newBracket('New section')); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'remind' && b) { b.remind = !b.remind; if (b.remind && !b.due) b.due = today(); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'save') { bk.updated = new Date().toISOString(); await Notes.saveAll(false); }
+      else if (act === 'toReminders') {
+        const recs = Notes.asReminders().filter(r => r.tab === bookId);
+        if (!recs.length) { toast('Flag a section with 🔕 → 🔔 first.', 'warn'); return; }
+        Reminders.exportICS(recs);
+      }
+    });
+
+    const onEdit = (e) => {
+      const f = e.target.closest('[data-act]');
+      if (!f) return;
+      const act = f.getAttribute('data-act');
+      const host = f.closest('[data-b]');
+      if (!host) return;
+      const bookId = host.getAttribute('data-book');
+      const bk = Notes.get(bookId);
+      const b = findBracket(bk.brackets, host.getAttribute('data-b'));
+      if (!b) return;
+      if (act === 'title') b.title = f.value;
+      else if (act === 'content') b.content = f.value;
+      else if (act === 'due') b.due = f.value;
+      else return;
+      bk.updated = new Date().toISOString();
+      Notes.markDirty(bookId);
+    };
+    root.addEventListener('input', onEdit);
+  },
+
+  repaint(root, bookId) {
+    const body = root.querySelector('[data-notes-body="' + bookId + '"]');
+    if (!body) return;
+    const bk = Notes.get(bookId);
+    body.innerHTML = bk.brackets.map(b => Notes.renderBracket(b, bookId, 0)).join('') || '<p class="flow-empty">No sections yet.</p>';
+  },
+
+  /** Collapsed notes drawer appended to each of the app's own sections. */
+  mountInline(section, bookId, title) {
+    if (section.querySelector('[data-flow-notes-drawer]')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'flow-x';
+    wrap.setAttribute('data-flow-notes-drawer', bookId);
+    wrap.style.margin = '18px 0 6px';
+    const bk = Notes.get(bookId, title);
+    let count = 0; walkBrackets(bk.brackets, () => count++);
+
+    wrap.innerHTML = `
+      <button class="flow-btn" data-flow-notes-toggle style="width:100%;text-align:left;border-radius:12px">
+        📝 Notes for ${esc(title)} <span class="flow-chip" style="margin-left:8px">${count} section${count === 1 ? '' : 's'}</span>
+      </button>
+      <div class="flow-card" data-flow-notes-panel style="display:none">${Notes.renderBook(bookId, title)}</div>`;
+    section.appendChild(wrap);
+
+    const toggle = wrap.querySelector('[data-flow-notes-toggle]');
+    const panel = wrap.querySelector('[data-flow-notes-panel]');
+    toggle.addEventListener('click', () => {
+      const open = panel.style.display !== 'none';
+      panel.style.display = open ? 'none' : 'block';
+      if (!open) Notes.repaint(panel, bookId);
+    });
+    Notes.bind(wrap);
+  }
+};
+
+/* =========================================================================
+ * 14 · Live roll-up of the app's own tabs (for the Artur dashboard)
+ * ====================================================================== */
+const Rollup = {
+  sections() {
+    return $$('.section').filter(s => s.id && s.id.indexOf('tab-') === 0 && !s.classList.contains('flow-section'));
+  },
+  labelFor(name) {
+    const pill = $(`[data-tab="${name}"]`);
+    return pill ? norm(pill.textContent) : name;
+  },
+  statsIn(section) {
+    return $$('.stat', section).map(el => {
+      const kids = Array.prototype.slice.call(el.children).filter(n => norm(n.textContent));
+      if (kids.length >= 2) return { value: norm(kids[0].textContent), label: norm(kids[kids.length - 1].textContent) };
+      const t = norm(el.textContent); const sp = t.indexOf(' ');
+      return { value: sp > 0 ? t.slice(0, sp) : t, label: sp > 0 ? t.slice(sp + 1) : '' };
+    }).filter(s => s.value);
+  },
+  checks(section) {
+    const boxes = $$('input[type=checkbox]', section).filter(b => !b.closest('.flow-x'));
+    return { total: boxes.length, done: boxes.filter(b => b.checked).length };
+  },
+  all() {
+    return Rollup.sections().map(sec => {
+      const name = sec.id.slice(4);
+      return { name, label: Rollup.labelFor(name), stats: Rollup.statsIn(sec), checks: Rollup.checks(sec) };
+    });
+  },
+  headline(max) {
+    const picked = [];
+    Rollup.all().forEach(s => s.stats.forEach(st => { if (picked.length < (max || 8)) picked.push({ tab: s.label, value: st.value, label: st.label }); }));
+    return picked;
+  }
+};
+
+/* =========================================================================
+ * 15 · The Artur tab
+ * ====================================================================== */
+const Artur = {
+  render(section) {
+    const s = Settings.data;
+    const now = new Date();
+    const wk = isoWeek(now);
+    const ws = startOfWeek(now, s.weekStart);
+    const weekFrom = isoDate(ws), weekTo = isoDate(addDays(ws, 6));
+
+    const todayItems = Schedule.onDate(today());
+    const weekItems = Schedule.between(weekFrom, weekTo);
+    const overdue = Schedule.scheduled().filter(r => !r.done && r.date < today());
+    const ym = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const monthSpend = Finance.inMonth(ym).reduce((a, x) => a + Math.abs(Number(x.amount) || 0), 0);
+    const cats = Finance.byCategory(Finance.inMonth(ym));
+    const rolls = Rollup.all();
+    const allChecks = rolls.reduce((a, r) => ({ total: a.total + r.checks.total, done: a.done + r.checks.done }), { total: 0, done: 0 });
+    const budget = Number(s.budgetMonthly) || 0;
+
+    section.innerHTML = `
+      <div class="flow-row between" style="margin:6px 0 2px">
+        <div>
+          <div class="flow-label">${esc(DOW[now.getDay()])}, ${now.getDate()} ${esc(MON[now.getMonth()])} ${now.getFullYear()} · week ${wk.week}</div>
+          <div class="flow-hero">${esc(s.displayName || 'Artur')}</div>
+        </div>
+        <div class="flow-row">
+          <button class="flow-btn" data-a="refresh">↻ Refresh</button>
+          <button class="flow-btn primary" data-a="settings">⚙ Settings</button>
+        </div>
+      </div>
+
+      <div class="flow-grid c4" style="margin-top:16px">
+        <div class="flow-stat"><div class="v">${todayItems.filter(t => !t.done).length}</div><div class="l">Scheduled today</div>
+          <div class="d">${todayItems.length ? esc(todayItems.filter(t => t.done).length + ' already done') : 'nothing on the clock yet'}</div></div>
+        <div class="flow-stat"><div class="v">${weekItems.length}</div><div class="l">Scheduled this week</div>
+          <div class="d">${esc(prettyDate(weekFrom))} → ${esc(prettyDate(weekTo))}</div></div>
+        <div class="flow-stat"><div class="v" style="${overdue.length ? 'color:var(--f-critical)' : ''}">${overdue.length}</div><div class="l">Overdue</div>
+          <div class="d">${overdue.length ? '⚠ needs rescheduling' : 'all clear'}</div></div>
+        <div class="flow-stat"><div class="v">${allChecks.total ? Math.round(allChecks.done / allChecks.total * 100) : 0}%</div><div class="l">Checkboxes ticked</div>
+          <div class="d">${allChecks.done} of ${allChecks.total} across every tab</div></div>
+      </div>
+
+      <div class="flow-grid c2">
+        <div class="flow-card">
+          <h3>⏱ Today</h3>
+          <p class="flow-sub">Everything you gave a time to, from any tab. Add times with the 🕘 chip that now sits on every task row.</p>
+          ${Artur.timeline(todayItems)}
+          <div class="flow-row" style="margin-top:12px">
+            <input class="flow-in grow" id="ar-new" placeholder="Add something to today…">
+            <input class="flow-in" type="time" id="ar-time" style="width:110px">
+            <button class="flow-btn primary" data-a="add">Add</button>
+          </div>
+        </div>
+
+        <div class="flow-card">
+          <h3>📅 Rest of the week</h3>
+          <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots.</p>
+          ${Artur.weekList(overdue, weekItems)}
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <h3>📤 Send this to your calendar</h3>
+        <p class="flow-sub">Apple downloads a standard .ics you open on your Mac or iPhone. Google writes straight into your calendar and updates the same events on every later export instead of duplicating them.</p>
+        <div class="flow-row">
+          <span class="flow-label">Range</span>
+          <select class="flow-in" id="ar-range">
+            <option value="week">This week</option>
+            <option value="2weeks">Next 2 weeks</option>
+            <option value="4weeks" selected>Next 4 weeks</option>
+            <option value="12weeks">Next 12 weeks</option>
+            <option value="all">Everything</option>
+          </select>
+          <button class="flow-btn" data-a="ics"> Apple Calendar (.ics)</button>
+          <button class="flow-btn" data-a="gcal">📆 Google Calendar</button>
+          <button class="flow-btn" data-a="rem">🔔 iOS Reminders</button>
+          <span class="flow-spacer"></span>
+          <span class="flow-note-status" id="ar-calstatus"></span>
+        </div>
+      </div>
+
+      <div class="flow-grid c2">
+        <div class="flow-card">
+          <h3>💰 ${esc(MON[now.getMonth()])} spending</h3>
+          <p class="flow-sub">From receipts you photograph and statements you import, in the Finances tab.</p>
+          <div class="flow-hero" style="font-size:38px">${esc(money(monthSpend, s.currency))}</div>
+          ${budget ? Chart.meter(monthSpend, budget, { label: 'Monthly budget', format: v => money(v, s.currency) }) : '<p class="flow-empty">Set a monthly budget in Settings to track it here.</p>'}
+          ${cats.length ? `<div style="margin-top:16px">${Chart.bars(cats.slice(0, 6), { format: v => money(v, s.currency), labelWidth: 120, title: 'Spending by category' })}</div>` : '<p class="flow-empty">No expenses logged this month yet.</p>'}
+        </div>
+
+        <div class="flow-card">
+          <h3>📊 Live roll-up</h3>
+          <p class="flow-sub">Read straight off your existing tabs as they stand right now — no duplicate data entry.</p>
+          <div class="flow-scroll"><table class="flow-table">
+            <thead><tr><th>Tab</th><th class="num">Ticked</th><th>Headline</th></tr></thead>
+            <tbody>${rolls.map(r => `
+              <tr><td>${esc(r.label)}</td>
+                  <td class="num">${r.checks.total ? r.checks.done + '/' + r.checks.total : '—'}</td>
+                  <td>${r.stats.slice(0, 2).map(st => `<span class="flow-chip">${esc(st.value)} · ${esc(String(st.label).toLowerCase().slice(0, 26))}</span>`).join(' ') || '<span style="color:var(--f-muted)">—</span>'}</td></tr>`).join('')}
+            </tbody></table></div>
+        </div>
+      </div>
+
+      ${Journal.entries.some(e => e.date === today()) ? '' : `
+      <div class="flow-card" style="border-color:rgba(23,187,146,.3)">
+        <div class="flow-row between">
+          <div>
+            <h3 style="margin:0">📓 Today isn't written yet</h3>
+            <p class="flow-sub" style="margin:4px 0 0">${Journal.streak() ? Journal.streak() + ' day streak going. ' : ''}Two minutes now beats reconstructing the week on Sunday.</p>
+          </div>
+          <button class="flow-btn primary" data-a="journal">Write today's entry</button>
+        </div>
+      </div>`}
+
+      <div class="flow-card" data-artur-notes></div>`;
+
+    // notes for the Artur tab itself
+    const nb = section.querySelector('[data-artur-notes]');
+    nb.innerHTML = Notes.renderBook('artur', 'Artur');
+    Notes.bind(nb);
+    Chart.hydrate(section);
+
+    section.querySelectorAll('[data-a]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const a = btn.getAttribute('data-a');
+        const range = () => (section.querySelector('#ar-range') || {}).value || '4weeks';
+        const status = section.querySelector('#ar-calstatus');
+        if (a === 'refresh') Artur.render(section);
+        else if (a === 'settings') Tabs.activate('settings');
+        else if (a === 'journal') {
+          const jt = $$('[data-tab]').find(p => /journal|📓/i.test(p.textContent));
+          if (jt) { jt.click(); setTimeout(() => { const b = $('#jr-body'); if (b) { b.scrollIntoView({ behavior: 'smooth', block: 'center' }); b.focus(); } }, 350); }
+        }
+        else if (a === 'ics') Calendar.exportApple(range());
+        else if (a === 'gcal') Calendar.exportGoogle(range(), status);
+        else if (a === 'rem') Reminders.exportICS();
+        else if (a === 'add') {
+          const t = section.querySelector('#ar-new');
+          const tm = section.querySelector('#ar-time');
+          const text = norm(t.value);
+          if (!text) { toast('Type something first.', 'warn'); return; }
+          const key = 'planner::' + uid('p');
+          Schedule.put(key, { text, tab: 'planner', date: today(), time: tm.value || '', dur: Settings.get('defaultDurationMin'), done: false, source: 'planner' });
+          await Schedule.saveNow();
+          t.value = ''; tm.value = '';
+          Artur.render(section);
+          toast('Added to today ✓');
+        }
+      });
+    });
+
+    section.querySelectorAll('[data-done]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        Schedule.put(cb.getAttribute('data-done'), { done: cb.checked });
+        await Schedule.saveNow();
+        TimeChips.repaintAll();
+        cb.closest('li') && cb.closest('li').classList.toggle('done', cb.checked);
+      });
+    });
+    section.querySelectorAll('[data-del]').forEach(b => {
+      b.addEventListener('click', async () => {
+        Schedule.remove(b.getAttribute('data-del'));
+        await Schedule.saveNow(); TimeChips.repaintAll(); Artur.render(section);
+      });
+    });
+  },
+
+  timeline(items) {
+    if (!items.length) return '<p class="flow-empty">Nothing scheduled for today. Give a task a time with the 🕘 chip on any tab, or add one below.</p>';
+    return '<ul class="flow-tl">' + items.map(r => `
+      <li class="${r.done ? 'done' : ''}">
+        <span class="tm ${r.time ? '' : 'none'}">${esc(r.time || '—')}</span>
+        <span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}${r.dur ? ' · ' + r.dur + ' min' : ''}</small></span>
+        <span class="flow-row">
+          <input type="checkbox" data-done="${esc(r.key)}" ${r.done ? 'checked' : ''} title="Mark done">
+          ${r.source === 'planner' ? `<button class="flow-btn ghost sm" data-del="${esc(r.key)}" title="Remove">✕</button>` : ''}
+        </span>
+      </li>`).join('') + '</ul>';
+  },
+
+  weekList(overdue, week) {
+    const rest = week.filter(r => r.date > today());
+    if (!overdue.length && !rest.length) return '<p class="flow-empty">The rest of the week is open.</p>';
+    let html = '';
+    if (overdue.length) {
+      html += `<div class="flow-label" style="color:var(--f-critical);margin-bottom:6px">⚠ Overdue</div><ul class="flow-tl">` +
+        overdue.slice(0, 6).map(r => `<li><span class="tm none">${esc(prettyDate(r.date))}</span><span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span><span></span></li>`).join('') + '</ul>';
+    }
+    const byDay = {};
+    rest.forEach(r => { (byDay[r.date] = byDay[r.date] || []).push(r); });
+    Object.keys(byDay).sort().forEach(d => {
+      html += `<div class="flow-label" style="margin:12px 0 4px">${esc(prettyDate(d))}</div><ul class="flow-tl">` +
+        byDay[d].map(r => `<li class="${r.done ? 'done' : ''}"><span class="tm ${r.time ? '' : 'none'}">${esc(r.time || '—')}</span><span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span><span></span></li>`).join('') + '</ul>';
+    });
+    return html;
+  }
+};
+
+/* =========================================================================
+ * 16 · Finance UI — injected into the app's own Finances tab
+ * ====================================================================== */
+const FinanceUI = {
+  state: { photo: null, parsed: null, staged: null },
+
+  mount(section) {
+    if (section.querySelector('[data-flow-finance]')) { FinanceUI.repaint(section); return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'flow-x';
+    wrap.setAttribute('data-flow-finance', '1');
+    section.appendChild(wrap);
+    FinanceUI.repaint(section);
+  },
+
+  repaint(section) {
+    const wrap = section.querySelector('[data-flow-finance]');
+    if (!wrap) return;
+    const s = Settings.data;
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const month = Finance.inMonth(ym);
+    const total = month.reduce((a, x) => a + Math.abs(Number(x.amount) || 0), 0);
+    const cats = Finance.byCategory(month);
+    const trend = Finance.byMonth(6);
+    const recent = Finance.items.slice().sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''))).slice(0, 25);
+    const budget = Number(s.budgetMonthly) || 0;
+
+    wrap.innerHTML = `
+      <div class="flow-card">
+        <h3>📸 Snap a receipt</h3>
+        <p class="flow-sub">Photograph an invoice or till receipt and the text is read on your device — nothing is uploaded anywhere. Merchant, total, date and time are filled in for you; correct anything that came out wrong and save.</p>
+        <div class="flow-drop" data-fa="pick">
+          Tap to take a photo or choose an image<br>
+          <span style="font-size:11.5px">JPG · PNG · HEIC · works offline after the first run</span>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="fx-file" style="display:none">
+        <div class="flow-prog" id="fx-prog" style="display:none"><i></i></div>
+        <div id="fx-result" style="margin-top:14px"></div>
+      </div>
+
+      <div class="flow-card">
+        <h3>➕ Add an expense by hand</h3>
+        <div class="flow-grid c4" style="gap:10px">
+          <div class="flow-field"><label class="flow-label">Date</label><input class="flow-in" type="date" id="fx-date" value="${today()}"></div>
+          <div class="flow-field"><label class="flow-label">Time</label><input class="flow-in" type="time" id="fx-time"></div>
+          <div class="flow-field"><label class="flow-label">Amount</label><input class="flow-in" type="number" step="0.01" id="fx-amt" placeholder="0.00"></div>
+          <div class="flow-field"><label class="flow-label">Category</label>
+            <select class="flow-in" id="fx-cat">${s.categories.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
+        </div>
+        <div class="flow-row" style="margin-top:10px">
+          <input class="flow-in grow" id="fx-merch" placeholder="Merchant / description">
+          <input class="flow-in" id="fx-note" placeholder="Note (optional)" style="flex:1 1 160px">
+          <button class="flow-btn primary" data-fa="addManual">Add expense</button>
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <h3>🏦 Import a bank statement</h3>
+        <p class="flow-sub">Export CSV from your internet banking, drop it here, and every line is dated, categorised and de-duplicated against what you already have. Re-importing an overlapping file is safe.</p>
+        <div class="flow-drop" data-fa="pickCsv">Drop a CSV here, or tap to choose one</div>
+        <input type="file" accept=".csv,.txt,text/csv" id="fx-csv" style="display:none">
+        <div id="fx-csvresult" style="margin-top:12px"></div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--f-muted)">Why not connect the bank directly?</summary>
+          <p class="flow-sub" style="margin-top:8px">Direct bank connections go through an aggregator — Plaid (US/CA/UK/EU), GoCardless Bank Account Data (free, EU/UK), or Salt Edge (widest coverage, includes Turkey). All three need a signed-up account, server-side API keys and, for the EU ones, a licensed agent agreement. Turkish banks in particular are thin on aggregator coverage, which is why statement import is the path that actually works today. When you have credentials, set the provider in Settings and the server add-on will pull transactions on the same schedule.</p>
+        </details>
+      </div>
+
+      <div class="flow-grid c2">
+        <div class="flow-card">
+          <h3>Where ${esc(MON[now.getMonth()])} went</h3>
+          <p class="flow-sub">${month.length} expense${month.length === 1 ? '' : 's'} · ${esc(money(total, s.currency))} total</p>
+          ${budget ? Chart.meter(total, budget, { label: 'Monthly budget', format: v => money(v, s.currency) }) : ''}
+          <div style="margin-top:14px">${cats.length ? Chart.bars(cats, { format: v => money(v, s.currency), title: 'Spending by category' }) : '<p class="flow-empty">Nothing logged this month yet.</p>'}</div>
+        </div>
+        <div class="flow-card">
+          <h3>Last 6 months</h3>
+          <p class="flow-sub">Total spend per month, so a bad month is obvious before the next one starts.</p>
+          ${Chart.line(trend, { format: v => money(v, s.currency).replace(/[.,]00$/, ''), title: 'Monthly spend' })}
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <div class="flow-row between">
+          <h3 style="margin:0">Recent expenses</h3>
+          <span class="flow-row">
+            <button class="flow-btn sm" data-fa="exportCsv">↓ Export CSV</button>
+            <button class="flow-btn sm" data-fa="exportJson">↓ Backup JSON</button>
+          </span>
+        </div>
+        <div class="flow-scroll" style="margin-top:12px">
+          <table class="flow-table">
+            <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th></th></tr></thead>
+            <tbody>${recent.length ? recent.map(x => `
+              <tr>
+                <td style="white-space:nowrap">${esc(prettyDate(x.date))}${x.time ? ' <span style="color:var(--f-muted)">' + esc(x.time) + '</span>' : ''}</td>
+                <td>${esc(String(x.merchant || '—').slice(0, 46))}${x.receiptId ? ' <span class="flow-chip" data-fa="viewRcpt" data-id="' + esc(x.id) + '" style="cursor:pointer">📸</span>' : ''}</td>
+                <td><select class="flow-in" data-recat="${esc(x.id)}" style="padding:3px 6px;font-size:11.5px">${s.categories.map(c => `<option${c === x.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></td>
+                <td class="num">${esc(money(Math.abs(x.amount), x.currency || s.currency))}</td>
+                <td><button class="flow-btn ghost sm" data-fa="del" data-id="${esc(x.id)}">✕</button></td>
+              </tr>`).join('') : '<tr><td colspan="5" class="flow-empty">No expenses yet — snap a receipt or import a statement above.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    FinanceUI.bind(section, wrap);
+    Chart.hydrate(wrap);
+  },
+
+  bind(section, wrap) {
+    const fileEl = wrap.querySelector('#fx-file');
+    const csvEl = wrap.querySelector('#fx-csv');
+
+    wrap.addEventListener('click', async (e) => {
+      const t = e.target.closest('[data-fa]');
+      if (!t) return;
+      const a = t.getAttribute('data-fa');
+
+      if (a === 'pick') fileEl.click();
+      else if (a === 'pickCsv') csvEl.click();
+      else if (a === 'addManual') {
+        const amt = parseFloat(wrap.querySelector('#fx-amt').value);
+        if (isNaN(amt) || amt === 0) { toast('Enter an amount.', 'warn'); return; }
+        await Finance.add({
+          date: wrap.querySelector('#fx-date').value || today(),
+          time: wrap.querySelector('#fx-time').value || '',
+          amount: Math.abs(amt),
+          merchant: norm(wrap.querySelector('#fx-merch').value),
+          category: wrap.querySelector('#fx-cat').value,
+          note: norm(wrap.querySelector('#fx-note').value),
+          source: 'manual'
+        });
+        toast('Expense added ✓');
+        FinanceUI.repaint(section);
+      }
+      else if (a === 'del') { await Finance.remove(t.getAttribute('data-id')); toast('Deleted'); FinanceUI.repaint(section); }
+      else if (a === 'viewRcpt') {
+        const it = Finance.items.find(x => x.id === t.getAttribute('data-id'));
+        if (!it) return;
+        const img = await DB.get('flow:receipt:' + it.receiptId, null);
+        if (!img) { toast('That receipt image is no longer stored.', 'warn'); return; }
+        const w = window.open('', '_blank');
+        if (w) w.document.write(`<title>Receipt · ${esc(it.merchant)}</title><body style="margin:0;background:#111"><img src="${img}" style="max-width:100%;display:block;margin:auto"></body>`);
+      }
+      else if (a === 'exportCsv') {
+        const rows = [['date', 'time', 'merchant', 'category', 'amount', 'currency', 'note', 'source']]
+          .concat(Finance.items.map(x => [x.date, x.time || '', x.merchant || '', x.category || '', Math.abs(x.amount), x.currency || '', (x.note || '').replace(/"/g, "'"), x.source || '']));
+        download(`the-flow-expenses-${today()}.csv`,
+          rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
+      }
+      else if (a === 'exportJson') download(`the-flow-expenses-${today()}.json`, JSON.stringify(Finance.items, null, 2), 'application/json');
+      else if (a === 'saveParsed') {
+        const p = FinanceUI.state.parsed || {};
+        const amt = parseFloat(wrap.querySelector('#fr-amt').value);
+        if (isNaN(amt) || amt === 0) { toast('Check the amount before saving.', 'warn'); return; }
+        let receiptId = null;
+        if (FinanceUI.state.photo) { receiptId = uid('r'); await DB.set('flow:receipt:' + receiptId, FinanceUI.state.photo); }
+        const merchant = norm(wrap.querySelector('#fr-merch').value);
+        const category = wrap.querySelector('#fr-cat').value;
+        await Finance.add({
+          date: wrap.querySelector('#fr-date').value || today(),
+          time: wrap.querySelector('#fr-time').value || '',
+          amount: Math.abs(amt), merchant, category,
+          note: norm(wrap.querySelector('#fr-note').value), receiptId, source: 'ocr'
+        });
+        await Finance.learn(merchant, category);
+        FinanceUI.state = { photo: null, parsed: null, staged: null };
+        toast('Receipt saved ✓');
+        FinanceUI.repaint(section);
+      }
+      else if (a === 'discard') { FinanceUI.state = { photo: null, parsed: null, staged: null }; wrap.querySelector('#fx-result').innerHTML = ''; }
+      else if (a === 'rawText') {
+        const box = wrap.querySelector('#fr-raw');
+        if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+      }
+      else if (a === 'confirmCsv') {
+        const staged = FinanceUI.state.staged || [];
+        const res = await Finance.importItems(staged);
+        toast(`Imported ${res.added} expense${res.added === 1 ? '' : 's'}${res.dupes ? ` · ${res.dupes} duplicate${res.dupes === 1 ? '' : 's'} skipped` : ''} ✓`, null, 4200);
+        FinanceUI.state.staged = null;
+        FinanceUI.repaint(section);
+      }
+    });
+
+    wrap.addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-recat]');
+      if (sel) {
+        const it = Finance.items.find(x => x.id === sel.getAttribute('data-recat'));
+        if (it) {
+          it.category = sel.value;
+          await Finance.save();
+          await Finance.learn(it.merchant, sel.value);
+          toast('Category updated — that merchant is remembered.');
+        }
+      }
+    });
+
+    if (fileEl && !fileEl.__bound) {
+      fileEl.__bound = true;
+      fileEl.addEventListener('change', async () => {
+        const f = fileEl.files && fileEl.files[0];
+        if (!f) return;
+        await FinanceUI.handlePhoto(wrap, f);
+        fileEl.value = '';
+      });
+    }
+    if (csvEl && !csvEl.__bound) {
+      csvEl.__bound = true;
+      csvEl.addEventListener('change', () => {
+        const f = csvEl.files && csvEl.files[0];
+        if (!f) return;
+        const fr = new FileReader();
+        fr.onload = () => { FinanceUI.handleCSV(wrap, String(fr.result)); csvEl.value = ''; };
+        fr.readAsText(f, 'utf-8');
+      });
+    }
+
+    // drag & drop onto either drop zone
+    $$('.flow-drop', wrap).forEach(zone => {
+      ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('over'); }));
+      ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove('over'); }));
+      zone.addEventListener('drop', async (e) => {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        if (/image\//.test(f.type)) await FinanceUI.handlePhoto(wrap, f);
+        else { const fr = new FileReader(); fr.onload = () => FinanceUI.handleCSV(wrap, String(fr.result)); fr.readAsText(f, 'utf-8'); }
+      });
+    });
+  },
+
+  async handlePhoto(wrap, file) {
+    const prog = wrap.querySelector('#fx-prog');
+    const bar = prog.querySelector('i');
+    const out = wrap.querySelector('#fx-result');
+    prog.style.display = 'block'; bar.style.width = '6%';
+    out.innerHTML = '<p class="flow-empty">Compressing the photo…</p>';
+    try {
+      const dataUrl = await Finance.compress(file, 1500, 0.74);
+      FinanceUI.state.photo = dataUrl;
+      out.innerHTML = '<p class="flow-empty">Reading the text on your device… the first run downloads the language data, which takes a moment.</p>';
+      bar.style.width = '18%';
+      const text = await Finance.ocr(dataUrl, p => { bar.style.width = (18 + p * 78).toFixed(0) + '%'; });
+      bar.style.width = '100%';
+      const parsed = Finance.parseReceipt(text);
+      FinanceUI.state.parsed = parsed;
+      FinanceUI.showParsed(wrap, parsed, dataUrl);
+    } catch (err) {
+      out.innerHTML = `<p class="flow-empty">Could not read that image: ${esc(err.message)}<br>You can still add the expense by hand below — the photo is kept if you save one now.</p>`;
+    } finally {
+      setTimeout(() => { prog.style.display = 'none'; bar.style.width = '0%'; }, 700);
+    }
+  },
+
+  showParsed(wrap, p, dataUrl) {
+    const s = Settings.data;
+    const cat = Finance.categorise(p.merchant, '');
+    const conf = [];
+    if (!isNaN(p.amount)) conf.push('total'); if (p.date) conf.push('date'); if (p.time) conf.push('time'); if (p.merchant) conf.push('merchant');
+    wrap.querySelector('#fx-result').innerHTML = `
+      <div class="flow-receipt">
+        <img src="${dataUrl}" alt="Receipt photo">
+        <div style="flex:1 1 320px;min-width:280px">
+          <div class="flow-row between" style="margin-bottom:8px">
+            <span class="flow-label">Read from the photo</span>
+            <span class="flow-chip${conf.length >= 3 ? ' accent' : ''}">${conf.length}/4 fields found</span>
+          </div>
+          <div class="flow-grid c2" style="gap:10px">
+            <div class="flow-field"><label class="flow-label">Date</label><input class="flow-in" type="date" id="fr-date" value="${esc(p.date || today())}"></div>
+            <div class="flow-field"><label class="flow-label">Time</label><input class="flow-in" type="time" id="fr-time" value="${esc(p.time || '')}"></div>
+            <div class="flow-field"><label class="flow-label">Total</label><input class="flow-in" type="number" step="0.01" id="fr-amt" value="${isNaN(p.amount) ? '' : p.amount.toFixed(2)}"></div>
+            <div class="flow-field"><label class="flow-label">Category</label>
+              <select class="flow-in" id="fr-cat">${s.categories.map(c => `<option${c === cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+          </div>
+          <div class="flow-field" style="margin-top:10px"><label class="flow-label">Merchant</label>
+            <input class="flow-in" id="fr-merch" value="${esc(p.merchant || '')}"></div>
+          <div class="flow-field" style="margin-top:10px"><label class="flow-label">Note</label>
+            <input class="flow-in" id="fr-note" placeholder="${isNaN(p.vat) ? 'optional' : 'VAT ' + p.vat.toFixed(2)}"></div>
+          <div class="flow-row" style="margin-top:12px">
+            <button class="flow-btn primary" data-fa="saveParsed">Save expense + receipt</button>
+            <button class="flow-btn" data-fa="rawText">View raw text</button>
+            <button class="flow-btn ghost" data-fa="discard">Discard</button>
+          </div>
+          <pre class="flow-code" id="fr-raw" style="display:none;margin-top:10px;max-height:220px;overflow:auto;white-space:pre-wrap">${esc(p.raw || '')}</pre>
+        </div>
+      </div>`;
+  },
+
+  handleCSV(wrap, text) {
+    const res = Finance.parseStatement(text, { prefer: Settings.get('statementDateFormat') === 'mdy' ? 'mdy' : 'dmy' });
+    FinanceUI.state.staged = res.items;
+    const box = wrap.querySelector('#fx-csvresult');
+    if (!res.items.length) {
+      box.innerHTML = `<p class="flow-empty">No spending rows recognised. Columns found: ${esc(res.header.join(' · ') || 'none')}.<br>
+        Make sure the file has a header row with a date column and an amount (or debit) column.</p>`;
+      return;
+    }
+    const total = res.items.reduce((a, x) => a + x.amount, 0);
+    box.innerHTML = `
+      <div class="flow-row between" style="margin-bottom:8px">
+        <span class="flow-label">${res.items.length} rows ready · ${esc(money(total, Settings.get('currency')))}${res.skipped ? ' · ' + res.skipped + ' rows skipped' : ''}</span>
+        <button class="flow-btn primary sm" data-fa="confirmCsv">Import ${res.items.length}</button>
+      </div>
+      <div class="flow-scroll"><table class="flow-table">
+        <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+        <tbody>${res.items.slice(0, 12).map(x => `<tr><td>${esc(prettyDate(x.date))}</td><td>${esc(x.merchant.slice(0, 44))}</td><td>${esc(x.category)}</td><td class="num">${esc(money(x.amount, x.currency))}</td></tr>`).join('')}</tbody>
+      </table></div>
+      ${res.items.length > 12 ? `<p class="flow-empty">…and ${res.items.length - 12} more.</p>` : ''}`;
+  }
+};
+
+/* =========================================================================
+ * 17 · Settings tab
+ * ====================================================================== */
+const SettingsUI = {
+  render(section) {
+    const s = Settings.data;
+    const shortcut = location.origin + '/api/flow/reminders.json';
+
+    section.innerHTML = `
+      <div style="margin:6px 0 2px">
+        <div class="flow-label">Preferences · integrations · data</div>
+        <div class="flow-hero" style="font-size:38px">Settings</div>
+      </div>
+
+      <div class="flow-grid c2">
+        <div class="flow-card">
+          <h3>👤 You</h3>
+          <div class="flow-grid c2" style="gap:10px">
+            <div class="flow-field"><label class="flow-label">Display name</label><input class="flow-in" data-s="displayName" value="${esc(s.displayName)}"></div>
+            <div class="flow-field"><label class="flow-label">Currency</label><input class="flow-in" data-s="currency" value="${esc(s.currency)}"></div>
+            <div class="flow-field"><label class="flow-label">Time zone</label><input class="flow-in" data-s="timezone" value="${esc(s.timezone)}"></div>
+            <div class="flow-field"><label class="flow-label">Week starts</label>
+              <select class="flow-in" data-s="weekStart" data-type="num">
+                <option value="1"${s.weekStart == 1 ? ' selected' : ''}>Monday</option>
+                <option value="0"${s.weekStart == 0 ? ' selected' : ''}>Sunday</option>
+              </select></div>
+            <div class="flow-field"><label class="flow-label">Default duration (min)</label><input class="flow-in" type="number" min="5" step="5" data-s="defaultDurationMin" data-type="num" value="${esc(s.defaultDurationMin)}"></div>
+            <div class="flow-field"><label class="flow-label">Monthly budget</label><input class="flow-in" type="number" step="100" data-s="budgetMonthly" data-type="num" value="${esc(s.budgetMonthly)}"></div>
+          </div>
+        </div>
+
+        <div class="flow-card">
+          <h3>🕘 Time chips</h3>
+          <p class="flow-sub">The 🕘 chip is what puts a date, time, duration and alert on tasks that never had one — it is added to every checkbox row across every tab.</p>
+          <div class="flow-switch"><div class="t"><b>Show time chips on task rows</b><span>Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
+            <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
+          <div class="flow-field" style="margin-top:12px"><label class="flow-label">Limit to these tabs (blank = all)</label>
+            <input class="flow-in" data-s="chipTabs" value="${esc(s.chipTabs)}" placeholder="e.g. compass, quad, training"></div>
+          <p class="flow-sub" style="margin-top:10px">Tab names available: ${Rollup.sections().map(x => `<code>${esc(x.id.slice(4))}</code>`).join(', ') || '—'}</p>
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <h3>📊 Visuals</h3>
+        <p class="flow-sub">Any card in the app headed “Visual breakdown” (or Breakdown / Distribution) is re-rendered with a square-by-construction ring, so it can never be squashed into an ellipse or render blurry text again. The original widget is hidden, never deleted.</p>
+        <div class="flow-switch"><div class="t"><b>Re-render breakdown widgets</b><span>Currently upgraded: ${Visuals.upgraded} card${Visuals.upgraded === 1 ? '' : 's'} on this page.</span></div>
+          <input type="checkbox" data-s="upgradeVisuals" data-type="bool" ${s.upgradeVisuals !== false ? 'checked' : ''}></div>
+        <div class="flow-row" style="margin-top:12px">
+          <span class="flow-label">Default shape</span>
+          <span class="flow-seg">
+            <button class="${s.breakdownForm !== 'bars' ? 'on' : ''}" data-act2="formDonut">Ring</button>
+            <button class="${s.breakdownForm === 'bars' ? 'on' : ''}" data-act2="formBars">Bars</button>
+          </span>
+          <span class="flow-spacer"></span>
+          <button class="flow-btn sm ghost" data-act2="restoreViz">Restore the originals</button>
+        </div>
+        <p class="flow-sub" style="margin-top:10px">Bars are easier to read once there are more than about four categories, because length beats angle for comparing magnitudes. The ring caps at five slices and folds the rest into “Other” — past five, no single-hue scale keeps its steps distinguishable.</p>
+      </div>
+
+      <div class="flow-card">
+        <h3>📆 Google Calendar</h3>
+        <p class="flow-sub">Exports write directly into your Google calendar and are idempotent: the same task always maps to the same event, so re-exporting updates it instead of creating a duplicate.</p>
+        <div class="flow-grid c2" style="gap:10px">
+          <div class="flow-field"><label class="flow-label">OAuth Client ID</label><input class="flow-in" data-s="gcalClientId" value="${esc(s.gcalClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
+          <div class="flow-field"><label class="flow-label">Calendar ID</label><input class="flow-in" data-s="gcalCalendarId" value="${esc(s.gcalCalendarId)}" placeholder="primary"></div>
+        </div>
+        <ol class="flow-ol">
+          <li>Open <b>console.cloud.google.com</b> → create a project → APIs &amp; Services.</li>
+          <li>Enable the <b>Google Calendar API</b>.</li>
+          <li>OAuth consent screen → External → add yourself as a test user.</li>
+          <li>Credentials → Create → <b>OAuth client ID</b> → Web application.</li>
+          <li>Authorised JavaScript origins: <code>${esc(location.origin)}</code></li>
+          <li>Paste the client ID above. No client secret is needed — the token never leaves your browser.</li>
+        </ol>
+      </div>
+
+      <div class="flow-card">
+        <h3>🔔 iOS Reminders</h3>
+        <p class="flow-sub">Apple gives no public web API for Reminders, so there are three real routes. The first works immediately; the second is the one worth setting up once.</p>
+        <div class="flow-switch"><div class="t"><b>Enable Reminders export</b><span>Adds the Reminders buttons to the Artur tab and note sections.</span></div>
+          <input type="checkbox" data-s="remindersEnabled" data-type="bool" ${s.remindersEnabled ? 'checked' : ''}></div>
+        <div class="flow-field" style="margin:12px 0"><label class="flow-label">Reminders list name</label>
+          <input class="flow-in" data-s="remindersListName" value="${esc(s.remindersListName)}"></div>
+
+        <div class="flow-grid c3" style="margin-top:6px">
+          <div>
+            <div class="flow-label" style="margin-bottom:6px">1 · .ics file — works now</div>
+            <p class="flow-sub">Export, AirDrop or email the file to yourself, open it on the iPhone and choose Reminders. Each task carries its due date and alert.</p>
+            <button class="flow-btn" data-act2="remIcs">Export reminders now</button>
+          </div>
+          <div>
+            <div class="flow-label" style="margin-bottom:6px">2 · Apple Shortcut — automatic</div>
+            <p class="flow-sub">Build this once, then run it from the Home Screen or on a schedule:</p>
+            <ol class="flow-ol">
+              <li>Shortcuts → new shortcut → <b>Get Contents of URL</b></li>
+              <li>URL: <code>${esc(shortcut)}</code></li>
+              <li><b>Get Dictionary Value</b> → <code>items</code></li>
+              <li><b>Repeat with Each</b> → <b>Add New Reminder</b>, title = <code>title</code>, notes = <code>notes</code>, due = <code>dueDate</code>, list = <code>${esc(s.remindersListName)}</code></li>
+              <li>Automation → run daily at 06:00</li>
+            </ol>
+            <button class="flow-btn" data-act2="remPublish">Publish outbox now</button>
+          </div>
+          <div>
+            <div class="flow-label" style="margin-bottom:6px">3 · CalDAV to iCloud — hands-off</div>
+            <p class="flow-sub">The server pushes straight into an iCloud Reminders list. Credentials live in Render environment variables and never touch the browser:</p>
+            <pre class="flow-code">ICLOUD_USER=you@icloud.com
+ICLOUD_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
+            <p class="flow-sub">Generate the app-specific password at appleid.apple.com → Sign-In and Security. Never put your real Apple password there.</p>
+            <button class="flow-btn" data-act2="remCaldav">Test CalDAV push</button>
+          </div>
+        </div>
+        <div class="flow-note-status" id="set-remstatus" style="margin-top:10px"></div>
+      </div>
+
+      <div class="flow-card">
+        <h3>🏦 Bank &amp; statements</h3>
+        <div class="flow-field" style="max-width:340px"><label class="flow-label">Aggregator</label>
+          <select class="flow-in" data-s="bankProvider">
+            <option value="none"${s.bankProvider === 'none' ? ' selected' : ''}>None — statement import only (recommended)</option>
+            <option value="plaid"${s.bankProvider === 'plaid' ? ' selected' : ''}>Plaid (US · CA · UK · EU)</option>
+            <option value="gocardless"${s.bankProvider === 'gocardless' ? ' selected' : ''}>GoCardless Bank Account Data (EU · UK, free tier)</option>
+            <option value="saltedge"${s.bankProvider === 'saltedge' ? ' selected' : ''}>Salt Edge (widest, includes Turkey)</option>
+          </select></div>
+        <div class="flow-field" style="margin-top:10px;max-width:340px"><label class="flow-label">Statement date format</label>
+          <select class="flow-in" data-s="statementDateFormat">
+            <option value="auto"${s.statementDateFormat === 'auto' ? ' selected' : ''}>Auto / day-first (TR, EU)</option>
+            <option value="mdy"${s.statementDateFormat === 'mdy' ? ' selected' : ''}>Month-first (US)</option>
+          </select></div>
+        <p class="flow-sub" style="margin-top:12px">Choosing an aggregator here only records the intent — the actual pull runs server-side and needs API keys as environment variables (<code>PLAID_CLIENT_ID</code>/<code>PLAID_SECRET</code>, <code>GOCARDLESS_SECRET_ID</code>/<code>GOCARDLESS_SECRET_KEY</code>, or <code>SALTEDGE_APP_ID</code>/<code>SALTEDGE_SECRET</code>). Until those exist, CSV import is the working path and it costs nothing.</p>
+      </div>
+
+      <div class="flow-card">
+        <h3>🏷 Categories</h3>
+        <p class="flow-sub">One per line. Changing a category on any expense also teaches the matcher that merchant, so imports get sharper over time.</p>
+        <textarea data-s="categories" data-type="lines" style="min-height:150px">${esc(s.categories.join('\n'))}</textarea>
+        <p class="flow-sub" style="margin-top:8px">Learned merchants: ${Object.keys(s.merchantMemory || {}).length || 'none yet'}
+          ${Object.keys(s.merchantMemory || {}).length ? '<button class="flow-btn ghost sm" data-act2="forget" style="margin-left:8px">Forget all</button>' : ''}</p>
+      </div>
+
+      <div class="flow-card">
+        <h3>💾 Data</h3>
+        <p class="flow-sub">Everything the upgrade pack stores lives under <code>flow:*</code> keys in the same database as the rest of the app, and is mirrored to this browser so it survives going offline.</p>
+        <div class="flow-row">
+          <button class="flow-btn" data-act2="backup">↓ Download full backup</button>
+          <button class="flow-btn" data-act2="restore">↑ Restore from backup</button>
+          <input type="file" accept="application/json,.json" id="set-restore" style="display:none">
+          <span class="flow-spacer"></span>
+          <button class="flow-btn danger" data-act2="wipe">Erase upgrade-pack data</button>
+        </div>
+        <p class="flow-sub" style="margin-top:10px">Stored right now: ${Schedule.all().length} scheduled items · ${Finance.items.length} expenses · ${Object.keys(Notes.book).length} notebooks · ${Queue.list().length} unsynced change${Queue.list().length === 1 ? '' : 's'}</p>
+      </div>`;
+
+    /* --- persist any field with a data-s attribute --- */
+    section.querySelectorAll('[data-s]').forEach(el => {
+      const key = el.getAttribute('data-s'), type = el.getAttribute('data-type');
+      const commit = async () => {
+        let v;
+        if (type === 'bool') v = el.checked;
+        else if (type === 'num') v = Number(el.value) || 0;
+        else if (type === 'lines') v = el.value.split('\n').map(x => norm(x)).filter(Boolean);
+        else v = el.value;
+        await Settings.set(key, v);
+        if (key === 'upgradeVisuals') { if (v) Visuals.upgradeAll(); else Visuals.restoreAll(); }
+        if (key === 'showTimeChips') {
+          if (v) {
+            TimeChips.scan(document);
+          } else {
+            $$('.flow-time-chip').forEach(c => c.remove());
+            $$('[data-flow-timed]').forEach(r => r.removeAttribute('data-flow-timed'));
+          }
+        }
+        toast('Saved ✓', null, 1200);
+      };
+      el.addEventListener('change', commit);
+    });
+
+    section.querySelectorAll('[data-act2]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const a = btn.getAttribute('data-act2');
+        const st = section.querySelector('#set-remstatus');
+        if (a === 'remIcs') Reminders.exportICS();
+        else if (a === 'remPublish') {
+          const r = await Reminders.publishForShortcut();
+          st.textContent = `Outbox published — ${r.length} item${r.length === 1 ? '' : 's'} ready at ${shortcut}`;
+          st.className = 'flow-note-status ok';
+        }
+        else if (a === 'remCaldav') {
+          st.textContent = 'Pushing…'; st.className = 'flow-note-status pending';
+          try {
+            const r = await Reminders.caldavPush();
+            st.textContent = `CalDAV: ${r.pushed || 0} pushed, ${r.failed || 0} failed`;
+            st.className = 'flow-note-status ok';
+          } catch (e) {
+            st.textContent = e.message + ' — is the server add-on installed and are the iCloud env vars set?';
+            st.className = 'flow-note-status pending';
+          }
+        }
+        else if (a === 'formDonut' || a === 'formBars') {
+          await Settings.set('breakdownForm', a === 'formBars' ? 'bars' : 'donut');
+          $$('[data-flow-viz] .flow-viz').forEach(m => { if (m.__repaint) m.__repaint(); });
+          SettingsUI.render(section);
+        }
+        else if (a === 'restoreViz') { Visuals.restoreAll(); toast('Original widgets restored'); SettingsUI.render(section); }
+        else if (a === 'forget') { await Settings.set('merchantMemory', {}); toast('Merchant memory cleared'); SettingsUI.render(section); }
+        else if (a === 'backup') {
+          const dump = {
+            exportedAt: new Date().toISOString(), version: window.__FLOW_UPGRADE__,
+            settings: Settings.data, schedule: Schedule.map, expenses: Finance.items, notes: Notes.book
+          };
+          download(`the-flow-upgrade-backup-${today()}.json`, JSON.stringify(dump, null, 2), 'application/json');
+        }
+        else if (a === 'restore') section.querySelector('#set-restore').click();
+        else if (a === 'wipe') {
+          if (!confirm('Erase everything the upgrade pack stores — schedules, expenses, receipts and notes?\n\nYour original Flow data is not touched.')) return;
+          if (!confirm('Really erase? This cannot be undone.')) return;
+          await DB.set(SCHEDULE_KEY, {}); await DB.set(EXPENSE_KEY, []); await DB.set(NOTES_KEY, {});
+          Schedule.map = {}; Finance.items = []; Notes.book = {};
+          DB._mem.clear();
+          toast('Upgrade-pack data erased'); SettingsUI.render(section);
+        }
+      });
+    });
+
+    const rf = section.querySelector('#set-restore');
+    if (rf) rf.addEventListener('change', () => {
+      const f = rf.files && rf.files[0]; if (!f) return;
+      const fr = new FileReader();
+      fr.onload = async () => {
+        try {
+          const d = JSON.parse(String(fr.result));
+          if (d.settings) { Settings.data = Object.assign({}, SETTINGS_DEFAULTS, d.settings); await Settings.save(); }
+          if (d.schedule) { Schedule.map = d.schedule; await Schedule.saveNow(); }
+          if (d.expenses) { Finance.items = d.expenses; await Finance.save(); }
+          if (d.notes) { Notes.book = d.notes; await DB.set(NOTES_KEY, Notes.book); }
+          toast('Backup restored ✓'); SettingsUI.render(section); TimeChips.repaintAll();
+        } catch (e) { toast('That file could not be read: ' + e.message, 'err', 5000); }
+      };
+      fr.readAsText(f);
+    });
+  }
+};
+
+/* =========================================================================
+ * 17b · Visuals — find the app's own breakdown widgets and re-render them.
+ *
+ *  The stretched grey donut happens when an SVG or canvas is sized by CSS to
+ *  a non-square box while its internal coordinate system stays square: the
+ *  circle becomes an ellipse and any text inside it scales unevenly, which
+ *  is what makes the label look blurry. Replacing it with a square-by-
+ *  construction viewBox removes the whole class of bug.
+ *
+ *  Non-destructive: the original node is hidden, never removed, so if the
+ *  host app writes to it later nothing throws.
+ * ====================================================================== */
+const BREAKDOWN_RE = /^(visual breakdown|breakdown|distribution|dağılım|dagilim|split|composition)$/i;
+
+const Visuals = {
+  upgraded: 0,
+
+  /** Leaf elements whose entire text is a breakdown-ish heading. */
+  findHeadings() {
+    return $$('h1,h2,h3,h4,h5,h6,div,span,p,b,strong,label').filter(el => {
+      if (el.closest('.flow-x')) return false;
+      if (el.children.length) return false;
+      const t = norm(el.textContent);
+      return t.length < 40 && BREAKDOWN_RE.test(t);
+    });
+  },
+
+  /** The card that owns a heading: nearest ancestor that also holds a chart. */
+  cardFor(head) {
+    let el = head.parentElement, hops = 0;
+    while (el && hops < 5) {
+      if (el.querySelector('svg, canvas, [class*="chart"], [class*="donut"], [class*="pie"]')) return el;
+      el = el.parentElement; hops++;
+    }
+    return head.parentElement;
+  },
+
+  /** Try to recover the numbers the widget was supposed to be drawing. */
+  harvest(card) {
+    // 1 · explicit opt-in wins
+    const raw = card.getAttribute('data-flow-chart');
+    if (raw) { try { const d = JSON.parse(raw); if (Array.isArray(d) && d.length) return d; } catch (e) {} }
+
+    // 2 · a table in the same card
+    const rows = $$('table tbody tr', card);
+    if (rows.length) {
+      const out = [];
+      rows.forEach(tr => {
+        const cells = $$('td', tr).map(td => norm(td.textContent));
+        if (cells.length < 2) return;
+        const v = parseAmount(cells[cells.length - 1]);
+        if (!isNaN(v) && v !== 0 && cells[0]) out.push({ label: cells[0], value: Math.abs(v) });
+      });
+      if (out.length) return out;
+    }
+
+    // 3 · a legend or list of "label … number" pairs
+    const items = $$('li, [class*="legend"] > *, [class*="row"]', card)
+      .filter(n => !n.children.length || n.children.length <= 3);
+    const pairs = [];
+    items.forEach(n => {
+      const t = norm(n.textContent);
+      const m = t.match(/^(.{1,34}?)\s*[·:\-–]?\s*([\d.,]+)\s*%?$/);
+      if (!m) return;
+      const v = parseAmount(m[2]);
+      if (!isNaN(v) && v > 0) pairs.push({ label: norm(m[1]), value: v });
+    });
+    if (pairs.length >= 2) return pairs;
+
+    return null;
+  },
+
+  /** Anything the pack itself knows about, keyed by which tab we are in. */
+  fallbackFor(card) {
+    const sec = card.closest('[id^="tab-"]');
+    const tab = sec ? sec.id.slice(4) : '';
+    const cur = Settings.get('currency');
+
+    if (/money|financ|expense|spend/i.test(tab)) {
+      const ym = new Date().getFullYear() + '-' + pad(new Date().getMonth() + 1);
+      const cats = Finance.byCategory(Finance.inMonth(ym));
+      if (cats.length) return {
+        data: cats, format: v => money(v, cur), centerFormat: v => moneyCompact(v, cur),
+        centerLabel: 'this month', title: 'Spending by category'
+      };
+    }
+    if (/train|workout|spor/i.test(tab) || /diet|habit|sleep/i.test(tab)) {
+      const c = Rollup.checks(sec || document.body);
+      if (c.total) return {
+        data: [{ label: 'Done', value: c.done }, { label: 'Remaining', value: Math.max(0, c.total - c.done) }],
+        format: v => String(v), centerLabel: 'items', title: 'Completion'
+      };
+    }
+    // time actually committed per tab, from the schedule — always something real
+    const mins = {};
+    Schedule.all().forEach(r => { if (r.dur) mins[Rollup.labelFor(r.tab) || r.tab] = (mins[Rollup.labelFor(r.tab) || r.tab] || 0) + r.dur; });
+    const md = Object.keys(mins).map(k => ({ label: k.replace(/^[^\w]+/, ''), value: mins[k] }));
+    if (md.length) return { data: md, format: v => Math.round(v / 60 * 10) / 10 + ' h', centerLabel: 'scheduled', title: 'Time committed' };
+    return null;
+  },
+
+  upgradeCard(card, head) {
+    if (card.getAttribute('data-flow-viz')) return false;
+    card.setAttribute('data-flow-viz', '1');
+
+    // hide, never remove, whatever was drawing before
+    $$('svg, canvas', card).forEach(n => {
+      if (n.closest('.flow-x')) return;
+      n.setAttribute('data-flow-hidden', '1');
+      n.style.display = 'none';
+    });
+    // and any wrapper that only existed to hold it
+    $$('[class*="donut"], [class*="pie"], [class*="chart"]', card).forEach(n => {
+      if (n.closest('.flow-x') || n.contains(head)) return;
+      if (!norm(n.textContent) || /no data/i.test(norm(n.textContent))) { n.setAttribute('data-flow-hidden', '1'); n.style.display = 'none'; }
+    });
+
+    const mount = document.createElement('div');
+    mount.className = 'flow-x flow-viz';
+    card.appendChild(mount);
+
+    const paint = () => {
+      const harvested = Visuals.harvest(card);
+      const fb = harvested ? null : Visuals.fallbackFor(card);
+      const data = harvested || (fb && fb.data);
+      const form = Settings.get('breakdownForm') || 'donut';
+
+      if (!data || !data.length) {
+        mount.innerHTML = Chart.empty('No data yet',
+          'This fills in as soon as there is something to break down.');
+        return;
+      }
+      const opts = {
+        format: (fb && fb.format) || (v => (Math.round(v * 100) / 100).toLocaleString()),
+        centerFormat: (fb && fb.centerFormat) || (v => v >= 10000 ? moneyCompact(v, '').replace(/[^\d.,KMB]/g, '') : String(Math.round(v))),
+        centerLabel: (fb && fb.centerLabel) || 'total',
+        title: (fb && fb.title) || 'Breakdown'
+      };
+      mount.innerHTML = `
+        <div class="flow-row between" style="margin-bottom:6px">
+          <span class="flow-label">${esc(opts.title)}</span>
+          <span class="flow-seg">
+            <button class="${form === 'donut' ? 'on' : ''}" data-viz="donut">Ring</button>
+            <button class="${form === 'bars' ? 'on' : ''}" data-viz="bars">Bars</button>
+          </span>
+        </div>
+        ${form === 'donut'
+          ? Chart.donut(data, opts)
+          : Chart.bars(data.slice().sort((a, b) => b.value - a.value).slice(0, 8), opts)}`;
+      Chart.hydrate(mount);
+    };
+
+    mount.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-viz]');
+      if (!b) return;
+      await Settings.set('breakdownForm', b.getAttribute('data-viz'));
+      $$('[data-flow-viz] .flow-viz').forEach(m => { if (m.__repaint) m.__repaint(); });
+    });
+    mount.__repaint = paint;
+    paint();
+    Visuals.upgraded++;
+    return true;
+  },
+
+  upgradeAll() {
+    if (Settings.get('upgradeVisuals') === false) return 0;
+    let n = 0;
+    Visuals.findHeadings().forEach(head => {
+      const card = Visuals.cardFor(head);
+      if (card && Visuals.upgradeCard(card, head)) n++;
+    });
+    return n;
+  },
+
+  /** Put the original widgets back, for anyone who prefers them. */
+  restoreAll() {
+    $$('[data-flow-hidden]').forEach(n => { n.style.display = ''; n.removeAttribute('data-flow-hidden'); });
+    $$('.flow-viz').forEach(n => n.remove());
+    $$('[data-flow-viz]').forEach(n => n.removeAttribute('data-flow-viz'));
+    Visuals.upgraded = 0;
+  }
+};
+
+/* =========================================================================
+ * 18 · Journal — a place to write, not a system audit trail.
+ *
+ *  The app's own auto-log still exists and is still useful, but it stops
+ *  being the main event: it collapses behind a toggle, and the entries for
+ *  a given day resurface *inside the composer* as memory joggers while you
+ *  write about that day. Noise becomes raw material.
+ * ====================================================================== */
+const JOURNAL_KEY = 'flow:journal';
+const JOURNAL_DRAFT = 'flow:journal:draft';
+
+const MOODS = [
+  { v: 1, e: '😞', l: 'rough' },
+  { v: 2, e: '😕', l: 'flat' },
+  { v: 3, e: '😐', l: 'ok' },
+  { v: 4, e: '🙂', l: 'good' },
+  { v: 5, e: '😄', l: 'great' }
+];
+
+const PROMPT_FIELDS = [
+  ['wins', 'What went well'],
+  ['friction', 'What got in the way'],
+  ['grateful', 'Grateful for'],
+  ['tomorrow', 'One thing for tomorrow']
+];
+
+const Journal = {
+  entries: [],
+  editingId: null,
+  filter: { q: '', tag: '', from: '', to: '' },
+  showPrompts: false,
+  logCollapsed: true,
+  sectionId: null,
+
+  async load() {
+    Journal.entries = (await DB.get(JOURNAL_KEY, [])) || [];
+    const st = await DB.get('flow:journal:ui', null);
+    if (st) { Journal.logCollapsed = st.logCollapsed !== false; Journal.showPrompts = !!st.showPrompts; }
+    return Journal.entries;
+  },
+  save() { return DB.set(JOURNAL_KEY, Journal.entries); },
+  saveUI() { return DB.set('flow:journal:ui', { logCollapsed: Journal.logCollapsed, showPrompts: Journal.showPrompts }); },
+
+  words(e) {
+    const t = [e.body || ''].concat(PROMPT_FIELDS.map(([k]) => (e.prompts && e.prompts[k]) || '')).join(' ');
+    return (t.match(/\S+/g) || []).length;
+  },
+  totalWords() { return Journal.entries.reduce((a, e) => a + Journal.words(e), 0); },
+
+  /** Consecutive days with at least one entry, counting back from today. */
+  streak() {
+    const days = {};
+    Journal.entries.forEach(e => { days[e.date] = 1; });
+    let n = 0, d = new Date();
+    if (!days[isoDate(d)]) d = addDays(d, -1);        // today not written yet is not a broken streak
+    while (days[isoDate(d)]) { n++; d = addDays(d, -1); }
+    return n;
+  },
+
+  allTags() {
+    const m = {};
+    Journal.entries.forEach(e => (e.tags || []).forEach(t => { m[t] = (m[t] || 0) + 1; }));
+    return Object.keys(m).sort((a, b) => m[b] - m[a]);
+  },
+
+  matching() {
+    const f = Journal.filter, q = norm(f.q).toLowerCase();
+    return Journal.entries
+      .filter(e => {
+        if (f.tag && (e.tags || []).indexOf(f.tag) < 0) return false;
+        if (f.from && e.date < f.from) return false;
+        if (f.to && e.date > f.to) return false;
+        if (!q) return true;
+        const hay = [e.title, e.body, (e.tags || []).join(' ')]
+          .concat(PROMPT_FIELDS.map(([k]) => (e.prompts && e.prompts[k]) || '')).join(' ').toLowerCase();
+        return hay.indexOf(q) >= 0;
+      })
+      .sort((a, b) => (b.date + (b.created || '')).localeCompare(a.date + (a.created || '')));
+  },
+
+  /* ---- what actually happened on a given day, from every source we have -- */
+  contextFor(date) {
+    const out = { done: [], planned: [], spend: [], log: [] };
+    Schedule.onDate(date).forEach(r => (r.done ? out.done : out.planned).push(r.text));
+    Finance.items.filter(x => x.date === date).forEach(x =>
+      out.spend.push(`${x.merchant || x.category} · ${money(Math.abs(x.amount), x.currency)}`));
+    out.log = Journal.hostLogFor(date);
+    return out;
+  },
+
+  /** Best-effort read of the app's own log rows for one date. */
+  hostLogFor(date) {
+    try {
+      const sec = Journal.sectionId && $('#' + Journal.sectionId);
+      if (!sec) return [];
+      const want = parseISO(date);
+      const kids = $$(':scope > *', sec).filter(n => !n.classList.contains('flow-x'));
+      let current = null; const hits = [];
+      kids.forEach(node => {
+        const t = norm(node.textContent);
+        const dm = t.match(/(\d{1,2})\s+(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+(\d{4})/i);
+        if (dm && t.length < 60) {
+          const d = new Date(`${dm[1]} ${dm[2]} ${dm[3]}`);
+          current = isNaN(d.getTime()) ? null : isoDate(d);
+          return;
+        }
+        if (current === isoDate(want) && t.length > 3 && hits.length < 14) hits.push(t.slice(0, 120));
+      });
+      return hits;
+    } catch (e) { return []; }
+  },
+
+  /* ---------------------------------------------------------------- markup */
+  composer() {
+    const editing = Journal.editingId ? Journal.entries.find(e => e.id === Journal.editingId) : null;
+    const e = editing || Journal._draft || {};
+    const date = e.date || today();
+    const ctx = Journal.contextFor(date);
+    const hasCtx = ctx.done.length || ctx.planned.length || ctx.spend.length || ctx.log.length;
+
+    return `
+      <div class="flow-card">
+        <div class="flow-row between">
+          <h3 style="margin:0">${editing ? '✎ Editing an entry' : '✍️ Write'}</h3>
+          <span class="flow-row">
+            <button class="flow-btn sm ${Journal.showPrompts ? 'primary' : ''}" data-j="prompts">Guided prompts</button>
+            ${editing ? '<button class="flow-btn sm ghost" data-j="cancelEdit">Cancel</button>' : ''}
+          </span>
+        </div>
+
+        <div class="flow-row" style="margin:12px 0 10px">
+          <input class="flow-in" type="date" id="jr-date" value="${esc(date)}" style="width:150px">
+          <input class="flow-in grow" id="jr-title" placeholder="Title (optional) — e.g. 'Hard session, good call with Burak'" value="${esc(e.title || '')}">
+        </div>
+
+        <textarea id="jr-body" style="min-height:170px" placeholder="How did today actually go?
+
+Write freely — nothing here is logged automatically, and only what you type is saved.">${esc(e.body || '')}</textarea>
+
+        ${Journal.showPrompts ? `<div class="flow-grid c2" style="margin-top:12px">
+          ${PROMPT_FIELDS.map(([k, label]) => `
+            <div class="flow-field"><label class="flow-label">${esc(label)}</label>
+              <textarea id="jr-${k}" style="min-height:64px">${esc((e.prompts && e.prompts[k]) || '')}</textarea></div>`).join('')}
+        </div>` : ''}
+
+        <div class="flow-row" style="margin-top:12px;gap:14px">
+          <span class="flow-row" style="gap:6px">
+            <span class="flow-label">Mood</span>
+            ${MOODS.map(m => `<button class="flow-btn sm jr-mood${e.mood === m.v ? ' primary' : ''}" data-j="mood" data-v="${m.v}" title="${m.l}">${m.e}</button>`).join('')}
+          </span>
+          <span class="flow-row" style="gap:6px">
+            <span class="flow-label">Energy</span>
+            ${[1, 2, 3, 4, 5].map(v => `<button class="flow-btn sm jr-energy${e.energy === v ? ' primary' : ''}" data-j="energy" data-v="${v}">${v}</button>`).join('')}
+          </span>
+        </div>
+
+        <div class="flow-row" style="margin-top:12px">
+          <input class="flow-in grow" id="jr-tags" placeholder="Tags, comma separated — training, abko, music" value="${esc((e.tags || []).join(', '))}">
+          <button class="flow-btn primary" data-j="save">${editing ? 'Update entry' : 'Save entry'}</button>
+        </div>
+        <p class="flow-sub" style="margin:10px 0 0">⌘/Ctrl + Enter saves. Drafts are kept if you navigate away mid-sentence.</p>
+
+        ${hasCtx ? `<details style="margin-top:14px" ${editing ? '' : 'open'}>
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--f-muted)">What the system recorded on ${esc(prettyDate(date))} — memory joggers</summary>
+          <div class="flow-grid c2" style="margin-top:10px">
+            ${ctx.done.length ? `<div><div class="flow-label" style="margin-bottom:6px">✅ Done</div>${ctx.done.map(t => `<div class="flow-chip" style="margin:2px 4px 2px 0">${esc(t.slice(0, 46))}</div>`).join('')}</div>` : ''}
+            ${ctx.planned.length ? `<div><div class="flow-label" style="margin-bottom:6px">◻️ Planned, not ticked</div>${ctx.planned.map(t => `<div class="flow-chip" style="margin:2px 4px 2px 0">${esc(t.slice(0, 46))}</div>`).join('')}</div>` : ''}
+            ${ctx.spend.length ? `<div><div class="flow-label" style="margin-bottom:6px">💰 Spent</div>${ctx.spend.map(t => `<div class="flow-chip" style="margin:2px 4px 2px 0">${esc(t)}</div>`).join('')}</div>` : ''}
+            ${ctx.log.length ? `<div><div class="flow-label" style="margin-bottom:6px">📋 Activity log</div>${ctx.log.map(t => `<div class="flow-chip" style="margin:2px 4px 2px 0">${esc(t.slice(0, 52))}</div>`).join('')}</div>` : ''}
+          </div>
+        </details>` : ''}
+      </div>`;
+  },
+
+  entryCard(e) {
+    const m = MOODS.find(x => x.v === e.mood);
+    const w = Journal.words(e);
+    return `
+      <article class="flow-jentry" data-id="${esc(e.id)}">
+        <div class="flow-row between">
+          <div>
+            <div class="flow-label">${esc(prettyDate(e.date))} ${e.date === today() ? '· today' : ''}</div>
+            <h4 style="margin:3px 0 0;font-size:15px">${esc(e.title || 'Untitled entry')}</h4>
+          </div>
+          <span class="flow-row">
+            ${m ? `<span class="flow-chip" title="mood: ${m.l}">${m.e}</span>` : ''}
+            ${e.energy ? `<span class="flow-chip" title="energy">⚡ ${e.energy}/5</span>` : ''}
+            <span class="flow-chip">${w} word${w === 1 ? '' : 's'}</span>
+            <button class="flow-btn ghost sm" data-j="edit" data-id="${esc(e.id)}">Edit</button>
+            <button class="flow-btn ghost sm" data-j="del" data-id="${esc(e.id)}">✕</button>
+          </span>
+        </div>
+        ${e.body ? `<p class="flow-jbody">${esc(e.body)}</p>` : ''}
+        ${PROMPT_FIELDS.filter(([k]) => e.prompts && norm(e.prompts[k])).map(([k, label]) =>
+          `<div class="flow-jprompt"><b>${esc(label)}</b><span>${esc(e.prompts[k])}</span></div>`).join('')}
+        ${(e.tags || []).length ? `<div style="margin-top:8px">${e.tags.map(t => `<span class="flow-chip accent" data-j="tag" data-v="${esc(t)}" style="cursor:pointer;margin-right:4px">#${esc(t)}</span>`).join('')}</div>` : ''}
+      </article>`;
+  },
+
+  render(wrap) {
+    const list = Journal.matching();
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const thisMonth = Journal.entries.filter(e => e.date.slice(0, 7) === ym).length;
+    const wroteToday = Journal.entries.some(e => e.date === today());
+    const tags = Journal.allTags();
+
+    wrap.innerHTML = `
+      <div class="flow-row between" style="margin:6px 0 2px">
+        <div>
+          <div class="flow-label">Your words · not an activity feed</div>
+          <div class="flow-hero" style="font-size:38px">📓 Journal</div>
+        </div>
+        <button class="flow-btn ${Journal.logCollapsed ? '' : 'primary'}" data-j="toggleLog">
+          ${Journal.logCollapsed ? '📋 Show activity log' : '📋 Hide activity log'}
+        </button>
+      </div>
+
+      <div class="flow-grid c4" style="margin-top:14px">
+        <div class="flow-stat"><div class="v">${Journal.entries.length}</div><div class="l">Entries written</div>
+          <div class="d">${wroteToday ? '✓ today is written' : 'nothing for today yet'}</div></div>
+        <div class="flow-stat"><div class="v">${Journal.streak()}</div><div class="l">Day streak</div>
+          <div class="d">consecutive days with an entry</div></div>
+        <div class="flow-stat"><div class="v">${thisMonth}</div><div class="l">This month</div>
+          <div class="d">${esc(MON[now.getMonth()])} ${now.getFullYear()}</div></div>
+        <div class="flow-stat"><div class="v">${Journal.totalWords().toLocaleString()}</div><div class="l">Words</div>
+          <div class="d">across every entry</div></div>
+      </div>
+
+      ${Journal.composer()}
+
+      <div class="flow-card">
+        <div class="flow-row between" style="margin-bottom:12px">
+          <h3 style="margin:0">Entries</h3>
+          <span class="flow-row">
+            <button class="flow-btn sm" data-j="exportMd">↓ Markdown</button>
+            <button class="flow-btn sm" data-j="exportJson">↓ JSON</button>
+          </span>
+        </div>
+        <div class="flow-row" style="margin-bottom:12px">
+          <input class="flow-in grow" id="jr-q" placeholder="Search your entries…" value="${esc(Journal.filter.q)}">
+          <input class="flow-in" type="date" id="jr-from" value="${esc(Journal.filter.from)}" title="From">
+          <input class="flow-in" type="date" id="jr-to" value="${esc(Journal.filter.to)}" title="To">
+          ${Journal.filter.q || Journal.filter.tag || Journal.filter.from || Journal.filter.to
+            ? '<button class="flow-btn sm ghost" data-j="clearFilter">Clear</button>' : ''}
+        </div>
+        ${tags.length ? `<div style="margin-bottom:12px">${tags.slice(0, 14).map(t =>
+          `<span class="flow-chip${Journal.filter.tag === t ? ' accent' : ''}" data-j="tag" data-v="${esc(t)}" style="cursor:pointer;margin:0 4px 4px 0">#${esc(t)}</span>`).join('')}</div>` : ''}
+
+        ${list.length
+          ? list.map(Journal.entryCard).join('')
+          : `<p class="flow-empty">${Journal.entries.length
+              ? 'No entries match that search.'
+              : 'Nothing written yet. The box above is the whole point — write a few lines about today and press Save entry.'}</p>`}
+      </div>`;
+
+    Journal.bind(wrap);
+  },
+
+  /* Read the composer as it stands right now. */
+  collect() {
+    const wrap = Journal._wrap;
+    const g = (id) => wrap && wrap.querySelector('#' + id);
+    const prompts = {};
+    PROMPT_FIELDS.forEach(([k]) => { const el = g('jr-' + k); if (el) prompts[k] = el.value; });
+    return {
+      date: (g('jr-date') || {}).value || today(),
+      title: norm((g('jr-title') || {}).value),
+      body: (g('jr-body') || {}).value || '',
+      tags: ((g('jr-tags') || {}).value || '').split(',').map(t => norm(t).toLowerCase().replace(/^#/, '')).filter(Boolean),
+      prompts,
+      mood: Journal._mood != null ? Journal._mood : ((Journal._draft && Journal._draft.mood) || null),
+      energy: Journal._energy != null ? Journal._energy : ((Journal._draft && Journal._draft.energy) || null)
+    };
+  },
+
+  keepDraft: debounce(function () {
+    if (Journal.editingId || !Journal._wrap) return;
+    Journal._draft = Journal.collect();
+    DB.set(JOURNAL_DRAFT, Journal._draft);
+  }, 900),
+
+  async doSave() {
+    const data = Journal.collect();
+    const empty = !norm(data.body) && !norm(data.title) &&
+      !PROMPT_FIELDS.some(([k]) => norm(data.prompts[k]));
+    if (empty) { toast('Write something first.', 'warn'); return; }
+
+    if (Journal.editingId) {
+      const e = Journal.entries.find(x => x.id === Journal.editingId);
+      if (e) Object.assign(e, data, { updated: new Date().toISOString() });
+      Journal.editingId = null;
+      toast('Entry updated ✓');
+    } else {
+      Journal.entries.push(Object.assign({ id: uid('j'), created: new Date().toISOString(), updated: new Date().toISOString() }, data));
+      toast('Entry saved ✓');
+    }
+    Journal._draft = null; Journal._mood = null; Journal._energy = null;
+    await DB.set(JOURNAL_DRAFT, null);
+    await Journal.save();
+    Journal.render(Journal._wrap);
+  },
+
+  applyFilter: debounce(function () {
+    const wrap = Journal._wrap;
+    if (!wrap) return;
+    const g = (id) => wrap.querySelector('#' + id);
+    Journal.filter.q = (g('jr-q') || {}).value || '';
+    Journal.filter.from = (g('jr-from') || {}).value || '';
+    Journal.filter.to = (g('jr-to') || {}).value || '';
+    const focused = document.activeElement && document.activeElement.id;
+    Journal.render(wrap);
+    const back = focused && wrap.querySelector('#' + focused);
+    if (back) { back.focus(); if (back.setSelectionRange && back.value) back.setSelectionRange(back.value.length, back.value.length); }
+  }, 320),
+
+  bind(wrap) {
+    Journal._wrap = wrap;
+    const g = (id) => wrap.querySelector('#' + id);
+
+    /* Field listeners are re-attached every render, because render() replaces
+       innerHTML and these are brand-new elements each time. */
+    ['jr-body', 'jr-title', 'jr-tags'].forEach(id => { const el = g(id); if (el) el.addEventListener('input', Journal.keepDraft); });
+    ['jr-q', 'jr-from', 'jr-to'].forEach(id => { const el = g(id); if (el) el.addEventListener('input', Journal.applyFilter); });
+    const bodyEl = g('jr-body');
+    if (bodyEl) {
+      bodyEl.addEventListener('keydown', (ev) => {
+        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); Journal.doSave(); }
+      });
+    }
+
+    /* The delegated handler lives on `wrap`, which survives every render —
+       so it must be attached exactly once or every click fires N times. */
+    if (wrap.__flowJournalBound) return;
+    wrap.__flowJournalBound = true;
+
+    wrap.addEventListener('click', async (ev) => {
+      const t = ev.target.closest('[data-j]');
+      if (!t) return;
+      const a = t.getAttribute('data-j');
+
+      if (a === 'save') Journal.doSave();
+      else if (a === 'mood') {
+        Journal._mood = Number(t.getAttribute('data-v'));
+        $$('.jr-mood', wrap).forEach(b => b.classList.toggle('primary', Number(b.getAttribute('data-v')) === Journal._mood));
+        Journal.keepDraft();
+      }
+      else if (a === 'energy') {
+        Journal._energy = Number(t.getAttribute('data-v'));
+        $$('.jr-energy', wrap).forEach(b => b.classList.toggle('primary', Number(b.getAttribute('data-v')) === Journal._energy));
+        Journal.keepDraft();
+      }
+      else if (a === 'prompts') { Journal.showPrompts = !Journal.showPrompts; Journal._draft = Journal.collect(); await Journal.saveUI(); Journal.render(wrap); }
+      else if (a === 'edit') {
+        Journal.editingId = t.getAttribute('data-id');
+        const e = Journal.entries.find(x => x.id === Journal.editingId);
+        Journal._mood = e ? e.mood : null; Journal._energy = e ? e.energy : null;
+        Journal.showPrompts = Journal.showPrompts || (e && PROMPT_FIELDS.some(([k]) => e.prompts && norm(e.prompts[k])));
+        Journal.render(wrap);
+        wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      else if (a === 'cancelEdit') { Journal.editingId = null; Journal._mood = null; Journal._energy = null; Journal.render(wrap); }
+      else if (a === 'del') {
+        const e = Journal.entries.find(x => x.id === t.getAttribute('data-id'));
+        if (!e) return;
+        if (!confirm(`Delete the entry from ${prettyDate(e.date)}?\n\nThis cannot be undone.`)) return;
+        Journal.entries = Journal.entries.filter(x => x.id !== e.id);
+        await Journal.save(); toast('Entry deleted'); Journal.render(wrap);
+      }
+      else if (a === 'tag') {
+        const v = t.getAttribute('data-v');
+        Journal.filter.tag = Journal.filter.tag === v ? '' : v;
+        Journal.render(wrap);
+      }
+      else if (a === 'clearFilter') { Journal.filter = { q: '', tag: '', from: '', to: '' }; Journal.render(wrap); }
+      else if (a === 'toggleLog') { Journal.logCollapsed = !Journal.logCollapsed; await Journal.saveUI(); Journal.applyLogVisibility(); Journal.render(wrap); }
+      else if (a === 'exportMd') Journal.exportMarkdown();
+      else if (a === 'exportJson') download(`the-flow-journal-${today()}.json`, JSON.stringify(Journal.entries, null, 2), 'application/json');
+    });
+  },
+
+  exportMarkdown() {
+    const list = Journal.matching().slice().reverse();
+    if (!list.length) { toast('No entries to export.', 'warn'); return; }
+    let md = `# Journal — The Flow\n\n_${list.length} entries · exported ${today()}_\n\n`;
+    list.forEach(e => {
+      const d = parseISO(e.date);
+      md += `\n---\n\n## ${DOW[d.getDay()]}, ${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}\n`;
+      if (e.title) md += `### ${e.title}\n`;
+      const meta = [];
+      const m = MOODS.find(x => x.v === e.mood);
+      if (m) meta.push(`mood ${e.mood}/5 ${m.e}`);
+      if (e.energy) meta.push(`energy ${e.energy}/5`);
+      if ((e.tags || []).length) meta.push(e.tags.map(t => '#' + t).join(' '));
+      if (meta.length) md += `\n_${meta.join(' · ')}_\n`;
+      if (e.body) md += `\n${e.body}\n`;
+      PROMPT_FIELDS.forEach(([k, label]) => {
+        if (e.prompts && norm(e.prompts[k])) md += `\n**${label}:** ${e.prompts[k]}\n`;
+      });
+    });
+    download(`the-flow-journal-${today()}.md`, md, 'text/markdown');
+    toast(`${list.length} entries exported as Markdown ✓`);
+  },
+
+  applyLogVisibility() {
+    const sec = Journal.sectionId && $('#' + Journal.sectionId);
+    if (!sec) return;
+    sec.classList.toggle('flow-log-collapsed', !!Journal.logCollapsed);
+  },
+
+  async mount(section) {
+    Journal.sectionId = section.id;
+    if (section.querySelector('[data-flow-journal]')) { Journal.applyLogVisibility(); return; }
+    Journal._draft = await DB.get(JOURNAL_DRAFT, null);
+    if (Journal._draft) { Journal._mood = Journal._draft.mood; Journal._energy = Journal._draft.energy; }
+    const wrap = document.createElement('div');
+    wrap.className = 'flow-x';
+    wrap.setAttribute('data-flow-journal', '1');
+    section.insertBefore(wrap, section.firstChild);
+    Journal.applyLogVisibility();
+    Journal.render(wrap);
+  },
+
+  rerender() {
+    const w = $('[data-flow-journal]');
+    if (w) Journal.render(w);
+  }
+};
+
+/* =========================================================================
+ * 19 · Boot
+ * ====================================================================== */
+async function boot() {
+  try {
+    await Settings.load();
+    await Promise.all([Schedule.load(), Finance.load(), Notes.load(), Journal.load()]);
+  } catch (e) { console.error('[Flow] load failed', e); }
+
+  Tabs.init();
+  Tabs.add('artur', '👤 Artur', (sec) => Artur.render(sec));
+  Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
+
+  // time chips everywhere
+  TimeChips.scan(document);
+  TimeChips.watch();
+
+  // finance panel into the app's own Finances tab
+  const financeTab = $$('[data-tab]').find(p => /finance|money|💰/i.test(p.textContent));
+  if (financeTab) {
+    const sec = $('#tab-' + financeTab.getAttribute('data-tab'));
+    if (sec) FinanceUI.mount(sec);
+  }
+
+  // the real journal, at the top of the app's own Journal tab
+  const journalTab = $$('[data-tab]').find(p => /journal|günlük|📓/i.test(p.textContent));
+  if (journalTab) {
+    const sec = $('#tab-' + journalTab.getAttribute('data-tab'));
+    if (sec) await Journal.mount(sec);
+  }
+
+  // notes drawer at the bottom of every existing tab
+  Rollup.sections().forEach(sec => {
+    const name = sec.id.slice(4);
+    Notes.mountInline(sec, name, Rollup.labelFor(name).replace(/^[^\w]+/, '') || name);
+  });
+
+  // replace any broken/stretched breakdown widgets across the app
+  Visuals.upgradeAll();
+
+  Queue.flush();
+
+  window.Flow = {
+    version: window.__FLOW_UPGRADE__,
+    DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips,
+    toast,
+    refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
+  };
+
+  console.log('%c The Flow · upgrade pack ' + window.__FLOW_UPGRADE__ + ' ready ',
+    'background:#17bb92;color:#05231b;font-weight:700;border-radius:4px');
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(boot, 300));
+else setTimeout(boot, 300);
+
+})();
+
+</script>
+<!-- ===== end Upgrade Pack ===== -->
+
 </body>
 </html>
