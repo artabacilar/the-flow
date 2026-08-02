@@ -3587,7 +3587,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 })();
 </script>
 
-<!-- ===== The Flow · Upgrade Pack v1.4.1 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
+<!-- ===== The Flow · Upgrade Pack v1.4.2 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
 <style>
 /* ==========================================================================
    The Flow — Upgrade Pack v1.0  ·  stylesheet
@@ -3949,107 +3949,6 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 @media print { .flow-btn, .flow-time-chip, .flow-seg { display: none !important; } }
 
 
-/* ==========================================================================
-   Statement blocks rendered as pull-quotes
-   ------------------------------------------------------------------------
-   The mission statement, and the North Star / Problem statements on the ABKO
-   and DTC boards, are saved prose you re-read — not fields you are filling in.
-   They were styled like inputs: hard border, panel fill, boxed. This restyles
-   only the SAVED state into a quote. The textarea editing state is untouched,
-   so writing still looks like writing.
-
-   #missionDisplay carries background/border/padding inline, so those three
-   properties need !important to be overridden. Nothing else does, and
-   `display` is deliberately never touched — the app toggles it to show/hide.
-   ========================================================================== */
-
-#missionDisplay,
-.ws-north .ns-view,
-.ws-problem .ns-view {
-  position: relative;
-  background: transparent !important;
-  border: 0 !important;
-  border-left: 2px solid rgba(139,123,255,.55) !important;
-  border-radius: 0 !important;
-  /* line 331 of the host stylesheet puts a blue glow on #missionDisplay to sell
-     it as a raised card. A quote should sit flat on the page. */
-  box-shadow: none !important;
-  padding: 4px 4px 0 30px !important;
-  margin: 6px 0 0 !important;
-  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  /* !important on these three as well: the mission block pins font-size,
-     line-height and color inline, so a plain rule loses to the style attribute.
-     (This is also why 64ch was resolving against 14px and coming out narrow.) */
-  font-size: 19px !important;
-  line-height: 1.62 !important;
-  font-style: italic;
-  letter-spacing: .002em;
-  color: #eef1f6 !important;
-  max-width: 64ch;
-  text-wrap: pretty;
-}
-
-/* Accent colour per context: purple for mission, blue for a goal, amber for a problem. */
-.ws-north .ns-view    { border-left-color: rgba(0,147,231,.55) !important; }
-.ws-problem .ns-view  { border-left-color: rgba(212,149,42,.6)  !important; }
-
-/* The opening mark. Decorative only, so it is hidden from screen readers by
-   virtue of being generated content with no semantic role. */
-#missionDisplay::before,
-.ws-north .ns-view::before,
-.ws-problem .ns-view::before {
-  content: "\201C";
-  position: absolute;
-  left: 6px;
-  top: -14px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 54px;
-  line-height: 1;
-  font-style: normal;
-  color: rgba(139,123,255,.30);
-  pointer-events: none;
-}
-.ws-north .ns-view::before   { color: rgba(0,147,231,.30); }
-.ws-problem .ns-view::before { color: rgba(212,149,42,.32); }
-
-#missionText { font: inherit; color: inherit; white-space: pre-wrap; }
-
-/* The pen sits under the quote, right-aligned, quiet until you look for it. */
-#missionDisplay > div:last-child { margin-top: 14px !important; }
-/* The host only right-aligns .ws-north .ns-actions, so the Problem block's pen
-   was falling to the left. Align every pen that follows a quote. */
-.ns-view + .ns-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-
-#missionDisplay #missionEditBtn,
-.ns-view + .ns-actions .btn {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 999px;
-  padding: 5px 13px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 11.5px;
-  font-style: normal;
-  letter-spacing: .02em;
-  color: #97a0b0;
-  opacity: .62;
-  transition: opacity .15s ease, color .15s ease, border-color .15s ease;
-}
-#missionDisplay #missionEditBtn:hover,
-.ns-view + .ns-actions .btn:hover {
-  opacity: 1;
-  color: #eef1f6;
-  border-color: rgba(255,255,255,.26);
-}
-
-@media (max-width: 760px) {
-  #missionDisplay,
-  .ws-north .ns-view,
-  .ws-problem .ns-view { font-size: 17.5px; padding-left: 24px !important; }
-  #missionDisplay::before,
-  .ws-north .ns-view::before,
-  .ws-problem .ns-view::before { font-size: 44px; top: -11px; left: 2px; }
-}
-
 /* ---------- Today: folded groups ---------------------------------------- */
 .flow-fold .td-group-head {
   cursor: pointer;
@@ -4166,7 +4065,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 'use strict';
 
 if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
-window.__FLOW_UPGRADE__ = '1.4.1';
+window.__FLOW_UPGRADE__ = '1.4.2';
 
 /* =========================================================================
  * 0 · Small utilities
