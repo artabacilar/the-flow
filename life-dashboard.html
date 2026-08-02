@@ -3587,7 +3587,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 })();
 </script>
 
-<!-- ===== The Flow · Upgrade Pack v1.1.3 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
+<!-- ===== The Flow · Upgrade Pack v1.4.0 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
 <style>
 /* ==========================================================================
    The Flow — Upgrade Pack v1.0  ·  stylesheet
@@ -3948,6 +3948,209 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 
 @media print { .flow-btn, .flow-time-chip, .flow-seg { display: none !important; } }
 
+
+/* ==========================================================================
+   Statement blocks rendered as pull-quotes
+   ------------------------------------------------------------------------
+   The mission statement, and the North Star / Problem statements on the ABKO
+   and DTC boards, are saved prose you re-read — not fields you are filling in.
+   They were styled like inputs: hard border, panel fill, boxed. This restyles
+   only the SAVED state into a quote. The textarea editing state is untouched,
+   so writing still looks like writing.
+
+   #missionDisplay carries background/border/padding inline, so those three
+   properties need !important to be overridden. Nothing else does, and
+   `display` is deliberately never touched — the app toggles it to show/hide.
+   ========================================================================== */
+
+#missionDisplay,
+.ws-north .ns-view,
+.ws-problem .ns-view {
+  position: relative;
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 2px solid rgba(139,123,255,.55) !important;
+  border-radius: 0 !important;
+  /* line 331 of the host stylesheet puts a blue glow on #missionDisplay to sell
+     it as a raised card. A quote should sit flat on the page. */
+  box-shadow: none !important;
+  padding: 4px 4px 0 30px !important;
+  margin: 6px 0 0 !important;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  /* !important on these three as well: the mission block pins font-size,
+     line-height and color inline, so a plain rule loses to the style attribute.
+     (This is also why 64ch was resolving against 14px and coming out narrow.) */
+  font-size: 19px !important;
+  line-height: 1.62 !important;
+  font-style: italic;
+  letter-spacing: .002em;
+  color: #eef1f6 !important;
+  max-width: 64ch;
+  text-wrap: pretty;
+}
+
+/* Accent colour per context: purple for mission, blue for a goal, amber for a problem. */
+.ws-north .ns-view    { border-left-color: rgba(0,147,231,.55) !important; }
+.ws-problem .ns-view  { border-left-color: rgba(212,149,42,.6)  !important; }
+
+/* The opening mark. Decorative only, so it is hidden from screen readers by
+   virtue of being generated content with no semantic role. */
+#missionDisplay::before,
+.ws-north .ns-view::before,
+.ws-problem .ns-view::before {
+  content: "\201C";
+  position: absolute;
+  left: 6px;
+  top: -14px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 54px;
+  line-height: 1;
+  font-style: normal;
+  color: rgba(139,123,255,.30);
+  pointer-events: none;
+}
+.ws-north .ns-view::before   { color: rgba(0,147,231,.30); }
+.ws-problem .ns-view::before { color: rgba(212,149,42,.32); }
+
+#missionText { font: inherit; color: inherit; white-space: pre-wrap; }
+
+/* The pen sits under the quote, right-aligned, quiet until you look for it. */
+#missionDisplay > div:last-child { margin-top: 14px !important; }
+/* The host only right-aligns .ws-north .ns-actions, so the Problem block's pen
+   was falling to the left. Align every pen that follows a quote. */
+.ns-view + .ns-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+#missionDisplay #missionEditBtn,
+.ns-view + .ns-actions .btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 11.5px;
+  font-style: normal;
+  letter-spacing: .02em;
+  color: #97a0b0;
+  opacity: .62;
+  transition: opacity .15s ease, color .15s ease, border-color .15s ease;
+}
+#missionDisplay #missionEditBtn:hover,
+.ns-view + .ns-actions .btn:hover {
+  opacity: 1;
+  color: #eef1f6;
+  border-color: rgba(255,255,255,.26);
+}
+
+@media (max-width: 760px) {
+  #missionDisplay,
+  .ws-north .ns-view,
+  .ws-problem .ns-view { font-size: 17.5px; padding-left: 24px !important; }
+  #missionDisplay::before,
+  .ws-north .ns-view::before,
+  .ws-problem .ns-view::before { font-size: 44px; top: -11px; left: 2px; }
+}
+
+/* ---------- Today: folded groups ---------------------------------------- */
+.flow-fold .td-group-head {
+  cursor: pointer;
+  position: relative;
+  padding-right: 22px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.flow-fold .td-group-head:active { opacity: .7; }
+.flow-fold .flow-fold-chev {
+  position: absolute; right: 2px; top: 50%;
+  width: 7px; height: 7px; margin-top: -5px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  opacity: .5;
+  transform: rotate(45deg);
+  transition: transform .18s ease, opacity .18s ease;
+}
+.flow-fold.is-open .flow-fold-chev { transform: rotate(-135deg); margin-top: -2px; opacity: .8; }
+/* The progress bar under the head stays visible when folded — it is the
+   summary. Only the rows themselves collapse. */
+.flow-fold .td-row,
+.flow-fold .td-empty-row { display: none; }
+.flow-fold.is-open .td-row { display: flex; }
+.flow-fold.is-open .td-empty-row { display: block; }
+@media (prefers-reduced-motion: reduce) { .flow-fold .flow-fold-chev { transition: none; } }
+
+/* ---------- Today: pulse strip + injected sections ---------------------- */
+.flow-td-pulse {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+  margin: 14px 0 4px;
+}
+.flow-td-tile {
+  appearance: none; cursor: pointer; text-align: left;
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: 12px; padding: 9px 8px 10px;
+  display: flex; flex-direction: column; gap: 1px;
+  font-family: inherit; color: var(--f-ink);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .14s ease, background .14s ease;
+}
+.flow-td-tile:active { background: var(--f-surface-2); }
+.flow-td-tile .l {
+  font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 800;
+}
+.flow-td-tile .v { font-size: 19px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.flow-td-tile .s { font-size: 9.5px; color: var(--f-muted); line-height: 1.3; }
+/* Status tone is paired with the number and its label, never colour alone. */
+.flow-td-tile.good .v { color: #2fd4a8; }
+.flow-td-tile.warn .v { color: var(--f-warning); }
+.flow-td-tile.bad  .v { color: #ff7a7a; }
+.flow-td-tile.bad  { border-color: rgba(208,59,59,.35); }
+
+.flow-td-sec { margin: 18px 0 0; }
+/* The host's own groups carry no top margin, so one following an injected
+   section collided with it. */
+.flow-td + .td-group, .flow-td + .td-rocks { margin-top: 20px; }
+.flow-td-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 7px; border-bottom: 1px solid var(--f-line); margin-bottom: 2px;
+}
+.flow-td-head .l {
+  font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 800;
+}
+.flow-td-head .c { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--f-ink-2); }
+.flow-td-head .c.ok  { color: #2fd4a8; }
+.flow-td-head .c.bad { color: #ff7a7a; }
+
+.flow-td-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 0; border-bottom: 1px solid var(--f-grid);
+  font-size: 14px; line-height: 1.4;
+}
+.flow-td-row:last-child { border-bottom: 0; }
+.flow-td-row .tx { flex: 1; min-width: 0; }
+.flow-td-row .mt { font-size: 11px; color: var(--f-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.flow-td-row.od .mt { color: #ff9a9a; }
+.flow-td-row[data-q], .flow-td-row[data-hb] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.flow-td-row[data-q]:active, .flow-td-row[data-hb]:active { opacity: .6; }
+
+.flow-td-row .bx {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px;
+  border: 1.5px solid rgba(255,255,255,.22);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900; color: #05231b;
+}
+.flow-td-row.done .bx { background: #2fd4a8; border-color: #2fd4a8; }
+.flow-td-row.done .tx { text-decoration: line-through; opacity: .45; }
+
+.flow-td-empty { color: var(--f-muted); font-size: 12.5px; padding: 12px 0; line-height: 1.55; }
+.flow-td-note { color: var(--f-muted); font-size: 11.5px; padding: 7px 0 0; }
+.flow-td-bar { height: 5px; background: var(--f-surface-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+.flow-td-bar i { display: block; height: 100%; background: var(--f-accent); border-radius: 999px; }
+.flow-td-bar i.over { background: var(--f-critical); }
+
+@media (max-width: 400px) {
+  .flow-td-tile .v { font-size: 17px; }
+  .flow-td-pulse { gap: 5px; }
+}
 </style>
 <script>
 /* ==========================================================================
@@ -3963,7 +4166,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 'use strict';
 
 if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
-window.__FLOW_UPGRADE__ = '1.1.3';
+window.__FLOW_UPGRADE__ = '1.4.0';
 
 /* =========================================================================
  * 0 · Small utilities
@@ -4554,7 +4757,12 @@ const Calendar = {
     else if (range === '4weeks') to = isoDate(addDays(ws, 27));
     else if (range === '12weeks') to = isoDate(addDays(ws, 83));
     else { from = '0000-01-01'; to = '9999-12-31'; }
-    return Schedule.between(from, to);
+    /* Anything you put a date and time on should reach your calendar, whether it
+       started life as a task row or as a flagged note section. */
+    const notes = (window.Flow && Flow.Notes ? Flow.Notes.asReminders() : [])
+      .filter(r => r.date && r.date >= from && r.date <= to);
+    return Schedule.between(from, to).concat(notes)
+      .sort((a, b) => (a.date + (a.time || '99:99')).localeCompare(b.date + (b.time || '99:99')));
   },
 
   exportApple(range) {
@@ -5376,7 +5584,8 @@ const Finance = {
 const NOTES_KEY = 'flow:notes';
 
 function newBracket(title) {
-  return { id: uid('b'), title: title || 'New section', content: '', collapsed: false, children: [], remind: false, due: '' };
+  return { id: uid('b'), title: title || 'New section', content: '', collapsed: false, children: [],
+           remind: false, due: '', dueTime: '', remindMin: 15 };
 }
 function walkBrackets(list, fn, parent) {
   (list || []).forEach(b => { fn(b, parent); walkBrackets(b.children, fn, b); });
@@ -5427,6 +5636,25 @@ const Notes = {
     Notes.autosave();
   },
 
+  /** Flagged sections as calendar events (VEVENT + alarm), not just to-dos. */
+  exportCalendar(recs, name) {
+    const ics = ICS.build(recs, {
+      name: 'The Flow', tz: Settings.get('timezone'),
+      defaultDuration: Settings.get('defaultDurationMin')
+    });
+    download('flow-' + (name || 'notes') + '-' + today() + '.ics', ics, 'text/calendar');
+    toast(recs.length + (recs.length === 1 ? ' event' : ' events') + ' exported — open the file to add it to your calendar.', null, 4200);
+  },
+
+  /** Human label for a bracket's reminder, shown on the collapsed header. */
+  whenLabel(b) {
+    if (!b.due) return 'reminder';
+    let out;
+    try { const d = parseISO(b.due); out = d.getDate() + ' ' + MON[d.getMonth()]; }
+    catch (e) { out = String(b.due); }
+    return out + (b.dueTime ? ' ' + b.dueTime : '');
+  },
+
   /** Brackets flagged "remind" become iOS reminders. */
   asReminders() {
     const out = [];
@@ -5435,7 +5663,13 @@ const Notes = {
         if (!b.remind) return;
         out.push({
           key: 'note::' + b.id, text: b.title, tab: id,
-          date: b.due || today(), time: '', dur: 30,
+          date: b.due || today(),
+          /* A VTODO/VEVENT only carries an alarm if it has a wall-clock time.
+             Passing '' here was why flagged sections exported but never fired. */
+          time: b.dueTime || '09:00',
+          dur: 30,
+          remind: true,
+          remindMin: (b.remindMin == null ? 15 : Number(b.remindMin)),
           note: (b.content || '').slice(0, 400), done: false, source: 'note'
         });
       });
@@ -5451,16 +5685,29 @@ const Notes = {
           <button class="tw" data-act="toggle" title="Collapse / expand">${b.collapsed ? '▶' : '▼'}</button>
           <input class="bt" data-act="title" value="${esc(b.title)}" placeholder="Section title…">
           <span class="flow-chip${b.remind ? ' accent' : ''}" data-act="remind" style="cursor:pointer"
-                title="Send this section to iOS Reminders">${b.remind ? '🔔 reminder' : '🔕'}</span>
+                title="${b.remind ? 'Remove the reminder' : 'Remind me about this section'}">${
+                  b.remind
+                    ? '🔔 ' + esc(Notes.whenLabel(b))
+                    : '🔕'
+                }</span>
           <button class="flow-btn ghost sm" data-act="del" title="Delete section">✕</button>
         </div>
         <div class="bb">
           <textarea data-act="content" placeholder="Write here — it saves automatically and when you press Save notes.">${esc(b.content)}</textarea>
-          ${b.remind ? `<div class="flow-row" style="margin-top:8px">
-              <span class="flow-label">Remind on</span>
-              <input class="flow-in" type="date" data-act="due" value="${esc(b.due || today())}">
-            </div>` : ''}
+          ${b.remind ? `<div class="flow-row" style="margin-top:8px;align-items:flex-end">
+              <div class="flow-field"><label class="flow-label">Date</label>
+                <input class="flow-in" type="date" data-act="due" value="${esc(b.due || today())}"></div>
+              <div class="flow-field"><label class="flow-label">Time</label>
+                <input class="flow-in" type="time" data-act="dueTime" value="${esc(b.dueTime || '09:00')}"></div>
+              <div class="flow-field"><label class="flow-label">Alert</label>
+                <select class="flow-in" data-act="remindMin">
+                  ${[[0,'at the time'],[5,'5 min before'],[15,'15 min before'],[30,'30 min before'],[60,'1 hour before'],[1440,'1 day before']]
+                    .map(([v,l]) => `<option value="${v}"${Number(b.remindMin == null ? 15 : b.remindMin) === v ? ' selected' : ''}>${l}</option>`).join('')}
+                </select></div>
+            </div>
+            <div class="flow-sub" style="margin:6px 0 0">Exports with an alarm to Apple Calendar, Google Calendar and iOS Reminders.</div>` : ''}
           <div class="bactions">
+            ${b.remind ? '<button class="flow-btn sm" data-act="oneCalendar" title="Download this one as a calendar event with an alarm">📅 Add to calendar</button>' : ''}
             <button class="flow-btn sm" data-act="addChild">+ Sub-section</button>
             ${depth === 0 ? '<button class="flow-btn sm" data-act="addSibling">+ Section below</button>' : ''}
           </div>
@@ -5485,6 +5732,7 @@ const Notes = {
       <div class="flow-row" style="margin-top:10px">
         <button class="flow-btn" data-act="addRoot" data-book="${bookId}">+ Add bracket section</button>
         <button class="flow-btn" data-act="toReminders" data-book="${bookId}">🔔 Send flagged → Reminders</button>
+        <button class="flow-btn" data-act="toCalendar" data-book="${bookId}">📅 Send flagged → Calendar</button>
       </div>`;
   },
 
@@ -5511,12 +5759,26 @@ const Notes = {
       else if (act === 'addChild' && b) { b.children = b.children || []; b.children.push(newBracket('Sub-section')); b.collapsed = false; Notes.markDirty(bookId); Notes.repaint(root, bookId); }
       else if (act === 'addSibling') { bk.brackets.push(newBracket('New section')); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
       else if (act === 'addRoot') { bk.brackets.push(newBracket('New section')); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
-      else if (act === 'remind' && b) { b.remind = !b.remind; if (b.remind && !b.due) b.due = today(); Notes.markDirty(bookId); Notes.repaint(root, bookId); }
+      else if (act === 'remind' && b) {
+        b.remind = !b.remind;
+        if (b.remind) { if (!b.due) b.due = today(); if (!b.dueTime) b.dueTime = '09:00'; if (b.remindMin == null) b.remindMin = 15; }
+        Notes.markDirty(bookId); Notes.repaint(root, bookId);
+      }
       else if (act === 'save') { bk.updated = new Date().toISOString(); await Notes.saveAll(false); }
       else if (act === 'toReminders') {
         const recs = Notes.asReminders().filter(r => r.tab === bookId);
         if (!recs.length) { toast('Flag a section with 🔕 → 🔔 first.', 'warn'); return; }
         Reminders.exportICS(recs);
+      }
+      else if (act === 'toCalendar') {
+        const recs = Notes.asReminders().filter(r => r.tab === bookId);
+        if (!recs.length) { toast('Flag a section with 🔕 → 🔔 first.', 'warn'); return; }
+        Notes.exportCalendar(recs, bookId + '-reminders');
+      }
+      else if (act === 'oneCalendar' && b) {
+        const recs = Notes.asReminders().filter(r => r.key === 'note::' + b.id);
+        if (!recs.length) { toast('Turn the 🔔 on first.', 'warn'); return; }
+        Notes.exportCalendar(recs, norm(b.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32) || 'reminder');
       }
     });
 
@@ -5533,6 +5795,8 @@ const Notes = {
       if (act === 'title') b.title = f.value;
       else if (act === 'content') b.content = f.value;
       else if (act === 'due') b.due = f.value;
+      else if (act === 'dueTime') b.dueTime = f.value;
+      else if (act === 'remindMin') b.remindMin = Number(f.value);
       else return;
       bk.updated = new Date().toISOString();
       Notes.markDirty(bookId);
@@ -6981,6 +7245,498 @@ Write freely — nothing here is logged automatically, and only what you type is
 /* =========================================================================
  * 19 · Boot
  * ====================================================================== */
+/* =========================================================================
+ * 18 · Sleep chart — rebuilt
+ *
+ * The original drew three encodings of one series (bars + line + dots) on a
+ * fixed 0–10h scale that only labelled 6–9h, so every real night was squashed
+ * into the top sliver of the plot and the line always looked flat. Bar width
+ * was cW/n*0.6, so at three nights each bar became a fifth of the chart. The
+ * canvas also had hard 800×140 attributes stretched by CSS, which is why the
+ * type looked soft.
+ *
+ * One series is one form: a single-hue line over a dynamic scale, on a
+ * device-pixel-ratio canvas, with the 7–9h target as a quiet band behind it.
+ * ====================================================================== */
+const SleepChart = {
+  _hi: -1,
+  _pts: [],
+  HUE: '#00e88a',          /* contrast 3:1+ on the card surface — validated */
+  SURF: '#14161b',
+
+  rows() {
+    try {
+      if (typeof slData === 'undefined' || !Array.isArray(slData)) return [];
+      return slData.filter(e => e && isFinite(Number(e.hrs)) && Number(e.hrs) > 0);
+    } catch (e) { return []; }
+  },
+
+  install() {
+    const cv = document.getElementById('slChart');
+    if (!cv || cv.__flowSleep) return;
+    cv.__flowSleep = 1;
+    cv.style.width = '100%';
+    cv.style.height = '190px';
+    cv.style.display = 'block';
+    cv.removeAttribute('width'); cv.removeAttribute('height');
+
+    window.renderSleepChart = SleepChart.draw;
+
+    let t;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(SleepChart.draw, 140); });
+    cv.addEventListener('mousemove', SleepChart.hover);
+    cv.addEventListener('mouseleave', () => { SleepChart._hi = -1; SleepChart.tip(null); SleepChart.draw(); });
+    SleepChart.draw();
+  },
+
+  tip(html, x, y) {
+    let el = $('#flow-sleep-tip');
+    if (!html) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'flow-sleep-tip'; el.className = 'flow-tip'; document.body.appendChild(el); }
+    el.innerHTML = html;
+    el.style.left = Math.round(x + 12) + 'px';
+    el.style.top = Math.round(y - 34) + 'px';
+  },
+
+  hover(e) {
+    const pts = SleepChart._pts;
+    if (!pts.length) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = 0, bd = 1e9;
+    pts.forEach((p, i) => { const d = Math.abs(p.x - mx); if (d < bd) { bd = d; best = i; } });
+    if (bd > 40) { SleepChart._hi = -1; SleepChart.tip(null); SleepChart.draw(); return; }
+    SleepChart._hi = best;
+    const p = pts[best];
+    SleepChart.tip(`<b>${p.hrs.toFixed(1)}h</b> · ${esc(p.label)}` + (p.quality ? ` · ${esc(String(p.quality))}/5` : ''),
+      r.left + p.x, r.top + p.y);
+    SleepChart.draw();
+  },
+
+  draw() {
+    const cv = document.getElementById('slChart');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const cssW = Math.max(280, Math.round(cv.clientWidth || (cv.parentElement && cv.parentElement.clientWidth) || 800));
+    const cssH = 190;
+    const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const F = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+    const INK = '#7e8493', INK2 = '#d5dae3', HUE = SleepChart.HUE;
+    const rec = SleepChart.rows().slice(-14);
+
+    if (!rec.length) {
+      ctx.fillStyle = INK; ctx.font = '13px ' + F; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('No nights logged yet — add one above and this fills in.', cssW / 2, cssH / 2);
+      const h0 = document.querySelector('.sleep-chart-wrap h3');
+      if (h0) h0.textContent = 'Sleep hours';
+      SleepChart._pts = []; return;
+    }
+
+    /* The heading is hard-coded to "last 14 nights"; say what is actually shown. */
+    const head = document.querySelector('.sleep-chart-wrap h3');
+    if (head) head.textContent = rec.length === 1
+      ? 'Sleep hours — last night'
+      : 'Sleep hours — last ' + rec.length + ' nights';
+
+    const pad = { l: 36, r: 18, t: 18, b: 26 };
+    const w = cssW - pad.l - pad.r, h = cssH - pad.t - pad.b;
+    const vals = rec.map(e => Number(e.hrs));
+    let lo = Math.floor(Math.min.apply(null, vals.concat([6.5]))) - 0.5;
+    let hi = Math.ceil(Math.max.apply(null, vals.concat([8.5]))) + 0.5;
+    if (hi - lo < 3) hi = lo + 3;
+    const Y = v => pad.t + h - ((v - lo) / (hi - lo)) * h;
+    const X = i => rec.length === 1 ? pad.l + w / 2 : pad.l + (i / (rec.length - 1)) * w;
+
+    /* target band, behind everything */
+    ctx.fillStyle = 'rgba(0,232,138,.055)';
+    const yb = Math.max(pad.t, Y(9)), yt = Math.min(pad.t + h, Y(7));
+    ctx.fillRect(pad.l, yb, w, yt - yb);
+
+    /* hairline grid + y labels */
+    ctx.lineWidth = 1; ctx.font = '10px ' + F; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let v = Math.ceil(lo); v <= Math.floor(hi); v++) {
+      const y = Math.round(Y(v)) + 0.5;
+      ctx.strokeStyle = 'rgba(255,255,255,.055)';
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + w, y); ctx.stroke();
+      ctx.fillStyle = INK; ctx.fillText(v + 'h', pad.l - 9, y);
+    }
+    /* Left-aligned: the latest-value label always sits at the right end, and
+       the two collided there. */
+    ctx.textAlign = 'left'; ctx.font = '9.5px ' + F; ctx.fillStyle = 'rgba(0,232,138,.5)';
+    ctx.fillText('7–9h target', pad.l + 7, yb + 9);
+
+    const pts = rec.map((e, i) => ({
+      x: X(i), y: Y(Number(e.hrs)), hrs: Number(e.hrs), date: e.date,
+      quality: e.quality,
+      label: (function () { try { const d = parseISO(e.date); return d.getDate() + ' ' + MON[d.getMonth()]; } catch (x) { return String(e.date || ''); } })()
+    }));
+    SleepChart._pts = pts;
+
+    if (pts.length > 1) {
+      /* area under the line */
+      const g = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
+      g.addColorStop(0, 'rgba(0,232,138,.20)');
+      g.addColorStop(1, 'rgba(0,232,138,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pad.t + h);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length - 1].x, pad.t + h); ctx.closePath(); ctx.fill();
+
+      ctx.strokeStyle = HUE; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    }
+
+    /* dots: 2px surface ring so they read against the line */
+    const showDots = pts.length <= 14;
+    pts.forEach((p, i) => {
+      const on = i === SleepChart._hi;
+      if (!showDots && !on && i !== pts.length - 1) return;
+      ctx.beginPath(); ctx.arc(p.x, p.y, on ? 5.5 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = HUE; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = SleepChart.SURF; ctx.stroke();
+    });
+
+    /* one direct label — the latest night. Never a number on every point. */
+    const last = pts[pts.length - 1];
+    ctx.font = '700 12px ' + F; ctx.fillStyle = INK2;
+    ctx.textAlign = last.x > pad.l + w - 40 ? 'right' : 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(last.hrs.toFixed(1) + 'h', last.x + (ctx.textAlign === 'right' ? -8 : 8), last.y - 7);
+
+    /* x labels: ends always, then thinned to avoid collisions */
+    ctx.font = '10px ' + F; ctx.fillStyle = INK; ctx.textBaseline = 'top';
+    const step = Math.max(1, Math.ceil(pts.length / 5));
+    pts.forEach((p, i) => {
+      const isEnd = i === 0 || i === pts.length - 1;
+      if (!isEnd && (i % step !== 0 || i > pts.length - 1 - step * 0.6)) return;
+      ctx.textAlign = i === 0 ? 'left' : (i === pts.length - 1 ? 'right' : 'center');
+      ctx.fillText(p.label, p.x + (i === 0 ? -4 : (i === pts.length - 1 ? 4 : 0)), pad.t + h + 8);
+    });
+
+    if (SleepChart._hi >= 0 && pts[SleepChart._hi]) {
+      const p = pts[SleepChart._hi];
+      ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(Math.round(p.x) + 0.5, pad.t); ctx.lineTo(Math.round(p.x) + 0.5, pad.t + h); ctx.stroke();
+    }
+  }
+};
+
+/* =========================================================================
+ * 19 · Today — collapsible groups
+ *
+ * The Today feed rendered every diet item and every Sharpen-the-Saw item in
+ * full, so the two longest, most repetitive blocks pushed everything else off
+ * the first screen. They become headers you tap: label, count, chevron.
+ *
+ * This wraps the app's own renderToday() instead of replacing it, so all the
+ * tick handling and journal logging inside it stay exactly as they were. The
+ * app re-renders Today on every tick, so the wrapper re-applies each time.
+ * Open/closed state is UI, not data — it lives in localStorage under the
+ * pack's own namespace and never touches the database.
+ * ====================================================================== */
+const TodayGroups = {
+  LS: 'flowpack:todayOpen',
+  COLLAPSIBLE: [/^diet$/i, /^sharpen the saw$/i],
+
+  state() {
+    try { return JSON.parse(localStorage.getItem(TodayGroups.LS) || '{}'); } catch (e) { return {}; }
+  },
+  setOpen(k, v) {
+    const s = TodayGroups.state(); if (v) s[k] = 1; else delete s[k];
+    try { localStorage.setItem(TodayGroups.LS, JSON.stringify(s)); } catch (e) {}
+  },
+
+  install() {
+    if (typeof window.renderToday !== 'function' || window.renderToday.__flowWrapped) return;
+    const original = window.renderToday;
+    const wrapped = function () {
+      const r = original.apply(this, arguments);
+      try { TodayPlus.apply(); } catch (e) { console.warn('[Flow] today plus', e); }
+      try { TodayGroups.apply(); } catch (e) { console.warn('[Flow] today groups', e); }
+      return r;
+    };
+    wrapped.__flowWrapped = 1;
+    window.renderToday = wrapped;
+    try { wrapped(); } catch (e) {}
+  },
+
+  apply() {
+    const mount = document.getElementById('today-feed');
+    if (!mount) return;
+    const open = TodayGroups.state();
+
+    $$('.td-group', mount).forEach(group => {
+      const head = $('.td-group-head', group);
+      if (!head || head.__flowFolded) return;
+      const label = norm(($('.g-lbl', head) || {}).textContent || '');
+      if (!TodayGroups.COLLAPSIBLE.some(re => re.test(label))) return;
+
+      head.__flowFolded = 1;
+      const key = label.toLowerCase();
+      const isOpen = !!open[key];
+
+      group.classList.add('flow-fold');
+      group.classList.toggle('is-open', isOpen);
+      head.setAttribute('role', 'button');
+      head.setAttribute('tabindex', '0');
+      head.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      head.setAttribute('aria-label', label + ', ' + (isOpen ? 'collapse' : 'expand'));
+
+      if (!$('.flow-fold-chev', head)) {
+        const chev = document.createElement('span');
+        chev.className = 'flow-fold-chev';
+        chev.setAttribute('aria-hidden', 'true');
+        head.appendChild(chev);
+      }
+
+      const toggle = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const nowOpen = !group.classList.contains('is-open');
+        group.classList.toggle('is-open', nowOpen);
+        head.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+        head.setAttribute('aria-label', label + ', ' + (nowOpen ? 'collapse' : 'expand'));
+        TodayGroups.setOpen(key, nowOpen);
+      };
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') toggle(e);
+      });
+    });
+  }
+};
+
+/* =========================================================================
+ * 20 · Today — the 7am read
+ *
+ * The feed answered "what are my week's rocks, and have I eaten". It never
+ * touched habits, priorities, recovery or spending, all of which the app was
+ * already storing. This injects four things into the app's own feed:
+ *
+ *   · a pulse strip under the header — recovery, priorities, habits, spend,
+ *     the four questions worth answering before you are properly awake
+ *   · priorities: open Q1/Q2 items plus anything scheduled that has slipped
+ *   · habits: today's boxes with streaks, tappable in place
+ *   · spend: today and month-to-date against budget
+ *
+ * Injected around the existing blocks rather than replacing renderToday, so
+ * rocks, training, diet and Sharpen-the-Saw keep their original behaviour.
+ * Ticking anything here writes through the app's own stores and re-renders.
+ * ====================================================================== */
+const TodayPlus = {
+  host(name) { try { return eval(name); } catch (e) { return undefined; } },
+
+  /* ---------- data ---------- */
+  recovery() {
+    const w = TodayPlus.host('whoopData') || {};
+    const sl = TodayPlus.host('slData') || [];
+    const t = TodayPlus.host('todayStr') || today();
+    let night = null;
+    for (let i = sl.length - 1; i >= 0; i--) { if (sl[i] && sl[i].date <= t) { night = sl[i]; break; } }
+    return {
+      recovery: (w.recovery == null ? null : Number(w.recovery)),
+      strain: (w.strain == null ? null : w.strain),
+      hrs: night && isFinite(Number(night.hrs)) ? Number(night.hrs) : null,
+      last: night ? night.date : null,
+      isToday: !!(night && night.date === t)
+    };
+  },
+
+  priorities() {
+    const q = TodayPlus.host('qData');
+    const items = (q && Array.isArray(q.items)) ? q.items : [];
+    const open = items.filter(i => i && !i.done);
+    const q1 = open.filter(i => i.q === 1);
+    const q2 = open.filter(i => i.q === 2);
+    let overdue = [];
+    try {
+      overdue = Schedule.scheduled().filter(r => r && !r.done && r.date < today());
+    } catch (e) { overdue = []; }
+    return { q1, q2, overdue, count: q1.length + overdue.length };
+  },
+
+  habits() {
+    const hb = TodayPlus.host('hbData');
+    if (!hb || !Array.isArray(hb.habits)) return { list: [], done: 0, total: 0 };
+    const t = TodayPlus.host('todayStr') || today();
+    const streakFn = TodayPlus.host('hbStreak');
+    const list = hb.habits.map(h => ({
+      id: h.id, name: h.name,
+      done: !!(hb.completions && hb.completions[h.id] && hb.completions[h.id][t]),
+      streak: (typeof streakFn === 'function' ? (function () { try { return streakFn(h.id); } catch (e) { return 0; } })() : 0)
+    }));
+    return { list, done: list.filter(h => h.done).length, total: list.length };
+  },
+
+  spend() {
+    const fn = TodayPlus.host('fnData');
+    const month = TodayPlus.host('NOW_MONTH');
+    const t = TodayPlus.host('todayStr') || today();
+    const cats = TodayPlus.host('FIN_CATS') || [];
+    if (!fn || !fn.monthly || !month) return null;
+    const rows = fn.monthly[month] || [];
+    const mtd = rows.reduce((s, r) => s + (Number(r.amt) || 0), 0);
+    const tod = rows.filter(r => r.date === t).reduce((s, r) => s + (Number(r.amt) || 0), 0);
+    let budget = 0;
+    try { cats.forEach(c => { budget += Number((fn.budgets || {})[c.id]) || 0; }); } catch (e) {}
+    if (!budget) budget = Number(Settings.get('budgetMonthly')) || 0;
+    return { today: tod, mtd, budget, count: rows.length };
+  },
+
+  /* Their finance UI labels every field in £, so the numbers in this store are
+     pounds. Match the host rather than inventing a currency for them. */
+  money(n) {
+    const v = Number(n) || 0;
+    return '£' + (Math.abs(v) >= 1000 ? v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : v.toFixed(v % 1 ? 2 : 0));
+  },
+
+  /* ---------- build ---------- */
+  apply() {
+    const feed = document.getElementById('today-feed');
+    if (!feed || !feed.children.length) return;
+    $$('.flow-td', feed).forEach(n => n.remove());
+
+    const rec = TodayPlus.recovery();
+    const pri = TodayPlus.priorities();
+    const hab = TodayPlus.habits();
+    const sp = TodayPlus.spend();
+
+    /* — pulse strip — */
+    const recTxt = rec.recovery != null ? rec.recovery + '%' : (rec.hrs != null ? rec.hrs.toFixed(1) + 'h' : '—');
+    const recSub = rec.recovery != null
+      ? (rec.hrs != null ? rec.hrs.toFixed(1) + 'h sleep' : 'recovery')
+      : (rec.hrs != null ? (rec.isToday ? 'last night' : 'last logged') : 'nothing logged');
+    const recTone = rec.recovery == null ? '' : (rec.recovery >= 67 ? ' good' : rec.recovery >= 34 ? ' warn' : ' bad');
+
+    const strip = document.createElement('div');
+    strip.className = 'flow-td flow-td-pulse flow-x';
+    strip.innerHTML = [
+      ['recovery', 'Recovery', recTxt, recSub, recTone],
+      ['priorities', 'Priorities', String(pri.count), pri.overdue.length ? pri.overdue.length + ' overdue' : (pri.q1.length ? 'urgent open' : 'nothing urgent'), pri.overdue.length ? ' bad' : (pri.q1.length ? ' warn' : ' good')],
+      ['habits', 'Habits', hab.total ? hab.done + '/' + hab.total : '—', hab.total ? (hab.done === hab.total ? 'all done' : 'to tick') : 'none set', hab.total && hab.done === hab.total ? ' good' : ''],
+      ['spend', 'Spend', sp ? TodayPlus.money(sp.today) : '—', sp ? TodayPlus.money(sp.mtd) + ' this month' : 'nothing logged', '']
+    ].map(([k, lbl, v, sub, tone]) =>
+      `<button class="flow-td-tile${tone}" data-jump="${k}">
+         <span class="l">${lbl}</span><span class="v">${esc(v)}</span><span class="s">${esc(sub)}</span>
+       </button>`).join('');
+
+    const head = $('.td-head', feed);
+    if (head && head.nextSibling) feed.insertBefore(strip, head.nextSibling); else feed.insertBefore(strip, feed.firstChild);
+
+    /* — priorities — */
+    const pblock = document.createElement('div');
+    pblock.className = 'flow-td flow-td-sec flow-x';
+    pblock.id = 'flow-td-priorities';
+    const prow = (txt, meta, cls, attr) =>
+      `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${esc(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
+    const pbody = [
+      ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
+      ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', `data-q="${esc(i.id)}"`)),
+      ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', `data-q="${esc(i.id)}"`))
+    ].join('');
+    pblock.innerHTML =
+      `<div class="flow-td-head"><span class="l">Priorities</span><span class="c">${pri.q1.length + pri.q2.length} open</span></div>` +
+      (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Add them in 🎯 Priorities.</div>`);
+    const rocks = $('.td-rocks', feed);
+    if (rocks && rocks.nextSibling) feed.insertBefore(pblock, rocks.nextSibling); else feed.appendChild(pblock);
+
+    /* — habits — */
+    const hblock = document.createElement('div');
+    hblock.className = 'flow-td flow-td-sec flow-x';
+    hblock.id = 'flow-td-habits';
+    hblock.innerHTML =
+      `<div class="flow-td-head"><span class="l">Habits</span><span class="c${hab.total && hab.done === hab.total ? ' ok' : ''}">${hab.done} / ${hab.total}</span></div>` +
+      (hab.list.length
+        ? hab.list.map(h =>
+            `<div class="flow-td-row hb${h.done ? ' done' : ''}" data-hb="${esc(h.id)}">
+               <span class="bx">${h.done ? '✓' : ''}</span>
+               <span class="tx">${esc(h.name)}</span>
+               ${h.streak > 0 ? `<span class="mt">🔥 ${h.streak}</span>` : ''}
+             </div>`).join('')
+        : `<div class="flow-td-empty">No habits yet. Add them in ✅ Habits and they show up here.</div>`);
+
+    const groups = $$('.td-group', feed);
+    const trainGroup = groups.find(g => /train/i.test((($('.g-lbl', g) || {}).textContent) || ''));
+    if (trainGroup && trainGroup.nextSibling) feed.insertBefore(hblock, trainGroup.nextSibling);
+    else feed.appendChild(hblock);
+
+    /* — spend — */
+    if (sp) {
+      const pct = sp.budget ? Math.min(100, Math.round(sp.mtd / sp.budget * 100)) : 0;
+      const over = sp.budget && sp.mtd > sp.budget;
+      const sblock = document.createElement('div');
+      sblock.className = 'flow-td flow-td-sec flow-x';
+      sblock.id = 'flow-td-spend';
+      sblock.innerHTML =
+        `<div class="flow-td-head"><span class="l">Spend</span><span class="c${over ? ' bad' : ''}">${esc(TodayPlus.money(sp.mtd))}${sp.budget ? ' / ' + esc(TodayPlus.money(sp.budget)) : ''}</span></div>` +
+        `<div class="flow-td-row"><span class="tx">Today</span><span class="mt">${esc(TodayPlus.money(sp.today))}</span></div>` +
+        (sp.budget
+          ? `<div class="flow-td-bar"><i style="width:${pct}%" class="${over ? 'over' : ''}"></i></div>
+             <div class="flow-td-note">${over ? 'Over budget by ' + esc(TodayPlus.money(sp.mtd - sp.budget)) : esc(TodayPlus.money(sp.budget - sp.mtd)) + ' left this month'}</div>`
+          : `<div class="flow-td-note">Set category budgets in 💰 Finances to track this against a limit.</div>`);
+      feed.appendChild(sblock);
+    }
+
+    TodayPlus.bind(feed);
+  },
+
+  bind(feed) {
+    if (feed.__flowTdBound) return;
+    feed.__flowTdBound = 1;
+    feed.addEventListener('click', (e) => {
+      const jump = e.target.closest('[data-jump]');
+      if (jump) {
+        const id = { recovery: 'flow-td-habits', priorities: 'flow-td-priorities', habits: 'flow-td-habits', spend: 'flow-td-spend' }[jump.getAttribute('data-jump')];
+        const el = id && document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      const hb = e.target.closest('[data-hb]');
+      if (hb) {
+        const id = hb.getAttribute('data-hb');
+        const data = TodayPlus.host('hbData');
+        const S_ = TodayPlus.host('S');
+        const t = TodayPlus.host('todayStr') || today();
+        if (!data || !S_) return;
+        data.completions = data.completions || {};
+        data.completions[id] = data.completions[id] || {};
+        const nowDone = !data.completions[id][t];
+        if (nowDone) {
+          data.completions[id][t] = true;
+          const h = (data.habits || []).find(x => x.id === id);
+          const J_ = TodayPlus.host('J');
+          if (typeof J_ === 'function' && h) { try { J_('habits', '✅ ' + h.name); } catch (x) {} }
+        } else delete data.completions[id][t];
+        S_.set('habits', data);
+        const rh = TodayPlus.host('renderHabits');
+        if (typeof rh === 'function') { try { rh(); } catch (x) {} }
+        if (typeof window.renderToday === 'function') window.renderToday();
+        return;
+      }
+
+      const qr = e.target.closest('[data-q]');
+      if (qr) {
+        const id = qr.getAttribute('data-q');
+        const q = TodayPlus.host('qData');
+        const qs = TodayPlus.host('qSave');
+        if (!q || typeof qs !== 'function') return;
+        const it = (q.items || []).find(x => x.id === id);
+        if (!it) return;
+        it.done = !it.done;
+        qs();
+        const rq = TodayPlus.host('renderQuad');
+        if (typeof rq === 'function') { try { rq(); } catch (x) {} }
+        if (typeof window.renderToday === 'function') window.renderToday();
+      }
+    });
+  }
+};
+
 async function boot() {
   try {
     await Settings.load();
@@ -7026,6 +7782,9 @@ async function boot() {
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
+
+  try { SleepChart.install(); } catch (e) { console.warn('[Flow] sleep chart', e); }
+  try { TodayGroups.install(); } catch (e) { console.warn('[Flow] today groups', e); }
 
   console.log('%c The Flow · upgrade pack ' + window.__FLOW_UPGRADE__ + ' ready ',
     'background:#17bb92;color:#05231b;font-weight:700;border-radius:4px');
