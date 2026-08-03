@@ -203,6 +203,15 @@ async function gate(req, res) {
 
     const users = await getJSON(USERS_KEY, {});
     const first = Object.keys(users).length === 0;
+
+    /* The first account becomes the owner and inherits everything already in
+       the store. Between deploying this and the owner signing up there is a
+       window where a stranger who knows the URL could claim it — and with a
+       public repo, the URL is discoverable. When FLOW_OWNER_EMAIL is set, only
+       that address can take the first account, which closes the window. */
+    if (first && OWNER_EMAIL && email !== OWNER_EMAIL) {
+      return json(res, 403, { error: 'This Flow is reserved for its owner. Ask them to invite you once they have set it up.' }), true;
+    }
     if (!first && INVITE && String(b.invite || '') !== INVITE) {
       return json(res, 403, { error: 'That invite code is not right.' }), true;
     }
