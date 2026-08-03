@@ -4276,7 +4276,13 @@ const Settings = {
     return Settings.data;
   },
   get(k) { return Settings.data[k]; },
-  async set(k, v) { Settings.data[k] = v; await DB.set(SETTINGS_KEY, Settings.data); },
+  async set(k, v) {
+    Settings.data[k] = v;
+    await DB.set(SETTINGS_KEY, Settings.data);
+    /* The planner tab carries the display name, so renaming yourself renames
+       the tab straight away rather than at the next reload. */
+    if (k === 'displayName') { try { Planner.applyTabName(); } catch (e) {} }
+  },
   async save() { await DB.set(SETTINGS_KEY, Settings.data); }
 };
 
@@ -4686,6 +4692,27 @@ const Tabs = {
        only toggles classes — so appending to it is stable. */
     Tabs.addToMobileSheet(name, label);
     return section;
+  },
+
+  /* The planner tab is named after whoever is signed in. The shipped file
+     cannot hardcode a name — it is the same file for everyone — so the label
+     is set once the account and settings are known, and falls back to a
+     neutral word until then. */
+  relabel(name, label) {
+    const t = Tabs.mine[name];
+    if (t && t.pill) t.pill.textContent = label;
+    const grid = document.getElementById('moreGrid');
+    const btn = grid && grid.querySelector('[data-flow-goto="' + name + '"]');
+    if (btn) {
+      const parts = String(label).trim().split(/\s+/);
+      let icon = '';
+      if (parts.length > 1 && !/[a-z0-9]/i.test(parts[0])) icon = parts.shift();
+      const lab = btn.querySelector('.mg-label') || btn.querySelector('span:last-child');
+      if (lab) lab.textContent = parts.join(' ');
+      const ic = btn.querySelector('.mg-icon') || btn.querySelector('span:first-child');
+      if (ic && icon) ic.textContent = icon;
+      if (!lab) btn.textContent = label;
+    }
   },
 
   addToMobileSheet(name, label) {
@@ -5723,6 +5750,19 @@ const Rollup = {
  * 15 · The Planner tab
  * ====================================================================== */
 const Planner = {
+  /* First name of the signed-in account, else the display name from Settings,
+     else a neutral word. Never a name baked into the file. */
+  who() {
+    const fromAuth = (Auth.user && Auth.user.name) || '';
+    const fromSettings = (Settings.data && Settings.data.displayName) || '';
+    const raw = String(fromAuth || fromSettings || '').trim();
+    if (!raw) return 'Planner';
+    return raw.split(/\s+/)[0].slice(0, 18);
+  },
+  applyTabName() {
+    try { Tabs.relabel('artur', '👤 ' + Planner.who()); } catch (e) {}
+  },
+
   render(section) {
     const s = Settings.data;
     const now = new Date();
@@ -8189,6 +8229,9 @@ async function boot() {
   Tabs.init();
   Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
+  /* Settings and the account are both loaded by now, so the planner tab can
+     take the signed-in person's name. */
+  Planner.applyTabName();
 
   // time chips everywhere
   TimeChips.scan(document);
