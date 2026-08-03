@@ -3587,7 +3587,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 })();
 </script>
 
-<!-- ===== The Flow · Upgrade Pack v1.4.2 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
+<!-- ===== The Flow · Upgrade Pack v1.6.1 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
 <style>
 /* ==========================================================================
    The Flow — Upgrade Pack v1.0  ·  stylesheet
@@ -4050,6 +4050,33 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   .flow-td-tile .v { font-size: 17px; }
   .flow-td-pulse { gap: 5px; }
 }
+
+/* ---------- sign-in ------------------------------------------------------ */
+#flow-auth {
+  position: fixed; inset: 0; z-index: 2147483000;
+  background: #0a0d0e;
+  display: flex; align-items: center; justify-content: center;
+  padding: 22px; overflow-y: auto;
+}
+#flow-auth .fa-card {
+  width: 100%; max-width: 380px;
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: 18px; padding: 30px 26px 26px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.6);
+}
+#flow-auth .fa-brand { font-size: 21px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 22px; color: var(--f-ink-2); }
+#flow-auth .fa-brand b { font-weight: 800; color: var(--f-ink); }
+#flow-auth .fa-h { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+#flow-auth .fa-sub { margin: 0 0 20px; font-size: 12.5px; line-height: 1.55; color: var(--f-muted); }
+#flow-auth .flow-label { display: block; margin: 14px 0 6px; }
+#flow-auth .flow-in { width: 100%; padding: 11px 12px; font-size: 15px; border-radius: 10px; }
+#flow-auth .fa-go { width: 100%; margin-top: 22px; padding: 12px; font-size: 14px; border-radius: 10px; }
+#flow-auth .fa-alt { width: 100%; margin-top: 9px; padding: 9px; font-size: 12.5px; border-radius: 10px; color: var(--f-muted); }
+#flow-auth .fa-err {
+  background: rgba(208,59,59,.14); border: 1px solid rgba(208,59,59,.4);
+  color: #ffc2c2; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+  margin-bottom: 4px;
+}
 </style>
 <script>
 /* ==========================================================================
@@ -4065,7 +4092,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 'use strict';
 
 if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
-window.__FLOW_UPGRADE__ = '1.4.2';
+window.__FLOW_UPGRADE__ = '1.6.1';
 
 /* =========================================================================
  * 0 · Small utilities
@@ -6432,6 +6459,57 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           ${Object.keys(s.merchantMemory || {}).length ? '<button class="flow-btn ghost sm" data-act2="forget" style="margin-left:8px">Forget all</button>' : ''}</p>
       </div>
 
+      ${Auth.installed ? `
+      <div class="flow-card">
+        <h3>👤 Account</h3>
+        <p class="flow-sub">Signed in as <b>${esc(Auth.user ? (Auth.user.name || Auth.user.email) : '')}</b>${Auth.user && Auth.user.email ? ' · ' + esc(Auth.user.email) : ''}${Auth.user && Auth.user.owner ? ' · owner of this server' : ''}. Your data is private to this account — nobody else signed in here can see it.</p>
+        <div class="flow-row">
+          <button class="flow-btn" data-act2="changepw">Change password</button>
+          <span class="flow-spacer"></span>
+          <button class="flow-btn danger" data-act2="signout">Sign out</button>
+        </div>
+      </div>` : ''}
+
+      <div class="flow-card">
+        <h3>🧩 Make it yours</h3>
+        <p class="flow-sub">The dashboard ships as a template. Everything below is yours alone — changing it never touches anyone else's Flow.${Profile.isNew ? ' You are starting from the neutral template.' : ''}</p>
+
+        <div class="flow-grid c2">
+          ${(Profile.data && Profile.data.workspaces || []).map((w, i) => `
+          <div class="flow-field">
+            <label class="flow-label">Work board ${i + 1}</label>
+            <div class="flow-row">
+              <input class="flow-in" style="flex:0 0 56px;text-align:center" data-ws="${i}" data-wsf="icon" value="${esc(w.icon)}">
+              <input class="flow-in grow" data-ws="${i}" data-wsf="name" value="${esc(w.name)}">
+            </div>
+            <input class="flow-in" data-ws="${i}" data-wsf="sub" placeholder="One line describing it" value="${esc(w.sub || '')}">
+          </div>`).join('')}
+        </div>
+
+        <div class="flow-field" style="margin-top:14px">
+          <label class="flow-label">Daily checklist — one per line</label>
+          <textarea data-prof="dietCommon" rows="7">${esc(Profile.rowsToLines(Profile.data && Profile.data.dietCommon))}</textarea>
+        </div>
+        <div class="flow-field" style="margin-top:10px">
+          <label class="flow-label">Extra items on training days — one per line</label>
+          <textarea data-prof="dietGym" rows="3">${esc(Profile.rowsToLines(Profile.data && Profile.data.dietGym))}</textarea>
+        </div>
+        <div class="flow-field" style="margin-top:10px">
+          <label class="flow-label">Weekly commitments (Sharpen the Saw) — one per line</label>
+          <textarea data-prof="saw" rows="8">${esc(Profile.rowsToLines(Profile.data && Profile.data.saw))}</textarea>
+        </div>
+        <div class="flow-field" style="margin-top:10px">
+          <label class="flow-label">Training week — one line per day, as <code>Day | Title | Time</code></label>
+          <textarea data-prof="plan" rows="7">${esc((Profile.data && Profile.data.plan || []).map(d => [d.key, d.title, d.time || ''].join(' | ')).join('\n'))}</textarea>
+        </div>
+
+        <div class="flow-row" style="margin-top:14px">
+          <button class="flow-btn primary" data-act2="profsave">Save my setup</button>
+          <span class="flow-spacer"></span>
+          <button class="flow-btn danger" data-act2="profreset">Reset to the blank template</button>
+        </div>
+      </div>
+
       <div class="flow-card">
         <h3>💾 Data</h3>
         <p class="flow-sub">Everything the upgrade pack stores lives under <code>flow:*</code> keys in the same database as the rest of the app, and is mirrored to this browser so it survives going offline.</p>
@@ -6472,6 +6550,60 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const a = btn.getAttribute('data-act2');
+      if (a === 'profsave') {
+        const sec = btn.closest('.flow-section') || document;
+        const P = Profile.data;
+        sec.querySelectorAll('[data-ws]').forEach(f => {
+          const w = P.workspaces[Number(f.getAttribute('data-ws'))];
+          if (w) w[f.getAttribute('data-wsf')] = f.value.trim();
+        });
+        const t = (k) => { const el = sec.querySelector('[data-prof="' + k + '"]'); return el ? el.value : null; };
+        const dc = t('dietCommon'); if (dc != null) P.dietCommon = Profile.linesToRows(dc, 'd');
+        const dg = t('dietGym');    if (dg != null) P.dietGym = Profile.linesToRows(dg, 'g');
+        const sw = t('saw');        if (sw != null) P.saw = Profile.linesToRows(sw, 's');
+        const pl = t('plan');
+        if (pl != null) {
+          P.plan = String(pl).split('\n').map(s => s.trim()).filter(Boolean).map(line => {
+            const bits = line.split('|').map(x => x.trim());
+            const key = (bits[0] || '').toLowerCase().slice(0, 3);
+            const title = bits[1] || '';
+            const time = bits[2] || '';
+            return { key, title, tag: title.split(/[\s—-]/)[0] || 'Train', time, type: /rest/i.test(title) ? 'rest' : 'hyper' };
+          }).filter(d => d.key);
+        }
+        Profile.isNew = false;
+        await Profile.save();
+        Profile.apply();
+        await Profile.rerenderHost();
+        toast('Saved — this is your setup now ✓');
+        SettingsUI.render(btn.closest('.flow-section'));
+        return;
+      }
+      if (a === 'profreset') {
+        if (!confirm('Reset your training, diet, weekly commitments and board names to the blank template? Your journal, tasks and finances are not touched.')) return;
+        Profile.data = JSON.parse(JSON.stringify(NEUTRAL));
+        Profile.isNew = true;
+        await Profile.save();
+        Profile.apply();
+        await Profile.rerenderHost();
+        toast('Reset to the template ✓');
+        SettingsUI.render(btn.closest('.flow-section'));
+        return;
+      }
+      if (a === 'signout') {
+        if (!confirm('Sign out of The Flow on this device?')) return;
+        await Auth.signOut();
+        return;
+      }
+      if (a === 'changepw') {
+        const current = prompt('Your current password:');
+        if (current == null) return;
+        const next = prompt('New password (at least 10 characters):');
+        if (next == null) return;
+        try { await Auth.post('/api/auth/password', { current, next }); toast('Password changed ✓'); }
+        catch (e) { toast(e.message, 'err', 5000); }
+        return;
+      }
         const st = section.querySelector('#set-remstatus');
         if (a === 'remIcs') Reminders.exportICS();
         else if (a === 'remPublish') {
@@ -7505,6 +7637,16 @@ const TodayPlus = {
     if (!feed || !feed.children.length) return;
     $$('.flow-td', feed).forEach(n => n.remove());
 
+    /* The header showed only the ISO week. The quarter is the unit business
+       planning actually runs on, so show both. */
+    const wk = $('.td-wk', feed);
+    if (wk) {
+      const now = new Date();
+      const q = Math.floor(now.getMonth() / 3) + 1;
+      const week = (wk.textContent.match(/\d+/) || [''])[0];
+      wk.textContent = 'Q' + q + (week ? ' · WK ' + week : '');
+    }
+
     const rec = TodayPlus.recovery();
     const pri = TodayPlus.priorities();
     const hab = TodayPlus.habits();
@@ -7642,7 +7784,422 @@ const TodayPlus = {
   }
 };
 
+/* =========================================================================
+ * 21 · Accounts
+ *
+ * Talks to the optional server module (flow-auth.js). If that module is not
+ * installed, /api/auth/me is simply not a route — the check fails quietly and
+ * the app behaves exactly as it always has. So this is safe to ship before
+ * the server change, and the server change is safe to ship after it.
+ * ====================================================================== */
+const Auth = {
+  user: null,
+  seed: null,          /* 'legacy' | 'template' — decided by the server at signup */
+  installed: false,
+
+  async check() {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok && r.status !== 401) return null;         /* no auth module */
+      const j = await r.json().catch(() => null);
+      if (!j || typeof j.ok === 'undefined') return null; /* not our endpoint */
+      Auth.installed = true;
+      Auth.user = j.user || null;
+      Auth.seed = j.seed || null;
+      if (!Auth.user) Auth.screen(!!j.needsSetup);
+      return Auth.user;
+    } catch (e) { return null; }
+  },
+
+  async post(path, body) {
+    const r = await fetch(path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ('Something went wrong (' + r.status + ')'));
+    return j;
+  },
+
+  screen(firstRun) {
+    if ($('#flow-auth')) return;
+    const el = document.createElement('div');
+    el.id = 'flow-auth';
+    el.className = 'flow-x';
+    el.innerHTML = `
+      <div class="fa-card">
+        <div class="fa-brand">The <b>Flow</b></div>
+        <h2 class="fa-h" id="fa-h">${firstRun ? 'Set up your account' : 'Sign in'}</h2>
+        <p class="fa-sub" id="fa-sub">${firstRun
+          ? 'This is the first account on this server, so it becomes the owner — everything already in The Flow becomes yours.'
+          : 'Your data is private to your account.'}</p>
+        <div class="fa-err" id="fa-err" hidden></div>
+        <label class="flow-label" for="fa-email">Email</label>
+        <input class="flow-in" id="fa-email" type="email" autocomplete="username" placeholder="you@example.com">
+        <div id="fa-namewrap" ${firstRun ? '' : 'hidden'}>
+          <label class="flow-label" for="fa-name">Name</label>
+          <input class="flow-in" id="fa-name" type="text" autocomplete="name" placeholder="What should it call you?">
+        </div>
+        <label class="flow-label" for="fa-pw">Password</label>
+        <input class="flow-in" id="fa-pw" type="password" autocomplete="current-password" placeholder="At least 10 characters">
+        <div id="fa-invwrap" hidden>
+          <label class="flow-label" for="fa-inv">Invite code</label>
+          <input class="flow-in" id="fa-inv" type="text" placeholder="The code you were given">
+        </div>
+        <button class="flow-btn primary fa-go" id="fa-go">${firstRun ? 'Create account' : 'Sign in'}</button>
+        <button class="flow-btn ghost fa-alt" id="fa-alt">${firstRun ? '' : 'Create an account instead'}</button>
+      </div>`;
+    document.body.appendChild(el);
+
+    let mode = firstRun ? 'signup' : 'login';
+    const err = $('#fa-err', el);
+    const setMode = (m) => {
+      mode = m;
+      $('#fa-h', el).textContent = m === 'signup' ? 'Create your account' : 'Sign in';
+      $('#fa-sub', el).textContent = m === 'signup'
+        ? 'Ask whoever shared The Flow with you for the invite code.'
+        : 'Your data is private to your account.';
+      $('#fa-go', el).textContent = m === 'signup' ? 'Create account' : 'Sign in';
+      $('#fa-alt', el).textContent = m === 'signup' ? 'I already have an account' : 'Create an account instead';
+      $('#fa-namewrap', el).hidden = m !== 'signup';
+      $('#fa-invwrap', el).hidden = m !== 'signup' || firstRun;
+      $('#fa-pw', el).setAttribute('autocomplete', m === 'signup' ? 'new-password' : 'current-password');
+      err.hidden = true;
+    };
+    if (!firstRun) $('#fa-alt', el).addEventListener('click', () => setMode(mode === 'signup' ? 'login' : 'signup'));
+    else $('#fa-alt', el).style.display = 'none';
+
+    const go = async () => {
+      const btn = $('#fa-go', el);
+      err.hidden = true; btn.disabled = true;
+      const was = btn.textContent; btn.textContent = 'One moment…';
+      try {
+        const payload = {
+          email: $('#fa-email', el).value.trim(),
+          password: $('#fa-pw', el).value
+        };
+        if (mode === 'signup') {
+          payload.name = $('#fa-name', el).value.trim();
+          payload.invite = $('#fa-inv', el).value.trim();
+        }
+        const j = await Auth.post(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', payload);
+        btn.textContent = j.adopted ? 'Restoring your data…' : 'Loading…';
+        /* A full reload is deliberate: the app hydrates its whole store in one
+           synchronous pass at boot, so the cleanest way to pick up the account's
+           data is to start again with the session in place. */
+        location.reload();
+      } catch (e) {
+        err.textContent = e.message; err.hidden = false;
+        btn.disabled = false; btn.textContent = was;
+      }
+    };
+    $('#fa-go', el).addEventListener('click', go);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    setTimeout(() => { try { $('#fa-email', el).focus(); } catch (e) {} }, 60);
+  },
+
+  async signOut() {
+    try { await fetch('/api/auth/logout', { credentials: 'same-origin' }); } catch (e) {}
+    /* Clear the local mirror too, or the next person to open this browser sees
+       the previous account's cached data behind the sign-in screen. */
+    try {
+      Object.keys(localStorage).filter(k => k.indexOf('ld_') === 0 || k.indexOf('flowpack:') === 0)
+        .forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
+    location.reload();
+  }
+};
+
+/* =========================================================================
+ * 22 · Profile — makes the dashboard a template rather than one person's app
+ *
+ * A lot of what looks like "the app" is hard-coded content: QUAD_DEFAULTS,
+ * SAW_ITEMS, PLAN, DIET_GYM/DIET_COMMON, and the two work boards. Ship that
+ * to a second account and they get an empty journal wrapped in someone else's
+ * life. This moves all of it into per-user data.
+ *
+ * Those constants are declared with `const`, so they cannot be reassigned —
+ * but they are arrays, and arrays are mutable. Splicing them in place changes
+ * what every existing render function reads, without touching that code.
+ *
+ * Anyone who already has data keeps exactly what they have: their profile is
+ * captured FROM the current constants the first time this runs, so nothing
+ * changes for them. Only genuinely new accounts get the neutral template.
+ * ====================================================================== */
+const PROFILE_KEY = 'flow:profile';
+
+const NEUTRAL = {
+  mission: '',
+  roles: ['Work', 'Health & Body', 'Money', 'Relationships', 'Learning', 'Something creative'],
+  workspaces: [
+    { id: 'abko', name: 'Work', icon: '🏢', sub: 'Your job or main business — the goal you are driving, the tasks in motion, and a running log.', nsPlaceholder: 'What are you driving at work right now?' },
+    { id: 'dtc',  name: 'Side Project', icon: '🚀', sub: 'Your own project — north-star goal, task pipeline, and notes.', nsPlaceholder: 'Where is this project headed?' }
+  ],
+  dietCommon: [
+    ['water',  '💧 2–3 litres of water'],
+    ['meal1',  '🍳 Breakfast'],
+    ['meal2',  '🥗 Lunch'],
+    ['meal3',  '🍽️ Dinner'],
+    ['clean',  '🚫 No snacking between meals']
+  ],
+  dietGym: [
+    ['train',  '🏋️ Training session'],
+    ['shake',  '🥤 Post-workout protein']
+  ],
+  saw: [
+    ['phys1', '💪 Physical — train 4× this week'],
+    ['phys2', '🥗 Physical — eat to plan most days'],
+    ['ment1', '📚 Mental — read or study ×3'],
+    ['ment2', '🧠 Mental — learn one new thing'],
+    ['soc1',  '🤝 Social — reach out to someone who matters'],
+    ['soc2',  '❤️ Social — real time with people, phone away'],
+    ['spir1', '🎧 Spiritual — something creative ×3'],
+    ['spir2', '🪧 Spiritual — weekly review + mission check']
+  ],
+  quad: [
+    [1, 'Something urgent and important — do it today'],
+    [2, 'Something important but not urgent — this is where the wins are'],
+    [3, 'Something urgent but not important — can it be delegated?'],
+    [4, 'Something that is neither — be honest about it']
+  ],
+  plan: [
+    { key: 'mon', title: 'Push — Chest, Shoulders, Triceps', tag: 'Push', time: '18:00', type: 'hyper' },
+    { key: 'tue', title: 'Pull — Back and Biceps',            tag: 'Pull', time: '18:00', type: 'hyper' },
+    { key: 'wed', title: 'Rest / Active Recovery',            tag: 'Rest', time: '',      type: 'rest'  },
+    { key: 'thu', title: 'Legs',                              tag: 'Legs', time: '18:00', type: 'hyper' },
+    { key: 'fri', title: 'Upper Body',                        tag: 'Upper', time: '18:00', type: 'hyper' },
+    { key: 'sat', title: 'Conditioning or a long walk',       tag: 'Cardio', time: '',    type: 'hyper' },
+    { key: 'sun', title: 'Rest',                              tag: 'Rest', time: '',      type: 'rest'  }
+  ]
+};
+
+const Profile = {
+  data: null,
+  isNew: false,
+
+  host(name) { try { return eval(name); } catch (e) { return undefined; } },
+
+  /** Read the constants as the code currently defines them. */
+  capture() {
+    const plan = (Profile.host('PLAN') || []).map(d => ({ key: d.key, title: d.title, tag: d.tag, time: d.time, type: d.type }));
+    return {
+      mission: Profile.host('DEFAULT_MISSION') || '',
+      roles: (Profile.host('DEFAULT_ROLES') || []).slice(),
+      workspaces: [
+        { id: 'abko', name: 'ABKO', icon: '🏢', sub: "Your role at ABKO — the goal you're driving, the tasks in motion, and a running work log.", nsPlaceholder: 'What are you driving at ABKO right now?' },
+        { id: 'dtc',  name: 'DTC Business', icon: '🛒', sub: 'Your own e-commerce / DTC business — north-star goal, task pipeline, and notes.', nsPlaceholder: 'Where is your DTC business headed?' }
+      ],
+      dietCommon: (Profile.host('DIET_COMMON') || []).map(x => x.slice()),
+      dietGym: (Profile.host('DIET_GYM') || []).map(x => x.slice()),
+      saw: (Profile.host('SAW_ITEMS') || []).map(x => x.slice()),
+      quad: (Profile.host('QUAD_DEFAULTS') || []).map(x => x.slice()),
+      plan
+    };
+  },
+
+  /** Fallback only — used when the server has no accounts installed, i.e. the
+      single-user case, where "existing" is always the right answer. */
+  hasExistingData() {
+    try {
+      const q = Profile.host('qData');
+      const j = Profile.host('jData');
+      const c = Profile.host('cData');
+      if (j && j.length > 3) return true;
+      if (c && c.mission && String(c.mission).trim()) return true;
+      if (q && q.items && q.items.some(i => i.done)) return true;
+      /* A store that already holds a quad list it did not just seed. */
+      const raw = localStorage.getItem('ld_quad');
+      if (raw && j && j.length) return true;
+      return false;
+    } catch (e) { return false; }
+  },
+
+  async load() {
+    let saved = null;
+    try { saved = await DB.get(PROFILE_KEY, null); } catch (e) {}
+    if (saved && saved.workspaces) { Profile.data = saved; return saved; }
+
+    /* The server decides this at signup and remembers it. Guessing from the
+       client is not possible: the app writes its own defaults into the store
+       during boot, so a fresh account looks identical to an old one by the
+       time anything here can look. */
+    Profile.isNew = Auth.installed ? (Auth.seed === 'template') : !Profile.hasExistingData();
+    /* Existing users keep exactly what the code gave them; only genuinely new
+       accounts get the neutral template. */
+    Profile.data = Profile.isNew ? JSON.parse(JSON.stringify(NEUTRAL)) : Profile.capture();
+    /* A capture that found nothing means the host constants were not readable
+       yet. Persisting that would bake the emptiness in permanently. */
+    const captured = (Profile.data.dietCommon || []).length + (Profile.data.saw || []).length + (Profile.data.quad || []).length;
+    if (!Profile.isNew && !captured) {
+      console.warn('[Flow] profile capture found nothing; leaving the app as-is rather than saving an empty profile.');
+      Profile.data = null;
+      return null;
+    }
+    try { await DB.set(PROFILE_KEY, Profile.data); } catch (e) {}
+    return Profile.data;
+  },
+
+  async save() { await DB.set(PROFILE_KEY, Profile.data); },
+
+  /** Splice the profile into the host's constants, in place. */
+  apply() {
+    const p = Profile.data;
+    if (!p || !p.workspaces) return;
+    const swap = (name, rows) => {
+      const arr = Profile.host(name);
+      if (!Array.isArray(arr) || !Array.isArray(rows)) return;
+      /* Never empty a list that currently has content. If a profile ever comes
+         back empty — a bad capture, a partial save — replacing a populated
+         array with nothing would look exactly like the user's diet or
+         priorities vanishing. Leaving the existing content alone is always the
+         safer failure. */
+      if (!rows.length && arr.length) return;
+      arr.length = 0;
+      rows.forEach(r => arr.push(r.slice ? r.slice() : r));
+    };
+    swap('DIET_COMMON', p.dietCommon);
+    swap('DIET_GYM', p.dietGym);
+    swap('SAW_ITEMS', p.saw);
+    swap('QUAD_DEFAULTS', p.quad);
+
+    /* PLAN entries carry exercises the user may have edited, so only the
+       labels are replaced — never the contents of a training day. */
+    const PLAN_ = Profile.host('PLAN');
+    if (Array.isArray(PLAN_) && Array.isArray(p.plan)) {
+      p.plan.forEach(row => {
+        const d = PLAN_.find(x => x.key === row.key);
+        if (!d) return;
+        if (row.title) d.title = row.title;
+        if (row.tag) d.tag = row.tag;
+        d.time = row.time || '';
+        if (row.type) { d.type = row.type; d.core = row.type !== 'rest'; }
+      });
+    }
+
+    /* DEFAULT_MISSION is the previous owner's actual mission statement, and
+       the app pre-fills it for anyone new. Clear it so they write their own. */
+    if (Profile.isNew) {
+      const c = Profile.host('cData'), cSave = Profile.host('cSave');
+      if (c && typeof cSave === 'function') {
+        const dm = Profile.host('DEFAULT_MISSION');
+        if (!c.mission || c.mission === dm) { c.mission = p.mission || ''; c.roles = (p.roles || []).slice(); cSave(); }
+      }
+    }
+
+    /* A brand-new account was seeded with the previous owner's priorities
+       before this ran; replace them with the template's. */
+    if (Profile.isNew) {
+      const q = Profile.host('qData'), qSave = Profile.host('qSave');
+      if (q && typeof qSave === 'function') {
+        q.items = p.quad.map((x, i) => ({ id: 'q' + i, q: x[0], txt: x[1], done: false }));
+        qSave();
+      }
+    }
+
+    Profile.paintWorkspaces();
+    Profile.paintDietCopy();
+
+    /* The host rendered every tab before this ran, so the swapped arrays are
+       not on screen yet. Re-render the views that read them. */
+    ['renderQuad', 'renderCompass', 'renderDiet', 'renderToday'].forEach(fn => {
+      const f = Profile.host(fn);
+      if (typeof f === 'function') { try { f(); } catch (e) {} }
+    });
+  },
+
+  /* The Diet tab also carries hard-coded prose: a Turkish protocol line, a
+     note naming the owner's 08:00 training slot, and a full bespoke meal plan
+     in .mealcard blocks. None of that is data, so none of it was covered by
+     swapping the arrays. */
+  paintDietCopy() {
+    if (!Profile.isNew) return;
+    const sec = document.getElementById('tab-diet');
+    if (!sec || sec.__flowDietCopy) return;
+    sec.__flowDietCopy = 1;
+
+    const sub = $('.section-sub', sec);
+    if (sub) sub.textContent = 'Tick off your daily basics. Edit the checklist in ⚙️ Settings → Make it yours.';
+
+    $$('h3', sec).forEach(h => {
+      const span = $('span', h);
+      if (span && /minimum|sabah spor/i.test(span.textContent || '')) {
+        span.textContent = '(the checklist and week plan adapt to the days you train)';
+      }
+    });
+
+    const cards = $$('.mealcard', sec);
+    if (cards.length) {
+      const wrap = cards[0].parentElement;
+      if (wrap) {
+        wrap.innerHTML = '<div class="flow-x"><div class="flow-empty" style="padding:18px 0">'
+          + 'No meal plan yet. Write your own here later, or just use the daily checklist above.'
+          + '</div></div>';
+      }
+    }
+  },
+
+  paintWorkspaces() {
+    const p = Profile.data; if (!p) return;
+    (p.workspaces || []).forEach(w => {
+      const pill = $('.tab[data-tab="' + w.id + '"]');
+      if (pill) pill.textContent = w.icon + ' ' + w.name;
+      const sec = document.getElementById('tab-' + w.id);
+      if (sec) {
+        const h = $('.section-header', sec);
+        if (h) h.textContent = w.icon + ' ' + w.name;
+        const sub = $('.section-sub', sec);
+        if (sub) sub.textContent = w.sub || '';
+        const ta = $('.ws-north textarea', sec);
+        if (ta) ta.setAttribute('placeholder', w.nsPlaceholder || '');
+      }
+      /* The mobile sheet is built once from a hard-coded list. */
+      const m = $('#moreGrid [data-goto="' + w.id + '"] .mg-lbl');
+      if (m) m.textContent = w.name;
+    });
+  },
+
+  watch() {
+    ['abko', 'dtc'].forEach(id => {
+      const mount = document.getElementById('ws-' + id);
+      if (!mount || mount.__flowProfileWatched) return;
+      mount.__flowProfileWatched = 1;
+      new MutationObserver(() => { try { Profile.paintWorkspaces(); } catch (e) {} })
+        .observe(mount, { childList: true });
+    });
+  },
+
+  /* ---------- editing ---------- */
+  linesToRows(text, prefix) {
+    return String(text || '').split('\n').map(s => s.trim()).filter(Boolean)
+      .map((label, i) => [prefix + (i + 1), label]);
+  },
+  rowsToLines(rows) { return (rows || []).map(r => r[1]).join('\n'); },
+
+  async rerenderHost() {
+    ['renderToday', 'renderCompass', 'renderDiet', 'renderQuad', 'renderTraining']
+      .forEach(fn => { const f = Profile.host(fn); if (typeof f === 'function') { try { f(); } catch (e) {} } });
+    Profile.paintWorkspaces();
+  }
+};
+
 async function boot() {
+  /* Before anything else: if the server has accounts installed and nobody is
+     signed in, put the sign-in screen up. Everything below still runs, so the
+     app is ready the moment the session exists. */
+  try { await Auth.check(); } catch (e) {}
+
+  /* Load the profile before anything renders, so the template swap happens
+     once rather than as a visible flicker.
+
+     Skipped entirely while the sign-in screen is up. Running it signed-out was
+     a real bug: every read 401s, so it fell back to capturing the code's own
+     constants and cached that to localStorage — and the freshly created
+     account then found that cache and kept the previous owner's setup. */
+  if (!(Auth.installed && !Auth.user)) {
+    try { await Profile.load(); Profile.apply(); Profile.watch(); } catch (e) { console.warn('[Flow] profile', e); }
+  }
+
   try {
     await Settings.load();
     await Promise.all([Schedule.load(), Finance.load(), Notes.load(), Journal.load()]);
@@ -7683,7 +8240,7 @@ async function boot() {
 
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
-    DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips,
+    DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
