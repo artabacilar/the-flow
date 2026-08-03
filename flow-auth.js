@@ -36,6 +36,12 @@ const SESSION_DAYS = 60;
 const PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const INVITE = process.env.FLOW_INVITE_CODE || '';
 const OWNER_EMAIL = (process.env.FLOW_OWNER_EMAIL || '').trim().toLowerCase();
+/* A leaked invite code should not be able to fill the database. 0 disables the
+   cap entirely; the owner's own account is always allowed through it. */
+const MAX_ACCOUNTS = (() => {
+  const n = parseInt(process.env.FLOW_MAX_ACCOUNTS || '10', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 10;
+})();
 
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
@@ -44,6 +50,7 @@ const SESS = (t) => '__auth:sess:' + t;
 const LEGACY_CLAIMED = '__auth:legacy_claimed_v2';
 const NAMESPACED = /^ld_u[0-9a-f]+:/;
 const SEED = (uid) => '__auth:seed:' + uid;
+const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
 
 /* The raw, un-namespaced store. Captured by protect(). */
 let raw = null;
@@ -135,6 +142,46 @@ async function adoptLegacyKeys(uid, force) {
   return n;
 }
 
+/* The upgrade pack stores under `flow:*`, which falls OUTSIDE the store's
+   `ld_*` listing pattern — so all() cannot see those keys and adoption, which
+   walks all(), silently skipped every one of them. They have to be claimed by
+   name. The list is closed and known; receipt photos are the one open-ended
+   set, and they are reachable from the expense records that reference them. */
+const PACK_KEYS = [
+  'flow:journal', 'flow:journal:ui', 'flow:journal:draft',
+  'flow:settings', 'flow:schedule', 'flow:notes', 'flow:profile',
+  'flow:expenses', 'flow:reminders:outbox'
+];
+
+/* Copies an un-namespaced pack key into the owner's namespace ONLY when that
+   namespaced key is empty, so it can never clobber something newer. */
+async function adoptUnlistable(uid) {
+  const pre = 'ld_u' + uid + ':';
+  const queue = PACK_KEYS.slice();
+  const seen = new Set();
+  let n = 0;
+  while (queue.length) {
+    const k = queue.shift();
+    if (seen.has(k) || seen.size > 400) continue;
+    seen.add(k);
+    let mine = null, legacy = null;
+    try { mine = await raw.get(pre + k); } catch (e) { continue; }
+    if (mine != null && mine !== '') continue;               // already has one — leave it
+    try { legacy = await raw.get(k); } catch (e) { continue; }
+    if (legacy == null || legacy === '') continue;           // nothing to copy
+    await raw.set(pre + k, legacy);
+    n++;
+    if (k === 'flow:expenses') {                             // follow receipt photos
+      try {
+        const p = typeof legacy === 'string' ? JSON.parse(legacy) : legacy;
+        const rows = Array.isArray(p) ? p : (p && Array.isArray(p.items) ? p.items : []);
+        rows.forEach(e => { if (e && e.receiptId) queue.push('flow:receipt:' + e.receiptId); });
+      } catch (e) { /* unreadable expenses — the receipts are simply skipped */ }
+    }
+  }
+  return n;
+}
+
 /* Re-adopt only into an empty namespace. Returns the number of keys rescued,
    or 0 when there was nothing to do — which is the normal, steady state. */
 async function healOwner(uid) {
@@ -215,11 +262,20 @@ async function gate(req, res) {
        namespace is completely empty while un-namespaced data is sitting in
        the store. It therefore cannot overwrite anything: the only case it
        fires in is the one where there is nothing of theirs to overwrite. */
-    let healed = 0;
+    let healed = 0, packHealed = 0;
     if (me.owner) {
       try { healed = await healOwner(me.id); } catch (e) { healed = 0; }
+      /* Claimed by name, once, and stamped — the pack keys cannot be listed,
+         so there is no cheap way to ask "is there anything left to do?". */
+      try {
+        const stamp = PACK_CLAIMED(me.id);
+        if (!(await getJSON(stamp, null))) {
+          packHealed = await adoptUnlistable(me.id);
+          await setJSON(stamp, { at: new Date().toISOString(), keys: packHealed });
+        }
+      } catch (e) { packHealed = 0; }
     }
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed });
+    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed, packHealed });
     return true;
   }
 
@@ -230,7 +286,8 @@ async function gate(req, res) {
     if (!me || !me.owner) return json(res, 403, { error: 'Not permitted.' }), true;
     const all = await raw.all();
     const names = Object.keys(all || {});
-    const mine = 'ld_u' + me.id + ':';
+    const mine0 = 'ld_u' + me.id + ':';
+    const mine = mine0;
     json(res, 200, {
       uid: me.id,
       visibleToPattern: names.length,
@@ -239,7 +296,23 @@ async function gate(req, res) {
       otherNamespaces: [...new Set(names.filter(k => NAMESPACED.test(k) && k.indexOf(mine) !== 0)
         .map(k => k.slice(0, k.indexOf(':') + 1)))],
       claimV1: !!(await getJSON('__auth:legacy_claimed', null)),
-      claimV2: await getJSON(LEGACY_CLAIMED, null)
+      claimV2: await getJSON(LEGACY_CLAIMED, null),
+      packClaimed: await getJSON(PACK_CLAIMED(me.id), null),
+      accounts: Object.keys(await getJSON(USERS_KEY, {})).length,
+      invited: Object.values(await getJSON(USERS_KEY, {})).filter(u => !u.owner).length,
+      maxAccounts: MAX_ACCOUNTS,   /* invited accounts only — the owner is extra */
+      /* Sizes only. These keys are invisible to all(), which is exactly how
+         they went missing, so the diagnostic has to probe them by name. */
+      pack: await (async () => {
+        const o = {};
+        for (const k of PACK_KEYS) {
+          const legacy = await raw.get(k);
+          const mine = await raw.get(mine0 + k);
+          o[k] = { legacy: legacy == null ? 0 : String(legacy).length,
+                   mine: mine == null ? 0 : String(mine).length };
+        }
+        return o;
+      })()
     });
     return true;
   }
@@ -268,9 +341,17 @@ async function gate(req, res) {
     }
     if (users[email]) return json(res, 409, { error: 'There is already an account with that email.' }), true;
 
+    /* The cap protects against a leaked invite code, so it applies to invited
+       accounts only — the owner can always create their own. */
+    const owner0 = first || (OWNER_EMAIL && email === OWNER_EMAIL);
+    const invited = Object.values(users).filter(u => !u.owner).length;
+    if (!owner0 && MAX_ACCOUNTS > 0 && invited >= MAX_ACCOUNTS) {
+      return json(res, 403, { error: 'This Flow is full — ask Artur to make room for you.' }), true;
+    }
+
     const salt = crypto.randomBytes(16).toString('hex');
     const id = crypto.randomBytes(9).toString('hex');
-    const owner = first || (OWNER_EMAIL && email === OWNER_EMAIL);
+    const owner = owner0;
     users[email] = { id, email, name, salt, hash: hashPassword(pw, salt), owner: !!owner, created: new Date().toISOString() };
     await setJSON(USERS_KEY, users);
 
@@ -347,9 +428,20 @@ async function gate(req, res) {
   return false;
 }
 
+/* A cold start can hand back a transient read failure, and reading that as
+   "there are no accounts yet" is how a returning owner got shown "Set up your
+   account" instead of "Sign in". Only an unambiguous, successful read of an
+   empty user list counts as a first run; anything else fails closed. */
 async function isFirstRun() {
-  const users = await getJSON(USERS_KEY, {});
-  return Object.keys(users).length === 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const v = await raw.get(USERS_KEY);
+      if (v == null) { if (attempt === 1) return true; continue; }  // absent — confirm once more
+      const users = JSON.parse(typeof v === 'string' ? v : JSON.stringify(v));
+      return !users || Object.keys(users).length === 0;
+    } catch (e) { /* transient — try once more, then assume accounts exist */ }
+  }
+  return false;
 }
 function safeParse(s) { try { return JSON.parse(s || '{}'); } catch (e) { return {}; } }
 
