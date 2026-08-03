@@ -524,7 +524,7 @@ canvas{width:100%;height:120px;}
   .cday, .panel, .mission, .ws-north, .ws-problem{ max-width:100%; }
 }
 
-/* ── Work workspaces (ABKO / DTC) ── */
+/* ── Work workspaces ── */
 .ws-north{background:linear-gradient(135deg,#141a24,#12141b);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:18px;}
 .ws-north h4{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin-bottom:10px;}
 .ws-north .ns-view{font-size:15px;line-height:1.6;font-style:italic;color:var(--text);white-space:pre-wrap;}
@@ -701,8 +701,8 @@ canvas{width:100%;height:120px;}
   <div class="tab" data-tab="today" id="tab-btn-today" style="display:none;">📅 Today</div>
   <div class="tab active" data-tab="compass">🧭 Week Compass</div>
   <div class="tab" data-tab="quad">🎯 Priorities</div>
-  <div class="tab" data-tab="abko">🏢 ABKO</div>
-  <div class="tab" data-tab="dtc">🛒 DTC Business</div>
+  <div class="tab" data-tab="abko">🏢 Work</div>
+  <div class="tab" data-tab="dtc">🚀 Side Project</div>
   <div class="tab" data-tab="brainstorm">🧠 Brainstorm</div>
   <div class="tab" data-tab="training">🏋️ Training</div>
   <div class="tab" data-tab="diet">🥗 Diet</div>
@@ -821,9 +821,9 @@ canvas{width:100%;height:120px;}
     <div class="h7"><b>1 · Be Proactive</b>Own your response. Log the day even when it went sideways — data beats excuses.</div>
     <div class="h7"><b>2 · Begin with the End in Mind</b>Your mission statement above. Re-read it every Sunday before planning the week.</div>
     <div class="h7"><b>3 · Put First Things First</b>Big Rocks + the Q2 quadrant. Schedule importance before urgency fills the calendar.</div>
-    <div class="h7"><b>4 · Think Win-Win</b>Distributor visits, promoter outreach, Burak — build deals where both sides win.</div>
+    <div class="h7"><b>4 · Think Win-Win</b>In your deals and partnerships — look for the arrangement where both sides genuinely gain.</div>
     <div class="h7"><b>5 · Seek First to Understand</b>In this week's calls and meetings: listen and diagnose before you pitch.</div>
-    <div class="h7"><b>6 · Synergize</b>Combine strengths — your music and your e-com marketing skills compound each other.</div>
+    <div class="h7"><b>6 · Synergize</b>Combine your strengths — the skills you already have compound when you use them together.</div>
     <div class="h7"><b>7 · Sharpen the Saw</b>Training, diet, sleep, languages, music. The weekly checklist keeps the engine strong.</div>
   </div>
 </div>
@@ -844,11 +844,11 @@ canvas{width:100%;height:120px;}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
-     ABKO — work workspace
+     work workspace
 ══════════════════════════════════════════════════════════ -->
 <div class="section" id="tab-abko">
-  <div class="section-header">🏢 ABKO — Work</div>
-  <div class="section-sub">Your role at ABKO — the goal you're driving, the tasks in motion, and a running work log.</div>
+  <div class="section-header">🏢 Work</div>
+  <div class="section-sub">Your job or main business — the goal you are driving, the tasks in motion, and a running log.</div>
   <div id="ws-abko"></div>
 </div>
 
@@ -856,8 +856,8 @@ canvas{width:100%;height:120px;}
      DTC — e-commerce business workspace
 ══════════════════════════════════════════════════════════ -->
 <div class="section" id="tab-dtc">
-  <div class="section-header">🛒 DTC Business</div>
-  <div class="section-sub">Your own e-commerce / DTC business — north-star goal, task pipeline, and notes.</div>
+  <div class="section-header">🚀 Side Project</div>
+  <div class="section-sub">Your own project — north-star goal, task pipeline, and notes.</div>
   <div id="ws-dtc"></div>
 </div>
 
@@ -871,11 +871,11 @@ canvas{width:100%;height:120px;}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
-     DIET TAB (program kept in Turkish)
+     DIET TAB
 ══════════════════════════════════════════════════════════ -->
 <div class="section" id="tab-diet">
-  <div class="section-header">🥗 Diet — Kas Kütlesi Koruyucu ve Yağ Yakımını Destekleyici Beslenme Planı</div>
-  <div class="section-sub">Günlük 3 litre su tüketilecek; 3 ana öğün arasında yalnızca şekersiz bitki çayı, sade kahve veya su tercih edilecektir.</div>
+  <div class="section-header">🥗 Diet</div>
+  <div class="section-sub">Tick off your daily basics. Edit the checklist in ⚙️ Settings → Make it yours.</div>
 
   <div class="stats">
     <div class="stat"><div class="num green" id="dtToday">0%</div><div class="lbl">Today's compliance</div></div>
@@ -885,7 +885,7 @@ canvas{width:100%;height:120px;}
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
-    <h3>Training days <span style="color:var(--muted);font-size:12px;font-weight:400;">(5-day minimum — the checklist and week plan adapt automatically; sabah spor 08:00–09:00)</span></h3>
+    <h3>Training days <span style="color:var(--muted);font-size:12px;font-weight:400;">(the checklist and week plan adapt to the days you train)</span></h3>
     <div class="gymchips" id="gymChips"></div>
   </div>
 
@@ -899,78 +899,7 @@ canvas{width:100%;height:120px;}
 
   <h3 style="font-size:15px;margin-bottom:10px;">📋 Program</h3>
   <div class="mealcards">
-    <div class="mealcard">
-      <h4>💊 Günlük Takviye Planı</h4>
-      <ul>
-        <li><b>Hidrolize kolajen:</b> İlk ana öğünde 10 gram.</li>
-        <li><b>Probiyotik toz:</b> 1 porsiyon; sıcak olmayan öğüne eklenecek.</li>
-        <li><b>Psyllium:</b> Bağırsak hareketleri yavaşsa 1 tatlı kaşığı (~5 g), 350–400 ml su ile.</li>
-        <li><b>Omega:</b> 1 adet her sabah kahvaltıda.</li>
-        <li><b>Whey Protein:</b> Sadece spor günleri 25 gram.</li>
-      </ul>
-    </div>
-    <div class="mealcard">
-      <h4>🏋️ Sabah Spor + Spor Sonrası</h4>
-      <div class="mtime">Spor zamanı: 08:00–09:00</div>
-      <span class="opt">Spor sonrası öğün (smoothie)</span>
-      28 gram whey protein + 10 gram kolajen + 1 bardak badem sütü + ½ adet muz + 10 adet blueberry + toz tarçın ekle ve smoothie yap.
-    </div>
-    <div class="mealcard">
-      <h4>🍳 İlk Ana Öğün</h4>
-      <div class="mtime">09:00–10:00</div>
-      <span class="opt">1. Seçenek — Spor günleri kahvaltısı</span>
-      <ul>
-        <li>1 tam yumurta + 3 yumurta beyazı</li>
-        <li>4 yemek kaşığı yulaf ezmesi</li>
-        <li>Bol ıspanak, mantar, kapya biber, maydanoz ve dereotu</li>
-        <li>2 tatlı kaşığı zeytinyağı</li>
-        <li>50 gram keçi lor peyniri</li>
-      </ul>
-      <b>Hazırlık:</b> Yumurta, yumurta beyazı ve yulaf karıştırılır. İnce doğranmış sebzeler eklenir. Karışım yapışmaz tavada iki taraflı pişirilerek krep şeklinde tüketilir. Probiyotik bu seçenekte suya eklenecek.
-      <span class="opt">2. Seçenek — Spor olmayan günler kahvaltısı</span>
-      <ul>
-        <li>2 tam yumurta + 5 yumurta beyazı</li>
-        <li>6 adet karabuğday patlağı</li>
-        <li>Bol ıspanak, mantar, kapya biber, maydanoz ve dereotu</li>
-        <li>2 tatlı kaşığı zeytinyağı</li>
-        <li>50 gram keçi lor peyniri</li>
-      </ul>
-    </div>
-    <div class="mealcard">
-      <h4>🥗 İkinci Ana Öğün</h4>
-      <div class="mtime">13:00–14:00</div>
-      <span class="opt">1. Seçenek — Proteinli Renkli Salata Bowl</span>
-      <ul>
-        <li>Bol roka, marul, salatalık, maydanoz ve dereotu</li>
-        <li>½ küçük pancar + ½ küçük turp + 5–6 adet kuşkonmaz</li>
-        <li>1 tatlı kaşığı öğütülmüş keten tohumu</li>
-        <li>Çiğ 400 gram protein alternatifi: hindi, tavuk, yağsız dana eti, balık</li>
-        <li>~50 g karbonhidrat: 250 g tatlı patates veya 160 g pişmiş karabuğday</li>
-        <li>Sos: limon + elma sirkesi + 2–3 tatlı kaşığı zeytinyağı + sumak</li>
-      </ul>
-      <span class="opt">2. Seçenek — Balık ve Tatlı Patates Bowl</span>
-      <ul>
-        <li>400–450 gram somon, levrek veya çipura</li>
-        <li>250 gram küp doğranmış tatlı patates (fırında)</li>
-        <li>Bol roka ve marul; salatalık, kırmızı lahana, turp ve pancar</li>
-        <li>5 adet kuşkonmaz + 1 tatlı kaşığı öğütülmüş keten tohumu</li>
-        <li>Sos: limon suyu + dereotu + 2–3 tatlı kaşığı zeytinyağı + karabiber</li>
-      </ul>
-      <span class="opt">3. Seçenek — Kırmızı Et ve Zeytinyağlı Sebze Tabağı</span>
-      <ul>
-        <li>1 orta tabak zeytinyağlı sebze: taze fasulye, kabak, pırasa, enginar, ıspanak, semizotu, bamya veya türlü</li>
-        <li>350–400 gram kırmızı et — ızgara, fırında veya az yağlı tavada</li>
-        <li>6 adet karabuğday patlağı</li>
-        <li>Bol roka, marul, salatalık, turp ve pancarlı salata + 1 tatlı kaşığı öğütülmüş keten tohumu</li>
-      </ul>
-    </div>
-    <div class="mealcard">
-      <h4>🍽️ Üçüncü Ana Öğün</h4>
-      <div class="mtime">18:00–19:00</div>
-      İkinci ana öğün ile aynı 3 seçenek geçerli. Öğle yemeğinden farklı bir seçenek tercih ederek çeşitlilik sağla.
-      <span class="opt">Genel not</span>
-      Günlük 3 litre su; ana öğünler arasında yalnızca şekersiz bitki çayı, sade kahve veya su.
-    </div>
+    <div class="flow-empty" style="padding:18px 0">No meal plan yet. Write your own here later, or just use the daily checklist above.</div>
   </div>
 </div>
 
@@ -1482,27 +1411,13 @@ document.querySelectorAll('.tab').forEach(t=>{
 // TRAINING (original code, preserved)
 // ════════════════════════════════════════════
 const PLAN = [
-  {key:'mon',name:'Monday',type:'strength',tag:'Strength',title:'Upper Body — Strength',focus:'Heavy pressing & rowing, low reps',time:'18:00',core:true,
-   exercises:[['Barbell Bench Press','4 × 5 (heavy)'],['Barbell Row','4 × 6'],['Overhead Press','3 × 6'],['Weighted Pull-ups (or Lat Pulldown)','3 × 6–8'],['Incline DB Press','3 × 8–10'],['Barbell or DB Curl','3 × 10'],['Plank','3 × 45–60s']],
-   note:'Strength day: rest 2–3 min between compound sets. Add weight when you hit the top of the rep range.'},
-  {key:'tue',name:'Tuesday',type:'strength',tag:'Strength',title:'Lower Body — Strength',focus:'Squat focus + cardio finisher',time:'18:00',core:true,
-   exercises:[['Back Squat','4 × 5 (heavy)'],['Romanian Deadlift','3 × 8'],['Walking Lunges','3 × 10/leg'],['Standing Calf Raise','4 × 12'],['Hanging Leg Raise','3 × 12'],['Cardio finisher: incline walk or bike','12–15 min moderate']],
-   note:'Squat first while fresh. The cardio finisher supports fat loss — keep it easy enough to recover for Thursday.'},
-  {key:'wed',name:'Wednesday',type:'rest',tag:'Rest',title:'Rest / Active Recovery',focus:'Optional 30-min walk, stretch, mobility',time:'',core:false,
-   exercises:[['Optional: 30-min brisk walk','Zone 2'],['Optional: 10-min stretching / mobility','Hips, shoulders']],
-   note:'Recovery is where muscle is built. Prioritize sleep and protein.'},
-  {key:'thu',name:'Thursday',type:'hyper',tag:'Hypertrophy',title:'Push — Hypertrophy',focus:'Chest, shoulders, triceps — volume',time:'18:00',core:true,
-   exercises:[['Incline DB Press','4 × 8–12'],['Machine / Cable Chest Press','3 × 10–12'],['Cable Fly','3 × 12–15'],['DB Lateral Raise','4 × 12–15'],['Overhead Triceps Extension','3 × 10–12'],['Triceps Rope Pushdown','3 × 12–15']],
-   note:'Hypertrophy day: rest 60–90s, control the negative, take sets close to failure.'},
-  {key:'fri',name:'Friday',type:'hyper',tag:'Hypertrophy',title:'Pull — Hypertrophy',focus:'Back, rear delts, biceps + cardio finisher',time:'18:00',core:true,
-   exercises:[['Deadlift (moderate) or Rack Pull','3 × 6'],['Lat Pulldown (wide grip)','4 × 10–12'],['Seated Cable Row','3 × 10–12'],['Face Pull','3 × 15'],['Incline DB Curl','3 × 10–12'],['Hammer Curl','3 × 12'],['Cardio finisher: rower or bike intervals','10 min (30s hard / 60s easy)']],
-   note:'Keep deadlifts moderate (~70–75%) — this is a volume day, not a max day.'},
-  {key:'sat',name:'Saturday',type:'cond',tag:'Optional',title:'Legs + Conditioning (Day 5)',focus:'Bonus day — do it on 5-day weeks',time:'11:00',core:false,
-   exercises:[['Leg Press','4 × 10–12'],['Seated Hamstring Curl','3 × 12'],['Leg Extension','3 × 12–15'],['Seated Calf Raise','3 × 15'],['HIIT: bike or sled','8 rounds — 20s hard / 40s easy'],['Core circuit: cable crunch + side plank','3 rounds']],
-   note:'On a 3–4 day week, skip it guilt-free — the Mon/Tue/Thu/Fri core covers everything.'},
-  {key:'sun',name:'Sunday',type:'rest',tag:'Rest',title:'Full Rest',focus:'Sleep in. Eat well. Recover.',time:'',core:false,
-   exercises:[['Optional: light walk','20–30 min']],
-   note:'Plan next week: check which lifts went up and set targets.'},
+  {key:'mon',title:'Push — Chest, Shoulders, Triceps',tag:'Push',time:'18:00',type:'hyper'},
+  {key:'tue',title:'Pull — Back and Biceps',tag:'Pull',time:'18:00',type:'hyper'},
+  {key:'wed',title:'Rest / Active Recovery',tag:'Rest',time:'',type:'rest'},
+  {key:'thu',title:'Legs',tag:'Legs',time:'18:00',type:'hyper'},
+  {key:'fri',title:'Upper Body',tag:'Upper',time:'18:00',type:'hyper'},
+  {key:'sat',title:'Conditioning or a long walk',tag:'Cardio',time:'',type:'hyper'},
+  {key:'sun',title:'Rest',tag:'Rest',time:'',type:'rest'}
 ];
 const CORE_KEYS=PLAN.filter(d=>d.core).map(d=>d.key);
 const DAY_KEYS=PLAN.map(d=>d.key);
@@ -2425,8 +2340,8 @@ renderTime();
 // ════════════════════════════════════════════
 // 7 HABITS — WEEK COMPASS
 // ════════════════════════════════════════════
-const DEFAULT_MISSION = "I build businesses that buy my freedom and music that outlives me. I protect the machine — train in the morning, eat by the plan, sleep like it matters — because energy funds everything else. I give my best hours to Quadrant II: creating, planning, learning languages, and building win-win relationships with promoters, distributors and partners. I say no to the merely urgent, and I earn my celebrations.";
-const DEFAULT_ROLES = ['Entrepreneur — DTC / E-com','Music — Producer & Performer','Health & Body','Finances','Relationships & Network','Mind & Learning'];
+const DEFAULT_MISSION = "";
+const DEFAULT_ROLES = ['Work','Health & Body','Money','Relationships','Learning','Something creative'];
 let cData = S.get('compass', null);
 if(!cData){
   cData = {mission:DEFAULT_MISSION, roles:DEFAULT_ROLES.slice(), rocks:{}, saw:{}, reviews:{}};
@@ -2503,14 +2418,14 @@ function addRock(title, role, day, time, wid){
 }
 
 const SAW_ITEMS=[
-  ['phys1','💪 Physical — 5 training sessions (08:00–09:00)'],
-  ['phys2','🥗 Physical — diet compliance ≥ 80% this week'],
-  ['ment1','🗣️ Mental — language practice ×3'],
-  ['ment2','🤖 Mental — learn / build with Claude (Q2)'],
-  ['soc1','🤝 Social — outreach: promoters / distributors / Burak'],
-  ['soc2','❤️ Social — real time with people who matter'],
-  ['spir1','🎹 Spiritual — music production or piano ×3'],
-  ['spir2','🪧 Spiritual — Sunday mission review + weekly review'],
+  ['phys1','💪 Physical — train 4× this week'],
+  ['phys2','🥗 Physical — eat to plan most days'],
+  ['ment1','📚 Mental — read or study ×3'],
+  ['ment2','🧠 Mental — learn one new thing'],
+  ['soc1','🤝 Social — reach out to someone who matters'],
+  ['soc2','❤️ Social — real time with people, phone away'],
+  ['spir1','🎧 Spiritual — something creative ×3'],
+  ['spir2','🪧 Spiritual — weekly review + mission check']
 ];
 
 // ════════════════════════════════════════════
@@ -2855,7 +2770,7 @@ document.getElementById('icsExport').addEventListener('click',()=>{
   if(!total){ st.textContent='Nothing to export in this range yet — add Big Rocks or training times first.'; return; }
   const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='artur-life-os-'+todayStr+'.ics';
+  const a=document.createElement('a'); a.href=url; a.download='the-flow-'+todayStr+'.ics';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1500);
   const parts=[]; if(nRocks)parts.push(nRocks+' rocks'); if(nTrain)parts.push(nTrain+' training'); if(nMeals)parts.push(nMeals+' meals');
@@ -2865,13 +2780,13 @@ document.getElementById('icsExport').addEventListener('click',()=>{
 
 // ════════════════════════════════════════════
 // PRIORITIES — EISENHOWER / COVEY QUADRANTS
-// (seeded from Artur's whiteboard photo)
+// (seeded from the owner's own notes)
 // ════════════════════════════════════════════
 const QUAD_DEFAULTS=[
-  [1,'CRM lead generation campaign'],[1,'Seamless.ai form campaign'],[1,'DTC e-com business'],[1,'Meet with Burak'],[1,'Detailed day-to-day planning dashboard'],
-  [2,'Get in touch with promoters, venues & hosts'],[2,'Record a set & send it to them'],[2,'Go visit distributors'],[2,'Create FBA to Amazon DE (+ other EU cities)'],[2,'Long-term planning of the business'],[2,'Music production & releases'],[2,'Live performance & piano practice'],[2,'Financial independence plan'],[2,'Improving language skills'],[2,'Write a personal mission statement'],[2,'Learn Claude & minimize token spend'],
-  [3,'Mali Neşe opening party'],[3,'Call Makali'],[3,'Some calls'],[3,'Some emails'],[3,'Some business events'],
-  [4,'Kanye West concert'],[4,'Eating out'],[4,'Clubs & parties'],[4,'Going out'],[4,'Vacation / travelling'],
+  [1,'Something urgent and important — do it today'],
+  [2,'Something important but not urgent — this is where the wins are'],
+  [3,'Something urgent but not important — can it be delegated?'],
+  [4,'Something that is neither — be honest about it']
 ];
 let qData=S.get('quad', null);
 if(!qData){ qData={items:QUAD_DEFAULTS.map((x,i)=>({id:'q'+i, q:x[0], txt:x[1], done:false}))}; S.set('quad',qData); }
@@ -2937,18 +2852,15 @@ function dSave(){ S.set('diet',dData); }
 function isGymDay(dowIdx){ return !!(dData&&dData.gymDays&&dData.gymDays[dowIdx]); }
 
 const DIET_COMMON=[
-  ['water','💧 3 litre su'],
-  ['omega','💊 Omega — sabah kahvaltıda 1 adet'],
-  ['collagen','💊 Hidrolize kolajen 10 g — ilk ana öğünde'],
-  ['probiotic','💊 Probiyotik toz — sıcak olmayan öğüne'],
-  ['meal1','🍳 İlk ana öğün · 09:00–10:00'],
-  ['meal2','🥗 İkinci ana öğün · 13:00–14:00'],
-  ['meal3','🍽️ Üçüncü ana öğün · 18:00–19:00'],
-  ['clean','🚫 Ara öğün yok — sadece bitki çayı / sade kahve / su'],
+  ['water','💧 2–3 litres of water'],
+  ['meal1','🍳 Breakfast'],
+  ['meal2','🥗 Lunch'],
+  ['meal3','🍽️ Dinner'],
+  ['clean','🚫 No snacking between meals']
 ];
 const DIET_GYM=[
-  ['train','🏋️ Sabah spor · 08:00–09:00'],
-  ['shake','🥤 Spor sonrası whey smoothie (28 g whey + kolajen + badem sütü + ½ muz + blueberry + tarçın)'],
+  ['train','🏋️ Training session'],
+  ['shake','🥤 Post-workout protein']
 ];
 function dietItemsFor(dowIdx){ return isGymDay(dowIdx)?DIET_GYM.concat(DIET_COMMON):DIET_COMMON.slice(); }
 function dietPct(dateISO, dowIdx){
@@ -3076,7 +2988,7 @@ document.getElementById('jnView').addEventListener('change',renderJournal);
 function exportBackup(){
   const data={};
   for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) data[k]=localStorage.getItem(k); }
-  const blob=new Blob([JSON.stringify({exported:new Date().toISOString(), app:'artur-life-dashboard-v2', data}, null, 1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({exported:new Date().toISOString(), app:'the-flow-dashboard-v2', data}, null, 1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='life-dashboard-backup-'+todayStr+'.json'; a.click(); URL.revokeObjectURL(a.href);
   J('planning','💾 Backup exported ('+Object.keys(data).length+' data sets)');
@@ -3195,11 +3107,11 @@ function renderBrainstorm(){
 }
 
 // ════════════════════════════════════════════
-// WORK WORKSPACES — ABKO & DTC (reusable board)
+// WORK WORKSPACES (reusable board)
 // ════════════════════════════════════════════
 function makeWorkspace(cfg){
   // cfg: {key, mountId, name, nsPlaceholder}
-  const KEY=cfg.key; // storage key suffix, e.g. 'work_abko'
+  const KEY=cfg.key; // storage key suffix
   let data=S.get(KEY, {northstar:'', problem:'', tasks:[], notes:''});
   if(!data.tasks) data.tasks=[];
   let nsEditing=false, problemEditing=false, taskEditId=null, openTaskId=null, taskNoteEditId=null, aiNoteEdit=new Set();
@@ -3454,8 +3366,8 @@ function makeWorkspace(cfg){
   }
   return { render };
 }
-const wsABKO = makeWorkspace({key:'work_abko', mountId:'ws-abko', name:'ABKO', nsPlaceholder:'What are you driving at ABKO right now? e.g. Grow Goldwell lead export for DualSense + chemical line; hit Q3 targets…'});
-const wsDTC  = makeWorkspace({key:'work_dtc',  mountId:'ws-dtc',  name:'DTC',  nsPlaceholder:'Where is your DTC business headed? e.g. Launch FBA to Amazon DE, 3 new SKUs, €10k/mo revenue…'});
+const wsABKO = makeWorkspace({key:'work_abko', mountId:'ws-abko', name:'Work', nsPlaceholder:'What are you driving at work right now?'});
+const wsDTC  = makeWorkspace({key:'work_dtc',  mountId:'ws-dtc',  name:'Side Project', nsPlaceholder:'Where is this project headed?'});
 
 // ── Init ──
 if(!S.ok){ document.getElementById('storageBanner').style.display='block'; }
@@ -3526,7 +3438,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   }
   const NAV_ALL=[
     ...(APP_MODE ? [['today','📅','Today']] : []),
-    ['compass','🧭','Week Compass'],['quad','🎯','Priorities'],['abko','🏢','ABKO'],['dtc','🛒','DTC Business'],
+    ['compass','🧭','Week Compass'],['quad','🎯','Priorities'],['abko','🏢','Work'],['dtc','🚀','Side Project'],
     ['brainstorm','🧠','Brainstorm'],['training','🏋️','Training'],['diet','🥗','Diet'],['habits','✅','Habits'],['sleep','😴','Sleep & Recovery'],
     ['mood','🧠','Mood & Energy'],['finance','💰','Finances'],['time','⏱️','Time'],['journal','📓','Journal']
   ];
@@ -4081,7 +3993,7 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 <script>
 /* ==========================================================================
  * The Flow — Upgrade Pack v1.0.1
- * Adds: Artur tab · Settings · time-on-every-task · Apple/Google calendar
+ * Adds: Planner tab · Settings · time-on-every-task · Apple/Google calendar
  *       export · receipt OCR + statement import · bracketed notes ·
  *       iOS Reminders sync.
  *
@@ -4332,7 +4244,7 @@ const DEFAULT_RULES = [
 
 const SETTINGS_KEY = 'flow:settings';
 const SETTINGS_DEFAULTS = {
-  displayName: 'Artur',
+  displayName: '',
   timezone: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return 'Europe/Istanbul'; } })(),
   currency: 'TRY',
   weekStart: 1,
@@ -4375,7 +4287,7 @@ const Settings = {
  *
  *   Rows that already exist in the app are keyed by  <tab>::<normalised text>
  *   so the schedule survives the app re-rendering its own lists.
- *   Items created inside the Artur planner are keyed  planner::<uid>
+ *   Items created inside the Planner planner are keyed  planner::<uid>
  * ====================================================================== */
 const SCHEDULE_KEY = 'flow:schedule';
 const Schedule = {
@@ -5772,7 +5684,7 @@ const Notes = {
 };
 
 /* =========================================================================
- * 14 · Live roll-up of the app's own tabs (for the Artur dashboard)
+ * 14 · Live roll-up of the app's own tabs (for the Planner dashboard)
  * ====================================================================== */
 const Rollup = {
   sections() {
@@ -5808,9 +5720,9 @@ const Rollup = {
 };
 
 /* =========================================================================
- * 15 · The Artur tab
+ * 15 · The Planner tab
  * ====================================================================== */
-const Artur = {
+const Planner = {
   render(section) {
     const s = Settings.data;
     const now = new Date();
@@ -5832,7 +5744,7 @@ const Artur = {
       <div class="flow-row between" style="margin:6px 0 2px">
         <div>
           <div class="flow-label">${esc(DOW[now.getDay()])}, ${now.getDate()} ${esc(MON[now.getMonth()])} ${now.getFullYear()} · week ${wk.week}</div>
-          <div class="flow-hero">${esc(s.displayName || 'Artur')}</div>
+          <div class="flow-hero">${esc(s.displayName || 'Your day')}</div>
         </div>
         <div class="flow-row">
           <button class="flow-btn" data-a="refresh">↻ Refresh</button>
@@ -5855,7 +5767,7 @@ const Artur = {
         <div class="flow-card">
           <h3>⏱ Today</h3>
           <p class="flow-sub">Everything you gave a time to, from any tab. Add times with the 🕘 chip that now sits on every task row.</p>
-          ${Artur.timeline(todayItems)}
+          ${Planner.timeline(todayItems)}
           <div class="flow-row" style="margin-top:12px">
             <input class="flow-in grow" id="ar-new" placeholder="Add something to today…">
             <input class="flow-in" type="time" id="ar-time" style="width:110px">
@@ -5866,7 +5778,7 @@ const Artur = {
         <div class="flow-card">
           <h3>📅 Rest of the week</h3>
           <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots.</p>
-          ${Artur.weekList(overdue, weekItems)}
+          ${Planner.weekList(overdue, weekItems)}
         </div>
       </div>
 
@@ -5925,9 +5837,9 @@ const Artur = {
 
       <div class="flow-card" data-artur-notes></div>`;
 
-    // notes for the Artur tab itself
+    // notes for the Planner tab itself
     const nb = section.querySelector('[data-artur-notes]');
-    nb.innerHTML = Notes.renderBook('artur', 'Artur');
+    nb.innerHTML = Notes.renderBook('artur', 'Planner');
     Notes.bind(nb);
     Chart.hydrate(section);
 
@@ -5936,7 +5848,7 @@ const Artur = {
         const a = btn.getAttribute('data-a');
         const range = () => (section.querySelector('#ar-range') || {}).value || '4weeks';
         const status = section.querySelector('#ar-calstatus');
-        if (a === 'refresh') Artur.render(section);
+        if (a === 'refresh') Planner.render(section);
         else if (a === 'settings') Tabs.activate('settings');
         else if (a === 'journal') {
           const jt = $$('[data-tab]').find(p => /journal|📓/i.test(p.textContent));
@@ -5954,7 +5866,7 @@ const Artur = {
           Schedule.put(key, { text, tab: 'planner', date: today(), time: tm.value || '', dur: Settings.get('defaultDurationMin'), done: false, source: 'planner' });
           await Schedule.saveNow();
           t.value = ''; tm.value = '';
-          Artur.render(section);
+          Planner.render(section);
           toast('Added to today ✓');
         }
       });
@@ -5971,7 +5883,7 @@ const Artur = {
     section.querySelectorAll('[data-del]').forEach(b => {
       b.addEventListener('click', async () => {
         Schedule.remove(b.getAttribute('data-del'));
-        await Schedule.saveNow(); TimeChips.repaintAll(); Artur.render(section);
+        await Schedule.saveNow(); TimeChips.repaintAll(); Planner.render(section);
       });
     });
   },
@@ -6398,7 +6310,7 @@ const SettingsUI = {
       <div class="flow-card">
         <h3>🔔 iOS Reminders</h3>
         <p class="flow-sub">Apple gives no public web API for Reminders, so there are three real routes. The first works immediately; the second is the one worth setting up once.</p>
-        <div class="flow-switch"><div class="t"><b>Enable Reminders export</b><span>Adds the Reminders buttons to the Artur tab and note sections.</span></div>
+        <div class="flow-switch"><div class="t"><b>Enable Reminders export</b><span>Adds the Reminders buttons to the Planner tab and note sections.</span></div>
           <input type="checkbox" data-s="remindersEnabled" data-type="bool" ${s.remindersEnabled ? 'checked' : ''}></div>
         <div class="flow-field" style="margin:12px 0"><label class="flow-label">Reminders list name</label>
           <input class="flow-in" data-s="remindersListName" value="${esc(s.remindersListName)}"></div>
@@ -6982,7 +6894,7 @@ const Journal = {
 
         <div class="flow-row" style="margin:12px 0 10px">
           <input class="flow-in" type="date" id="jr-date" value="${esc(date)}" style="width:150px">
-          <input class="flow-in grow" id="jr-title" placeholder="Title (optional) — e.g. 'Hard session, good call with Burak'" value="${esc(e.title || '')}">
+          <input class="flow-in grow" id="jr-title" placeholder="Title (optional) — e.g. 'Hard session, good call'" value="${esc(e.title || '')}">
         </div>
 
         <textarea id="jr-body" style="min-height:170px" placeholder="How did today actually go?
@@ -7007,7 +6919,7 @@ Write freely — nothing here is logged automatically, and only what you type is
         </div>
 
         <div class="flow-row" style="margin-top:12px">
-          <input class="flow-in grow" id="jr-tags" placeholder="Tags, comma separated — training, abko, music" value="${esc((e.tags || []).join(', '))}">
+          <input class="flow-in grow" id="jr-tags" placeholder="Tags, comma separated — e.g. training, work, music" value="${esc((e.tags || []).join(', '))}">
           <button class="flow-btn primary" data-j="save">${editing ? 'Update entry' : 'Save entry'}</button>
         </div>
         <p class="flow-sub" style="margin:10px 0 0">⌘/Ctrl + Enter saves. Drafts are kept if you navigate away mid-sentence.</p>
@@ -7963,6 +7875,17 @@ const NEUTRAL = {
     [3, 'Something urgent but not important — can it be delegated?'],
     [4, 'Something that is neither — be honest about it']
   ],
+  /* Static page prose. It is not a constant the app reads, it is written
+     straight into the markup, so it has to be captured from the DOM and put
+     back the same way — otherwise shipping a generic file would silently
+     delete whatever the owner had written there. */
+  copy: {
+    dietHeader: '🥗 Diet',
+    dietSub: 'Tick off your daily basics. Edit the checklist in ⚙️ Settings → Make it yours.',
+    trainNote: '(the checklist and week plan adapt to the days you train)',
+    mealcards: '<div class="flow-empty" style="padding:18px 0">No meal plan yet. Write your own here later, or just use the daily checklist above.</div>',
+    habits: []
+  },
   plan: [
     { key: 'mon', title: 'Push — Chest, Shoulders, Triceps', tag: 'Push', time: '18:00', type: 'hyper' },
     { key: 'tue', title: 'Pull — Back and Biceps',            tag: 'Pull', time: '18:00', type: 'hyper' },
@@ -7986,16 +7909,71 @@ const Profile = {
     return {
       mission: Profile.host('DEFAULT_MISSION') || '',
       roles: (Profile.host('DEFAULT_ROLES') || []).slice(),
-      workspaces: [
-        { id: 'abko', name: 'ABKO', icon: '🏢', sub: "Your role at ABKO — the goal you're driving, the tasks in motion, and a running work log.", nsPlaceholder: 'What are you driving at ABKO right now?' },
-        { id: 'dtc',  name: 'DTC Business', icon: '🛒', sub: 'Your own e-commerce / DTC business — north-star goal, task pipeline, and notes.', nsPlaceholder: 'Where is your DTC business headed?' }
-      ],
+      /* Read from the page, never hardcoded — the shipped file is generic, so
+         hardcoding one person's board names here would put them straight back. */
+      workspaces: Profile.captureWorkspaces(),
       dietCommon: (Profile.host('DIET_COMMON') || []).map(x => x.slice()),
       dietGym: (Profile.host('DIET_GYM') || []).map(x => x.slice()),
       saw: (Profile.host('SAW_ITEMS') || []).map(x => x.slice()),
       quad: (Profile.host('QUAD_DEFAULTS') || []).map(x => x.slice()),
+      copy: Profile.captureCopy(),
       plan
     };
+  },
+
+  /** Board names and blurbs as the page currently shows them. */
+  captureWorkspaces() {
+    const out = [];
+    [['abko', '🏢'], ['dtc', '🛒']].forEach(([id, icon]) => {
+      const sec = document.getElementById('tab-' + id);
+      const pill = document.querySelector('.tab[data-tab="' + id + '"]');
+      const name = ((pill && pill.textContent) || id).replace(/^[^A-Za-z0-9]+/, '').trim();
+      const ns = document.querySelector('#ws-' + id + ' [id$="NS"], #ws-' + id + ' textarea, #ws-' + id + ' input');
+      out.push({
+        id, icon,
+        name: name || id,
+        sub: (sec && $('.section-sub', sec) ? $('.section-sub', sec).textContent.trim() : ''),
+        nsPlaceholder: (ns && ns.placeholder) || ''
+      });
+    });
+    return out;
+  },
+
+  /** Prose that lives in the markup rather than in a constant. */
+  captureCopy() {
+    const sec = document.getElementById('tab-diet');
+    const pick = (sel, root) => { const n = $(sel, root || document); return n ? n.textContent.trim() : ''; };
+    const cards = sec ? $('.mealcards', sec) : null;
+    let trainNote = '';
+    if (sec) $$('h3 span', sec).forEach(sp => { if (/minimum|adapt|train/i.test(sp.textContent || '')) trainNote = sp.textContent.trim(); });
+    return {
+      dietHeader: sec ? pick('.section-header', sec) : '',
+      dietSub: sec ? pick('.section-sub', sec) : '',
+      trainNote,
+      mealcards: cards ? cards.innerHTML : '',
+      habits: $$('.habits7 .h7').map(n => n.innerHTML)
+    };
+  },
+
+  /** Put captured prose back into the page. Only ever writes what was saved. */
+  applyCopy() {
+    const c = (Profile.data && Profile.data.copy) || null;
+    if (!c) return;
+    const sec = document.getElementById('tab-diet');
+    if (sec) {
+      const h = $('.section-header', sec), sub = $('.section-sub', sec);
+      if (h && c.dietHeader) h.textContent = c.dietHeader;
+      if (sub && c.dietSub) sub.textContent = c.dietSub;
+      if (c.trainNote) $$('h3 span', sec).forEach(sp => {
+        if (/minimum|adapt|train/i.test(sp.textContent || '')) sp.textContent = c.trainNote;
+      });
+      const cards = $('.mealcards', sec);
+      if (cards && c.mealcards) cards.innerHTML = c.mealcards;
+    }
+    if (c.habits && c.habits.length) {
+      const hs = $$('.habits7 .h7');
+      c.habits.forEach((html, i) => { if (hs[i]) hs[i].innerHTML = html; });
+    }
   },
 
   /** Fallback only — used when the server has no accounts installed, i.e. the
@@ -8077,9 +8055,11 @@ const Profile = {
       });
     }
 
-    /* DEFAULT_MISSION is the previous owner's actual mission statement, and
-       the app pre-fills it for anyone new. Clear it so they write their own. */
-    if (Profile.isNew) {
+    /* The shipped file no longer carries anyone's mission statement, so the
+       owner's has to come back from their profile — not just a new account's
+       empty one. The guard means a mission that has actually been written is
+       never touched: this only fills a blank. */
+    {
       const c = Profile.host('cData'), cSave = Profile.host('cSave');
       if (c && typeof cSave === 'function') {
         const dm = Profile.host('DEFAULT_MISSION');
@@ -8098,6 +8078,7 @@ const Profile = {
     }
 
     Profile.paintWorkspaces();
+    Profile.applyCopy();
     Profile.paintDietCopy();
 
     /* The host rendered every tab before this ran, so the swapped arrays are
@@ -8123,7 +8104,7 @@ const Profile = {
 
     $$('h3', sec).forEach(h => {
       const span = $('span', h);
-      if (span && /minimum|sabah spor/i.test(span.textContent || '')) {
+      if (span && /minimum|adapt|train/i.test(span.textContent || '')) {
         span.textContent = '(the checklist and week plan adapt to the days you train)';
       }
     });
@@ -8206,7 +8187,7 @@ async function boot() {
   } catch (e) { console.error('[Flow] load failed', e); }
 
   Tabs.init();
-  Tabs.add('artur', '👤 Artur', (sec) => Artur.render(sec));
+  Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
 
   // time chips everywhere
