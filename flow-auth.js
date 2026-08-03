@@ -39,7 +39,10 @@ const OWNER_EMAIL = (process.env.FLOW_OWNER_EMAIL || '').trim().toLowerCase();
 
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
-const LEGACY_CLAIMED = '__auth:legacy_claimed';
+/* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
+   so adoption has to run once more to place them where all() can see them. */
+const LEGACY_CLAIMED = '__auth:legacy_claimed_v2';
+const NAMESPACED = /^ld_u[0-9a-f]+:/;
 const SEED = (uid) => '__auth:seed:' + uid;
 
 /* The raw, un-namespaced store. Captured by protect(). */
@@ -124,8 +127,8 @@ async function adoptLegacyKeys(uid) {
   const all = await raw.all();
   let n = 0;
   for (const k of Object.keys(all || {})) {
-    if (k.indexOf('__auth:') === 0 || k.indexOf('u:') === 0) continue;
-    await raw.set('u:' + uid + ':' + k, all[k]);
+    if (k.indexOf('__auth:') === 0 || k.indexOf('u:') === 0 || NAMESPACED.test(k)) continue;
+    await raw.set('ld_u' + uid + ':' + k, all[k]);
     n++;
   }
   await setJSON(LEGACY_CLAIMED, { uid, at: new Date().toISOString(), keys: n });
@@ -136,7 +139,12 @@ async function adoptLegacyKeys(uid) {
 function protect(store) {
   raw = store;
   const uid = () => (als && als.getStore()) || null;
-  const pre = () => 'u:' + uid() + ':';
+  /* The prefix MUST keep the key inside the host store's own key space. The
+     Upstash backend implements all() as `KEYS ld_*`, so a namespace like
+     `u:<id>:ld_journal` is written successfully but is invisible to all() —
+     and the app hydrates entirely from /api/all. Prefixing INSIDE the pattern
+     keeps every namespaced key discoverable. */
+  const pre = () => 'ld_u' + uid() + ':';
   return {
     get engine() { return store.engine; },
     get file() { return store.file; },
