@@ -121,9 +121,9 @@ async function currentUser(req) {
 }
 
 /* ---------- one-time migration of today's data --------------------------- */
-async function adoptLegacyKeys(uid) {
+async function adoptLegacyKeys(uid, force) {
   const claimed = await getJSON(LEGACY_CLAIMED, null);
-  if (claimed) return 0;
+  if (claimed && !force) return 0;
   const all = await raw.all();
   let n = 0;
   for (const k of Object.keys(all || {})) {
@@ -133,6 +133,18 @@ async function adoptLegacyKeys(uid) {
   }
   await setJSON(LEGACY_CLAIMED, { uid, at: new Date().toISOString(), keys: n });
   return n;
+}
+
+/* Re-adopt only into an empty namespace. Returns the number of keys rescued,
+   or 0 when there was nothing to do — which is the normal, steady state. */
+async function healOwner(uid) {
+  const all = await raw.all();
+  const names = Object.keys(all || {});
+  const mine = 'ld_u' + uid + ':';
+  if (names.some(k => k.indexOf(mine) === 0)) return 0;      // already has data — never touch it
+  const orphans = names.filter(k => k.indexOf('ld_') === 0 && !NAMESPACED.test(k));
+  if (!orphans.length) return 0;                             // nothing to rescue
+  return adoptLegacyKeys(uid, true);
 }
 
 /* ---------- the protected store ------------------------------------------ */
@@ -197,7 +209,38 @@ async function gate(req, res) {
     const me = await currentUser(req);
     if (!me) { json(res, 200, { ok: false, user: null, needsSetup: await isFirstRun() }); return true; }
     const seed = await getJSON(SEED(me.id), 'template');
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed });
+    /* Self-heal. Adoption used to run only at signup and login, so an owner
+       holding a session from before a fix had no way to trigger it short of
+       signing out. This re-runs it when — and only when — the owner's own
+       namespace is completely empty while un-namespaced data is sitting in
+       the store. It therefore cannot overwrite anything: the only case it
+       fires in is the one where there is nothing of theirs to overwrite. */
+    let healed = 0;
+    if (me.owner) {
+      try { healed = await healOwner(me.id); } catch (e) { healed = 0; }
+    }
+    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed });
+    return true;
+  }
+
+  /* Owner-only. Key NAMES and counts, never values — enough to diagnose a
+     namespace problem without exposing a single line of anyone's data. */
+  if (p === '/api/auth/diag') {
+    const me = await currentUser(req);
+    if (!me || !me.owner) return json(res, 403, { error: 'Not permitted.' }), true;
+    const all = await raw.all();
+    const names = Object.keys(all || {});
+    const mine = 'ld_u' + me.id + ':';
+    json(res, 200, {
+      uid: me.id,
+      visibleToPattern: names.length,
+      unNamespaced: names.filter(k => k.indexOf('ld_') === 0 && !NAMESPACED.test(k)),
+      mineCount: names.filter(k => k.indexOf(mine) === 0).length,
+      otherNamespaces: [...new Set(names.filter(k => NAMESPACED.test(k) && k.indexOf(mine) !== 0)
+        .map(k => k.slice(0, k.indexOf(':') + 1)))],
+      claimV1: !!(await getJSON('__auth:legacy_claimed', null)),
+      claimV2: await getJSON(LEGACY_CLAIMED, null)
+    });
     return true;
   }
 
