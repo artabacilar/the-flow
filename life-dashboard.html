@@ -3498,8 +3498,6 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   },{passive:true});
 })();
 </script>
-
-<!-- ===== The Flow · Upgrade Pack v1.6.1 — paste this whole block immediately before </body> in life-dashboard.html ===== -->
 <style>
 /* ==========================================================================
    The Flow — Upgrade Pack v1.0  ·  stylesheet
@@ -3860,7 +3858,6 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
 
 @media print { .flow-btn, .flow-time-chip, .flow-seg { display: none !important; } }
 
-
 /* ---------- Today: folded groups ---------------------------------------- */
 .flow-fold .td-group-head {
   cursor: pointer;
@@ -3989,6 +3986,94 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   color: #ffc2c2; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
   margin-bottom: 4px;
 }
+
+/* ---------- markets strip ------------------------------------------------ */
+.flow-mkt { margin: 10px 0 4px; }
+.flow-mkt-row {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+}
+@media (max-width: 560px){ .flow-mkt-row { grid-template-columns: repeat(2, 1fr); } }
+.flow-mkt-tile {
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius); padding: 9px 10px;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.flow-mkt-tile.dim { opacity: .45; }
+.flow-mkt-tile .l { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--f-muted); }
+.flow-mkt-tile .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-mkt-note { margin-top: 6px; font-size: 11.5px; color: var(--f-muted); }
+
+/* ---------- shared-task inbox -------------------------------------------- */
+.flow-inbox-row {
+  border: 1px solid var(--f-line); border-radius: var(--f-radius-sm);
+  padding: 10px 12px; margin-top: 10px; background: var(--f-surface-2);
+}
+.flow-inbox-row .t { font-weight: 600; }
+.flow-inbox-row .m { font-size: 12px; color: var(--f-muted); margin-top: 2px; }
+.flow-inbox-row .n { font-size: 12.5px; color: var(--f-ink-2); margin-top: 6px; white-space: pre-wrap; }
+.flow-inbox-row .a { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* ---------- the assistant ------------------------------------------------ */
+.flow-ask-log { max-height: 46vh; overflow-y: auto; }
+.flow-ask-turn { margin: 10px 0; }
+.flow-ask-turn .who {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--f-muted); margin-bottom: 3px;
+}
+.flow-ask-turn .txt {
+  background: var(--f-surface-2); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius-sm); padding: 9px 11px;
+  font-size: 13.5px; line-height: 1.55; white-space: normal;
+}
+.flow-ask-turn.user .txt { background: var(--f-accent-soft); border-color: transparent; }
+
+/* ---------- guest mode ---------------------------------------------------- */
+.fa-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--f-muted); font-size: 12px; }
+.fa-or::before, .fa-or::after { content: ''; flex: 1; height: 1px; background: var(--f-line); }
+.fa-fine { margin: 8px 0 0; font-size: 11.5px; color: var(--f-muted); line-height: 1.5; }
+#flow-guestbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; font-size: 12.5px;
+  background: var(--f-surface); border-top: 1px solid var(--f-line); color: var(--f-ink-2);
+}
+@media (max-width: 760px){ #flow-guestbar { bottom: 62px; } }
+.flow-btn.tiny { padding: 5px 10px; font-size: 12px; }
+
+/* ---------- priorities: let a row breathe on a phone ---------------------
+ * The host builds each priority as one non-wrapping flex line: checkbox,
+ * text, ✏️, → Rock, the quadrant selector, ×, and (since this pack) a time
+ * chip. On a 390px screen the fixed-width controls take ~230px of it, so the
+ * text was being squeezed to about 50px — a sentence rendered in a column two
+ * words wide, with the × crushed to 8px and the selector clipped.
+ *
+ * Giving the text its own line and letting the controls wrap underneath costs
+ * one row of height and makes the whole thing readable. Unchanged above 760px,
+ * where there is room for everything on one line.
+ * --------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .qitem {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* Checkbox and text share the first line; everything else wraps below. */
+  .qitem .qt,
+  .qitem .qt-edit {
+    flex: 1 1 calc(100% - 30px);
+    min-width: 0;                 /* flex items default to min-width:auto,
+                                     which is what forced the overflow */
+    overflow-wrap: anywhere;
+  }
+  /* First control on the wrapped line pushes the group to the right. */
+  .qitem .q-edit { margin-left: auto; }
+  /* Stop the small controls being shrunk to slivers. */
+  .qitem .q-edit,
+  .qitem .q-rock,
+  .qitem .q-del,
+  .qitem select { flex: 0 0 auto; }
+  .qitem .q-del { padding: 2px 8px; }
+}
+
 </style>
 <script>
 /* ==========================================================================
@@ -5749,6 +5834,296 @@ const Rollup = {
 /* =========================================================================
  * 15 · The Planner tab
  * ====================================================================== */
+/* =========================================================================
+ * 26 · Markets — a live price strip on Today
+ *
+ * The server does the fetching and the caching; this only draws. It always
+ * shows the last number it was given along with how old that number is,
+ * because a figure with an honest timestamp is more useful on a train than a
+ * spinner that never resolves.
+ * ======================================================================= */
+const Markets = {
+  KEY: 'flow:markets',
+  DEFAULT: ['BTCUSD', 'USDTRY', 'EURTRY', 'GRAMGOLDTRY'],
+  LABEL: {
+    BTCUSD: ['Bitcoin', '$'], BTCTRY: ['Bitcoin', '₺'], BTCEUR: ['Bitcoin', '€'],
+    USDTRY: ['Dollar', '₺'], EURTRY: ['Euro', '₺'], EURUSD: ['Euro', '$'],
+    XAUUSD: ['Gold / oz', '$'], GRAMGOLDTRY: ['Gram gold', '₺']
+  },
+  data: null,
+  watch: null,
+
+  async load() {
+    if (Markets.watch === null) {
+      const saved = await DB.get(Markets.KEY, null);
+      Markets.watch = Array.isArray(saved) && saved.length ? saved : Markets.DEFAULT.slice();
+    }
+    return Markets.watch;
+  },
+  async setWatch(list) {
+    Markets.watch = list.slice(0, 8);
+    await DB.set(Markets.KEY, Markets.watch);
+    Markets.paint();
+  },
+
+  fmt(sym, v) {
+    if (typeof v !== 'number' || !isFinite(v)) return '—';
+    const [, unit] = Markets.LABEL[sym] || ['', ''];
+    /* Big numbers do not need decimals; a rate does. */
+    const dp = v >= 1000 ? 0 : v >= 100 ? 1 : 2;
+    return unit + v.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  },
+  ago(ms) {
+    if (ms == null) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 90) return 'just now';
+    const m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    const h = Math.round(m / 60);
+    return h + (h === 1 ? ' hour ago' : ' hours ago');
+  },
+
+  async fetch(force) {
+    try {
+      const r = await fetch('/api/flow/prices', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (j && j.quotes) { Markets.data = j; return j; }
+    } catch (e) { /* offline — keep whatever we drew last */ }
+    return null;
+  },
+
+  async mount() {
+    await Markets.load();
+    await Markets.fetch();
+    Markets.paint();
+    /* Refresh while the tab is actually being looked at, not in the background. */
+    if (!Markets._timer) {
+      Markets._timer = setInterval(async () => {
+        if (document.hidden) return;
+        await Markets.fetch();
+        Markets.paint();
+      }, 120000);
+    }
+  },
+
+  paint() {
+    const feed = $('#tab-today') || $('.section#tab-today');
+    if (!feed) return;
+    let strip = $('#flow-markets', feed);
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'flow-markets';
+      strip.className = 'flow-td flow-mkt flow-x';
+      const pulse = $('.flow-td-pulse', feed);
+      if (pulse && pulse.nextSibling) feed.insertBefore(strip, pulse.nextSibling);
+      else if (pulse) feed.appendChild(strip);
+      else feed.insertBefore(strip, feed.firstChild);
+    }
+    const d = Markets.data;
+    const q = (d && d.quotes) || {};
+    const list = (Markets.watch || Markets.DEFAULT).filter(s => Markets.LABEL[s]);
+    if (!d) {
+      strip.innerHTML = '<div class="flow-mkt-note">Prices load when the server wakes up.</div>';
+      return;
+    }
+    strip.innerHTML =
+      '<div class="flow-mkt-row">' +
+      list.map(sym => {
+        const [name] = Markets.LABEL[sym] || [sym];
+        const has = typeof q[sym] === 'number';
+        return `<div class="flow-mkt-tile${has ? '' : ' dim'}">
+                  <span class="l">${esc(name)}</span>
+                  <span class="v">${esc(Markets.fmt(sym, q[sym]))}</span>
+                </div>`;
+      }).join('') +
+      '</div>' +
+      `<div class="flow-mkt-note">${d.stale ? '⚠️ ' : ''}${esc(Markets.ago(d.ageMs))}` +
+      (d.fxDate ? ' · rates ' + esc(d.fxDate) : '') +
+      (Object.keys(d.errors || {}).length ? ' · some sources unavailable' : '') +
+      ' · gram gold is derived from the ounce price</div>';
+  }
+};
+
+/* =========================================================================
+ * 27 · Shared tasks — a small inbox
+ *
+ * Accepting is done here, in the recipient's own app, rather than on the
+ * server: the server hands the task over and this decides where it belongs.
+ * Nothing arrives in anyone's list without them pressing Add.
+ * ======================================================================= */
+const Inbox = {
+  items: [],
+
+  async load() {
+    try {
+      const r = await fetch('/api/share/inbox', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      Inbox.items = (j && j.items) || [];
+    } catch (e) { Inbox.items = []; }
+    return Inbox.items;
+  },
+
+  async send(email, task) {
+    const r = await fetch('/api/share/send', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: email, task })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Could not share that.');
+    return j;
+  },
+
+  async resolve(id, accept) {
+    const r = await fetch('/api/share/' + (accept ? 'accept' : 'decline'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'That item is gone.');
+    return j.item;
+  },
+
+  /** File an accepted task into this person's own Q1 priorities. */
+  async file(item) {
+    const q = Profile.host('qData'), qSave = Profile.host('qSave');
+    if (!q || typeof qSave !== 'function') throw new Error('Could not reach your priorities.');
+    q.items = q.items || [];
+    q.items.push({
+      id: 'q' + Date.now().toString(36),
+      q: 1,
+      txt: item.task.txt + (item.from ? '  (from ' + item.from.name + ')' : ''),
+      done: false
+    });
+    qSave();
+    if (item.task.due) {
+      try { await Schedule.set('quad::' + q.items[q.items.length - 1].id, item.task.due, item.task.time || '09:00'); } catch (e) {}
+    }
+    if (typeof window.renderQuad === 'function') window.renderQuad();
+    if (typeof window.renderToday === 'function') window.renderToday();
+  },
+
+  render(host) {
+    const n = Inbox.items.length;
+    const box = document.createElement('div');
+    box.className = 'flow-card flow-x';
+    box.id = 'flow-inbox';
+    box.innerHTML = `<h3>📥 Shared with you${n ? ' · ' + n : ''}</h3>` +
+      (!n ? '<p class="flow-sub">Nothing waiting. When somebody shares a task with you it appears here.</p>'
+          : '<p class="flow-sub">Nothing is added to your app until you press Add.</p>' +
+            Inbox.items.map(it => `
+              <div class="flow-inbox-row" data-id="${esc(it.id)}">
+                <div class="t">${esc(it.task.txt)}</div>
+                <div class="m">from ${esc(it.from ? it.from.name : 'someone')}${it.task.due ? ' · due ' + esc(it.task.due) + (it.task.time ? ' ' + esc(it.task.time) : '') : ''}</div>
+                ${it.task.note ? `<div class="n">${esc(it.task.note)}</div>` : ''}
+                <div class="a">
+                  <button class="flow-btn small primary" data-inbox="add">Add to my priorities</button>
+                  <button class="flow-btn small ghost" data-inbox="no">Dismiss</button>
+                </div>
+              </div>`).join(''));
+    host.appendChild(box);
+
+    box.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-inbox]');
+      if (!btn) return;
+      const row = btn.closest('.flow-inbox-row');
+      const id = row.getAttribute('data-id');
+      const accept = btn.getAttribute('data-inbox') === 'add';
+      btn.disabled = true;
+      try {
+        const item = await Inbox.resolve(id, accept);
+        if (accept && item) await Inbox.file(item);
+        await Inbox.load();
+        const parent = box.parentElement;
+        box.remove();
+        Inbox.render(parent);
+      } catch (err) {
+        row.querySelector('.m').textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+  }
+};
+
+/* =========================================================================
+ * 28 · The assistant — read-only, over your own data
+ * ======================================================================= */
+const Ask = {
+  turns: [],
+  busy: false,
+
+  render(sec) {
+    sec.innerHTML = `
+      <div class="flow-hero-wrap">
+        <div class="flow-eyebrow">READS YOUR FLOW · NEVER CHANGES IT</div>
+        <div class="flow-hero">Ask</div>
+      </div>
+      <div class="flow-card">
+        <p class="flow-sub">It can see your priorities, week, journal, training, habits, sleep and spending, and answer questions about them. It cannot add or edit anything — that is deliberate.</p>
+        <div id="ask-log" class="flow-ask-log"></div>
+        <div class="flow-row" style="margin-top:12px">
+          <textarea class="flow-in grow" id="ask-in" rows="2" placeholder="What should I focus on this week?"></textarea>
+          <button class="flow-btn primary" id="ask-go">Ask</button>
+        </div>
+        <div class="flow-sub" id="ask-meta" style="margin-top:8px"></div>
+        <div class="flow-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
+          ${['What should I focus on this week?', 'How has my sleep been?', 'Am I keeping up with training?', 'Where is my money going?']
+            .map(q => `<button class="flow-btn tiny ghost" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}
+        </div>
+      </div>`;
+
+    const log = $('#ask-log', sec), input = $('#ask-in', sec), meta = $('#ask-meta', sec);
+    const draw = () => {
+      log.innerHTML = Ask.turns.map(t =>
+        `<div class="flow-ask-turn ${t.role}"><div class="who">${t.role === 'user' ? 'You' : 'Flow'}</div><div class="txt">${esc(t.content).replace(/\n/g, '<br>')}</div></div>`).join('');
+      log.scrollTop = log.scrollHeight;
+    };
+
+    const ask = async (text) => {
+      const q = String(text || input.value || '').trim();
+      if (!q || Ask.busy) return;
+      Ask.busy = true;
+      input.value = '';
+      Ask.turns.push({ role: 'user', content: q });
+      Ask.turns.push({ role: 'assistant', content: '…' });
+      draw();
+      try {
+        const r = await fetch('/api/flow/chat', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: Ask.turns.filter(t => t.content !== '…') })
+        });
+        const j = await r.json().catch(() => ({}));
+        Ask.turns.pop();
+        if (!r.ok) {
+          Ask.turns.push({ role: 'assistant', content: j.error || 'That did not work.' });
+        } else {
+          Ask.turns.push({ role: 'assistant', content: j.reply || '(no answer)' });
+          meta.textContent = j.used != null ? j.used + ' of ' + j.cap + ' messages used today' : '';
+        }
+      } catch (e) {
+        Ask.turns.pop();
+        Ask.turns.push({ role: 'assistant', content: 'Could not reach the server.' });
+      }
+      Ask.busy = false;
+      draw();
+    };
+
+    $('#ask-go', sec).addEventListener('click', () => ask());
+    input.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') ask();
+    });
+    sec.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ask]');
+      if (b) ask(b.getAttribute('data-ask'));
+    });
+    draw();
+  }
+};
+
 const Planner = {
   /* First name of the signed-in account, else the display name from Settings,
      else a neutral word. Never a name baked into the file. */
@@ -5880,6 +6255,8 @@ const Planner = {
     // notes for the Planner tab itself
     const nb = section.querySelector('[data-artur-notes]');
     nb.innerHTML = Notes.renderBook('artur', 'Planner');
+    /* Anything somebody has shared, waiting to be accepted. */
+    try { Inbox.render(section); } catch (e) {}
     Notes.bind(nb);
     Chart.hydrate(section);
 
@@ -7748,6 +8125,10 @@ const Auth = {
   user: null,
   seed: null,          /* 'legacy' | 'template' — decided by the server at signup */
   installed: false,
+  /* Guest mode. Nothing a guest types ever reaches the database: the pack's
+     DB layer is switched to a browser-only store for the session, and the
+     host app's own localStorage writes were always local anyway. */
+  guest: false,
 
   async check() {
     try {
@@ -7801,6 +8182,9 @@ const Auth = {
         </div>
         <button class="flow-btn primary fa-go" id="fa-go">${firstRun ? 'Create account' : 'Sign in'}</button>
         <button class="flow-btn ghost fa-alt" id="fa-alt">${firstRun ? '' : 'Create an account instead'}</button>
+        <div class="fa-or"><span>or</span></div>
+        <button class="flow-btn ghost" id="fa-guest">Have a look around first</button>
+        <p class="fa-fine">No account, nothing saved to the server. You can keep your work if you sign up afterwards.</p>
       </div>`;
     document.body.appendChild(el);
 
@@ -7837,6 +8221,11 @@ const Auth = {
         }
         const j = await Auth.post(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', payload);
         btn.textContent = j.adopted ? 'Restoring your data…' : 'Loading…';
+        /* If they were looking around as a guest first, carry that work into
+           the account they just made, before the reload picks it all up. */
+        if (mode === 'signup') {
+          try { const n = await Auth.adoptCarried(); if (n) btn.textContent = 'Keeping your work…'; } catch (e) {}
+        }
         /* A full reload is deliberate: the app hydrates its whole store in one
            synchronous pass at boot, so the cleanest way to pick up the account's
            data is to start again with the session in place. */
@@ -7846,9 +8235,87 @@ const Auth = {
         btn.disabled = false; btn.textContent = was;
       }
     };
+    const guestBtn = $('#fa-guest', el);
+    if (guestBtn) guestBtn.addEventListener('click', (e) => { e.preventDefault(); Auth.startGuest(); });
     $('#fa-go', el).addEventListener('click', go);
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     setTimeout(() => { try { $('#fa-email', el).focus(); } catch (e) {} }, 60);
+  },
+
+  /* ---- guest mode ----------------------------------------------------
+   * The guest never gets a session, so every /api call would 401. Rather
+   * than let the app fail request by request, DB is redirected at a
+   * browser-only store for the rest of the visit. The server is not asked
+   * for anything and is never sent anything.
+   * ------------------------------------------------------------------ */
+  startGuest() {
+    Auth.guest = true;
+    Auth.user = { email: '', name: 'Guest', owner: false, guest: true };
+    Auth.seed = 'template';
+
+    const LS = 'flowguest:';
+    DB.get = async (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(LS + key);
+        if (raw != null) return JSON.parse(raw);
+      } catch (e) {}
+      return fallback === undefined ? null : fallback;
+    };
+    DB.set = async (key, value) => {
+      try { localStorage.setItem(LS + key, JSON.stringify(value)); } catch (e) {}
+      DB._mem.set(key, value);
+      return value;
+    };
+
+    const el = $('#flow-auth');
+    if (el) el.remove();
+    document.body.classList.add('flow-is-guest');
+    Auth.guestBanner();
+  },
+
+  guestBanner() {
+    if ($('#flow-guestbar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'flow-guestbar';
+    bar.className = 'flow-x';
+    bar.innerHTML = `<span>You are looking around as a guest — nothing here is saved to the server.</span>
+      <button class="flow-btn tiny primary" id="fg-signup">Keep my work — create an account</button>`;
+    document.body.appendChild(bar);
+    $('#fg-signup', bar).addEventListener('click', () => Auth.convert());
+  },
+
+  /* Carry what the guest typed into the account they are about to make. */
+  async convert() {
+    const carried = {};
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.indexOf('flowguest:') === 0)
+        .forEach(k => { carried[k.slice('flowguest:'.length)] = localStorage.getItem(k); });
+    } catch (e) {}
+    sessionStorage.setItem('flow:carry', JSON.stringify(carried));
+    /* Host-app data lives under ld_* in localStorage already and survives a
+       reload, so signing up adopts it in the normal way. */
+    Auth.guest = false;
+    Auth.user = null;
+    const bar = $('#flow-guestbar'); if (bar) bar.remove();
+    document.body.classList.remove('flow-is-guest');
+    Auth.screen(false);
+    const alt = $('#fa-alt'); if (alt) alt.click();
+    const note = $('#fa-err');
+    if (note) { note.hidden = false; note.textContent = 'Create your account and your work will be carried over.'; }
+  },
+
+  /* Called after a successful signup: replay anything the guest had typed. */
+  async adoptCarried() {
+    let carried = null;
+    try { carried = JSON.parse(sessionStorage.getItem('flow:carry') || 'null'); } catch (e) {}
+    if (!carried) return 0;
+    sessionStorage.removeItem('flow:carry');
+    let n = 0;
+    for (const key of Object.keys(carried)) {
+      try { await DB.set(key, JSON.parse(carried[key])); n++; } catch (e) {}
+    }
+    return n;
   },
 
   async signOut() {
@@ -8228,10 +8695,15 @@ async function boot() {
 
   Tabs.init();
   Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
+  Tabs.add('ask', '💬 Ask', (sec) => Ask.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
   /* Settings and the account are both loaded by now, so the planner tab can
      take the signed-in person's name. */
   Planner.applyTabName();
+  /* Prices and the shared-task inbox. Both are additive and both fail quietly:
+     no server module, no strip, no inbox, and the rest of the app is unchanged. */
+  try { await Inbox.load(); } catch (e) {}
+  try { await Markets.mount(); } catch (e) {}
 
   // time chips everywhere
   TimeChips.scan(document);
@@ -8265,6 +8737,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
+    Markets, Inbox, Ask, Planner,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
@@ -8282,7 +8755,5 @@ else setTimeout(boot, 300);
 })();
 
 </script>
-<!-- ===== end Upgrade Pack ===== -->
-
 </body>
 </html>

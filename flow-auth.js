@@ -43,6 +43,11 @@ const MAX_ACCOUNTS = (() => {
   return Number.isFinite(n) && n >= 0 ? n : 10;
 })();
 
+/* Optional sibling module: live prices and, later, the assistant. Absent is a
+   perfectly valid state — the app simply does not offer those routes. */
+let extras = null;
+try { extras = require('./flow-extras'); } catch (e) { extras = null; }
+
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
 /* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
@@ -51,6 +56,14 @@ const LEGACY_CLAIMED = '__auth:legacy_claimed_v2';
 const NAMESPACED = /^ld_u[0-9a-f]+:/;
 const SEED = (uid) => '__auth:seed:' + uid;
 const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
+/* One task, handed from one account to another. This is the ONLY channel
+   between accounts in the whole system, so it is deliberately narrow: a
+   record holds exactly what the sender typed plus who they are, and it lives
+   in its own key outside both namespaces. Nothing reads it but its owner. */
+const INBOX = (uid) => '__share:inbox:' + uid;
+const INBOX_MAX = 50;                       /* so nobody can flood a mailbox  */
+const SHARE_DAILY_MAX = 50;                 /* and nobody can flood everyone  */
+const SHARE_SENT = (uid, day) => '__share:sent:' + uid + ':' + day;
 
 /* The raw, un-namespaced store. Captured by protect(). */
 let raw = null;
@@ -194,6 +207,46 @@ async function healOwner(uid) {
   return adoptLegacyKeys(uid, true);
 }
 
+/* ---------- sharing a single task ---------------------------------------- */
+async function userByEmail(email) {
+  const users = await getJSON(USERS_KEY, {});
+  return users[String(email || '').trim().toLowerCase()] || null;
+}
+
+/* Only the fields we promise to carry. Anything else the client sends is
+   dropped here rather than trusted onward — the recipient's app renders this. */
+function cleanTask(t) {
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const txt = str(t && t.txt, 500).trim();
+  if (!txt) return null;
+  return {
+    txt,
+    note: str(t && t.note, 2000),
+    due: validDate(t && t.due),
+    time: validTime(t && t.time),
+    origin: str(t && t.origin, 40)
+  };
+}
+
+/* Shape alone is not enough: "2026-13-45" and "99:99" both match a naive
+   pattern and would land in someone else's app as a date their calendar
+   cannot parse. Check the ranges, and for a date that it survives a
+   round-trip through Date — which rejects 31 February. */
+function validDate(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const d = new Date(s + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10) === s ? s : '';
+}
+function validTime(v) {
+  const s = String(v == null ? '' : v).trim();
+  const m = /^(\d{2}):(\d{2})$/.exec(s);
+  if (!m) return '';
+  const h = +m[1], mi = +m[2];
+  return (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) ? s : '';
+}
+
 /* ---------- the protected store ------------------------------------------ */
 function protect(store) {
   raw = store;
@@ -249,6 +302,116 @@ async function gate(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  /* ---- sharing one task with one person ----
+     Deliberately kept here, next to the account records, rather than in the
+     extras module: this is the one place that writes into somebody else's
+     space, and it should be obvious where that happens. */
+  if (p === '/api/share/send' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const to = String(b.to || '').trim().toLowerCase();
+    const task = cleanTask(b.task);
+    if (!emailOk(to)) { json(res, 400, { error: 'That does not look like an email address.' }); return true; }
+    if (!task) { json(res, 400, { error: 'The task needs some text.' }); return true; }
+    if (to === me.email) { json(res, 400, { error: 'That is your own address.' }); return true; }
+
+    const day = new Date().toISOString().slice(0, 10);
+    const sent = (await getJSON(SHARE_SENT(me.id, day), 0)) || 0;
+    if (sent >= SHARE_DAILY_MAX) {
+      json(res, 429, { error: 'You have shared a lot today. Try again tomorrow.' });
+      return true;
+    }
+
+    const rec = await userByEmail(to);
+    /* Telling the sender the address is unknown is a small disclosure — it
+       confirms whether an account exists. On a private, invite-only Flow that
+       is worth it: silently swallowing a share is far worse for the person
+       who typed a typo and waits for a reply that never comes. */
+    if (!rec) { json(res, 404, { error: 'Nobody here has that email address yet.' }); return true; }
+
+    const inbox = await getJSON(INBOX(rec.id), []);
+    if (inbox.length >= INBOX_MAX) { json(res, 429, { error: 'Their inbox is full.' }); return true; }
+    const item = {
+      id: crypto.randomBytes(8).toString('hex'),
+      at: new Date().toISOString(),
+      from: { name: me.name || me.email, email: me.email },
+      task
+    };
+    inbox.push(item);
+    await setJSON(INBOX(rec.id), inbox);
+    await setJSON(SHARE_SENT(me.id, day), sent + 1);
+    json(res, 200, { ok: true, id: item.id, to: rec.email });
+    return true;
+  }
+
+  if (p === '/api/share/inbox' && req.method !== 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    json(res, 200, { ok: true, items: await getJSON(INBOX(me.id), []) });
+    return true;
+  }
+
+  /* Accept hands the task back to the client, which files it wherever it
+     belongs in that person's own app; the server never writes into anyone's
+     task list on their behalf. Decline just drops it. */
+  if ((p === '/api/share/accept' || p === '/api/share/decline') && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const id = String(b.id || '');
+    const inbox = await getJSON(INBOX(me.id), []);
+    const i = inbox.findIndex(x => x && x.id === id);
+    if (i < 0) { json(res, 404, { error: 'That item is no longer there.' }); return true; }
+    const [item] = inbox.splice(i, 1);
+    await setJSON(INBOX(me.id), inbox);
+    json(res, 200, { ok: true, item: p === '/api/share/accept' ? item : null, remaining: inbox.length });
+    return true;
+  }
+
+  /* ---- optional extras (prices, assistant) ----
+     Signed in only: these cost upstream quota or money, so an anonymous
+     caller must never be able to spend either. */
+  if (extras && p.indexOf('/api/flow/') === 0) {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    try {
+      /* extras never receives the raw store. It gets a reader already locked
+         to the caller's own namespace, so a bug in a new feature cannot read
+         across accounts even by accident. */
+      const pre = 'ld_u' + me.id + ':';
+      const mine = {
+        async get(key) {
+          const v = await raw.get(pre + key);
+          if (v == null) return null;
+          if (typeof v !== 'string') return v;
+          const t = v.trim();
+          if (t && (t[0] === '{' || t[0] === '[')) { try { return JSON.parse(t); } catch (e) {} }
+          return v;
+        },
+        async all() {
+          const everything = await raw.all();
+          const out = {};
+          Object.keys(everything || {}).forEach(k => {
+            if (k.indexOf(pre) === 0) out[k.slice(pre.length)] = everything[k];
+          });
+          return out;
+        }
+      };
+      const done = await extras.handle(p, req, res, {
+        json, readBody, user: me, mine,
+        counter: {
+          get: (k) => getJSON('__auth:ctr:' + me.id + ':' + k, 0),
+          set: (k, v) => setJSON('__auth:ctr:' + me.id + ':' + k, v)
+        }
+      });
+      if (done) return true;
+    } catch (e) {
+      json(res, 502, { error: 'That service is unavailable right now.' });
+      return true;
+    }
   }
 
   /* ---- auth endpoints ---- */
