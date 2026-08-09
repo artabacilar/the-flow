@@ -4074,6 +4074,289 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   .qitem .q-del { padding: 2px 8px; }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 29 · Navigation — the iOS bottom bar and the desktop sidebar
+ *
+ * Purely additive. The host's own .tabs pill row and .mobilenav bottom bar are
+ * left in the DOM and hidden, because syncMobileNav() and the swipe handler
+ * both still read them. Everything here is new markup layered on top, and
+ * every destination is still reached by clicking the host's own pill — so the
+ * host's per-section render callbacks fire exactly as they always did.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --fn-bar-h: 54px;
+  --fn-side-w: 236px;
+  --fn-side-w-sm: 64px;
+}
+
+#flow-nav-sprite{display:none;}
+.fn-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — bottom tab bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-tabbar{display:none;}
+
+@media (max-width:760px){
+  /* The host's own bottom bar and its "More" sheet step aside. They stay in
+     the DOM so syncMobileNav() keeps working against them. */
+  .mobilenav{display:none !important;}
+  .moresheet,.morebackdrop{display:none !important;}
+
+  body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 26px) !important;}
+
+  #flow-tabbar{
+    display:grid;grid-template-columns:repeat(5,1fr);align-items:end;
+    position:fixed;left:0;right:0;bottom:0;z-index:940;
+    padding:7px 6px calc(7px + env(safe-area-inset-bottom));
+    background:rgba(14,16,20,.93);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-top:1px solid var(--border);
+  }
+  #flow-tabbar button{
+    background:none;border:0;cursor:pointer;font-family:inherit;color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;
+    padding:6px 2px;min-height:44px;                 /* 44pt minimum touch target */
+    -webkit-tap-highlight-color:transparent;transition:color .15s;
+  }
+  #flow-tabbar button .fn-lb{font-size:9.5px;font-weight:700;letter-spacing:.01em;}
+  #flow-tabbar button.on{color:var(--accent);}
+  #flow-tabbar button.on .fn-i{stroke-width:2.3;}
+
+  /* The capture button — deliberately the largest target on the screen. */
+  #flow-tabbar .fn-cap{align-self:center;}
+  #flow-tabbar .fn-cap .fn-knob{
+    width:48px;height:48px;border-radius:16px;
+    background:linear-gradient(150deg,var(--accent),#0072c6);
+    display:grid;place-items:center;color:#fff;
+    box-shadow:0 8px 20px -6px rgba(0,147,231,.7);transition:transform .14s;
+  }
+  #flow-tabbar .fn-cap:active .fn-knob{transform:scale(.93);}
+  #flow-tabbar .fn-cap .fn-i{width:24px;height:24px;stroke-width:2.5;}
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — header row (avatar + search), segment bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-headtools{display:none;}
+@media (max-width:760px){
+  #flow-headtools{display:flex;align-items:center;gap:9px;margin-left:auto;}
+  .fn-icobtn{
+    width:38px;height:38px;border-radius:12px;background:var(--card);
+    border:1px solid var(--border);color:var(--muted);
+    display:grid;place-items:center;cursor:pointer;flex:0 0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .fn-icobtn:active{background:var(--card2);}
+  .fn-avatar{
+    width:38px;height:38px;border-radius:50%;flex:0 0 auto;cursor:pointer;
+    background:linear-gradient(150deg,var(--accent),var(--purple));
+    display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;
+    border:0;font-family:inherit;-webkit-tap-highlight-color:transparent;
+  }
+}
+
+/* Segment bar — the second level of navigation, inside Focus and Body. */
+#flow-seg{
+  display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
+  margin:0 0 18px;padding-bottom:2px;-webkit-overflow-scrolling:touch;
+}
+#flow-seg::-webkit-scrollbar{display:none;}
+#flow-seg button{
+  background:var(--card);border:1px solid var(--border);border-radius:100px;
+  color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;
+  padding:9px 15px;min-height:38px;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+#flow-seg button:hover{color:var(--text);border-color:var(--border2,#333846);}
+#flow-seg button.on{
+  background:rgba(0,147,231,.14);border-color:rgba(0,147,231,.42);color:#63c2f7;
+}
+@media (min-width:761px){
+  #flow-seg{display:none;}          /* desktop has the sidebar; segments would duplicate it */
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Capture sheet
+ * ────────────────────────────────────────────────────────────────────────── */
+.fn-sheetwrap{position:fixed;inset:0;z-index:960;display:none;}
+.fn-sheetwrap.on{display:block;}
+.fn-sheetwrap .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.62);
+  animation:fnFade .2s ease;}
+@keyframes fnFade{from{opacity:0}to{opacity:1}}
+.fn-sheetwrap .fn-sheet{
+  position:absolute;left:0;right:0;bottom:0;
+  background:var(--card2);border-top:1px solid var(--border2,#333846);
+  border-radius:24px 24px 0 0;
+  padding:10px 18px calc(24px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;
+  animation:fnUp .28s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes fnUp{from{transform:translateY(100%)}to{transform:none}}
+@media (min-width:761px){
+  .fn-sheetwrap .fn-sheet{
+    left:50%;bottom:auto;top:16vh;transform:translateX(-50%);
+    width:440px;border-radius:20px;border:1px solid var(--border2,#333846);
+    animation:fnPop .18s ease;padding-bottom:24px;
+  }
+  @keyframes fnPop{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                   to{opacity:1;transform:translateX(-50%) scale(1)}}
+}
+.fn-sheetwrap .fn-grab{width:38px;height:4px;border-radius:100px;
+  background:var(--border2,#333846);margin:0 auto 14px;cursor:pointer;}
+.fn-sheetwrap h4{font-size:17px;font-weight:700;margin:0 0 3px;}
+.fn-sheetwrap .fn-sub{font-size:12.5px;color:var(--muted);margin-bottom:15px;}
+.fn-sheetwrap .fn-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+.fn-sheetwrap .fn-grid button{
+  background:var(--card);border:1px solid var(--border);border-radius:15px;
+  padding:15px 5px;display:flex;flex-direction:column;align-items:center;gap:7px;
+  cursor:pointer;font-family:inherit;color:var(--muted);font-size:11.5px;font-weight:600;
+  min-height:76px;transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+.fn-sheetwrap .fn-grid button:hover{border-color:var(--accent);color:var(--text);}
+.fn-sheetwrap .fn-grid button:active{transform:scale(.96);}
+
+/* the inline quick-note pane */
+#flow-capture .fn-note{display:none;}
+#flow-capture.note .fn-grid{display:none;}
+#flow-capture.note .fn-note{display:block;}
+#flow-capture textarea{
+  width:100%;background:var(--card);border:1px solid var(--border);border-radius:14px;
+  color:var(--text);font-family:inherit;font-size:16px;line-height:1.5;      /* 16px: no iOS zoom */
+  padding:13px 14px;min-height:120px;resize:vertical;
+}
+#flow-capture textarea:focus{outline:none;border-color:var(--accent);}
+#flow-capture .fn-acts{display:flex;gap:9px;margin-top:12px;}
+#flow-capture .fn-acts button{
+  flex:1;border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;
+  padding:12px;cursor:pointer;border:1px solid var(--border);min-height:44px;
+  background:var(--card);color:var(--muted);
+}
+#flow-capture .fn-acts button.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Command palette — ⌘K on desktop, the search icon on phone
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-pal{position:fixed;inset:0;z-index:980;display:none;}
+#flow-pal.on{display:block;}
+#flow-pal .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+#flow-pal .fn-box{
+  position:absolute;left:50%;transform:translateX(-50%);top:11vh;
+  width:min(540px,92vw);
+  background:rgba(24,27,34,.98);backdrop-filter:blur(24px);
+  border:1px solid var(--border2,#333846);border-radius:16px;overflow:hidden;
+  box-shadow:0 34px 80px -18px rgba(0,0,0,.9);
+  animation:fnPop2 .16s ease;
+}
+@keyframes fnPop2{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                  to{opacity:1;transform:translateX(-50%) scale(1)}}
+#flow-pal .fn-in{display:flex;align-items:center;gap:11px;padding:14px 17px;
+  border-bottom:1px solid var(--border);}
+#flow-pal input{
+  flex:1;background:none;border:0;outline:none;color:var(--text);
+  font-family:inherit;font-size:16px;font-weight:500;
+}
+#flow-pal input::placeholder{color:var(--muted2,#5c626f);}
+#flow-pal .fn-list{max-height:min(52vh,380px);overflow-y:auto;padding:7px;}
+#flow-pal .fn-cat{font-size:9.5px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted2,#5c626f);padding:10px 12px 5px;}
+#flow-pal .fn-row{
+  display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;
+  font-size:14px;color:var(--text2,#c3c8d4);cursor:pointer;
+}
+#flow-pal .fn-row.on{background:var(--accent);color:#fff;}
+#flow-pal .fn-row .fn-hint{margin-left:auto;font-size:10.5px;opacity:.75;}
+#flow-pal .fn-empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:14px;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * DESKTOP — the sidebar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-side{display:none;}
+
+@media (min-width:761px){
+  .tabs{display:none !important;}   /* the pill row is replaced, not hidden-and-duplicated */
+
+  body.fn-on{
+    padding-left:calc(var(--fn-side-w) + 28px) !important;
+    max-width:calc(1300px + var(--fn-side-w) + 28px) !important;
+  }
+
+  #flow-side{
+    display:flex;flex-direction:column;gap:2px;
+    position:fixed;left:0;top:0;bottom:0;width:var(--fn-side-w);z-index:930;
+    background:#0e1015;border-right:1px solid var(--border);
+    padding:16px 11px 18px;overflow-y:auto;scrollbar-width:none;
+  }
+  #flow-side::-webkit-scrollbar{display:none;}
+
+  .fn-brand{display:flex;align-items:center;gap:10px;padding:4px 9px 14px;}
+  .fn-brand .fn-mark{width:26px;height:26px;border-radius:8px;flex:0 0 auto;
+    background:linear-gradient(150deg,var(--accent),var(--purple));}
+  .fn-brand .fn-nm{font-size:14.5px;font-weight:800;letter-spacing:-0.02em;
+    white-space:nowrap;overflow:hidden;}
+
+  .fn-k{
+    display:flex;align-items:center;gap:8px;width:100%;
+    background:var(--card);border:1px solid var(--border);border-radius:10px;
+    color:var(--muted);font-family:inherit;font-size:12.5px;font-weight:600;
+    padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:.14s;
+  }
+  .fn-k:hover{border-color:var(--accent);color:var(--text);}
+  .fn-k .fn-kbd{margin-left:auto;font-size:10.5px;border:1px solid var(--border);
+    border-radius:5px;padding:1px 5px;}
+
+  .fn-grouplbl{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--muted2,#5c626f);padding:14px 10px 5px;white-space:nowrap;}
+
+  .fn-link{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
+    cursor:pointer;font-size:13.5px;font-weight:600;color:var(--text2,#c3c8d4);
+    border:1px solid transparent;transition:.12s;background:none;font-family:inherit;
+    width:100%;text-align:left;
+  }
+  .fn-link:hover{background:var(--card);color:var(--text);}
+  .fn-link.on{background:rgba(0,147,231,.14);color:#63c2f7;border-color:rgba(0,147,231,.28);}
+  .fn-link .fn-i{width:16px;height:16px;}
+  .fn-link .fn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fn-spacer{flex:1;min-height:14px;}
+}
+
+/* Between 761 and 1180 the sidebar drops to an icon rail so the content
+   column keeps a usable width on a small laptop. */
+@media (min-width:761px) and (max-width:1180px){
+  body.fn-on{padding-left:calc(var(--fn-side-w-sm) + 20px) !important;}
+  #flow-side{width:var(--fn-side-w-sm);padding:16px 8px 18px;align-items:stretch;}
+  #flow-side .fn-txt,#flow-side .fn-grouplbl,#flow-side .fn-brand .fn-nm,
+  #flow-side .fn-k span:not(.fn-i-wrap){display:none;}
+  #flow-side .fn-link,#flow-side .fn-k{justify-content:center;padding:10px 6px;}
+  #flow-side .fn-brand{justify-content:center;padding:4px 0 12px;}
+  #flow-side .fn-grouplbl{display:block;height:1px;padding:0;margin:10px 8px;
+    background:var(--border);overflow:hidden;text-indent:-999px;}
+}
+
+#flow-menu .fn-grid{grid-template-columns:1fr;gap:5px;}
+#flow-menu .fn-grid button{
+  flex-direction:row;justify-content:flex-start;gap:12px;min-height:52px;
+  padding:13px 15px;font-size:14.5px;color:var(--text2,#c3c8d4);
+}
+
+/* Today was written as a 560px phone column (#tab-today{max-width:560px}) and
+   was effectively unreachable on a desktop, since the host hides its own Today
+   pill outside the installed app. Now that it is the landing screen it needs
+   room, or it floats in the middle of the page. This widens the column; giving
+   it two columns and the context rail is the next phase, not this one. */
+@media (min-width:1181px){
+  body.fn-on #tab-today{max-width:880px;}
+}
+
+@media print{
+  #flow-tabbar,#flow-side,.fn-sheetwrap,#flow-pal,#flow-seg,#flow-headtools{display:none !important;}
+  body.fn-on{padding-left:24px !important;}
+}
+
 </style>
 <script>
 /* ==========================================================================
@@ -8671,6 +8954,569 @@ const Profile = {
   }
 };
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 29 · Navigation
+ *
+ * Two interfaces over one set of sections. On a phone: a five-slot bottom bar
+ * (Today · Focus · + · Body · Ask) with a segment row for the second level.
+ * On a desktop: a grouped sidebar and a ⌘K palette.
+ *
+ * Every destination is still reached by clicking the host's own pill, so the
+ * host's per-section render callbacks (renderQuad, renderDiet, syncWhoop …)
+ * fire exactly as they always have. Nothing here re-implements navigation —
+ * it only offers better ways in.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+const NAV_ICONS = {
+  today:    '<path d="M3 5h18v16H3z"/><path d="M8 3v4M16 3v4M3 11h18"/>',
+  target:   '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+  compass:  '<circle cx="12" cy="12" r="9"/><path d="M15.8 8.2l-2 5.6-5.6 2 2-5.6z"/>',
+  work:     '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
+  rocket:   '<path d="M5 15l-2 6 6-2M14.5 4.5a9 9 0 0 1 5 5L11 18l-5-5z"/><circle cx="14.5" cy="9.5" r="1.5"/>',
+  bulb:     '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"/>',
+  clock:    '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  dumbbell: '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',
+  food:     '<path d="M6 3v8a2 2 0 0 0 4 0V3M8 11v10M17 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9"/>',
+  moon:     '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+  check:    '<path d="M20 6L9 17l-5-5"/>',
+  heart:    '<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21.4l8.8-8.7a5 5 0 0 0 0-7.1z"/>',
+  note:     '<path d="M4 4h13l3 3v13H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
+  money:    '<path d="M12 3v18M16.5 7.5C16.5 5.8 14.5 5 12 5s-4.5.9-4.5 2.8S9.6 11 12 11.5s4.6 1.3 4.6 3.3S14.5 19 12 19s-4.5-.9-4.5-2.6"/>',
+  chat:     '<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/>',
+  user:     '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  gear:     '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/>',
+  plus:     '<path d="M12 5v14M5 12h14"/>',
+  search:   '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>'
+};
+
+const Nav = {
+  installed: false,
+
+  /* A group is a bottom-bar slot. Its `tabs` are the host tab names it owns,
+     in the order they appear in the segment row; the first is the default. */
+  GROUPS: [
+    { id: 'today', label: 'Today', icon: 'today', tabs: ['today'] },
+    { id: 'focus', label: 'Focus', icon: 'target',
+      tabs: ['quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
+    { id: 'body',  label: 'Body',  icon: 'dumbbell',
+      tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
+    { id: 'ask',   label: 'Ask',   icon: 'chat', tabs: ['ask'] }
+  ],
+
+  /* Reachable from the avatar and from the palette, but not worth a slot. */
+  MENU: ['journal', 'finance', 'artur', 'settings'],
+
+  ICON: {
+    today: 'today', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
+    brainstorm: 'bulb', time: 'clock', training: 'dumbbell', diet: 'food',
+    sleep: 'moon', habits: 'check', mood: 'heart', journal: 'note',
+    finance: 'money', ask: 'chat', artur: 'user', settings: 'gear'
+  },
+
+  /* Sidebar order and headings. */
+  SIDE: [
+    { head: '',       tabs: ['today'] },
+    { head: 'Focus',  tabs: ['quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
+    { head: 'Body',   tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
+    { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
+  ],
+  SIDE_FOOT: ['artur', 'settings'],
+
+  CAPTURE: [
+    { id: 'note',    label: 'Note',    icon: 'note'     },
+    { id: 'quad',    label: 'Task',    icon: 'target'   },
+    { id: 'finance', label: 'Expense', icon: 'money'    },
+    { id: 'training',label: 'Set',     icon: 'dumbbell' },
+    { id: 'habits',  label: 'Habit',   icon: 'check'    },
+    { id: 'mood',    label: 'Mood',    icon: 'heart'    },
+    { id: 'diet',    label: 'Meal',    icon: 'food'     },
+    { id: 'sleep',   label: 'Sleep',   icon: 'moon'     },
+    { id: 'time',    label: 'Time',    icon: 'clock'    }
+  ],
+
+  last: { focus: 'quad', body: 'training' },
+
+  /* ---- primitives ------------------------------------------------------ */
+
+  svg(name, cls) {
+    return '<svg class="' + (cls || 'fn-i') + '" viewBox="0 0 24 24" aria-hidden="true">' +
+           (NAV_ICONS[name] || NAV_ICONS.note) + '</svg>';
+  },
+
+  pill(tab) { return document.querySelector('.tab[data-tab="' + tab + '"]'); },
+
+  /* Labels come from the host's own pills, so a renamed tab — the planner
+     taking the signed-in person's name — is picked up for free. */
+  label(tab) {
+    const p = Nav.pill(tab);
+    if (!p) return tab;
+    const raw = (p.textContent || '').trim();
+    const parts = raw.split(/\s+/);
+    if (parts.length > 1 && !/[a-z0-9]/i.test(parts[0])) parts.shift();
+    return parts.join(' ') || raw;
+  },
+
+  current() {
+    const a = document.querySelector('.tab.active');
+    return a ? a.getAttribute('data-tab') : null;
+  },
+
+  go(tab) {
+    const p = Nav.pill(tab);
+    if (!p) return false;
+    p.click();
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+    Nav.sync();
+    return true;
+  },
+
+  groupOf(tab) {
+    for (const g of Nav.GROUPS) if (g.tabs.indexOf(tab) >= 0) return g;
+    return null;
+  },
+
+  /* Every tab that actually exists, in a sensible order, for the palette. */
+  allTabs() {
+    const seen = {}, out = [];
+    Nav.SIDE.forEach(s => s.tabs.forEach(t => { seen[t] = 1; }));
+    Nav.SIDE_FOOT.forEach(t => { seen[t] = 1; });
+    Object.keys(seen).forEach(t => { if (Nav.pill(t)) out.push(t); });
+    /* Anything the host has that we did not classify still needs to be
+       reachable — never strand a section. */
+    document.querySelectorAll('.tab[data-tab]').forEach(p => {
+      const n = p.getAttribute('data-tab');
+      if (out.indexOf(n) < 0) out.push(n);
+    });
+    return out;
+  },
+
+  /* ---- the phone bottom bar -------------------------------------------- */
+
+  buildTabbar() {
+    const bar = document.createElement('nav');
+    bar.id = 'flow-tabbar';
+    const slot = (g) =>
+      '<button type="button" data-fn-group="' + g.id + '">' + Nav.svg(g.icon) +
+      '<span class="fn-lb">' + esc(g.label) + '</span></button>';
+
+    bar.innerHTML =
+      slot(Nav.GROUPS[0]) + slot(Nav.GROUPS[1]) +
+      '<button type="button" class="fn-cap" id="fn-capbtn" aria-label="Capture">' +
+        '<span class="fn-knob">' + Nav.svg('plus') + '</span></button>' +
+      slot(Nav.GROUPS[2]) + slot(Nav.GROUPS[3]);
+
+    document.body.appendChild(bar);
+
+    bar.querySelectorAll('[data-fn-group]').forEach(b => {
+      b.addEventListener('click', () => {
+        const g = Nav.GROUPS.find(x => x.id === b.getAttribute('data-fn-group'));
+        if (!g) return;
+        /* Returning to a group lands you where you left it. */
+        const want = (g.tabs.length > 1 && Nav.last[g.id]) ? Nav.last[g.id] : g.tabs[0];
+        Nav.go(Nav.pill(want) ? want : g.tabs[0]);
+      });
+    });
+    document.getElementById('fn-capbtn').addEventListener('click', () => Nav.openCapture());
+  },
+
+  /* ---- the segment row (second level) ---------------------------------- */
+
+  buildSeg() {
+    const seg = document.createElement('div');
+    seg.id = 'flow-seg';
+    seg.style.display = 'none';
+    /* The host swipes between sections on a document-level touchstart. This
+       row scrolls horizontally, so its own touches must not also page. */
+    seg.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+    Nav.segEl = seg;
+  },
+
+  paintSeg(cur) {
+    const seg = Nav.segEl;
+    if (!seg) return;
+    const g = Nav.groupOf(cur);
+    const host = document.querySelector('.section.active');
+
+    if (!g || g.tabs.length < 2 || !host) { seg.style.display = 'none'; return; }
+
+    const tabs = g.tabs.filter(t => Nav.pill(t));
+    seg.innerHTML = tabs.map(t =>
+      '<button type="button" data-fn-seg="' + t + '" class="' + (t === cur ? 'on' : '') + '">' +
+      esc(Nav.label(t)) + '</button>').join('');
+    seg.querySelectorAll('[data-fn-seg]').forEach(b => {
+      b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-seg')));
+    });
+
+    if (seg.parentElement !== host || host.firstChild !== seg) host.insertBefore(seg, host.firstChild);
+    seg.style.display = '';
+  },
+
+  /* ---- header tools: search and the avatar ------------------------------ */
+
+  buildHeadTools() {
+    /* Into the title line itself, not the header — the header wraps on a phone
+       and the tools would land on a row of their own. The h1 is already a flex
+       row, so they sit opposite the logo where an iOS avatar belongs. */
+    const host = document.querySelector('.header h1') || document.querySelector('.header');
+    if (!host) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-headtools';
+    wrap.innerHTML =
+      '<button type="button" class="fn-icobtn" id="fn-search" aria-label="Search">' + Nav.svg('search') + '</button>' +
+      '<button type="button" class="fn-avatar" id="fn-avatar" aria-label="You">' + esc(Nav.initial()) + '</button>';
+    host.appendChild(wrap);
+    document.getElementById('fn-search').addEventListener('click', () => Nav.openPalette());
+    document.getElementById('fn-avatar').addEventListener('click', () => Nav.openMenu());
+  },
+
+  initial() {
+    let n = '';
+    try { n = (Auth && Auth.user && (Auth.user.name || Auth.user.email)) || ''; } catch (e) {}
+    if (!n) { try { n = Settings.get('displayName') || ''; } catch (e) {} }
+    return (String(n).trim()[0] || '·').toUpperCase();
+  },
+
+  buildMenu() {
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-menu';
+    wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-fn-close="1"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-label="You">' +
+        '<div class="fn-grab" data-fn-close="1"></div>' +
+        '<h4>You</h4>' +
+        '<div class="fn-sub">Everything that is not part of the daily loop.</div>' +
+        '<div class="fn-grid" id="fn-menugrid"></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.querySelectorAll('[data-fn-close]').forEach(e =>
+      e.addEventListener('click', () => wrap.classList.remove('on')));
+    Nav.menuEl = wrap;
+  },
+
+  openMenu() {
+    const grid = document.getElementById('fn-menugrid');
+    /* Rebuilt each time: the planner's label follows the signed-in name. */
+    grid.innerHTML = Nav.MENU.filter(t => Nav.pill(t)).map(t =>
+      '<button type="button" data-fn-menu="' + t + '">' + Nav.svg(Nav.ICON[t] || 'note') +
+      '<span>' + esc(Nav.label(t)) + '</span></button>').join('');
+    grid.querySelectorAll('[data-fn-menu]').forEach(b => b.addEventListener('click', () => {
+      Nav.menuEl.classList.remove('on');
+      Nav.go(b.getAttribute('data-fn-menu'));
+    }));
+    Nav.menuEl.classList.add('on');
+  },
+
+  /* ---- capture ---------------------------------------------------------- */
+
+  buildCapture() {
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-capture';
+    wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-fn-close="1"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-label="Capture">' +
+        '<div class="fn-grab" data-fn-close="1"></div>' +
+        '<h4>Capture</h4>' +
+        '<div class="fn-sub">A note is saved without leaving this screen.</div>' +
+        '<div class="fn-grid">' +
+          Nav.CAPTURE.filter(c => c.id === 'note' || Nav.pill(c.id)).map(c =>
+            '<button type="button" data-fn-cap="' + c.id + '">' + Nav.svg(c.icon) +
+            '<span>' + esc(c.label) + '</span></button>').join('') +
+        '</div>' +
+        '<div class="fn-note">' +
+          '<textarea id="fn-noteinput" placeholder="What happened?" rows="4"></textarea>' +
+          '<div class="fn-acts">' +
+            '<button type="button" id="fn-notecancel">Back</button>' +
+            '<button type="button" class="pri" id="fn-notesave">Save to journal</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    Nav.capEl = wrap;
+
+    wrap.querySelectorAll('[data-fn-close]').forEach(e =>
+      e.addEventListener('click', () => Nav.closeCapture()));
+
+    wrap.querySelectorAll('[data-fn-cap]').forEach(b => b.addEventListener('click', () => {
+      const id = b.getAttribute('data-fn-cap');
+      if (id === 'note') {
+        wrap.classList.add('note');
+        const ta = document.getElementById('fn-noteinput');
+        ta.value = '';
+        setTimeout(() => ta.focus(), 60);
+        return;
+      }
+      /* The rest hand you to the section that owns that kind of entry. Writing
+         them in place needs each section's own write path; the journal is the
+         one the pack already owns end to end. */
+      Nav.closeCapture();
+      Nav.go(id);
+    }));
+
+    document.getElementById('fn-notecancel').addEventListener('click', () => wrap.classList.remove('note'));
+    document.getElementById('fn-notesave').addEventListener('click', () => Nav.saveNote());
+    document.getElementById('fn-noteinput').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') Nav.saveNote();
+    });
+  },
+
+  openCapture() { Nav.capEl.classList.remove('note'); Nav.capEl.classList.add('on'); },
+  closeCapture() { Nav.capEl.classList.remove('on'); Nav.capEl.classList.remove('note'); },
+
+  /* A real write, not a redirect: the entry lands in the journal and the
+     screen you were on is still the screen you are on. */
+  async saveNote() {
+    const ta = document.getElementById('fn-noteinput');
+    const body = String(ta.value || '').trim();
+    if (!body) { toast('Write something first.', 'warn'); return; }
+    const btn = document.getElementById('fn-notesave');
+    btn.disabled = true;
+    try {
+      const now = new Date().toISOString();
+      Journal.entries.push({
+        id: uid('j'), created: now, updated: now,
+        date: today(), title: '', body: body, tags: ['quick'],
+        prompts: {}, mood: null, energy: null
+      });
+      await Journal.save();
+      try { Journal.rerender(); } catch (e) {}
+      toast('Saved to your journal ✓');
+      ta.value = '';
+      Nav.closeCapture();
+    } catch (e) {
+      console.error('[Flow] quick note', e);
+      toast('Could not save that.', 'warn');
+    }
+    btn.disabled = false;
+  },
+
+  /* ---- the command palette ---------------------------------------------- */
+
+  buildPalette() {
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-pal';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-fn-close="1"></div>' +
+      '<div class="fn-box" role="dialog" aria-label="Go to">' +
+        '<div class="fn-in">' + Nav.svg('search') +
+          '<input id="fn-palin" type="text" placeholder="Go to a section, or start a note…" ' +
+          'autocomplete="off" autocorrect="off" spellcheck="false">' +
+        '</div>' +
+        '<div class="fn-list" id="fn-pallist"></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    Nav.palEl = wrap;
+    Nav.palIdx = 0;
+
+    wrap.querySelector('[data-fn-close]').addEventListener('click', () => Nav.closePalette());
+    const input = document.getElementById('fn-palin');
+    input.addEventListener('input', () => { Nav.palIdx = 0; Nav.paintPalette(); });
+    input.addEventListener('keydown', (e) => {
+      const n = Nav.palRows.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); Nav.palIdx = n ? (Nav.palIdx + 1) % n : 0; Nav.paintPalette(true); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); Nav.palIdx = n ? (Nav.palIdx - 1 + n) % n : 0; Nav.paintPalette(true); }
+      else if (e.key === 'Enter') { e.preventDefault(); Nav.runPalette(); }
+      else if (e.key === 'Escape') { e.preventDefault(); Nav.closePalette(); }
+    });
+  },
+
+  palRows: [],
+
+  paintPalette(keepQuery) {
+    const q = String((document.getElementById('fn-palin') || {}).value || '').trim().toLowerCase();
+    const rows = [];
+
+    Nav.allTabs().forEach(t => {
+      const lab = Nav.label(t);
+      if (!q || lab.toLowerCase().indexOf(q) >= 0) {
+        rows.push({ kind: 'go', tab: t, label: lab, icon: Nav.ICON[t] || 'note' });
+      }
+    });
+    if (q) {
+      rows.push({ kind: 'note', label: 'New journal note: “' + q + '”', icon: 'note' });
+      if (Nav.pill('ask')) rows.push({ kind: 'ask', label: 'Ask: “' + q + '”', icon: 'chat' });
+    }
+
+    Nav.palRows = rows;
+    if (Nav.palIdx >= rows.length) Nav.palIdx = 0;
+
+    const list = document.getElementById('fn-pallist');
+    if (!rows.length) { list.innerHTML = '<div class="fn-empty">Nothing matches that.</div>'; return; }
+
+    let html = '', lastKind = null;
+    rows.forEach((r, i) => {
+      const kind = r.kind === 'go' ? 'Go to' : 'Do';
+      if (kind !== lastKind) { html += '<div class="fn-cat">' + kind + '</div>'; lastKind = kind; }
+      html += '<div class="fn-row' + (i === Nav.palIdx ? ' on' : '') + '" data-fn-i="' + i + '">' +
+              Nav.svg(r.icon) + '<span>' + esc(r.label) + '</span>' +
+              (i === Nav.palIdx ? '<span class="fn-hint">↵</span>' : '') + '</div>';
+    });
+    list.innerHTML = html;
+    list.querySelectorAll('[data-fn-i]').forEach(el => el.addEventListener('click', () => {
+      Nav.palIdx = parseInt(el.getAttribute('data-fn-i'), 10);
+      Nav.runPalette();
+    }));
+    const on = list.querySelector('.fn-row.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+    if (!keepQuery) { /* nothing else to do — kept for readability */ }
+  },
+
+  runPalette() {
+    const r = Nav.palRows[Nav.palIdx];
+    if (!r) return;
+    const q = String((document.getElementById('fn-palin') || {}).value || '').trim();
+    Nav.closePalette();
+    if (r.kind === 'go') { Nav.go(r.tab); return; }
+    if (r.kind === 'note') {
+      Nav.openCapture();
+      Nav.capEl.classList.add('note');
+      const ta = document.getElementById('fn-noteinput');
+      ta.value = q;
+      setTimeout(() => ta.focus(), 60);
+      return;
+    }
+    if (r.kind === 'ask') {
+      Nav.go('ask');
+      setTimeout(() => {
+        const box = document.getElementById('ask-in');
+        if (box) { box.value = q; box.focus(); }
+      }, 260);
+    }
+  },
+
+  openPalette() {
+    Nav.palEl.classList.add('on');
+    const i = document.getElementById('fn-palin');
+    i.value = ''; Nav.palIdx = 0;
+    Nav.paintPalette();
+    setTimeout(() => i.focus(), 40);
+  },
+  closePalette() { Nav.palEl.classList.remove('on'); },
+
+  /* ---- the desktop sidebar ---------------------------------------------- */
+
+  buildSide() {
+    const side = document.createElement('aside');
+    side.id = 'flow-side';
+
+    const link = (t) =>
+      '<button type="button" class="fn-link" data-fn-side="' + t + '">' +
+      Nav.svg(Nav.ICON[t] || 'note') + '<span class="fn-txt">' + esc(Nav.label(t)) + '</span></button>';
+
+    let html =
+      '<div class="fn-brand"><span class="fn-mark"></span><span class="fn-nm">The Flow</span></div>' +
+      '<button type="button" class="fn-k" id="fn-kbtn">' + Nav.svg('search') +
+        '<span>Search</span><span class="fn-kbd">⌘K</span></button>';
+
+    Nav.SIDE.forEach(sec => {
+      const tabs = sec.tabs.filter(t => Nav.pill(t));
+      if (!tabs.length) return;
+      if (sec.head) html += '<div class="fn-grouplbl">' + esc(sec.head) + '</div>';
+      html += tabs.map(link).join('');
+    });
+
+    html += '<div class="fn-spacer"></div>';
+    html += Nav.SIDE_FOOT.filter(t => Nav.pill(t)).map(link).join('');
+
+    side.innerHTML = html;
+    document.body.appendChild(side);
+
+    side.querySelectorAll('[data-fn-side]').forEach(b =>
+      b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-side'))));
+    document.getElementById('fn-kbtn').addEventListener('click', () => Nav.openPalette());
+
+    document.body.classList.add('fn-on');
+    Nav.sideEl = side;
+  },
+
+  /* Labels are resolved at build time; the planner is renamed after sign-in,
+     so refresh the two places that show it. */
+  relabel() {
+    if (Nav.sideEl) {
+      Nav.sideEl.querySelectorAll('[data-fn-side]').forEach(b => {
+        const t = b.getAttribute('data-fn-side');
+        const txt = b.querySelector('.fn-txt');
+        if (txt) txt.textContent = Nav.label(t);
+      });
+    }
+    const av = document.getElementById('fn-avatar');
+    if (av) av.textContent = Nav.initial();
+  },
+
+  /* ---- keeping everything in step --------------------------------------- */
+
+  /* `initial` is the one sync that must not record where you are: at boot the
+     host has simply activated its own default section, which is not a place
+     you chose to be, and treating it as one would make the first tap on a
+     group land somewhere arbitrary. */
+  sync(initial) {
+    const cur = Nav.current();
+    if (!cur) return;
+
+    const g = Nav.groupOf(cur);
+    if (g && g.tabs.length > 1 && !initial) Nav.last[g.id] = cur;
+
+    const bar = document.getElementById('flow-tabbar');
+    if (bar) bar.querySelectorAll('[data-fn-group]').forEach(b =>
+      b.classList.toggle('on', !!g && b.getAttribute('data-fn-group') === g.id));
+
+    if (Nav.sideEl) Nav.sideEl.querySelectorAll('[data-fn-side]').forEach(b =>
+      b.classList.toggle('on', b.getAttribute('data-fn-side') === cur));
+
+    Nav.paintSeg(cur);
+  },
+
+  install() {
+    if (Nav.installed) return;
+    Nav.installed = true;
+
+    Nav.buildSeg();
+    Nav.buildTabbar();
+    Nav.buildSide();
+    Nav.buildHeadTools();
+    Nav.buildCapture();
+    Nav.buildMenu();
+    Nav.buildPalette();
+
+    /* The host re-syncs its own bar after every switch; piggy-back on that so
+       we never miss a navigation, whoever caused it. */
+    const hostSync = window.syncMobileNav;
+    if (typeof hostSync === 'function') {
+      window.syncMobileNav = function () {
+        try { hostSync.apply(this, arguments); } catch (e) {}
+        Nav.sync();
+      };
+    }
+    /* Pack-added tabs (Ask, the planner, Settings) do not call it, so also
+       watch for any click that lands on a tab. */
+    document.addEventListener('click', (e) => {
+      const t = e.target && e.target.closest && e.target.closest('[data-tab]');
+      if (t) setTimeout(() => Nav.sync(), 0);
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      const k = (e.key || '').toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === 'k') { e.preventDefault();
+        Nav.palEl.classList.contains('on') ? Nav.closePalette() : Nav.openPalette(); return; }
+      if (e.key === 'Escape') {
+        if (Nav.palEl.classList.contains('on')) Nav.closePalette();
+        if (Nav.capEl.classList.contains('on')) Nav.closeCapture();
+        if (Nav.menuEl.classList.contains('on')) Nav.menuEl.classList.remove('on');
+      }
+    });
+
+    Nav.sync(true);
+
+    /* Open on the answer. The host boots into Week Compass and hides its own
+       Today pill outside the installed app, so on a desktop browser Today was
+       unreachable — this both fixes that and makes the first screen the one
+       that needs no interaction. */
+    if (Nav.pill('today') && Nav.current() !== 'today') Nav.go('today');
+  }
+};
+
 async function boot() {
   /* Before anything else: if the server has accounts installed and nobody is
      signed in, put the sign-in screen up. Everything below still runs, so the
@@ -8705,6 +9551,9 @@ async function boot() {
   try { await Inbox.load(); } catch (e) {}
   try { await Markets.mount(); } catch (e) {}
 
+  /* Navigation last: every pill it decorates has to exist first. */
+  try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
+
   // time chips everywhere
   TimeChips.scan(document);
   TimeChips.watch();
@@ -8737,7 +9586,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
-    Markets, Inbox, Ask, Planner,
+    Markets, Inbox, Ask, Planner, Nav,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
