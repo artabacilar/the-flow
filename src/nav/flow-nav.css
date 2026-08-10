@@ -1,0 +1,319 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 29 · Navigation — the iOS bottom bar and the desktop sidebar
+ *
+ * Purely additive. The host's own .tabs pill row and .mobilenav bottom bar are
+ * left in the DOM and hidden, because syncMobileNav() and the swipe handler
+ * both still read them. Everything here is new markup layered on top, and
+ * every destination is still reached by clicking the host's own pill — so the
+ * host's per-section render callbacks fire exactly as they always did.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --fn-bar-h: 54px;
+  --fn-side-w: 236px;
+  --fn-side-w-sm: 64px;
+}
+
+#flow-nav-sprite{display:none;}
+.fn-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — bottom tab bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-tabbar{display:none;}
+
+@media (max-width:760px){
+  /* The host's own bottom bar and its "More" sheet step aside. They stay in
+     the DOM so syncMobileNav() keeps working against them. */
+  .mobilenav{display:none !important;}
+  .moresheet,.morebackdrop{display:none !important;}
+
+  body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 26px) !important;}
+
+  #flow-tabbar{
+    display:grid;grid-template-columns:repeat(5,1fr);align-items:end;
+    position:fixed;left:0;right:0;bottom:0;z-index:940;
+    padding:7px 6px calc(7px + env(safe-area-inset-bottom));
+    background:rgba(14,16,20,.93);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-top:1px solid var(--border);
+  }
+  #flow-tabbar button{
+    background:none;border:0;cursor:pointer;font-family:inherit;color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;
+    padding:6px 2px;min-height:44px;                 /* 44pt minimum touch target */
+    -webkit-tap-highlight-color:transparent;transition:color .15s;
+  }
+  #flow-tabbar button .fn-lb{font-size:9.5px;font-weight:700;letter-spacing:.01em;}
+  #flow-tabbar button.on{color:var(--accent);}
+  #flow-tabbar button.on .fn-i{stroke-width:2.3;}
+
+  /* The capture button — deliberately the largest target on the screen. */
+  #flow-tabbar .fn-cap{align-self:center;}
+  #flow-tabbar .fn-cap .fn-knob{
+    width:48px;height:48px;border-radius:16px;
+    background:linear-gradient(150deg,var(--accent),#0072c6);
+    display:grid;place-items:center;color:#fff;
+    box-shadow:0 8px 20px -6px rgba(0,147,231,.7);transition:transform .14s;
+  }
+  #flow-tabbar .fn-cap:active .fn-knob{transform:scale(.93);}
+  #flow-tabbar .fn-cap .fn-i{width:24px;height:24px;stroke-width:2.5;}
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — header row (avatar + search), segment bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-headtools{display:none;}
+@media (max-width:760px){
+  #flow-headtools{display:flex;align-items:center;gap:9px;margin-left:auto;}
+  .fn-icobtn{
+    width:38px;height:38px;border-radius:12px;background:var(--card);
+    border:1px solid var(--border);color:var(--muted);
+    display:grid;place-items:center;cursor:pointer;flex:0 0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .fn-icobtn:active{background:var(--card2);}
+  .fn-avatar{
+    width:38px;height:38px;border-radius:50%;flex:0 0 auto;cursor:pointer;
+    background:linear-gradient(150deg,var(--accent),var(--purple));
+    display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;
+    border:0;font-family:inherit;-webkit-tap-highlight-color:transparent;
+  }
+}
+
+/* Segment bar — the second level of navigation, inside Focus and Body. */
+#flow-seg{
+  display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
+  margin:0 0 18px;padding-bottom:2px;-webkit-overflow-scrolling:touch;
+}
+#flow-seg::-webkit-scrollbar{display:none;}
+#flow-seg button{
+  background:var(--card);border:1px solid var(--border);border-radius:100px;
+  color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;
+  padding:9px 15px;min-height:38px;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+#flow-seg button:hover{color:var(--text);border-color:var(--border2,#333846);}
+#flow-seg button.on{
+  background:rgba(0,147,231,.14);border-color:rgba(0,147,231,.42);color:#63c2f7;
+}
+@media (min-width:761px){
+  #flow-seg{display:none;}          /* desktop has the sidebar; segments would duplicate it */
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Capture sheet
+ * ────────────────────────────────────────────────────────────────────────── */
+.fn-sheetwrap{position:fixed;inset:0;z-index:960;display:none;}
+.fn-sheetwrap.on{display:block;}
+.fn-sheetwrap .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.62);
+  animation:fnFade .2s ease;}
+@keyframes fnFade{from{opacity:0}to{opacity:1}}
+.fn-sheetwrap .fn-sheet{
+  position:absolute;left:0;right:0;bottom:0;
+  background:var(--card2);border-top:1px solid var(--border2,#333846);
+  border-radius:24px 24px 0 0;
+  padding:10px 18px calc(24px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;
+  animation:fnUp .28s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes fnUp{from{transform:translateY(100%)}to{transform:none}}
+@media (min-width:761px){
+  .fn-sheetwrap .fn-sheet{
+    left:50%;bottom:auto;top:16vh;transform:translateX(-50%);
+    width:440px;border-radius:20px;border:1px solid var(--border2,#333846);
+    animation:fnPop .18s ease;padding-bottom:24px;
+  }
+  @keyframes fnPop{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                   to{opacity:1;transform:translateX(-50%) scale(1)}}
+}
+.fn-sheetwrap .fn-grab{width:38px;height:4px;border-radius:100px;
+  background:var(--border2,#333846);margin:0 auto 14px;cursor:pointer;}
+.fn-sheetwrap h4{font-size:17px;font-weight:700;margin:0 0 3px;}
+.fn-sheetwrap .fn-sub{font-size:12.5px;color:var(--muted);margin-bottom:15px;}
+.fn-sheetwrap .fn-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+.fn-sheetwrap .fn-grid button{
+  background:var(--card);border:1px solid var(--border);border-radius:15px;
+  padding:15px 5px;display:flex;flex-direction:column;align-items:center;gap:7px;
+  cursor:pointer;font-family:inherit;color:var(--muted);font-size:11.5px;font-weight:600;
+  min-height:76px;transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+.fn-sheetwrap .fn-grid button:hover{border-color:var(--accent);color:var(--text);}
+.fn-sheetwrap .fn-grid button:active{transform:scale(.96);}
+
+/* the inline quick-note pane */
+#flow-capture .fn-note{display:none;}
+#flow-capture.note .fn-grid{display:none;}
+#flow-capture.note .fn-note{display:block;}
+#flow-capture textarea{
+  width:100%;background:var(--card);border:1px solid var(--border);border-radius:14px;
+  color:var(--text);font-family:inherit;font-size:16px;line-height:1.5;      /* 16px: no iOS zoom */
+  padding:13px 14px;min-height:120px;resize:vertical;
+}
+#flow-capture textarea:focus{outline:none;border-color:var(--accent);}
+#flow-capture .fn-acts{display:flex;gap:9px;margin-top:12px;}
+#flow-capture .fn-acts button{
+  flex:1;border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;
+  padding:12px;cursor:pointer;border:1px solid var(--border);min-height:44px;
+  background:var(--card);color:var(--muted);
+}
+#flow-capture .fn-acts button.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Command palette — ⌘K on desktop, the search icon on phone
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-pal{position:fixed;inset:0;z-index:980;display:none;}
+#flow-pal.on{display:block;}
+#flow-pal .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+#flow-pal .fn-box{
+  position:absolute;left:50%;transform:translateX(-50%);top:11vh;
+  width:min(540px,92vw);
+  background:rgba(24,27,34,.98);backdrop-filter:blur(24px);
+  border:1px solid var(--border2,#333846);border-radius:16px;overflow:hidden;
+  box-shadow:0 34px 80px -18px rgba(0,0,0,.9);
+  animation:fnPop2 .16s ease;
+}
+@keyframes fnPop2{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                  to{opacity:1;transform:translateX(-50%) scale(1)}}
+#flow-pal .fn-in{display:flex;align-items:center;gap:11px;padding:14px 17px;
+  border-bottom:1px solid var(--border);}
+#flow-pal input{
+  flex:1;background:none;border:0;outline:none;color:var(--text);
+  font-family:inherit;font-size:16px;font-weight:500;
+}
+#flow-pal input::placeholder{color:var(--muted2,#5c626f);}
+#flow-pal .fn-list{max-height:min(52vh,380px);overflow-y:auto;padding:7px;}
+#flow-pal .fn-cat{font-size:9.5px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted2,#5c626f);padding:10px 12px 5px;}
+#flow-pal .fn-row{
+  display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;
+  font-size:14px;color:var(--text2,#c3c8d4);cursor:pointer;
+}
+#flow-pal .fn-row.on{background:var(--accent);color:#fff;}
+#flow-pal .fn-row .fn-hint{margin-left:auto;font-size:10.5px;opacity:.75;}
+#flow-pal .fn-empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:14px;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * DESKTOP — the sidebar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-side{display:none;}
+
+@media (min-width:761px){
+  .tabs{display:none !important;}   /* the pill row is replaced, not hidden-and-duplicated */
+
+  body.fn-on{
+    padding-left:calc(var(--fn-side-w) + 28px) !important;
+    max-width:calc(1300px + var(--fn-side-w) + 28px) !important;
+  }
+
+  #flow-side{
+    display:flex;flex-direction:column;gap:2px;
+    position:fixed;left:0;top:0;bottom:0;width:var(--fn-side-w);z-index:930;
+    background:#0e1015;border-right:1px solid var(--border);
+    padding:16px 11px 18px;overflow-y:auto;scrollbar-width:none;
+  }
+  #flow-side::-webkit-scrollbar{display:none;}
+
+  .fn-brand{display:flex;align-items:center;gap:10px;padding:4px 9px 14px;}
+  .fn-brand .fn-mark{width:26px;height:26px;border-radius:8px;flex:0 0 auto;
+    background:linear-gradient(150deg,var(--accent),var(--purple));}
+  .fn-brand .fn-nm{font-size:14.5px;font-weight:800;letter-spacing:-0.02em;
+    white-space:nowrap;overflow:hidden;}
+
+  .fn-k{
+    display:flex;align-items:center;gap:8px;width:100%;
+    background:var(--card);border:1px solid var(--border);border-radius:10px;
+    color:var(--muted);font-family:inherit;font-size:12.5px;font-weight:600;
+    padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:.14s;
+  }
+  .fn-k:hover{border-color:var(--accent);color:var(--text);}
+  .fn-k .fn-kbd{margin-left:auto;font-size:10.5px;border:1px solid var(--border);
+    border-radius:5px;padding:1px 5px;}
+
+  .fn-grouplbl{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--muted2,#5c626f);padding:14px 10px 5px;white-space:nowrap;}
+
+  .fn-link{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
+    cursor:pointer;font-size:13.5px;font-weight:600;color:var(--text2,#c3c8d4);
+    border:1px solid transparent;transition:.12s;background:none;font-family:inherit;
+    width:100%;text-align:left;
+  }
+  .fn-link:hover{background:var(--card);color:var(--text);}
+  .fn-link.on{background:rgba(0,147,231,.14);color:#63c2f7;border-color:rgba(0,147,231,.28);}
+  .fn-link .fn-i{width:16px;height:16px;}
+  .fn-link .fn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fn-spacer{flex:1;min-height:14px;}
+}
+
+/* Between 761 and 1180 the sidebar drops to an icon rail so the content
+   column keeps a usable width on a small laptop. */
+@media (min-width:761px) and (max-width:1180px){
+  body.fn-on{padding-left:calc(var(--fn-side-w-sm) + 20px) !important;}
+  #flow-side{width:var(--fn-side-w-sm);padding:16px 8px 18px;align-items:stretch;}
+  #flow-side .fn-txt,#flow-side .fn-grouplbl,#flow-side .fn-brand .fn-nm,
+  #flow-side .fn-k span:not(.fn-i-wrap){display:none;}
+  #flow-side .fn-link,#flow-side .fn-k{justify-content:center;padding:10px 6px;}
+  #flow-side .fn-brand{justify-content:center;padding:4px 0 12px;}
+  #flow-side .fn-grouplbl{display:block;height:1px;padding:0;margin:10px 8px;
+    background:var(--border);overflow:hidden;text-indent:-999px;}
+}
+
+#flow-menu .fn-grid{grid-template-columns:1fr;gap:5px;}
+#flow-menu .fn-grid button{
+  flex-direction:row;justify-content:flex-start;gap:12px;min-height:52px;
+  padding:13px 15px;font-size:14.5px;color:var(--text2,#c3c8d4);
+}
+
+/* Today was written as a 560px phone column (#tab-today{max-width:560px}) and
+   was effectively unreachable on a desktop, since the host hides its own Today
+   pill outside the installed app. Now that it is the landing screen it needs
+   room, or it floats in the middle of the page. This widens the column; giving
+   it two columns and the context rail is the next phase, not this one. */
+@media (min-width:1181px){
+  body.fn-on #tab-today{max-width:880px;}
+}
+
+@media print{
+  #flow-tabbar,#flow-side,.fn-sheetwrap,#flow-pal,#flow-seg,#flow-headtools{display:none !important;}
+  body.fn-on{padding-left:24px !important;}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 31 · The system pass  (phase 4)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Type scale — six steps, nothing between. */
+  --fs-display:40px; --fs-title:28px; --fs-heading:20px;
+  --fs-body:17px;    --fs-support:14px; --fs-label:11px;
+  /* Spacing — a 4px grid. */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+  /* Colour with a job. Blue is the only thing that means "you can touch this". */
+  --role-action:#0093e7; --role-good:#00e88a; --role-warn:#ffc200;
+  --role-bad:#ff294d;   --role-quiet:#7e8493;
+}
+
+/* Touch targets. Several of the app's inline row controls are 24–28px, which
+   is what made the priority rows feel fiddly on a phone. Rather than resize
+   them — which would change every layout they sit in — the *tap* area is
+   expanded past the visual edge. Nothing moves; the target just gets bigger. */
+@media (max-width:760px){
+  .qitem .q-edit, .qitem .q-rock, .qitem .q-del,
+  .hab-del, .tr-del, .note-del, .j-del{
+    position:relative;
+  }
+  .qitem .q-edit::after, .qitem .q-rock::after, .qitem .q-del::after,
+  .hab-del::after, .tr-del::after, .note-del::after, .j-del::after{
+    content:'';position:absolute;top:50%;left:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);
+  }
+  /* Anything that is already a block-level control simply gets the height. */
+  .flow-btn, .r-btn, .mobilenav button{min-height:44px;}
+}
+
+/* Numbers are compared far more often than they are read. */
+.stat .num, .big-n, .fn-rmkt .v, .flow-mkt-tile .v, .td-stat .v{
+  font-variant-numeric:tabular-nums;
+}
