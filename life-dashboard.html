@@ -4357,6 +4357,103 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   body.fn-on{padding-left:24px !important;}
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 30 · The context rail  (phase 3)
+ *
+ * The most common desktop complaint about this app was losing your place:
+ * to check what was next you had to leave whatever you were reading. The rail
+ * pins now/next, capture, today's Q1 and the shared inbox to the right edge,
+ * so every other screen is free to be single-minded.
+ *
+ * It needs ~1400px to exist. Below that the content column would be squeezed
+ * under 600px, which is worse than not having it.
+ * ══════════════════════════════════════════════════════════════════════════ */
+#flow-rail{display:none;}
+
+@media (min-width:1400px){
+  body.fn-on{
+    padding-right:calc(296px + 28px) !important;
+    max-width:calc(1240px + var(--fn-side-w) + 296px + 56px) !important;
+  }
+  #flow-rail{
+    display:block;position:fixed;right:0;top:0;bottom:0;width:296px;z-index:930;
+    background:#0e1015;border-left:1px solid var(--border);
+    padding:18px 16px 24px;overflow-y:auto;scrollbar-width:none;
+  }
+  #flow-rail::-webkit-scrollbar{display:none;}
+}
+
+.fn-rlab{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted2,#5c626f);margin:20px 0 9px;}
+.fn-rlab:first-of-type{margin-top:0;}
+.fn-rbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 13px;}
+.fn-rbox + .fn-rbox{margin-top:7px;}
+.fn-rbox .rt{font-size:13.5px;font-weight:600;line-height:1.35;overflow-wrap:anywhere;}
+.fn-rbox .rm{font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:2px;}
+.fn-rbox .rs{font-size:11.5px;color:var(--muted);margin-top:4px;}
+.fn-rempty{font-size:12.5px;color:var(--muted2,#5c626f);line-height:1.5;}
+
+.fn-rnow{background:linear-gradient(150deg,rgba(0,147,231,.15),rgba(139,123,255,.06));
+  border-color:rgba(0,147,231,.32);}
+.fn-rnow .rm{color:#63c2f7;display:flex;align-items:center;gap:6px;}
+.fn-pulse{width:6px;height:6px;border-radius:50%;background:var(--green);flex:0 0 auto;}
+
+.fn-capwide{
+  width:100%;background:var(--accent);border:0;border-radius:11px;color:#fff;
+  font-family:inherit;font-size:13.5px;font-weight:700;padding:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;transition:.14s;
+}
+.fn-capwide:hover{background:#0aa2f8;}
+.fn-capwide .fn-i{width:16px;height:16px;stroke-width:2.4;}
+
+.fn-rq{display:flex;align-items:flex-start;gap:9px;padding:7px 0;font-size:13px;color:var(--text2,#c3c8d4);}
+.fn-rq + .fn-rq{border-top:1px solid var(--border);}
+.fn-rq .fn-qd{width:7px;height:7px;border-radius:50%;background:var(--red);flex:0 0 auto;margin-top:5px;}
+.fn-rq span{overflow-wrap:anywhere;}
+
+.fn-rmkt{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:12.5px;}
+.fn-rmkt + .fn-rmkt{border-top:1px solid var(--border);}
+.fn-rmkt .k{color:var(--muted);}
+.fn-rmkt .v{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 31 · The system pass  (phase 4)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Type scale — six steps, nothing between. */
+  --fs-display:40px; --fs-title:28px; --fs-heading:20px;
+  --fs-body:17px;    --fs-support:14px; --fs-label:11px;
+  /* Spacing — a 4px grid. */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+  /* Colour with a job. Blue is the only thing that means "you can touch this". */
+  --role-action:#0093e7; --role-good:#00e88a; --role-warn:#ffc200;
+  --role-bad:#ff294d;   --role-quiet:#7e8493;
+}
+
+/* Touch targets. Several of the app's inline row controls are 24–28px, which
+   is what made the priority rows feel fiddly on a phone. Rather than resize
+   them — which would change every layout they sit in — the *tap* area is
+   expanded past the visual edge. Nothing moves; the target just gets bigger. */
+@media (max-width:760px){
+  .qitem .q-edit, .qitem .q-rock, .qitem .q-del,
+  .hab-del, .tr-del, .note-del, .j-del{
+    position:relative;
+  }
+  .qitem .q-edit::after, .qitem .q-rock::after, .qitem .q-del::after,
+  .hab-del::after, .tr-del::after, .note-del::after, .j-del::after{
+    content:'';position:absolute;top:50%;left:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);
+  }
+  /* Anything that is already a block-level control simply gets the height. */
+  .flow-btn, .r-btn, .mobilenav button{min-height:44px;}
+}
+
+/* Numbers are compared far more often than they are read. */
+.stat .num, .big-n, .fn-rmkt .v, .flow-mkt-tile .v, .td-stat .v{
+  font-variant-numeric:tabular-nums;
+}
+
 </style>
 <script>
 /* ==========================================================================
@@ -6283,7 +6380,11 @@ const Inbox = {
     });
     qSave();
     if (item.task.due) {
-      try { await Schedule.set('quad::' + q.items[q.items.length - 1].id, item.task.due, item.task.time || '09:00'); } catch (e) {}
+      try {
+        Schedule.put('quad::' + q.items[q.items.length - 1].id, {
+          date: item.task.due, time: item.task.time || '09:00', text: item.task.txt
+        });
+      } catch (e) { console.warn('[Flow] schedule shared task', e); }
     }
     if (typeof window.renderQuad === 'function') window.renderQuad();
     if (typeof window.renderToday === 'function') window.renderToday();
@@ -8990,6 +9091,106 @@ const NAV_ICONS = {
   scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>'
 };
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 30 · The context rail  (phase 3)
+ *
+ * Read-only and derived: it renders from the same modules the sections do
+ * (Schedule, qData, Markets, Inbox) and never holds state of its own, so it
+ * cannot drift from what the app itself believes.
+ * ══════════════════════════════════════════════════════════════════════════ */
+const Rail = {
+  el: null,
+
+  build() {
+    const el = document.createElement('aside');
+    el.id = 'flow-rail';
+    document.body.appendChild(el);
+    Rail.el = el;
+    Rail.paint();
+    /* Cheap enough to redraw on every navigation, and that is exactly when it
+       is most likely to be stale. */
+    if (!Rail._timer) Rail._timer = setInterval(() => { if (!document.hidden) Rail.paint(); }, 60000);
+  },
+
+  /* Today's scheduled items, split at the current clock time. */
+  agenda() {
+    let recs = [];
+    try { recs = Schedule.onDate(today()).filter(r => r && !r.done); } catch (e) { return { now: null, next: [] }; }
+    const now = new Date();
+    const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const past = recs.filter(r => (r.time || '00:00') <= hhmm);
+    const ahead = recs.filter(r => (r.time || '00:00') > hhmm);
+    return { now: past.length ? past[past.length - 1] : null, next: ahead.slice(0, 3) };
+  },
+
+  label(r) {
+    if (r && r.text) return r.text;
+    const k = String((r && r.key) || '');
+    const i = k.indexOf('::');
+    return i >= 0 ? k.slice(i + 2) : 'Scheduled';
+  },
+
+  urgent() {
+    try {
+      const q = Profile.host('qData');
+      if (!q || !q.items) return [];
+      return q.items.filter(i => i && i.q === 1 && !i.done).slice(0, 4);
+    } catch (e) { return []; }
+  },
+
+  paint() {
+    const el = Rail.el;
+    if (!el) return;
+    const esc2 = (v) => esc(String(v == null ? '' : v));
+    const a = Rail.agenda();
+    const q = Rail.urgent();
+    const mk = Markets.data && Markets.data.quotes;
+    const inbox = (Inbox.items || []);
+
+    let h = '<button type="button" class="fn-capwide" id="fn-railcap">' +
+            Nav.svg('plus') + ' New entry</button>';
+
+    h += '<div class="fn-rlab">Today</div>';
+    if (a.now) {
+      h += '<div class="fn-rbox fn-rnow"><div class="rm"><i class="fn-pulse"></i>' +
+           esc2(a.now.time || 'now') + '</div><div class="rt">' + esc2(Rail.label(a.now)) + '</div></div>';
+    }
+    if (a.next.length) {
+      h += a.next.map(r => '<div class="fn-rbox"><div class="rm">' + esc2(r.time || '') +
+           '</div><div class="rt">' + esc2(Rail.label(r)) + '</div></div>').join('');
+    }
+    if (!a.now && !a.next.length) {
+      h += '<div class="fn-rbox"><div class="fn-rempty">Nothing scheduled today. ' +
+           'Anything with a time on it shows up here.</div></div>';
+    }
+
+    h += '<div class="fn-rlab">Do first</div>';
+    h += '<div class="fn-rbox">' + (q.length
+      ? q.map(i => '<div class="fn-rq"><i class="fn-qd"></i><span>' + esc2(i.txt) + '</span></div>').join('')
+      : '<div class="fn-rempty">No Q1 items open. That is a good place to be.</div>') + '</div>';
+
+    if (mk) {
+      const watch = (Markets.watch || Markets.DEFAULT).filter(s => Markets.LABEL[s]);
+      h += '<div class="fn-rlab">Markets</div><div class="fn-rbox">' +
+        watch.map(s => '<div class="fn-rmkt"><span class="k">' + esc2(Markets.LABEL[s][0]) +
+        '</span><span class="v">' + esc2(Markets.fmt(s, mk[s])) + '</span></div>').join('') +
+        '</div>';
+    }
+
+    if (inbox.length) {
+      h += '<div class="fn-rlab">Shared with you · ' + inbox.length + '</div>';
+      h += inbox.slice(0, 3).map(it =>
+        '<div class="fn-rbox"><div class="rt">' + esc2(it.task && it.task.txt) + '</div>' +
+        '<div class="rs">from ' + esc2(it.from ? it.from.name : 'someone') + '</div></div>').join('');
+    }
+
+    el.innerHTML = h;
+    const cap = document.getElementById('fn-railcap');
+    if (cap) cap.addEventListener('click', () => Nav.openCapture());
+  }
+};
+
 const Nav = {
   installed: false,
 
@@ -9283,6 +9484,7 @@ const Nav = {
       await Journal.save();
       try { Journal.rerender(); } catch (e) {}
       toast('Saved to your journal ✓');
+      try { Rail.paint(); } catch (e) {}
       ta.value = '';
       Nav.closeCapture();
     } catch (e) {
@@ -9466,6 +9668,7 @@ const Nav = {
       b.classList.toggle('on', b.getAttribute('data-fn-side') === cur));
 
     Nav.paintSeg(cur);
+    try { Rail.paint(); } catch (e) {}
   },
 
   install() {
@@ -9479,6 +9682,7 @@ const Nav = {
     Nav.buildCapture();
     Nav.buildMenu();
     Nav.buildPalette();
+    Rail.build();
 
     /* The host re-syncs its own bar after every switch; piggy-back on that so
        we never miss a navigation, whoever caused it. */
@@ -9586,7 +9790,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
-    Markets, Inbox, Ask, Planner, Nav,
+    Markets, Inbox, Ask, Planner, Nav, Rail,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
