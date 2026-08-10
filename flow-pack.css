@@ -1,0 +1,895 @@
+/* ==========================================================================
+   The Flow — Upgrade Pack v1.0  ·  stylesheet
+   Scoped under .flow-x / .flow-* so nothing here can clobber existing rules.
+   ========================================================================== */
+
+.flow-x {
+  --f-surface:      #141b1e;
+  --f-surface-2:    #1b2427;
+  --f-plane:        #0a0d0e;
+  --f-ink:          #ffffff;
+  --f-ink-2:        #b9c6cc;
+  --f-muted:        #8a98a0;
+  --f-line:         rgba(255,255,255,0.09);
+  --f-grid:         rgba(255,255,255,0.06);
+
+  --f-accent:       #17bb92;   /* validated: contrast 3:1+ on #151c1f */
+  --f-accent-soft:  rgba(23,187,146,0.14);
+  --f-accent-2:     #3987e5;   /* categorical slot 1, dark  */
+
+  /* sequential aqua ramp — ordinal-validated, monotone L, single hue */
+  --f-seq-1: #0b5f4a; --f-seq-2: #0e7a5f; --f-seq-3: #129a78;
+  --f-seq-4: #17bb92; --f-seq-5: #2fd4a8;
+
+  /* status — fixed, never themed, always paired with icon + label */
+  --f-good:     #0ca30c;
+  --f-warning:  #fab219;
+  --f-serious:  #ec835a;
+  --f-critical: #d03b3b;
+
+  --f-radius: 12px;
+  --f-radius-sm: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--f-ink);
+}
+
+/* ---------- sections we own ------------------------------------------- */
+.flow-section { display: none; }
+.flow-section.active { display: block; }
+
+/* ---------- layout primitives ----------------------------------------- */
+.flow-card {
+  background: var(--f-surface);
+  border: 1px solid var(--f-line);
+  border-radius: var(--f-radius);
+  padding: 18px 20px;
+  margin: 14px 0;
+}
+.flow-card > h3 {
+  margin: 0 0 4px; font-size: 15px; font-weight: 700; letter-spacing: .01em;
+}
+.flow-card > .flow-sub { margin: 0 0 14px; color: var(--f-muted); font-size: 12.5px; line-height: 1.5; }
+
+.flow-grid { display: grid; gap: 14px; }
+.flow-grid.c2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.flow-grid.c3 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.flow-grid.c4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+
+.flow-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.flow-row.between { justify-content: space-between; }
+.flow-spacer { flex: 1 1 auto; }
+
+/* ---------- controls --------------------------------------------------- */
+.flow-btn {
+  appearance: none; cursor: pointer;
+  background: var(--f-surface-2); color: var(--f-ink);
+  border: 1px solid var(--f-line); border-radius: 999px;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 600;
+  font-family: inherit; line-height: 1.2;
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.flow-btn:hover { background: #232e32; border-color: rgba(255,255,255,.18); }
+.flow-btn:active { transform: translateY(1px); }
+.flow-btn.primary { background: var(--f-accent); color: #05231b; border-color: transparent; }
+.flow-btn.primary:hover { background: var(--f-seq-5); }
+.flow-btn.ghost { background: transparent; }
+.flow-btn.danger { color: #ffbdbd; border-color: rgba(208,59,59,.45); }
+.flow-btn.danger:hover { background: rgba(208,59,59,.16); }
+.flow-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.flow-btn.sm { padding: 4px 10px; font-size: 11.5px; }
+
+.flow-in, .flow-x select, .flow-x textarea {
+  background: var(--f-plane); color: var(--f-ink);
+  border: 1px solid var(--f-line); border-radius: var(--f-radius-sm);
+  padding: 8px 10px; font-size: 13px; font-family: inherit;
+  outline: none; min-width: 0;
+}
+.flow-in:focus, .flow-x select:focus, .flow-x textarea:focus { border-color: var(--f-accent); }
+.flow-in::placeholder { color: #5d6a71; }
+.flow-in.grow { flex: 1 1 220px; }
+.flow-x textarea { width: 100%; resize: vertical; min-height: 80px; line-height: 1.55; }
+.flow-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--f-muted); font-weight: 700; }
+.flow-field { display: flex; flex-direction: column; gap: 6px; }
+
+.flow-switch { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--f-grid); }
+.flow-switch:last-child { border-bottom: 0; }
+.flow-switch .t { flex: 1; }
+.flow-switch .t b { display: block; font-size: 13px; font-weight: 600; }
+.flow-switch .t span { display: block; font-size: 11.5px; color: var(--f-muted); margin-top: 2px; line-height: 1.45; }
+.flow-switch input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--f-accent); cursor: pointer; }
+
+/* ---------- stat tiles -------------------------------------------------- */
+.flow-stat {
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius); padding: 16px 18px;
+}
+.flow-stat .v { font-size: 30px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; }
+.flow-stat .l { margin-top: 6px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--f-muted); font-weight: 700; }
+.flow-stat .d { margin-top: 6px; font-size: 11.5px; color: var(--f-ink-2); }
+.flow-hero { font-size: 52px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+
+/* ---------- timeline ---------------------------------------------------- */
+.flow-tl { list-style: none; margin: 0; padding: 0; }
+.flow-tl li {
+  display: grid; grid-template-columns: 62px 1fr auto; gap: 12px; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--f-grid);
+}
+.flow-tl li:last-child { border-bottom: 0; }
+.flow-tl .tm { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: var(--f-accent); }
+.flow-tl .tm.none { color: var(--f-muted); font-weight: 500; }
+.flow-tl .tx { font-size: 13.5px; line-height: 1.4; }
+.flow-tl .tx small { display: block; color: var(--f-muted); font-size: 11px; margin-top: 2px; }
+.flow-tl li.done .tx { text-decoration: line-through; opacity: .5; }
+
+.flow-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--f-surface-2); border: 1px solid var(--f-line);
+  border-radius: 999px; padding: 2px 9px; font-size: 11px; color: var(--f-ink-2);
+  white-space: nowrap;
+}
+.flow-chip.accent { background: var(--f-accent-soft); border-color: rgba(23,187,146,.35); color: #7ff0cd; }
+
+.flow-empty { color: var(--f-muted); font-size: 12.5px; padding: 14px 0; line-height: 1.55; }
+
+/* ---------- schedule chip injected into existing task rows -------------- */
+.flow-time-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; padding: 1px 8px;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  border-radius: 999px; cursor: pointer; user-select: none;
+  background: transparent; border: 1px dashed rgba(255,255,255,.22); color: #7c8b93;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  vertical-align: middle; line-height: 1.6;
+}
+/* Label comes from a pseudo-element, so it never appears in the row's
+   textContent and can never be picked up by the host app's own saves. */
+.flow-time-chip::after { content: attr(data-label); }
+.flow-time-chip:hover { border-color: var(--f-accent); color: var(--f-accent); }
+.flow-time-chip.set {
+  border-style: solid; border-color: rgba(23,187,146,.45);
+  background: rgba(23,187,146,.14); color: #7ff0cd;
+}
+
+.flow-pop {
+  position: absolute; z-index: 99999; width: 288px;
+  background: var(--f-surface); border: 1px solid rgba(255,255,255,.16);
+  border-radius: var(--f-radius); padding: 14px;
+  box-shadow: 0 18px 48px rgba(0,0,0,.6);
+}
+.flow-pop h4 { margin: 0 0 10px; font-size: 12.5px; font-weight: 700; line-height: 1.4; }
+.flow-pop .g { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.flow-pop .flow-in { width: 100%; }
+
+/* ---------- toast ------------------------------------------------------- */
+#flow-toasts { position: fixed; right: 18px; bottom: 18px; z-index: 100000; display: flex; flex-direction: column; gap: 8px; }
+.flow-toast {
+  background: var(--f-surface); border: 1px solid var(--f-line); border-left: 3px solid var(--f-accent);
+  color: var(--f-ink); padding: 10px 14px; border-radius: 10px; font-size: 12.5px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.5); max-width: 340px; line-height: 1.45;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  animation: flow-in .18s ease;
+}
+.flow-toast.err { border-left-color: var(--f-critical); }
+.flow-toast.warn { border-left-color: var(--f-warning); }
+@keyframes flow-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------- notes: bracket tree ---------------------------------------- */
+.flow-bracket {
+  border: 1px solid var(--f-line); border-left: 3px solid var(--f-seq-3);
+  border-radius: 10px; padding: 10px 12px; margin: 8px 0;
+  background: rgba(255,255,255,.015);
+}
+.flow-bracket .bh { display: flex; align-items: center; gap: 8px; }
+.flow-bracket .bh .tw {
+  background: none; border: 0; color: var(--f-muted); cursor: pointer;
+  font-size: 11px; width: 18px; padding: 0; font-family: inherit;
+}
+.flow-bracket .bh .bt {
+  flex: 1; background: transparent; border: 0; color: var(--f-ink);
+  font-size: 13.5px; font-weight: 700; padding: 3px 0; outline: none; font-family: inherit;
+}
+.flow-bracket .bh .bt:focus { border-bottom: 1px solid var(--f-accent); }
+.flow-bracket .bb { margin-top: 8px; }
+.flow-bracket.collapsed .bb { display: none; }
+.flow-bracket .kids { margin-left: 16px; padding-left: 10px; border-left: 1px dashed var(--f-line); }
+.flow-bracket .bactions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.flow-note-status { font-size: 11.5px; color: var(--f-muted); }
+.flow-note-status.ok { color: var(--f-good); }
+.flow-note-status.pending { color: var(--f-warning); }
+
+/* ---------- tables ------------------------------------------------------ */
+.flow-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.flow-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--f-muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--f-line);
+  white-space: nowrap;
+}
+.flow-table td { padding: 8px 10px; border-bottom: 1px solid var(--f-grid); vertical-align: middle; }
+.flow-table tr:last-child td { border-bottom: 0; }
+.flow-table td.num, .flow-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.flow-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.flow-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- charts ------------------------------------------------------ */
+.flow-chart { width: 100%; display: block; overflow: visible; }
+.flow-chart .grid { stroke: var(--f-grid); stroke-width: 1; }
+.flow-chart .axis { stroke: rgba(255,255,255,.14); stroke-width: 1; }
+.flow-chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.flow-chart .lbl { fill: var(--f-ink-2); font-size: 11.5px; }
+.flow-chart .val { fill: var(--f-ink); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.flow-chart .tick { fill: var(--f-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.flow-chart .bar { fill: var(--f-accent); }
+.flow-chart .bar:hover { fill: var(--f-seq-5); }
+.flow-chart .line { fill: none; stroke: var(--f-accent-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.flow-chart .dot { fill: var(--f-accent-2); stroke: var(--f-surface); stroke-width: 2; }
+
+.flow-tip {
+  position: fixed; z-index: 100001; pointer-events: none;
+  background: #0b1113; border: 1px solid rgba(255,255,255,.18); border-radius: 8px;
+  padding: 7px 10px; font-size: 11.5px; color: #fff; white-space: nowrap;
+  box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ---------- receipt preview -------------------------------------------- */
+.flow-receipt { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.flow-receipt img {
+  max-width: 190px; max-height: 250px; border-radius: 10px;
+  border: 1px solid var(--f-line); display: block;
+}
+.flow-drop {
+  border: 1.5px dashed rgba(255,255,255,.2); border-radius: var(--f-radius);
+  padding: 26px 18px; text-align: center; cursor: pointer; color: var(--f-muted);
+  font-size: 13px; transition: border-color .15s ease, background .15s ease; line-height: 1.55;
+}
+.flow-drop:hover, .flow-drop.over { border-color: var(--f-accent); background: var(--f-accent-soft); color: var(--f-ink); }
+.flow-prog { height: 4px; background: var(--f-surface-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+.flow-prog i { display: block; height: 100%; background: var(--f-accent); width: 0%; transition: width .2s ease; }
+
+.flow-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; }
+.flow-kv dt { color: var(--f-muted); }
+.flow-kv dd { margin: 0; }
+
+.flow-code {
+  background: var(--f-plane); border: 1px solid var(--f-line); border-radius: 8px;
+  padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; color: var(--f-ink-2); overflow-x: auto; white-space: pre; line-height: 1.6;
+}
+.flow-ol { margin: 8px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--f-ink-2); line-height: 1.7; }
+.flow-ol li { margin-bottom: 4px; }
+
+/* ==========================================================================
+   Visual language — breakdowns, empty states, journal
+   ========================================================================== */
+
+/* ---------- designed empty state (replaces the stretched grey blob) ------ */
+.flow-nodata {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 30px 18px; text-align: center; gap: 4px; min-height: 190px;
+}
+.flow-nodata svg { opacity: .8; margin-bottom: 10px; }
+.flow-nodata .t { font-size: 13.5px; font-weight: 600; color: var(--f-ink-2); }
+.flow-nodata .s { font-size: 12px; color: var(--f-muted); max-width: 300px; line-height: 1.55; }
+
+/* ---------- donut ------------------------------------------------------- */
+.flow-donut-wrap {
+  display: flex; align-items: center; gap: 26px; flex-wrap: wrap;
+  padding: 6px 0 2px;
+}
+.flow-donut {
+  position: relative; flex: 0 0 auto;
+  width: 210px; height: 210px;          /* square in BOTH axes — the whole fix */
+}
+.flow-donut svg { width: 100%; height: 100%; display: block; }
+.flow-donut-mid {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none; text-align: center;
+}
+.flow-donut-mid .v {
+  font-size: clamp(17px, 2.1vw, 24px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1;
+  max-width: 128px; white-space: nowrap;
+}
+.flow-donut-mid .l {
+  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 700; margin-top: 4px;
+}
+.flow-chart .slice {
+  transition: stroke-dasharray .5s cubic-bezier(.22,.61,.36,1), opacity .15s ease;
+  animation: flow-arc .55s cubic-bezier(.22,.61,.36,1) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.flow-chart .slice:hover { opacity: .82; }
+@keyframes flow-arc { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .flow-chart .slice { animation: none; transition: none; } }
+
+/* Capped so the legend reads as one block beside the ring instead of
+   stretching its values to the far edge of a wide card. */
+.flow-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 260px; min-width: 210px; max-width: 440px; }
+.flow-legend li {
+  display: grid; grid-template-columns: 10px 1fr auto auto; gap: 10px; align-items: center;
+  padding: 7px 0; border-bottom: 1px solid var(--f-grid); font-size: 12.5px;
+}
+.flow-legend li:last-child { border-bottom: 0; }
+.flow-legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.flow-legend .n { color: var(--f-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-legend .p { color: var(--f-muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.flow-legend .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- segmented control ------------------------------------------- */
+.flow-seg {
+  display: inline-flex; background: var(--f-plane); border: 1px solid var(--f-line);
+  border-radius: 999px; padding: 2px;
+}
+.flow-seg button {
+  appearance: none; border: 0; background: transparent; color: var(--f-muted);
+  font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer; transition: all .14s ease;
+}
+.flow-seg button.on { background: var(--f-accent); color: #05231b; }
+.flow-seg button:not(.on):hover { color: var(--f-ink); }
+
+.flow-viz { margin-top: 6px; }
+.flow-chart .bar { transition: fill .14s ease; }
+
+/* ---------- journal ------------------------------------------------------ */
+.flow-log-collapsed > *:not(.flow-x) { display: none !important; }
+
+.flow-jentry {
+  border: 1px solid var(--f-line); border-radius: var(--f-radius);
+  padding: 15px 17px; margin: 10px 0; background: rgba(255,255,255,.014);
+  transition: border-color .15s ease;
+}
+.flow-jentry:hover { border-color: rgba(255,255,255,.16); }
+.flow-jbody {
+  margin: 10px 0 0; font-size: 13.5px; line-height: 1.68; color: var(--f-ink-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.flow-jprompt {
+  margin-top: 9px; padding-left: 11px; border-left: 2px solid var(--f-seq-2);
+  font-size: 12.5px; line-height: 1.6;
+}
+.flow-jprompt b { display: block; color: var(--f-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+.flow-jprompt span { color: var(--f-ink-2); }
+
+.flow-x .jr-mood, .flow-x .jr-energy { padding: 4px 9px; font-size: 13px; line-height: 1.2; }
+.flow-x #jr-body { font-size: 14px; line-height: 1.7; }
+
+@media print { .flow-btn, .flow-time-chip, .flow-seg { display: none !important; } }
+
+/* ---------- Today: folded groups ---------------------------------------- */
+.flow-fold .td-group-head {
+  cursor: pointer;
+  position: relative;
+  padding-right: 22px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.flow-fold .td-group-head:active { opacity: .7; }
+.flow-fold .flow-fold-chev {
+  position: absolute; right: 2px; top: 50%;
+  width: 7px; height: 7px; margin-top: -5px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  opacity: .5;
+  transform: rotate(45deg);
+  transition: transform .18s ease, opacity .18s ease;
+}
+.flow-fold.is-open .flow-fold-chev { transform: rotate(-135deg); margin-top: -2px; opacity: .8; }
+/* The progress bar under the head stays visible when folded — it is the
+   summary. Only the rows themselves collapse. */
+.flow-fold .td-row,
+.flow-fold .td-empty-row { display: none; }
+.flow-fold.is-open .td-row { display: flex; }
+.flow-fold.is-open .td-empty-row { display: block; }
+@media (prefers-reduced-motion: reduce) { .flow-fold .flow-fold-chev { transition: none; } }
+
+/* ---------- Today: pulse strip + injected sections ---------------------- */
+.flow-td-pulse {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+  margin: 14px 0 4px;
+}
+.flow-td-tile {
+  appearance: none; cursor: pointer; text-align: left;
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: 12px; padding: 9px 8px 10px;
+  display: flex; flex-direction: column; gap: 1px;
+  font-family: inherit; color: var(--f-ink);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .14s ease, background .14s ease;
+}
+.flow-td-tile:active { background: var(--f-surface-2); }
+.flow-td-tile .l {
+  font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 800;
+}
+.flow-td-tile .v { font-size: 19px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.flow-td-tile .s { font-size: 9.5px; color: var(--f-muted); line-height: 1.3; }
+/* Status tone is paired with the number and its label, never colour alone. */
+.flow-td-tile.good .v { color: #2fd4a8; }
+.flow-td-tile.warn .v { color: var(--f-warning); }
+.flow-td-tile.bad  .v { color: #ff7a7a; }
+.flow-td-tile.bad  { border-color: rgba(208,59,59,.35); }
+
+.flow-td-sec { margin: 18px 0 0; }
+/* The host's own groups carry no top margin, so one following an injected
+   section collided with it. */
+.flow-td + .td-group, .flow-td + .td-rocks { margin-top: 20px; }
+.flow-td-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 7px; border-bottom: 1px solid var(--f-line); margin-bottom: 2px;
+}
+.flow-td-head .l {
+  font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--f-muted); font-weight: 800;
+}
+.flow-td-head .c { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--f-ink-2); }
+.flow-td-head .c.ok  { color: #2fd4a8; }
+.flow-td-head .c.bad { color: #ff7a7a; }
+
+.flow-td-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 0; border-bottom: 1px solid var(--f-grid);
+  font-size: 14px; line-height: 1.4;
+}
+.flow-td-row:last-child { border-bottom: 0; }
+.flow-td-row .tx { flex: 1; min-width: 0; }
+.flow-td-row .mt { font-size: 11px; color: var(--f-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.flow-td-row.od .mt { color: #ff9a9a; }
+.flow-td-row[data-q], .flow-td-row[data-hb] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.flow-td-row[data-q]:active, .flow-td-row[data-hb]:active { opacity: .6; }
+
+.flow-td-row .bx {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px;
+  border: 1.5px solid rgba(255,255,255,.22);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900; color: #05231b;
+}
+.flow-td-row.done .bx { background: #2fd4a8; border-color: #2fd4a8; }
+.flow-td-row.done .tx { text-decoration: line-through; opacity: .45; }
+
+.flow-td-empty { color: var(--f-muted); font-size: 12.5px; padding: 12px 0; line-height: 1.55; }
+.flow-td-note { color: var(--f-muted); font-size: 11.5px; padding: 7px 0 0; }
+.flow-td-bar { height: 5px; background: var(--f-surface-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+.flow-td-bar i { display: block; height: 100%; background: var(--f-accent); border-radius: 999px; }
+.flow-td-bar i.over { background: var(--f-critical); }
+
+@media (max-width: 400px) {
+  .flow-td-tile .v { font-size: 17px; }
+  .flow-td-pulse { gap: 5px; }
+}
+
+/* ---------- sign-in ------------------------------------------------------ */
+#flow-auth {
+  position: fixed; inset: 0; z-index: 2147483000;
+  background: #0a0d0e;
+  display: flex; align-items: center; justify-content: center;
+  padding: 22px; overflow-y: auto;
+}
+#flow-auth .fa-card {
+  width: 100%; max-width: 380px;
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: 18px; padding: 30px 26px 26px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.6);
+}
+#flow-auth .fa-brand { font-size: 21px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 22px; color: var(--f-ink-2); }
+#flow-auth .fa-brand b { font-weight: 800; color: var(--f-ink); }
+#flow-auth .fa-h { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+#flow-auth .fa-sub { margin: 0 0 20px; font-size: 12.5px; line-height: 1.55; color: var(--f-muted); }
+#flow-auth .flow-label { display: block; margin: 14px 0 6px; }
+#flow-auth .flow-in { width: 100%; padding: 11px 12px; font-size: 15px; border-radius: 10px; }
+#flow-auth .fa-go { width: 100%; margin-top: 22px; padding: 12px; font-size: 14px; border-radius: 10px; }
+#flow-auth .fa-alt { width: 100%; margin-top: 9px; padding: 9px; font-size: 12.5px; border-radius: 10px; color: var(--f-muted); }
+#flow-auth .fa-err {
+  background: rgba(208,59,59,.14); border: 1px solid rgba(208,59,59,.4);
+  color: #ffc2c2; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+/* ---------- markets strip ------------------------------------------------ */
+.flow-mkt { margin: 10px 0 4px; }
+.flow-mkt-row {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+}
+@media (max-width: 560px){ .flow-mkt-row { grid-template-columns: repeat(2, 1fr); } }
+.flow-mkt-tile {
+  background: var(--f-surface); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius); padding: 9px 10px;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.flow-mkt-tile.dim { opacity: .45; }
+.flow-mkt-tile .l { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--f-muted); }
+.flow-mkt-tile .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-mkt-note { margin-top: 6px; font-size: 11.5px; color: var(--f-muted); }
+
+/* ---------- shared-task inbox -------------------------------------------- */
+.flow-inbox-row {
+  border: 1px solid var(--f-line); border-radius: var(--f-radius-sm);
+  padding: 10px 12px; margin-top: 10px; background: var(--f-surface-2);
+}
+.flow-inbox-row .t { font-weight: 600; }
+.flow-inbox-row .m { font-size: 12px; color: var(--f-muted); margin-top: 2px; }
+.flow-inbox-row .n { font-size: 12.5px; color: var(--f-ink-2); margin-top: 6px; white-space: pre-wrap; }
+.flow-inbox-row .a { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* ---------- the assistant ------------------------------------------------ */
+.flow-ask-log { max-height: 46vh; overflow-y: auto; }
+.flow-ask-turn { margin: 10px 0; }
+.flow-ask-turn .who {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--f-muted); margin-bottom: 3px;
+}
+.flow-ask-turn .txt {
+  background: var(--f-surface-2); border: 1px solid var(--f-line);
+  border-radius: var(--f-radius-sm); padding: 9px 11px;
+  font-size: 13.5px; line-height: 1.55; white-space: normal;
+}
+.flow-ask-turn.user .txt { background: var(--f-accent-soft); border-color: transparent; }
+
+/* ---------- guest mode ---------------------------------------------------- */
+.fa-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--f-muted); font-size: 12px; }
+.fa-or::before, .fa-or::after { content: ''; flex: 1; height: 1px; background: var(--f-line); }
+.fa-fine { margin: 8px 0 0; font-size: 11.5px; color: var(--f-muted); line-height: 1.5; }
+#flow-guestbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; font-size: 12.5px;
+  background: var(--f-surface); border-top: 1px solid var(--f-line); color: var(--f-ink-2);
+}
+@media (max-width: 760px){ #flow-guestbar { bottom: 62px; } }
+.flow-btn.tiny { padding: 5px 10px; font-size: 12px; }
+
+/* ---------- priorities: let a row breathe on a phone ---------------------
+ * The host builds each priority as one non-wrapping flex line: checkbox,
+ * text, ✏️, → Rock, the quadrant selector, ×, and (since this pack) a time
+ * chip. On a 390px screen the fixed-width controls take ~230px of it, so the
+ * text was being squeezed to about 50px — a sentence rendered in a column two
+ * words wide, with the × crushed to 8px and the selector clipped.
+ *
+ * Giving the text its own line and letting the controls wrap underneath costs
+ * one row of height and makes the whole thing readable. Unchanged above 760px,
+ * where there is room for everything on one line.
+ * --------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .qitem {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* Checkbox and text share the first line; everything else wraps below. */
+  .qitem .qt,
+  .qitem .qt-edit {
+    flex: 1 1 calc(100% - 30px);
+    min-width: 0;                 /* flex items default to min-width:auto,
+                                     which is what forced the overflow */
+    overflow-wrap: anywhere;
+  }
+  /* First control on the wrapped line pushes the group to the right. */
+  .qitem .q-edit { margin-left: auto; }
+  /* Stop the small controls being shrunk to slivers. */
+  .qitem .q-edit,
+  .qitem .q-rock,
+  .qitem .q-del,
+  .qitem select { flex: 0 0 auto; }
+  .qitem .q-del { padding: 2px 8px; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 29 · Navigation — the iOS bottom bar and the desktop sidebar
+ *
+ * Purely additive. The host's own .tabs pill row and .mobilenav bottom bar are
+ * left in the DOM and hidden, because syncMobileNav() and the swipe handler
+ * both still read them. Everything here is new markup layered on top, and
+ * every destination is still reached by clicking the host's own pill — so the
+ * host's per-section render callbacks fire exactly as they always did.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --fn-bar-h: 54px;
+  --fn-side-w: 236px;
+  --fn-side-w-sm: 64px;
+}
+
+#flow-nav-sprite{display:none;}
+.fn-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — bottom tab bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-tabbar{display:none;}
+
+@media (max-width:760px){
+  /* The host's own bottom bar and its "More" sheet step aside. They stay in
+     the DOM so syncMobileNav() keeps working against them. */
+  .mobilenav{display:none !important;}
+  .moresheet,.morebackdrop{display:none !important;}
+
+  body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 26px) !important;}
+
+  #flow-tabbar{
+    display:grid;grid-template-columns:repeat(5,1fr);align-items:end;
+    position:fixed;left:0;right:0;bottom:0;z-index:940;
+    padding:7px 6px calc(7px + env(safe-area-inset-bottom));
+    background:rgba(14,16,20,.93);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-top:1px solid var(--border);
+  }
+  #flow-tabbar button{
+    background:none;border:0;cursor:pointer;font-family:inherit;color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;
+    padding:6px 2px;min-height:44px;                 /* 44pt minimum touch target */
+    -webkit-tap-highlight-color:transparent;transition:color .15s;
+  }
+  #flow-tabbar button .fn-lb{font-size:9.5px;font-weight:700;letter-spacing:.01em;}
+  #flow-tabbar button.on{color:var(--accent);}
+  #flow-tabbar button.on .fn-i{stroke-width:2.3;}
+
+  /* The capture button — deliberately the largest target on the screen. */
+  #flow-tabbar .fn-cap{align-self:center;}
+  #flow-tabbar .fn-cap .fn-knob{
+    width:48px;height:48px;border-radius:16px;
+    background:linear-gradient(150deg,var(--accent),#0072c6);
+    display:grid;place-items:center;color:#fff;
+    box-shadow:0 8px 20px -6px rgba(0,147,231,.7);transition:transform .14s;
+  }
+  #flow-tabbar .fn-cap:active .fn-knob{transform:scale(.93);}
+  #flow-tabbar .fn-cap .fn-i{width:24px;height:24px;stroke-width:2.5;}
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE — header row (avatar + search), segment bar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-headtools{display:none;}
+@media (max-width:760px){
+  #flow-headtools{display:flex;align-items:center;gap:9px;margin-left:auto;}
+  .fn-icobtn{
+    width:38px;height:38px;border-radius:12px;background:var(--card);
+    border:1px solid var(--border);color:var(--muted);
+    display:grid;place-items:center;cursor:pointer;flex:0 0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .fn-icobtn:active{background:var(--card2);}
+  .fn-avatar{
+    width:38px;height:38px;border-radius:50%;flex:0 0 auto;cursor:pointer;
+    background:linear-gradient(150deg,var(--accent),var(--purple));
+    display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;
+    border:0;font-family:inherit;-webkit-tap-highlight-color:transparent;
+  }
+}
+
+/* Segment bar — the second level of navigation, inside Focus and Body. */
+#flow-seg{
+  display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
+  margin:0 0 18px;padding-bottom:2px;-webkit-overflow-scrolling:touch;
+}
+#flow-seg::-webkit-scrollbar{display:none;}
+#flow-seg button{
+  background:var(--card);border:1px solid var(--border);border-radius:100px;
+  color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;
+  padding:9px 15px;min-height:38px;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+#flow-seg button:hover{color:var(--text);border-color:var(--border2,#333846);}
+#flow-seg button.on{
+  background:rgba(0,147,231,.14);border-color:rgba(0,147,231,.42);color:#63c2f7;
+}
+@media (min-width:761px){
+  #flow-seg{display:none;}          /* desktop has the sidebar; segments would duplicate it */
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Capture sheet
+ * ────────────────────────────────────────────────────────────────────────── */
+.fn-sheetwrap{position:fixed;inset:0;z-index:960;display:none;}
+.fn-sheetwrap.on{display:block;}
+.fn-sheetwrap .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.62);
+  animation:fnFade .2s ease;}
+@keyframes fnFade{from{opacity:0}to{opacity:1}}
+.fn-sheetwrap .fn-sheet{
+  position:absolute;left:0;right:0;bottom:0;
+  background:var(--card2);border-top:1px solid var(--border2,#333846);
+  border-radius:24px 24px 0 0;
+  padding:10px 18px calc(24px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;
+  animation:fnUp .28s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes fnUp{from{transform:translateY(100%)}to{transform:none}}
+@media (min-width:761px){
+  .fn-sheetwrap .fn-sheet{
+    left:50%;bottom:auto;top:16vh;transform:translateX(-50%);
+    width:440px;border-radius:20px;border:1px solid var(--border2,#333846);
+    animation:fnPop .18s ease;padding-bottom:24px;
+  }
+  @keyframes fnPop{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                   to{opacity:1;transform:translateX(-50%) scale(1)}}
+}
+.fn-sheetwrap .fn-grab{width:38px;height:4px;border-radius:100px;
+  background:var(--border2,#333846);margin:0 auto 14px;cursor:pointer;}
+.fn-sheetwrap h4{font-size:17px;font-weight:700;margin:0 0 3px;}
+.fn-sheetwrap .fn-sub{font-size:12.5px;color:var(--muted);margin-bottom:15px;}
+.fn-sheetwrap .fn-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+.fn-sheetwrap .fn-grid button{
+  background:var(--card);border:1px solid var(--border);border-radius:15px;
+  padding:15px 5px;display:flex;flex-direction:column;align-items:center;gap:7px;
+  cursor:pointer;font-family:inherit;color:var(--muted);font-size:11.5px;font-weight:600;
+  min-height:76px;transition:.14s;-webkit-tap-highlight-color:transparent;
+}
+.fn-sheetwrap .fn-grid button:hover{border-color:var(--accent);color:var(--text);}
+.fn-sheetwrap .fn-grid button:active{transform:scale(.96);}
+
+/* the inline quick-note pane */
+#flow-capture .fn-note{display:none;}
+#flow-capture.note .fn-grid{display:none;}
+#flow-capture.note .fn-note{display:block;}
+#flow-capture textarea{
+  width:100%;background:var(--card);border:1px solid var(--border);border-radius:14px;
+  color:var(--text);font-family:inherit;font-size:16px;line-height:1.5;      /* 16px: no iOS zoom */
+  padding:13px 14px;min-height:120px;resize:vertical;
+}
+#flow-capture textarea:focus{outline:none;border-color:var(--accent);}
+#flow-capture .fn-acts{display:flex;gap:9px;margin-top:12px;}
+#flow-capture .fn-acts button{
+  flex:1;border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;
+  padding:12px;cursor:pointer;border:1px solid var(--border);min-height:44px;
+  background:var(--card);color:var(--muted);
+}
+#flow-capture .fn-acts button.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Command palette — ⌘K on desktop, the search icon on phone
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-pal{position:fixed;inset:0;z-index:980;display:none;}
+#flow-pal.on{display:block;}
+#flow-pal .fn-scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+#flow-pal .fn-box{
+  position:absolute;left:50%;transform:translateX(-50%);top:11vh;
+  width:min(540px,92vw);
+  background:rgba(24,27,34,.98);backdrop-filter:blur(24px);
+  border:1px solid var(--border2,#333846);border-radius:16px;overflow:hidden;
+  box-shadow:0 34px 80px -18px rgba(0,0,0,.9);
+  animation:fnPop2 .16s ease;
+}
+@keyframes fnPop2{from{opacity:0;transform:translateX(-50%) scale(.97)}
+                  to{opacity:1;transform:translateX(-50%) scale(1)}}
+#flow-pal .fn-in{display:flex;align-items:center;gap:11px;padding:14px 17px;
+  border-bottom:1px solid var(--border);}
+#flow-pal input{
+  flex:1;background:none;border:0;outline:none;color:var(--text);
+  font-family:inherit;font-size:16px;font-weight:500;
+}
+#flow-pal input::placeholder{color:var(--muted2,#5c626f);}
+#flow-pal .fn-list{max-height:min(52vh,380px);overflow-y:auto;padding:7px;}
+#flow-pal .fn-cat{font-size:9.5px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted2,#5c626f);padding:10px 12px 5px;}
+#flow-pal .fn-row{
+  display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;
+  font-size:14px;color:var(--text2,#c3c8d4);cursor:pointer;
+}
+#flow-pal .fn-row.on{background:var(--accent);color:#fff;}
+#flow-pal .fn-row .fn-hint{margin-left:auto;font-size:10.5px;opacity:.75;}
+#flow-pal .fn-empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:14px;}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * DESKTOP — the sidebar
+ * ────────────────────────────────────────────────────────────────────────── */
+#flow-side{display:none;}
+
+@media (min-width:761px){
+  .tabs{display:none !important;}   /* the pill row is replaced, not hidden-and-duplicated */
+
+  body.fn-on{
+    padding-left:calc(var(--fn-side-w) + 28px) !important;
+    max-width:calc(1300px + var(--fn-side-w) + 28px) !important;
+  }
+
+  #flow-side{
+    display:flex;flex-direction:column;gap:2px;
+    position:fixed;left:0;top:0;bottom:0;width:var(--fn-side-w);z-index:930;
+    background:#0e1015;border-right:1px solid var(--border);
+    padding:16px 11px 18px;overflow-y:auto;scrollbar-width:none;
+  }
+  #flow-side::-webkit-scrollbar{display:none;}
+
+  .fn-brand{display:flex;align-items:center;gap:10px;padding:4px 9px 14px;}
+  .fn-brand .fn-mark{width:26px;height:26px;border-radius:8px;flex:0 0 auto;
+    background:linear-gradient(150deg,var(--accent),var(--purple));}
+  .fn-brand .fn-nm{font-size:14.5px;font-weight:800;letter-spacing:-0.02em;
+    white-space:nowrap;overflow:hidden;}
+
+  .fn-k{
+    display:flex;align-items:center;gap:8px;width:100%;
+    background:var(--card);border:1px solid var(--border);border-radius:10px;
+    color:var(--muted);font-family:inherit;font-size:12.5px;font-weight:600;
+    padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:.14s;
+  }
+  .fn-k:hover{border-color:var(--accent);color:var(--text);}
+  .fn-k .fn-kbd{margin-left:auto;font-size:10.5px;border:1px solid var(--border);
+    border-radius:5px;padding:1px 5px;}
+
+  .fn-grouplbl{font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--muted2,#5c626f);padding:14px 10px 5px;white-space:nowrap;}
+
+  .fn-link{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
+    cursor:pointer;font-size:13.5px;font-weight:600;color:var(--text2,#c3c8d4);
+    border:1px solid transparent;transition:.12s;background:none;font-family:inherit;
+    width:100%;text-align:left;
+  }
+  .fn-link:hover{background:var(--card);color:var(--text);}
+  .fn-link.on{background:rgba(0,147,231,.14);color:#63c2f7;border-color:rgba(0,147,231,.28);}
+  .fn-link .fn-i{width:16px;height:16px;}
+  .fn-link .fn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fn-spacer{flex:1;min-height:14px;}
+}
+
+/* Between 761 and 1180 the sidebar drops to an icon rail so the content
+   column keeps a usable width on a small laptop. */
+@media (min-width:761px) and (max-width:1180px){
+  body.fn-on{padding-left:calc(var(--fn-side-w-sm) + 20px) !important;}
+  #flow-side{width:var(--fn-side-w-sm);padding:16px 8px 18px;align-items:stretch;}
+  #flow-side .fn-txt,#flow-side .fn-grouplbl,#flow-side .fn-brand .fn-nm,
+  #flow-side .fn-k span:not(.fn-i-wrap){display:none;}
+  #flow-side .fn-link,#flow-side .fn-k{justify-content:center;padding:10px 6px;}
+  #flow-side .fn-brand{justify-content:center;padding:4px 0 12px;}
+  #flow-side .fn-grouplbl{display:block;height:1px;padding:0;margin:10px 8px;
+    background:var(--border);overflow:hidden;text-indent:-999px;}
+}
+
+#flow-menu .fn-grid{grid-template-columns:1fr;gap:5px;}
+#flow-menu .fn-grid button{
+  flex-direction:row;justify-content:flex-start;gap:12px;min-height:52px;
+  padding:13px 15px;font-size:14.5px;color:var(--text2,#c3c8d4);
+}
+
+/* Today was written as a 560px phone column (#tab-today{max-width:560px}) and
+   was effectively unreachable on a desktop, since the host hides its own Today
+   pill outside the installed app. Now that it is the landing screen it needs
+   room, or it floats in the middle of the page. This widens the column; giving
+   it two columns and the context rail is the next phase, not this one. */
+@media (min-width:1181px){
+  body.fn-on #tab-today{max-width:880px;}
+}
+
+@media print{
+  #flow-tabbar,#flow-side,.fn-sheetwrap,#flow-pal,#flow-seg,#flow-headtools{display:none !important;}
+  body.fn-on{padding-left:24px !important;}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 31 · The system pass  (phase 4)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Type scale — six steps, nothing between. */
+  --fs-display:40px; --fs-title:28px; --fs-heading:20px;
+  --fs-body:17px;    --fs-support:14px; --fs-label:11px;
+  /* Spacing — a 4px grid. */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+  /* Colour with a job. Blue is the only thing that means "you can touch this". */
+  --role-action:#0093e7; --role-good:#00e88a; --role-warn:#ffc200;
+  --role-bad:#ff294d;   --role-quiet:#7e8493;
+}
+
+/* Touch targets. Several of the app's inline row controls are 24–28px, which
+   is what made the priority rows feel fiddly on a phone. Rather than resize
+   them — which would change every layout they sit in — the *tap* area is
+   expanded past the visual edge. Nothing moves; the target just gets bigger. */
+@media (max-width:760px){
+  .qitem .q-edit, .qitem .q-rock, .qitem .q-del,
+  .hab-del, .tr-del, .note-del, .j-del{
+    position:relative;
+  }
+  .qitem .q-edit::after, .qitem .q-rock::after, .qitem .q-del::after,
+  .hab-del::after, .tr-del::after, .note-del::after, .j-del::after{
+    content:'';position:absolute;top:50%;left:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);
+  }
+  /* Anything that is already a block-level control simply gets the height. */
+  .flow-btn, .r-btn, .mobilenav button{min-height:44px;}
+}
+
+/* Numbers are compared far more often than they are read. */
+.stat .num, .big-n, .fn-rmkt .v, .flow-mkt-tile .v, .td-stat .v{
+  font-variant-numeric:tabular-nums;
+}

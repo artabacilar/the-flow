@@ -129,12 +129,44 @@ if (UP_URL && UP_TOK) {
 // ── Helpers ─────────────────────────────────────────────────
 function readBody(req) { return new Promise((r) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => r(b)); }); }
 function json(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); }
-function sendFile(res, file, type) {
+function sendFile(res, file, type, headers) {
   fs.readFile(path.join(APP_DIR, file), (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found: ' + file); }
-    res.writeHead(200, { 'Content-Type': type });
+    res.writeHead(200, Object.assign({ 'Content-Type': type }, headers || {}));
     res.end(data);
   });
+}
+
+// ── The upgrade pack ────────────────────────────────────────
+// The pack used to live inside life-dashboard.html, which meant a four-line
+// navigation change re-shipped half a megabyte and produced a diff nobody could
+// read. It is now two files, and the page asks for them by content hash.
+//
+// The hash is computed here rather than written into the HTML, and that is the
+// whole point: change flow-pack.js on its own and the URL in the page changes
+// with it. There is no way to ship a new pack that an old cache can satisfy,
+// and no second file to remember to edit.
+const PACK_FILES = ['flow-pack.js', 'flow-pack.css'];
+let PACK_V = 'dev';
+let SHELL_HTML = null;
+
+function packVersion() {
+  try {
+    const h = crypto.createHash('sha256');
+    for (const f of PACK_FILES) h.update(fs.readFileSync(path.join(APP_DIR, f)));
+    return h.digest('hex').slice(0, 12);
+  } catch (e) {
+    console.warn('[flow] the upgrade pack is missing (' + e.message + ') — the app will\n' +
+                 '       load without it. Deploy flow-pack.js and flow-pack.css.');
+    return 'missing';
+  }
+}
+
+function shell() {
+  if (SHELL_HTML) return SHELL_HTML;
+  const html = fs.readFileSync(path.join(APP_DIR, 'life-dashboard.html'), 'utf8');
+  SHELL_HTML = html.split('__PACK_V__').join(PACK_V);
+  return SHELL_HTML;
 }
 
 // ── PWA assets (generated inline so there are fewer files to ship) ──
@@ -155,6 +187,10 @@ self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
   if(u.pathname.startsWith('/api')) return; // never cache data — always live
+  // The pack is addressed by content hash and served immutable, so the HTTP
+  // cache already answers it without a network trip. Putting it in here too
+  // would just accumulate a copy of every version ever shipped.
+  if(u.pathname.startsWith('/flow-pack.')) return;
   e.respondWith(
     fetch(e.request.mode==='navigate'?new Request(e.request.url,{cache:'no-store',credentials:'same-origin'}):e.request).then(r=>{
       // only cache clean, same-origin 200s — never redirects (login gate) or errors
@@ -267,8 +303,20 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
+    // ── The upgrade pack ──
+    // Immutable is safe precisely because the URL carries the content hash: a
+    // different pack is a different URL, so nothing can go stale.
+    if (p === '/flow-pack.js' || p === '/flow-pack.css') {
+      return sendFile(res, p.slice(1),
+        p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8',
+        { 'Cache-Control': 'public, max-age=31536000, immutable' });
+    }
+
     // ── App shell ──
-    if (p === '/' || p === '/index.html') return sendFile(res, 'life-dashboard.html', 'text/html; charset=utf-8');
+    if (p === '/' || p === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      return res.end(shell());
+    }
     if (p === '/languages' || p === '/languages.html' || p === '/lingua') return sendFile(res, 'LinguaCoach.html', 'text/html; charset=utf-8');
 
     // ── Data API ──
@@ -294,11 +342,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 flowAuth.attach(server);
+
+/* Read the pack once, at boot. Re-reading it per request would let a deploy be
+   observed half-applied — the new HTML with the old pack, or the reverse. */
+PACK_V = packVersion();
+
 server.listen(PORT, '0.0.0.0', () => {
   const ip = lanIP();
   console.log('─────────────────────────────────────────────');
   console.log('  🌊 The Flow running');
   console.log('  Engine: ' + store.engine);
+  console.log('  Pack:   ' + PACK_V);
   console.log('  Login:  ' + (APP_PASSWORD ? 'password ON (set via APP_PASSWORD)' : 'OPEN — no password set'));
   console.log('');
   console.log('  On THIS computer:      http://localhost:' + PORT);
