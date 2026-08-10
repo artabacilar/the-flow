@@ -1,0 +1,11 @@
+node_modules/
+life-os-data.json
+.env
+
+# Generated seeds — the generators are committed, their output is not.
+tests/fixtures/.*.json
+
+# Local build output, and the base it is built from — the base is simply the
+# previous life-dashboard.html, which git already has.
+src/out/
+src/base/
