@@ -1,0 +1,45 @@
+name: tests
+
+# The app is one large HTML file, which makes it very easy to ship a change
+# that looks fine in a diff and breaks something three sections away. These
+# suites drive a real browser against a replica of the server, so that stops
+# being possible without someone being told.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright and its browser
+        run: |
+          npm install --no-save playwright@1.47.0
+          npx playwright install --with-deps chromium
+
+      - name: Run every suite
+        run: node tests/run.js
+
+      # A failure is nearly always visual, and the console output alone rarely
+      # says enough. Keep whatever the run left behind.
+      - name: Keep the evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-output
+          path: |
+            tests/*.png
+            tests/fixtures/.*.json
+          if-no-files-found: ignore
+          retention-days: 7
