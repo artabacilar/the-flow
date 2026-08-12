@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- maximum-scale + user-scalable=no: without them iOS keeps an accidental
+     pinch or double-tap zoom forever — the fixed tab bar detaches, dead bands
+     appear around the layout, and vertical scrolling turns into sideways
+     panning. This is an installed app, not a document; it renders at 1:1. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>The Flow</title>
 <!-- PWA: installable app on phone + desktop -->
 <link rel="manifest" href="manifest.webmanifest">
@@ -10,6 +14,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="The Flow">
+<!-- Failsafe for the boot veil: whatever happens to the pack, the page shows.
+     The pack lifts the veil itself the moment the navigation chrome exists. -->
+<script>setTimeout(function(){document.documentElement.classList.add('flow-ready')},4000)</script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -54,6 +61,14 @@ body{background:radial-gradient(1200px 600px at 50% -200px,#15171d 0%,#0a0b0d 60
    the status bar is painted by the ROOT element, not by body. Without this it
    renders as the default white canvas — the white band above the header. */
 html{background:#0a0b0d;}
+/* ── Boot veil ──
+   Opening the app used to show three interfaces in a row: the launch
+   snapshot, then this file's own bare layout (no tab bar, no avatar), then
+   the real chrome once flow-pack.js had run. The middle frame read as "an
+   old version opened first". Hold the page invisible until the pack raises
+   .flow-ready; a timer below lifts the veil regardless, so a broken or
+   blocked pack can never leave a black screen. */
+html:not(.flow-ready) body{visibility:hidden;}
 
 /* ── Header ── */
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
@@ -525,6 +540,9 @@ canvas{width:100%;height:120px;}
 @media(max-width:760px){
   /* Stop iOS from zooming when you tap a field (needs >=16px) */
   input, select, textarea{ font-size:16px !important; }
+  /* And stop double-tap-to-zoom entirely — an app, not a document. Panning
+     (scrolling) is unaffected; only the double-tap zoom gesture is dropped. */
+  *{ touch-action:manipulation; }
   /* Comfortable tap targets */
   .btn{ padding:12px 18px; }
   .mobilenav button:active{ transform:scale(.9); }

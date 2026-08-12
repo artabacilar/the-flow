@@ -5082,6 +5082,13 @@ const Nav = {
 
     if (seg.parentElement !== host || host.firstChild !== seg) host.insertBefore(seg, host.firstChild);
     seg.style.display = '';
+    /* A tab deep in its group used to leave the highlighted pill off-screen to
+       the right — the row read as broken rather than scrollable. Center the
+       active pill, and only paint the edge fade when there is actually more
+       to scroll to. */
+    const on = seg.querySelector('button.on');
+    if (on) seg.scrollLeft = Math.max(0, on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2);
+    seg.classList.toggle('fn-overflow', seg.scrollWidth > seg.clientWidth + 4);
   },
 
   /* ---- header tools: search and the avatar ------------------------------ */
@@ -5501,6 +5508,11 @@ async function boot() {
   /* Navigation first. It needs the pills, which exist by now, and nothing
      else — so it must not queue behind two network calls. */
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
+  /* The chrome exists — lift the boot veil. The host holds the page invisible
+     until this class lands, so nobody ever sees the pre-pack layout flash by
+     before the real navigation appears. (The host also lifts it on a timer,
+     so a pack that dies before this line cannot leave the screen blank.) */
+  try { document.documentElement.classList.add('flow-ready'); } catch (e) {}
 
   /* These paint into place when they arrive; nothing waits on them. */
   Inbox.load().catch(() => {});

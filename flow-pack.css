@@ -673,6 +673,12 @@
   margin:0 0 18px;padding-bottom:2px;-webkit-overflow-scrolling:touch;
 }
 #flow-seg::-webkit-scrollbar{display:none;}
+/* Painted by paintSeg only when the row actually overflows: fades both edges
+   so the cut-off pill reads as "more this way", not as a rendering bug. */
+#flow-seg.fn-overflow{
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 34px),transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 34px),transparent);
+}
 #flow-seg button{
   background:var(--card);border:1px solid var(--border);border-radius:100px;
   color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;
