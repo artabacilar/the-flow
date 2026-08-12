@@ -1374,7 +1374,54 @@ const DB_API = (location.protocol === 'file:') ? 'http://localhost:4000/api' : (
 window.__DB_ON = false;
 window.__DB_ENGINE = null;
 (function hydrateFromDB(){
+  /* Wipe every ld_* key this browser is holding. localStorage is a per-device
+     cache, not per-account: whatever it holds belongs to whoever used this
+     browser last. Leaving it in place is exactly how a guest, or a freshly
+     created account, or the sign-in screen itself, ended up showing the
+     previous person's board. */
+  function purgeLocal(){
+    const del=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) del.push(k); }
+    del.forEach(k=>localStorage.removeItem(k));
+  }
+  window.__flowPurgeLocalData = purgeLocal;   /* guest mode calls this too */
+
   try{
+    /* First: does this server run the accounts system, and are we signed in?
+       /api/auth/me answers both — 200 with a user means signed in; 200 with
+       user:null and needsSetup:false means accounts exist but nobody is
+       signed in on this device. */
+    let accountsExist=false, signedIn=false;
+    try{
+      const me=new XMLHttpRequest(); me.open('GET', DB_API+'/auth/me', false); me.send();
+      if(me.status===200){
+        const j=JSON.parse(me.responseText||'{}');
+        if(typeof j.ok!=='undefined'){
+          if(j.user){ accountsExist=true; signedIn=true; }
+          else if(!j.needsSetup){ accountsExist=true; signedIn=false; }
+        }
+      } else if(me.status===401){ accountsExist=true; signedIn=false; }
+    }catch(e){ /* no accounts module — fall through to open mode */ }
+
+    if(accountsExist){
+      /* The device cache is never trustworthy across accounts. Clear it, then:
+         - anonymous (guest or sign-in screen): stop here, the app renders the
+           blank template and nothing personal is shown;
+         - signed in: load ONLY this account's data straight from the server,
+           with no merge of whatever the device happened to be holding. */
+      purgeLocal();
+      if(!signedIn) return;
+      const xhr=new XMLHttpRequest(); xhr.open('GET', DB_API+'/all', false); xhr.send();
+      if(xhr.status!==200) return;
+      const all=JSON.parse(xhr.responseText);
+      window.__FLOW_ALL=all;
+      Object.keys(all).forEach(k=>{ if(k.indexOf('ld_')===0 && all[k]!=null) localStorage.setItem(k, all[k]); });
+      window.__DB_ON=true;
+      return;
+    }
+
+    /* ---- Open mode: no accounts installed, so localStorage really is the
+       store. This is the original single-user behaviour, unchanged. ---- */
     const xhr = new XMLHttpRequest();
     xhr.open('GET', DB_API+'/all', false); // synchronous: must finish before init reads storage
     xhr.send();

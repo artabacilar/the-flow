@@ -4467,6 +4467,19 @@ const Auth = {
     Auth.user = { email: '', name: 'Guest', owner: false, guest: true };
     Auth.seed = 'template';
 
+    /* A guest must never inherit the previous person's board. The host purges
+       the device cache on any anonymous load, but clear it here too — and drop
+       the host's in-memory copy — so a guest genuinely starts from the blank
+       template no matter how they arrived. */
+    try { if (typeof window.__flowPurgeLocalData === 'function') window.__flowPurgeLocalData(); } catch (e) {}
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('ld_') === 0) localStorage.removeItem(k);
+      }
+    } catch (e) {}
+    try { if (window.jData) window.jData.length = 0; } catch (e) {}
+
     const LS = 'flowguest:';
     DB.get = async (key, fallback) => {
       try {
