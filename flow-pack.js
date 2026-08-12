@@ -1866,6 +1866,22 @@ const Markets = {
       if (pulse && pulse.parentNode) pulse.parentNode.insertBefore(strip, pulse.nextSibling);
       else feed.insertBefore(strip, feed.firstChild);
     }
+    /* On the phone the database pill and the save line no longer live in the
+       header — the top of the screen belongs to Today, not to diagnostics.
+       They sit here instead, right under the market strip. The host's own
+       updateDbIndicator()/S.saved() write into these ids exactly as they do
+       the header pair, so there is one source of truth and two mounts. */
+    if (!$('#flow-dbline', feed)) {
+      const dbl = document.createElement('div');
+      dbl.id = 'flow-dbline';
+      dbl.className = 'flow-td flow-dbline';
+      dbl.innerHTML = '<span class="dbind" id="dbInd3"></span><span class="saveind" id="saveInd3"></span>';
+      strip.parentNode.insertBefore(dbl, strip.nextSibling);
+      /* The host may have painted its indicators before this node existed —
+         ask it to write them again now that there is somewhere to write. */
+      try { if (typeof updateDbIndicator === 'function') updateDbIndicator(); } catch (e) {}
+      try { if (typeof S !== 'undefined' && S && typeof S.saved === 'function') S.saved(); } catch (e) {}
+    }
     const d = Markets.data;
     const q = (d && d.quotes) || {};
     const list = (Markets.watch || Markets.DEFAULT).filter(s => Markets.LABEL[s]);

@@ -502,6 +502,15 @@
 .flow-mkt-tile .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .flow-mkt-note { margin-top: 6px; font-size: 11.5px; color: var(--f-muted); }
 
+/* ---------- database status line, inside Today ----------------------------
+ * The phone's only copy of the pill and the save line — the header cluster is
+ * hidden there. On desktop the header still carries them, so this line would
+ * be a duplicate; it stays phone-only. .dbind/.saveind styling is the host's.
+ * ------------------------------------------------------------------------- */
+.flow-dbline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.flow-dbline .saveind { margin-top: 0; text-align: left; }
+@media (min-width: 761px) { .flow-dbline { display: none; } }
+
 /* ---------- shared-task inbox -------------------------------------------- */
 .flow-inbox-row {
   border: 1px solid var(--f-line); border-radius: var(--f-radius-sm);

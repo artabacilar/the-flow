@@ -50,6 +50,10 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:1300px;margin:0 auto;-webkit-font-smoothing:antialiased;letter-spacing:-0.01em;}
 body{background:radial-gradient(1200px 600px at 50% -200px,#15171d 0%,#0a0b0d 60%);}
+/* The page declares viewport-fit=cover, so on a notched iPhone the area behind
+   the status bar is painted by the ROOT element, not by body. Without this it
+   renders as the default white canvas — the white band above the header. */
+html{background:#0a0b0d;}
 
 /* ── Header ── */
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
@@ -416,12 +420,19 @@ canvas{width:100%;height:120px;}
 .jrow .j-cat{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
 .jrow .j-txt{flex:1;line-height:1.4;}
 .banner{background:rgba(255,107,107,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:12px 16px;font-size:13px;margin-bottom:16px;display:none;}
-.saveind{font-size:11px;color:var(--muted);margin-top:4px;text-align:right;}
+/* The header's right-hand column. Every child used to pick its own edge —
+   .datebadge was a block and stretched to the column width while keeping its
+   text left, .dbind shrink-wrapped, .saveind and .backupbtns went right. Four
+   children, three alignments, stacked. One flex column with a single
+   align-items setting is the whole fix: the children now shrink-wrap and share
+   an edge, and the column stops resizing as the .dbind text grows. */
+.headmeta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+.saveind{font-size:11px;color:var(--muted);text-align:right;}
 .saveind b{color:var(--green);}
-.dbind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-top:6px;text-align:right;padding:3px 9px;border-radius:100px;border:1px solid var(--border);display:inline-block;}
+.dbind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:3px 9px;border-radius:100px;border:1px solid var(--border);}
 .dbind.on{color:var(--green);border-color:rgba(0,232,138,.4);}
 .dbind.off{color:var(--muted);}
-.backupbtns{display:flex;gap:6px;justify-content:flex-end;margin-top:6px;}
+.backupbtns{display:flex;gap:6px;justify-content:flex-end;}
 .backupbtns button,.backupbtns label{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
 .backupbtns button:hover,.backupbtns label:hover{border-color:var(--accent);color:var(--text);}
 
@@ -448,12 +459,29 @@ canvas{width:100%;height:120px;}
 .mobilenav{display:none;}
 .moresheet,.morebackdrop{display:none;}
 @media(max-width:760px){
-  body{padding:14px 14px calc(74px + env(safe-area-inset-bottom));}
+  /* Every safe-area inset in this file used to be -bottom. Nothing reserved the
+     TOP inset, so on a notched iPhone the first row of the header — the search
+     button and the avatar — sat underneath the status bar, where iOS eats the
+     touches. That is why the profile button could be seen but not tapped. The
+     side insets matter in landscape for the same reason. */
+  body{
+    padding-top:calc(14px + env(safe-area-inset-top));
+    padding-left:calc(14px + env(safe-area-inset-left));
+    padding-right:calc(14px + env(safe-area-inset-right));
+    padding-bottom:calc(74px + env(safe-area-inset-bottom));
+  }
   .tabs{display:none;}                 /* top pill tabs hidden on phone */
   .header{margin-bottom:14px;}
   .header h1{font-size:22px;}
   .header .sub{display:none;}
   .header .datebadge{display:none;}
+
+  /* The database pill, the save line and the Backup/Restore pair are
+     diagnostics. On a phone they were the first thing above the tab strip,
+     pushing the actual content below the fold. Backup and Restore already
+     exist inside the Journal tab, so the header copies here were duplicates —
+     the status moves down there with them, next to the buttons it describes. */
+  .headmeta{display:none;}
   .section-header{font-size:19px;}
   .mobilenav{
     display:flex;position:fixed;left:0;right:0;bottom:0;z-index:900;
@@ -690,7 +718,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     </h1>
     <div class="sub">7 Habits Compass · Priorities · Training · Diet · Sleep · Habits · Mood · Money · Time · Journal</div>
   </div>
-  <div>
+  <div class="headmeta">
     <div class="datebadge" id="dateBadge"></div>
     <div class="dbind" id="dbInd" title="Where your data is being saved"></div>
     <div class="saveind" id="saveInd"></div>
@@ -938,6 +966,11 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       <option value="time">⏱️ Time</option>
     </select>
     <span style="flex:1"></span>
+    <!-- Where the data actually lives, stated next to the buttons that move it
+         around. On a phone this is the only place it appears; on desktop the
+         header keeps its copy too. Both are written by updateDbIndicator(). -->
+    <div class="dbind" id="dbInd2" title="Where your data is being saved"></div>
+    <div class="saveind" id="saveInd2"></div>
     <button class="btn btn-ghost" id="jnExport">💾 Export backup (JSON)</button>
     <label class="btn btn-ghost" for="jnImportFile" style="cursor:pointer;">📥 Import backup</label>
     <input type="file" id="jnImportFile" accept=".json" style="display:none;">
@@ -1363,7 +1396,12 @@ const S = {
   ok:true,
   get(k, def){ try{ const v=localStorage.getItem('ld_'+k); return v!==null?JSON.parse(v):def; }catch(e){ return def; } },
   set(k, v){ const s=JSON.stringify(v); try{ localStorage.setItem('ld_'+k, s); S.saved(); }catch(e){ S.ok=false; const b=document.getElementById('storageBanner'); if(b) b.style.display='block'; } dbSet('ld_'+k, s); },
-  saved(){ const el=document.getElementById('saveInd'); if(el) el.innerHTML='<b>✓ saved</b> '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+(typeof jData!=='undefined'?jData.length:0)+' journal entries'; }
+  /* Written to both the header indicator (desktop) and the one beside the
+     backup buttons in the Journal tab (the only one a phone shows). */
+  saved(){
+    const html='<b>✓ saved</b> '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+(typeof jData!=='undefined'?jData.length:0)+' journal entries';
+    ['saveInd','saveInd2','saveInd3'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
+  }
 };
 // Storage self-test — warns instead of silently losing data
 try{ localStorage.setItem('ld__t','1'); if(localStorage.getItem('ld__t')!=='1') S.ok=false; localStorage.removeItem('ld__t'); }catch(e){ S.ok=false; }
@@ -1415,14 +1453,17 @@ document.querySelectorAll('.tab').forEach(t=>{
 // ════════════════════════════════════════════
 // TRAINING (original code, preserved)
 // ════════════════════════════════════════════
+/* `name` is the day label the card header prints. It was missing from every
+   entry while tRender() read `d.name`, so each card rendered the literal
+   string "undefined" above its title. */
 const PLAN = [
-  {key:'mon',title:'Push — Chest, Shoulders, Triceps',tag:'Push',time:'18:00',type:'hyper'},
-  {key:'tue',title:'Pull — Back and Biceps',tag:'Pull',time:'18:00',type:'hyper'},
-  {key:'wed',title:'Rest / Active Recovery',tag:'Rest',time:'',type:'rest'},
-  {key:'thu',title:'Legs',tag:'Legs',time:'18:00',type:'hyper'},
-  {key:'fri',title:'Upper Body',tag:'Upper',time:'18:00',type:'hyper'},
-  {key:'sat',title:'Conditioning or a long walk',tag:'Cardio',time:'',type:'hyper'},
-  {key:'sun',title:'Rest',tag:'Rest',time:'',type:'rest'}
+  {key:'mon',name:'Mon',title:'Push — Chest, Shoulders, Triceps',tag:'Push',time:'18:00',type:'hyper'},
+  {key:'tue',name:'Tue',title:'Pull — Back and Biceps',tag:'Pull',time:'18:00',type:'hyper'},
+  {key:'wed',name:'Wed',title:'Rest / Active Recovery',tag:'Rest',time:'',type:'rest'},
+  {key:'thu',name:'Thu',title:'Legs',tag:'Legs',time:'18:00',type:'hyper'},
+  {key:'fri',name:'Fri',title:'Upper Body',tag:'Upper',time:'18:00',type:'hyper'},
+  {key:'sat',name:'Sat',title:'Conditioning or a long walk',tag:'Cardio',time:'',type:'hyper'},
+  {key:'sun',name:'Sun',title:'Rest',tag:'Rest',time:'',type:'rest'}
 ];
 const CORE_KEYS=PLAN.filter(d=>d.core).map(d=>d.key);
 const DAY_KEYS=PLAN.map(d=>d.key);
@@ -3052,16 +3093,21 @@ document.getElementById('jnImportFile').addEventListener('change',function(){
 
 // ── Local database status indicator ──
 function updateDbIndicator(){
-  const el=document.getElementById('dbInd'); if(!el) return;
+  /* Two indicators now: the header one, and the one beside the backup buttons
+     in the Journal tab (the only one a phone shows). Write to whichever of
+     them exist rather than bailing on the first that is missing. */
+  const els=['dbInd','dbInd2','dbInd3'].map(id=>document.getElementById(id)).filter(Boolean);
+  if(!els.length) return;
+  const set=(cls,text,title)=>els.forEach(el=>{ el.className=cls; el.textContent=text; el.title=title; });
   if(window.__DB_ON){
-    el.className='dbind on';
-    el.textContent='🟢 Database'+(window.__DB_ENGINE?' · '+window.__DB_ENGINE:'');
-    el.title='Saving to your local database on disk (life-os-server.js). Safe across every copy of this file.';
-    try{ fetch(DB_API+'/status').then(r=>r.json()).then(s=>{ window.__DB_ENGINE=s.engine; el.textContent='🟢 Database · '+s.engine+' · '+s.keys+' sets'; }).catch(()=>{}); }catch(e){}
+    set('dbind on',
+        '🟢 Database'+(window.__DB_ENGINE?' · '+window.__DB_ENGINE:''),
+        'Saving to your local database on disk (life-os-server.js). Safe across every copy of this file.');
+    try{ fetch(DB_API+'/status').then(r=>r.json()).then(s=>{ window.__DB_ENGINE=s.engine; els.forEach(el=>{ el.textContent='🟢 Database · '+s.engine+' · '+s.keys+' sets'; }); }).catch(()=>{}); }catch(e){}
   } else {
-    el.className='dbind off';
-    el.textContent='⚪ This file only';
-    el.title='The database server is not running — data is saving inside THIS file only. Start life-os-server.js to sync across copies.';
+    set('dbind off',
+        '⚪ This file only',
+        'The database server is not running — data is saving inside THIS file only. Start life-os-server.js to sync across copies.');
   }
 }
 
