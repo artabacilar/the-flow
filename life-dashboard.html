@@ -391,20 +391,13 @@ canvas{width:100%;height:120px;}
 .h7 b{color:var(--text);display:block;font-size:13px;margin-bottom:3px;}
 
 /* ── Quadrants ──
-   Two tight columns: Q1 above Q3 on the left, Q2 above Q4 on the right. The
-   old auto-fit grid packed three across on a wide screen and wrapped Q4 under
-   Q1, leaving Q3 with a tall empty column — the "weird fit". Two columns give
-   each quadrant ~half the width (more room for the task text) and let Q3/Q4
-   sit directly under Q1/Q2. */
-.qwrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:start;}
-.qcol{display:flex;flex-direction:column;gap:14px;min-width:0;}
-@media(max-width:760px){
-  /* On a phone one column, in the natural Q1→Q2→Q3→Q4 order. The column
-     wrappers dissolve so the boxes flow directly and `order` sequences them. */
-  .qwrap{display:flex;flex-direction:column;}
-  .qcol{display:contents;}
-  .qbox.q1{order:1}.qbox.q2{order:2}.qbox.q3{order:3}.qbox.q4{order:4}
-}
+   A true 2×2 grid, exactly like the Week Compass cards: Q1│Q2 on the top row,
+   Q3│Q4 on the bottom row. Grid rows share a height, so Q1/Q2 line up and
+   Q3/Q4 line up regardless of how many items each holds — the boxes stretch to
+   the same height per row and align perfectly. */
+.qwrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:stretch;}
+.qbox{min-width:0;}
+@media(max-width:760px){ .qwrap{grid-template-columns:1fr;} }
 
 .qbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;border-top:3px solid var(--border);}
 .qbox.q1{border-top-color:var(--red);}
@@ -906,14 +899,10 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   <div class="section-sub">Pre-filled from your whiteboard. Effectiveness = living in Q2. Do Q1 now, schedule Q2 deliberately, minimize & batch Q3, keep Q4 as earned rewards. "→ Rock" sends an item to the week you're viewing in the Compass.</div>
   <a href="languages" class="btn btn-green" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px;">🗣️ Study Languages — open LinguaCoach</a>
   <div class="qwrap">
-    <div class="qcol">
-      <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
-      <div class="qbox q3"><h3>📞 Q3 — Urgent & Not Important</h3><div class="qsub">MINIMIZE — delegate or batch into one slot</div><div id="qlist3"></div><div class="qadd"><input type="text" id="qin3" placeholder="Add..."><button data-q="3">+</button></div></div>
-    </div>
-    <div class="qcol">
-      <div class="qbox q2"><h3>🌱 Q2 — Not Urgent & Important</h3><div class="qsub">SCHEDULE — this is where you win</div><div id="qlist2"></div><div class="qadd"><input type="text" id="qin2" placeholder="Add..."><button data-q="2">+</button></div></div>
-      <div class="qbox q4"><h3>🎉 Q4 — Not Urgent & Not Important</h3><div class="qsub">EARNED rewards — after the rocks are placed</div><div id="qlist4"></div><div class="qadd"><input type="text" id="qin4" placeholder="Add..."><button data-q="4">+</button></div></div>
-    </div>
+    <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
+    <div class="qbox q2"><h3>🌱 Q2 — Not Urgent & Important</h3><div class="qsub">SCHEDULE — this is where you win</div><div id="qlist2"></div><div class="qadd"><input type="text" id="qin2" placeholder="Add..."><button data-q="2">+</button></div></div>
+    <div class="qbox q3"><h3>📞 Q3 — Urgent & Not Important</h3><div class="qsub">MINIMIZE — delegate or batch into one slot</div><div id="qlist3"></div><div class="qadd"><input type="text" id="qin3" placeholder="Add..."><button data-q="3">+</button></div></div>
+    <div class="qbox q4"><h3>🎉 Q4 — Not Urgent & Not Important</h3><div class="qsub">EARNED rewards — after the rocks are placed</div><div id="qlist4"></div><div class="qadd"><input type="text" id="qin4" placeholder="Add..."><button data-q="4">+</button></div></div>
   </div>
 </div>
 

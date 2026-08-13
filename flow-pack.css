@@ -869,13 +869,11 @@
   padding:13px 15px;font-size:14.5px;color:var(--text2,#c3c8d4);
 }
 
-/* Today was written as a 560px phone column (#tab-today{max-width:560px}) and
-   was effectively unreachable on a desktop, since the host hides its own Today
-   pill outside the installed app. Now that it is the landing screen it needs
-   room, or it floats in the middle of the page. This widens the column; giving
-   it two columns and the context rail is the next phase, not this one. */
+/* Today is the landing screen and should use the full content width, exactly
+   like Week Compass and Priorities — no narrower column, no centring. (The
+   host rule already sets 100%; this used to clamp it to 880px on desktop.) */
 @media (min-width:1181px){
-  body.fn-on #tab-today{max-width:880px;}
+  body.fn-on #tab-today{max-width:100%;}
 }
 
 @media print{
