@@ -371,7 +371,23 @@ async function gate(req, res) {
     return true;
   }
 
-  /* ---- optional extras (prices, assistant) ----
+  /* ---- market prices: public ----
+     Prices are public market data (BTC/USD/EUR/gold), not anyone's personal
+     information, and the server caches them so an anonymous caller cannot
+     hammer the upstreams. Serving them without a session is what lets the
+     Today strip show real numbers for a guest and in "have a look around".
+     The prices handler only uses ctx.json — no per-user reader, no counter. */
+  if (extras && p === '/api/flow/prices') {
+    try {
+      const done = await extras.handle(p, req, res, { json });
+      if (done) return true;
+    } catch (e) {
+      json(res, 502, { error: 'Prices are unavailable right now.' });
+      return true;
+    }
+  }
+
+  /* ---- other extras (the assistant) ----
      Signed in only: these cost upstream quota or money, so an anonymous
      caller must never be able to spend either. */
   if (extras && p.indexOf('/api/flow/') === 0) {

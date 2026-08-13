@@ -17,6 +17,10 @@
 <!-- Failsafe for the boot veil: whatever happens to the pack, the page shows.
      The pack lifts the veil itself the moment the navigation chrome exists. -->
 <script>setTimeout(function(){document.documentElement.classList.add('flow-ready')},4000)</script>
+<!-- Apply the saved colour theme before first paint, so a returning visitor
+     never sees the default flash before their theme loads. The pack reconciles
+     this against the account value once it boots. -->
+<script>try{var t=localStorage.getItem('flowTheme');if(t)document.documentElement.setAttribute('data-flow-theme',t);}catch(e){}</script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -386,8 +390,21 @@ canvas{width:100%;height:120px;}
 .h7{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.5;}
 .h7 b{color:var(--text);display:block;font-size:13px;margin-bottom:3px;}
 
-/* ── Quadrants ── */
-.qwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;margin-bottom:20px;}
+/* ── Quadrants ──
+   Two tight columns: Q1 above Q3 on the left, Q2 above Q4 on the right. The
+   old auto-fit grid packed three across on a wide screen and wrapped Q4 under
+   Q1, leaving Q3 with a tall empty column — the "weird fit". Two columns give
+   each quadrant ~half the width (more room for the task text) and let Q3/Q4
+   sit directly under Q1/Q2. */
+.qwrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:start;}
+.qcol{display:flex;flex-direction:column;gap:14px;min-width:0;}
+@media(max-width:760px){
+  /* On a phone one column, in the natural Q1→Q2→Q3→Q4 order. The column
+     wrappers dissolve so the boxes flow directly and `order` sequences them. */
+  .qwrap{display:flex;flex-direction:column;}
+  .qcol{display:contents;}
+  .qbox.q1{order:1}.qbox.q2{order:2}.qbox.q3{order:3}.qbox.q4{order:4}
+}
 
 .qbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;border-top:3px solid var(--border);}
 .qbox.q1{border-top-color:var(--red);}
@@ -659,7 +676,10 @@ canvas{width:100%;height:120px;}
 /* ═══════════════════════════════════════════════════════
    TODAY FEED — native iOS-style daily screen
 ═══════════════════════════════════════════════════════ */
-#tab-today{max-width:560px;margin:0 auto;}
+/* Today used to be a narrow 560px iOS-style column centred in the page, which
+   on desktop left it stranded in the middle with huge empty margins while
+   every other tab used the full width. Match the rest of the app. */
+#tab-today{max-width:100%;margin:0;}
 .td-head{display:flex;justify-content:space-between;align-items:flex-start;padding:4px 2px 22px;}
 .td-head .td-date{font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
 .td-head .td-title{font-size:38px;font-weight:800;letter-spacing:-0.03em;line-height:1;}
@@ -886,10 +906,14 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   <div class="section-sub">Pre-filled from your whiteboard. Effectiveness = living in Q2. Do Q1 now, schedule Q2 deliberately, minimize & batch Q3, keep Q4 as earned rewards. "→ Rock" sends an item to the week you're viewing in the Compass.</div>
   <a href="languages" class="btn btn-green" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px;">🗣️ Study Languages — open LinguaCoach</a>
   <div class="qwrap">
-    <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
-    <div class="qbox q2"><h3>🌱 Q2 — Not Urgent & Important</h3><div class="qsub">SCHEDULE — this is where you win</div><div id="qlist2"></div><div class="qadd"><input type="text" id="qin2" placeholder="Add..."><button data-q="2">+</button></div></div>
-    <div class="qbox q3"><h3>📞 Q3 — Urgent & Not Important</h3><div class="qsub">MINIMIZE — delegate or batch into one slot</div><div id="qlist3"></div><div class="qadd"><input type="text" id="qin3" placeholder="Add..."><button data-q="3">+</button></div></div>
-    <div class="qbox q4"><h3>🎉 Q4 — Not Urgent & Not Important</h3><div class="qsub">EARNED rewards — after the rocks are placed</div><div id="qlist4"></div><div class="qadd"><input type="text" id="qin4" placeholder="Add..."><button data-q="4">+</button></div></div>
+    <div class="qcol">
+      <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
+      <div class="qbox q3"><h3>📞 Q3 — Urgent & Not Important</h3><div class="qsub">MINIMIZE — delegate or batch into one slot</div><div id="qlist3"></div><div class="qadd"><input type="text" id="qin3" placeholder="Add..."><button data-q="3">+</button></div></div>
+    </div>
+    <div class="qcol">
+      <div class="qbox q2"><h3>🌱 Q2 — Not Urgent & Important</h3><div class="qsub">SCHEDULE — this is where you win</div><div id="qlist2"></div><div class="qadd"><input type="text" id="qin2" placeholder="Add..."><button data-q="2">+</button></div></div>
+      <div class="qbox q4"><h3>🎉 Q4 — Not Urgent & Not Important</h3><div class="qsub">EARNED rewards — after the rocks are placed</div><div id="qlist4"></div><div class="qadd"><input type="text" id="qin4" placeholder="Add..."><button data-q="4">+</button></div></div>
+    </div>
   </div>
 </div>
 

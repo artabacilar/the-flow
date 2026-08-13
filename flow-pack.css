@@ -920,3 +920,93 @@
 .stat .num, .big-n, .fn-rmkt .v, .flow-mkt-tile .v, .td-stat .v{
   font-variant-numeric:tabular-nums;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 30 · Colour themes
+ *
+ * Each theme overrides a handful of custom properties on <html>. Because
+ * html[data-flow-theme="x"] outranks :root, one attribute reskins the whole
+ * app — host tokens (--accent, --purple, the body gradient) and pack tokens
+ * (--f-accent, --f-accent-soft) together. Switching is instant: the picker in
+ * Settings just sets the attribute, so a change shows without any reload.
+ * Available to everyone, including guests and brand-new accounts.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Slate — masculine: cool steel blue on graphite. */
+html[data-flow-theme="slate"]{
+  --accent:#4076f0; --purple:#6d7be6; --teal:#4076f0;
+  --f-accent:#5b8cf0; --f-accent-soft:rgba(91,140,240,0.15); --f-accent-2:#5b8cf0;
+}
+html[data-flow-theme="slate"] body{background:radial-gradient(1200px 600px at 50% -200px,#12151d 0%,#07090d 60%);}
+
+/* Rose — feminine: warm rose and plum. */
+html[data-flow-theme="rose"]{
+  --accent:#ff5f95; --purple:#c56cff; --teal:#ff5f95;
+  --f-accent:#ff7aa8; --f-accent-soft:rgba(255,122,168,0.16); --f-accent-2:#ff7aa8;
+}
+html[data-flow-theme="rose"] body{background:radial-gradient(1200px 600px at 50% -200px,#1b1016 0%,#0a0709 60%);}
+
+/* Cyber — tech: neon cyan and violet on near-black. */
+html[data-flow-theme="cyber"]{
+  --accent:#17d4ff; --purple:#7b5cff; --teal:#17d4ff;
+  --f-accent:#22d3ee; --f-accent-soft:rgba(34,211,238,0.16); --f-accent-2:#22d3ee;
+}
+html[data-flow-theme="cyber"] body{background:radial-gradient(1200px 600px at 50% -200px,#0a1220 0%,#05070e 60%);}
+
+/* Executive — entrepreneur: gold on charcoal. */
+html[data-flow-theme="executive"]{
+  --accent:#d1a94e; --purple:#9a86ff; --teal:#d1a94e;
+  --f-accent:#d8b45f; --f-accent-soft:rgba(216,180,95,0.15); --f-accent-2:#d8b45f;
+}
+html[data-flow-theme="executive"] body{background:radial-gradient(1200px 600px at 50% -200px,#14120b 0%,#090806 60%);}
+
+/* Athlete — sporty: high-energy orange. */
+html[data-flow-theme="athlete"]{
+  --accent:#ff6a2c; --purple:#ff9e3d; --teal:#ff6a2c;
+  --f-accent:#ff7a3c; --f-accent-soft:rgba(255,122,60,0.16); --f-accent-2:#ff7a3c;
+}
+html[data-flow-theme="athlete"] body{background:radial-gradient(1200px 600px at 50% -200px,#170f0a 0%,#0a0705 60%);}
+
+/* Whoop — stark black with a desaturated recovery-green primary. Darker
+   surfaces across the board for that flat, near-black instrument look. */
+html[data-flow-theme="whoop"]{
+  --bg:#000000; --card:#0c0d11; --card2:#131519; --border:#20232b;
+  --accent:#00e6a0; --purple:#1f8bff; --teal:#00e6a0;
+  --f-accent:#00e6a0; --f-accent-soft:rgba(0,230,160,0.14); --f-accent-2:#1f8bff;
+  --f-surface:#0c0d11; --f-surface-2:#131519; --f-plane:#000000; --f-line:rgba(255,255,255,0.08);
+}
+html[data-flow-theme="whoop"] body{background:radial-gradient(900px 500px at 50% -160px,#0a0b0d 0%,#000000 55%);}
+
+/* The pack declares its --f-* tokens on .flow-x, and a property set on an
+   element wins over one inherited from <html> — so the blocks above are
+   shadowed for every pack component. Re-assert the pack tokens at a selector
+   that outranks a bare .flow-x. Host tokens (--accent etc.) live on :root and
+   are already handled by the blocks above. */
+html[data-flow-theme="slate"]     .flow-x{ --f-accent:#5b8cf0; --f-accent-soft:rgba(91,140,240,0.15); --f-accent-2:#5b8cf0; }
+html[data-flow-theme="rose"]      .flow-x{ --f-accent:#ff7aa8; --f-accent-soft:rgba(255,122,168,0.16); --f-accent-2:#ff7aa8; }
+html[data-flow-theme="cyber"]     .flow-x{ --f-accent:#22d3ee; --f-accent-soft:rgba(34,211,238,0.16); --f-accent-2:#22d3ee; }
+html[data-flow-theme="executive"] .flow-x{ --f-accent:#d8b45f; --f-accent-soft:rgba(216,180,95,0.15); --f-accent-2:#d8b45f; }
+html[data-flow-theme="athlete"]   .flow-x{ --f-accent:#ff7a3c; --f-accent-soft:rgba(255,122,60,0.16); --f-accent-2:#ff7a3c; }
+html[data-flow-theme="whoop"]     .flow-x{
+  --f-accent:#00e6a0; --f-accent-soft:rgba(0,230,160,0.14); --f-accent-2:#1f8bff;
+  --f-surface:#0c0d11; --f-surface-2:#131519; --f-plane:#000000; --f-line:rgba(255,255,255,0.08);
+}
+
+/* ── The picker in Settings ── */
+.theme-grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:12px;
+}
+.theme-swatch{
+  display:flex; align-items:center; gap:10px; text-align:left;
+  background:var(--f-surface-2); border:1px solid var(--f-line); border-radius:12px;
+  padding:11px 13px; cursor:pointer; font-family:inherit; color:var(--f-ink); transition:.14s;
+}
+.theme-swatch:hover{ border-color:var(--f-accent); }
+.theme-swatch.on{ border-color:var(--f-accent); box-shadow:0 0 0 1px var(--f-accent) inset; }
+.theme-swatch .sw-dot{
+  width:26px; height:26px; border-radius:50%; flex:0 0 auto;
+  background:radial-gradient(circle at 32% 30%, #fff2, transparent 60%), var(--d);
+  box-shadow:0 0 0 1px rgba(255,255,255,.08) inset;
+}
+.theme-swatch .sw-nm{ font-size:13.5px; font-weight:700; }
+.theme-swatch .sw-sub{ font-size:11px; color:var(--f-muted); margin-left:auto; }

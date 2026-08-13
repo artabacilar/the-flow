@@ -2615,6 +2615,51 @@ const FinanceUI = {
 };
 
 /* =========================================================================
+ * 16b · Colour themes
+ *
+ * One <html data-flow-theme="x"> attribute reskins the whole app (the CSS
+ * does the rest). Switching is instant — no reload — and the choice follows
+ * the account when signed in, or stays on the device for a guest. The value
+ * lives under a non-ld_ key so the privacy purge never wipes it.
+ * ====================================================================== */
+const Theme = {
+  KEY: 'flow:theme',
+  LS: 'flowTheme',
+  LIST: [
+    { id: '',          name: 'Flow',      sub: 'default',      dot: '#0093e7', tc: '#0a0b0d' },
+    { id: 'slate',     name: 'Slate',     sub: 'masculine',    dot: '#4076f0', tc: '#07090d' },
+    { id: 'rose',      name: 'Rose',      sub: 'feminine',     dot: '#ff5f95', tc: '#0a0709' },
+    { id: 'cyber',     name: 'Cyber',     sub: 'tech',         dot: '#17d4ff', tc: '#05070e' },
+    { id: 'executive', name: 'Executive', sub: 'entrepreneur', dot: '#d1a94e', tc: '#090806' },
+    { id: 'athlete',   name: 'Athlete',   sub: 'sporty',       dot: '#ff6a2c', tc: '#0a0705' },
+    { id: 'whoop',     name: 'Whoop',     sub: 'stark black',  dot: '#00e6a0', tc: '#000000' }
+  ],
+  meta(id) { return Theme.LIST.find(t => t.id === (id || '')) || Theme.LIST[0]; },
+  current() { return document.documentElement.getAttribute('data-flow-theme') || ''; },
+
+  /* Paint it now. `save !== false` also persists it. */
+  apply(id, save) {
+    id = id || '';
+    const root = document.documentElement;
+    if (id) root.setAttribute('data-flow-theme', id);
+    else root.removeAttribute('data-flow-theme');
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', Theme.meta(id).tc);
+    try { localStorage.setItem(Theme.LS, id); } catch (e) {}     /* survives the ld_* purge */
+    if (save !== false) { try { DB.set(Theme.KEY, id); } catch (e) {} }
+  },
+
+  /* Reconcile at boot: the account's choice wins if signed in, else whatever
+     this device last used (already applied pre-paint by the inline script). */
+  async init() {
+    let id = null;
+    try { if (window.__DB_ON) id = await DB.get(Theme.KEY, null); } catch (e) {}
+    if (id == null) { try { id = localStorage.getItem(Theme.LS); } catch (e) {} }
+    Theme.apply(id || '', false);
+  }
+};
+
+/* =========================================================================
  * 17 · Settings tab
  * ====================================================================== */
 const SettingsUI = {
@@ -2626,6 +2671,17 @@ const SettingsUI = {
       <div style="margin:6px 0 2px">
         <div class="flow-label">Preferences · integrations · data</div>
         <div class="flow-hero" style="font-size:38px">Settings</div>
+      </div>
+
+      <div class="flow-card">
+        <h3>🎨 Appearance</h3>
+        <p class="flow-sub">Pick a colour theme. It applies the instant you tap it — no reload — and is saved to your account (or kept on this device while you're just looking around).</p>
+        <div class="theme-grid">
+          ${Theme.LIST.map(t => `<button type="button" class="theme-swatch${Theme.current() === t.id ? ' on' : ''}" data-theme="${t.id}">
+            <span class="sw-dot" style="--d:${t.dot}"></span>
+            <span class="sw-nm">${t.name}</span><span class="sw-sub">${t.sub}</span>
+          </button>`).join('')}
+        </div>
       </div>
 
       <div class="flow-grid c2">
@@ -2837,9 +2893,24 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
             $$('[data-flow-timed]').forEach(r => r.removeAttribute('data-flow-timed'));
           }
         }
+        /* Reflect the change on the app straight away — no reload. The name
+           feeds the planner tab and greetings; currency and budgets feed the
+           money views; the rest is picked up by a light repaint. */
+        try { Planner.applyTabName(); } catch (e) {}
+        try { if (window.Flow && typeof window.Flow.refresh === 'function') window.Flow.refresh(); } catch (e) {}
+        try { if (typeof window.renderToday === 'function') window.renderToday(); } catch (e) {}
         toast('Saved ✓', null, 1200);
       };
       el.addEventListener('change', commit);
+    });
+
+    /* Colour-theme swatches — apply instantly, persist, and re-mark the row. */
+    section.querySelectorAll('[data-theme]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        Theme.apply(btn.getAttribute('data-theme'));
+        section.querySelectorAll('[data-theme]').forEach(b =>
+          b.classList.toggle('on', b === btn));
+      });
     });
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
@@ -5521,6 +5592,9 @@ async function boot() {
   /* Navigation first. It needs the pills, which exist by now, and nothing
      else — so it must not queue behind two network calls. */
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
+  /* Reconcile the colour theme (account value wins over the device default the
+     inline script already painted). Never blocks the veil below. */
+  try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
   /* The chrome exists — lift the boot veil. The host holds the page invisible
      until this class lands, so nobody ever sees the pre-pack layout flash by
      before the real navigation appears. (The host also lifts it on a timer,
