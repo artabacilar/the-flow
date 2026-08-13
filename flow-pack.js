@@ -2339,6 +2339,17 @@ const Planner = {
     section.querySelectorAll('[data-cancel]').forEach(b => {
       b.addEventListener('click', () => { Planner.editing = null; Planner.render(section); });
     });
+    section.querySelectorAll('[data-star]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const k = b.getAttribute('data-star');
+        const cur = Schedule.get(k) || {};
+        Schedule.put(k, { priority: !cur.priority });
+        await Schedule.saveNow();
+        try { TodayPlus.apply(); } catch (e) {}
+        Planner.render(section);
+        toast(cur.priority ? 'Removed from Today priorities' : 'Pinned to Today priorities ★');
+      });
+    });
     section.querySelectorAll('[data-ef="text"]').forEach(inp => {
       inp.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); const li = inp.closest('li'); saveEdit(li.getAttribute('data-row'), li); }
@@ -2358,6 +2369,7 @@ const Planner = {
         <span class="tm ${r.time ? '' : 'none'}">${esc(r.time || '—')}</span>
         <span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}${r.dur ? ' · ' + r.dur + ' min' : ''}</small></span>
         <span class="flow-row">
+          <button class="flow-btn ghost sm" data-star="${esc(r.key)}" title="${r.priority ? 'On your Today priorities — tap to unpin' : 'Pin to your Today priorities'}"${r.priority ? ' style="color:#f5c451"' : ''}>${r.priority ? '★' : '☆'}</button>
           <input type="checkbox" data-done="${esc(r.key)}" ${r.done ? 'checked' : ''} title="Mark done">
           ${r.source === 'planner' ? `<button class="flow-btn ghost sm" data-del="${esc(r.key)}" title="Remove">✕</button>` : ''}
         </span>
@@ -2374,21 +2386,24 @@ const Planner = {
     const editing = Planner.editing;
     const del = (k) => `<button class="flow-btn ghost sm" data-del="${esc(k)}" title="Delete this task">✕</button>`;
     const ed = (k) => `<button class="flow-btn ghost sm" data-edit="${esc(k)}" title="Edit this task">✏️</button>`;
+    const star = (r) => `<button class="flow-btn ghost sm" data-star="${esc(r.key)}" title="${r.priority ? 'On your Today priorities — tap to unpin' : 'Pin to your Today priorities'}"${r.priority ? ' style="color:#f5c451"' : ''}>${r.priority ? '★' : '☆'}</button>`;
+    /* The row's <li> is normally a grid (time | text | actions); inline
+       display:flex overrides that so the edit fields lay out on one wrapping
+       line instead of being crushed into the narrow first column. */
     const editRow = (r) =>
-      `<li class="editing" data-row="${esc(r.key)}">` +
-      `<span class="flow-row" style="gap:6px;width:100%;flex-wrap:wrap">` +
-      `<input class="flow-in grow" data-ef="text" value="${esc(r.text)}" placeholder="Task">` +
-      `<input class="flow-in" type="date" data-ef="date" value="${esc(r.date || '')}" style="width:148px">` +
-      `<input class="flow-in" type="time" data-ef="time" value="${esc(r.time || '')}" style="width:104px">` +
+      `<li class="editing" data-row="${esc(r.key)}" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">` +
+      `<input class="flow-in" data-ef="text" value="${esc(r.text)}" placeholder="Task" style="flex:1 1 180px;min-width:150px">` +
+      `<input class="flow-in" type="date" data-ef="date" value="${esc(r.date || '')}" style="flex:0 0 auto;width:150px">` +
+      `<input class="flow-in" type="time" data-ef="time" value="${esc(r.time || '')}" style="flex:0 0 auto;width:112px">` +
       `<button class="flow-btn primary sm" data-save="${esc(r.key)}">Save</button>` +
       `<button class="flow-btn ghost sm" data-cancel="1">Cancel</button>` +
-      `</span></li>`;
+      `</li>`;
     const row = (r, timeText) =>
       r.key === editing ? editRow(r) :
       `<li class="${r.done ? 'done' : ''}">` +
       `<span class="tm ${r.time ? '' : 'none'}">${esc(timeText)}</span>` +
       `<span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span>` +
-      `<span class="flow-row">${ed(r.key)}${del(r.key)}</span></li>`;
+      `<span class="flow-row">${star(r)}${ed(r.key)}${del(r.key)}</span></li>`;
 
     let html = '';
     if (off === 0 && overdue.length) {
@@ -4310,11 +4325,16 @@ const TodayPlus = {
     const open = items.filter(i => i && !i.done);
     const q1 = open.filter(i => i.q === 1);
     const q2 = open.filter(i => i.q === 2);
-    let overdue = [];
+    let overdue = [], flagged = [];
     try {
-      overdue = Schedule.scheduled().filter(r => r && !r.done && r.date < today());
-    } catch (e) { overdue = []; }
-    return { q1, q2, overdue, count: q1.length + overdue.length };
+      const sched = Schedule.scheduled().filter(r => r && !r.done);
+      overdue = sched.filter(r => r.date < today());
+      /* Anything the user starred in the Planner that hasn't slipped yet — its
+         own "priority" line on Today, so a task shows up here without waiting
+         to become overdue. */
+      flagged = sched.filter(r => r.priority && r.date >= today());
+    } catch (e) { overdue = []; flagged = []; }
+    return { q1, q2, overdue, flagged, count: q1.length + overdue.length + flagged.length };
   },
 
   habits() {
@@ -4403,12 +4423,13 @@ const TodayPlus = {
       `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${esc(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
     const pbody = [
       ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
+      ...(pri.flagged || []).slice(0, 5).map(r => prow('★ ' + r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
       ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', `data-q="${esc(i.id)}"`)),
       ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', `data-q="${esc(i.id)}"`))
     ].join('');
     pblock.innerHTML =
-      `<div class="flow-td-head"><span class="l">Priorities</span><span class="c">${pri.q1.length + pri.q2.length} open</span></div>` +
-      (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Add them in 🎯 Priorities.</div>`);
+      `<div class="flow-td-head"><span class="l">Priorities</span><span class="c">${pri.q1.length + pri.q2.length + (pri.flagged || []).length} open</span></div>` +
+      (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Star a Planner task or add them in 🎯 Priorities.</div>`);
     const rocks = $('.td-rocks', feed);
     if (rocks && rocks.nextSibling) feed.insertBefore(pblock, rocks.nextSibling); else feed.appendChild(pblock);
 
