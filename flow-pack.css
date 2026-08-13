@@ -535,6 +535,18 @@
 }
 .flow-ask-turn.user .txt { background: var(--f-accent-soft); border-color: transparent; }
 
+/* Ask composer on a phone. Side by side, the send button became a big round
+   blob crammed against a tall textarea and the placeholder clipped at the
+   edge. Stack them: full-width textarea, a normal full-width send button
+   beneath it — a proper chat composer. Desktop keeps the inline row. */
+@media (max-width: 760px) {
+  #tab-ask .ask-compose { flex-direction: column; align-items: stretch; gap: 10px; }
+  #tab-ask .ask-compose #ask-in { width: 100%; }
+  #tab-ask .ask-compose #ask-go {
+    width: 100%; border-radius: 14px; padding: 13px 16px; font-size: 15px;
+  }
+}
+
 /* ---------- guest mode ---------------------------------------------------- */
 .fa-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--f-muted); font-size: 12px; }
 .fa-or::before, .fa-or::after { content: ''; flex: 1; height: 1px; background: var(--f-line); }

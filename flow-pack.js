@@ -2030,7 +2030,7 @@ const Ask = {
       <div class="flow-card">
         <p class="flow-sub">It can see your priorities, week, journal, training, habits, sleep and spending, and answer questions about them. It cannot add or edit anything — that is deliberate.</p>
         <div id="ask-log" class="flow-ask-log"></div>
-        <div class="flow-row" style="margin-top:12px">
+        <div class="flow-row ask-compose" style="margin-top:12px">
           <textarea class="flow-in grow" id="ask-in" rows="2" placeholder="What should I focus on this week?"></textarea>
           <button class="flow-btn primary" id="ask-go">Ask</button>
         </div>
