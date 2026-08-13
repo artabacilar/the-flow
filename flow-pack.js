@@ -4527,6 +4527,117 @@ const TodayPlus = {
 };
 
 /* =========================================================================
+ * 20b · Compass Plus — scheduled tasks on the Week Compass, and a calendar
+ *       export for them.
+ *
+ * The host's Week Compass day cards already show training, meals and big
+ * rocks. This wraps the host renderCompass() and, once it has painted #cGrid,
+ * drops the pack's own Schedule entries (anything you gave a date — Planner
+ * tasks and items time-blocked from any tab) onto the matching day as chips,
+ * so you can see what you planned for each day and at what time. It also adds
+ * a one-click "send these to my calendar" control to the host's own export
+ * panel, reusing the pack's tested Calendar exporter.
+ * ====================================================================== */
+const CompassPlus = {
+  host(name) { try { return eval(name); } catch (e) { return undefined; } },
+
+  /* Local YYYY-MM-DD for a Date, matching the host's own localISO. */
+  iso(d) {
+    const f = CompassPlus.host('localISO');
+    if (typeof f === 'function') { try { return f(d); } catch (e) {} }
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  },
+
+  apply() {
+    const grid = document.getElementById('cGrid');
+    if (!grid || !grid.children.length) return;
+    grid.querySelectorAll('.flow-cchip').forEach(n => n.remove());
+
+    let dates;
+    try { dates = CompassPlus.host('cWeekDates')(); } catch (e) { return; }
+    if (!Array.isArray(dates) || !dates.length) return;
+
+    const cells = Array.from(grid.children);
+    dates.forEach((d, i) => {
+      const cell = cells[i];
+      if (!cell) return;
+      const iso = CompassPlus.iso(d);
+      let items = [];
+      try { items = Schedule.onDate(iso); } catch (e) { items = []; }
+      items
+        .slice()
+        .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
+        .forEach(r => {
+          const chip = document.createElement('div');
+          chip.className = 'chip flow-cchip' + (r.done ? ' done' : '');
+          chip.setAttribute('data-k', r.key);
+          chip.title = (Rollup.labelFor(r.tab) || r.tab || 'task') + ' — click to toggle done';
+          chip.style.cssText = 'background:#123a3d;color:#5eead4;cursor:pointer;border:1px solid transparent;' + (r.done ? 'opacity:.45;text-decoration:line-through;' : '');
+          chip.textContent = '📌 ' + (r.time ? r.time + ' ' : '') + r.text;
+          cell.appendChild(chip);
+        });
+    });
+
+    grid.querySelectorAll('.flow-cchip').forEach(ch => {
+      ch.addEventListener('click', async () => {
+        const k = ch.getAttribute('data-k');
+        const cur = Schedule.get(k);
+        if (!cur) return;
+        Schedule.put(k, { done: !cur.done });
+        try { await Schedule.saveNow(); } catch (e) {}
+        try { TimeChips.repaintAll(); } catch (e) {}
+        const rc = CompassPlus.host('renderCompass');
+        if (typeof rc === 'function') rc(); else CompassPlus.apply();
+      });
+    });
+  },
+
+  /* A "send my scheduled tasks to the calendar" row inside the host's own
+     Export-to-Calendar panel. Reuses the pack's Calendar exporter, which
+     serialises every Schedule entry (and flagged notes) to a real .ics. */
+  injectExport() {
+    const host = document.getElementById('icsExport');
+    if (!host || document.getElementById('flow-cal-tasks')) return;
+    const rangeMap = { '1': 'week', '2': '2weeks', '4': '4weeks', '8': '12weeks', '12': '12weeks' };
+    const pick = () => rangeMap[(document.getElementById('icsRange') || {}).value] || '4weeks';
+    const row = document.createElement('div');
+    row.id = 'flow-cal-tasks';
+    row.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+    row.innerHTML =
+      '<span style="font-size:12px;color:var(--muted)">📌 Your scheduled tasks (Planner &amp; time-blocked items):</span>' +
+      '<button class="btn btn-primary" data-flowcal="apple">⬇️ Apple .ics</button>' +
+      '<button class="btn" data-flowcal="google">📆 Google Calendar</button>';
+    const panel = host.closest('.panel') || host.parentElement;
+    panel.appendChild(row);
+    row.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-flowcal]');
+      if (!b) return;
+      const range = pick();
+      try {
+        if (b.getAttribute('data-flowcal') === 'apple') Calendar.exportApple(range);
+        else Calendar.exportGoogle(range, null);
+      } catch (err) { try { toast('Could not export just now.', 'err'); } catch (e2) {} }
+    });
+  },
+
+  install() {
+    try { CompassPlus.injectExport(); } catch (e) {}
+    if (typeof window.renderCompass === 'function' && !window.renderCompass.__flowWrapped) {
+      const original = window.renderCompass;
+      const wrapped = function () {
+        const r = original.apply(this, arguments);
+        try { CompassPlus.apply(); } catch (e) { console.warn('[Flow] compass plus', e); }
+        try { CompassPlus.injectExport(); } catch (e) {}
+        return r;
+      };
+      wrapped.__flowWrapped = 1;
+      window.renderCompass = wrapped;
+    }
+    try { CompassPlus.apply(); } catch (e) {}
+  }
+};
+
+/* =========================================================================
  * 21 · Accounts
  *
  * Talks to the optional server module (flow-auth.js). If that module is not
@@ -5773,6 +5884,7 @@ async function boot() {
   try { SleepChart.install(); } catch (e) { console.warn('[Flow] sleep chart', e); }
   try { MoodChart.install(); } catch (e) { console.warn('[Flow] mood chart', e); }
   try { TodayGroups.install(); } catch (e) { console.warn('[Flow] today groups', e); }
+  try { CompassPlus.install(); } catch (e) { console.warn('[Flow] compass plus', e); }
 
   console.log('%c The Flow · upgrade pack ' + window.__FLOW_UPGRADE__ + ' ready ',
     'background:#17bb92;color:#05231b;font-weight:700;border-radius:4px');
