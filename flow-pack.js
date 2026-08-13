@@ -4388,6 +4388,23 @@ const TodayPlus = {
       wk.textContent = 'Q' + q + (week ? ' · WK ' + week : '');
     }
 
+    /* A steady line beside the big "Today", set in an italic serif so it reads
+       as a mantra rather than UI. Re-added each render (the host rebuilds the
+       header), placed right after the title so it sits next to it and wraps
+       underneath on a narrow screen. */
+    const title = $('.td-head .td-title', feed);
+    if (title && title.parentElement && !title.parentElement.querySelector('.flow-td-quote')) {
+      title.style.display = 'inline-block';
+      title.style.verticalAlign = 'baseline';
+      const quote = document.createElement('div');
+      quote.className = 'flow-td-quote';
+      quote.style.cssText = 'display:inline-block;vertical-align:baseline;margin-left:16px;max-width:540px';
+      quote.innerHTML =
+        '<span style="font-family:Georgia,serif;font-style:italic;font-size:15px;line-height:1.45;color:var(--muted)">“I am the master of my fate, I am the captain of my soul.”</span>' +
+        '<span style="display:block;font-family:Georgia,serif;font-size:11px;letter-spacing:.4px;color:var(--muted);opacity:.75;margin-top:3px">— William Ernest Henley, 1875</span>';
+      title.insertAdjacentElement('afterend', quote);
+    }
+
     const rec = TodayPlus.recovery();
     const pri = TodayPlus.priorities();
     const hab = TodayPlus.habits();
