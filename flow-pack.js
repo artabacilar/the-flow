@@ -4423,7 +4423,7 @@ const TodayPlus = {
       `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${esc(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
     const pbody = [
       ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
-      ...(pri.flagged || []).slice(0, 5).map(r => prow('★ ' + r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
+      ...(pri.flagged || []).slice(0, 5).map(r => prow(r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
       ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', `data-q="${esc(i.id)}"`)),
       ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', `data-q="${esc(i.id)}"`))
     ].join('');
