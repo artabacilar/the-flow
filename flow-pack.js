@@ -2091,6 +2091,10 @@ const Ask = {
 };
 
 const Planner = {
+  /* Which week the "Rest of the week" panel is showing. 0 = this week; negative
+     steps into past weeks so overdue tasks can be found and cleared there. */
+  weekOffset: 0,
+
   /* First name of the signed-in account, else the display name from Settings,
      else a neutral word. Never a name baked into the file. */
   who() {
@@ -2108,8 +2112,13 @@ const Planner = {
     const s = Settings.data;
     const now = new Date();
     const wk = isoWeek(now);
-    const ws = startOfWeek(now, s.weekStart);
+    const off = Planner.weekOffset || 0;
+    const ws = addDays(startOfWeek(now, s.weekStart), off * 7);
     const weekFrom = isoDate(ws), weekTo = isoDate(addDays(ws, 6));
+    const wkOff = isoWeek(ws);
+    const relWeek = off === 0 ? 'this week'
+      : off < 0 ? (-off) + ' week' + (off === -1 ? '' : 's') + ' ago'
+      : 'in ' + off + ' week' + (off === 1 ? '' : 's');
 
     const todayItems = Schedule.onDate(today());
     const weekItems = Schedule.between(weekFrom, weekTo);
@@ -2158,8 +2167,16 @@ const Planner = {
 
         <div class="flow-card">
           <h3>📅 Rest of the week</h3>
-          <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots.</p>
-          ${Planner.weekList(overdue, weekItems)}
+          <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots. Delete anything you no longer want with ✕, and step through past weeks with ← → to clear old overdue tasks.</p>
+          <div class="flow-row between" style="margin:0 0 12px;gap:8px">
+            <div class="flow-row" style="gap:6px">
+              <button class="flow-btn sm" data-a="wkprev">← Prev</button>
+              <button class="flow-btn sm" data-a="wknext">Next →</button>
+              ${off !== 0 ? '<button class="flow-btn ghost sm" data-a="wknow">This week</button>' : ''}
+            </div>
+            <span class="flow-label">Week ${wkOff.week} · ${wkOff.year} — ${esc(relWeek)}</span>
+          </div>
+          ${Planner.weekList(overdue, weekItems, off)}
         </div>
       </div>
 
@@ -2232,6 +2249,9 @@ const Planner = {
         const range = () => (section.querySelector('#ar-range') || {}).value || '4weeks';
         const status = section.querySelector('#ar-calstatus');
         if (a === 'refresh') Planner.render(section);
+        else if (a === 'wkprev') { Planner.weekOffset = (Planner.weekOffset || 0) - 1; Planner.render(section); }
+        else if (a === 'wknext') { Planner.weekOffset = (Planner.weekOffset || 0) + 1; Planner.render(section); }
+        else if (a === 'wknow')  { Planner.weekOffset = 0; Planner.render(section); }
         else if (a === 'settings') Tabs.activate('settings');
         else if (a === 'journal') {
           const jt = $$('[data-tab]').find(p => /journal|📓/i.test(p.textContent));
@@ -2284,20 +2304,35 @@ const Planner = {
       </li>`).join('') + '</ul>';
   },
 
-  weekList(overdue, week) {
-    const rest = week.filter(r => r.date > today());
-    if (!overdue.length && !rest.length) return '<p class="flow-empty">The rest of the week is open.</p>';
+  /* off = 0 shows the overdue float (relative to today) plus this week's
+     upcoming days. Any other offset shows that whole week grouped by day — for
+     a past week those are the overdue tasks, so they can be cleared there.
+     Every row carries a ✕ that removes the schedule entry (reusing the existing
+     [data-del] handler). */
+  weekList(overdue, week, off) {
+    off = off || 0;
+    const del = (k) => `<button class="flow-btn ghost sm" data-del="${esc(k)}" title="Delete this task">✕</button>`;
+    const row = (r, timeText) =>
+      `<li class="${r.done ? 'done' : ''}">` +
+      `<span class="tm ${r.time ? '' : 'none'}">${esc(timeText)}</span>` +
+      `<span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span>` +
+      `<span class="flow-row">${del(r.key)}</span></li>`;
+
     let html = '';
-    if (overdue.length) {
+    if (off === 0 && overdue.length) {
       html += `<div class="flow-label" style="color:var(--f-critical);margin-bottom:6px">⚠ Overdue</div><ul class="flow-tl">` +
-        overdue.slice(0, 6).map(r => `<li><span class="tm none">${esc(prettyDate(r.date))}</span><span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span><span></span></li>`).join('') + '</ul>';
+        overdue.map(r => row(r, prettyDate(r.date))).join('') + '</ul>';
     }
+    const days = (off === 0) ? week.filter(r => r.date > today()) : week.slice();
     const byDay = {};
-    rest.forEach(r => { (byDay[r.date] = byDay[r.date] || []).push(r); });
+    days.forEach(r => { (byDay[r.date] = byDay[r.date] || []).push(r); });
     Object.keys(byDay).sort().forEach(d => {
       html += `<div class="flow-label" style="margin:12px 0 4px">${esc(prettyDate(d))}</div><ul class="flow-tl">` +
-        byDay[d].map(r => `<li class="${r.done ? 'done' : ''}"><span class="tm ${r.time ? '' : 'none'}">${esc(r.time || '—')}</span><span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span><span></span></li>`).join('') + '</ul>';
+        byDay[d].map(r => row(r, r.time || '—')).join('') + '</ul>';
     });
+    if (!html) return off === 0
+      ? '<p class="flow-empty">The rest of the week is open.</p>'
+      : '<p class="flow-empty">Nothing scheduled that week.</p>';
     return html;
   }
 };
