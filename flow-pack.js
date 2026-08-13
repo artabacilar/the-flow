@@ -4638,6 +4638,73 @@ const CompassPlus = {
 };
 
 /* =========================================================================
+ * 20c · Diet Plan — make the Diet tab's "Program" block a real, editable,
+ *       saved meal plan instead of a dead placeholder.
+ *
+ * The host ships a static "No meal plan yet" note there and never wires it to
+ * anything. This replaces that block with your own plan: free text (meals,
+ * timing, macros — whatever you want), stored per-account through the pack's
+ * own DB so it syncs like everything else, with an inline edit/save editor.
+ * ====================================================================== */
+const DietPlan = {
+  KEY: 'flow:dietProgram',
+  text: '',
+  editing: false,
+
+  async mount() {
+    const host = document.querySelector('#tab-diet .mealcards');
+    if (!host || host.__flowDietMounted) return;
+    host.__flowDietMounted = 1;
+    try {
+      const v = await DB.get(DietPlan.KEY, null);
+      DietPlan.text = (v && typeof v === 'object' && typeof v.text === 'string') ? v.text
+        : (typeof v === 'string' ? v : '');
+    } catch (e) { DietPlan.text = ''; }
+    DietPlan.render(host);
+  },
+
+  render(host) {
+    if (DietPlan.editing) {
+      host.innerHTML =
+        '<div class="flow-x">' +
+        '<textarea class="flow-in" data-diet-edit style="width:100%;min-height:220px;line-height:1.7;font-size:14px;resize:vertical" ' +
+        'placeholder="Write your meal plan — e.g.&#10;Öğün 1 (09:00) — 4 eggs, oats, banana&#10;Öğün 2 (13:00) — chicken, rice, salad&#10;Öğün 3 (18:00) — salmon, potatoes, greens">' +
+        esc(DietPlan.text) + '</textarea>' +
+        '<div class="flow-row" style="gap:8px;margin-top:10px">' +
+        '<button class="flow-btn primary" data-diet-save>Save plan</button>' +
+        '<button class="flow-btn ghost" data-diet-cancel>Cancel</button>' +
+        '</div></div>';
+      const ta = host.querySelector('[data-diet-edit]');
+      if (ta) { ta.focus(); }
+      host.querySelector('[data-diet-save]').addEventListener('click', async () => {
+        DietPlan.text = ta ? ta.value : DietPlan.text;
+        try { await DB.set(DietPlan.KEY, { text: DietPlan.text }); } catch (e) {}
+        DietPlan.editing = false;
+        DietPlan.render(host);
+        try { toast('Meal plan saved ✓'); } catch (e) {}
+      });
+      host.querySelector('[data-diet-cancel]').addEventListener('click', () => {
+        DietPlan.editing = false; DietPlan.render(host);
+      });
+      return;
+    }
+
+    const has = DietPlan.text && DietPlan.text.trim();
+    host.innerHTML =
+      '<div class="flow-x">' +
+      (has
+        ? '<div class="flow-card" style="white-space:pre-wrap;line-height:1.7;font-size:14px">' + esc(DietPlan.text) + '</div>'
+        : '<div class="flow-empty" style="padding:18px 0">No meal plan yet — write your own program here (meals, timing, macros), or just use the daily checklist above.</div>') +
+      '<div class="flow-row" style="margin-top:10px">' +
+      '<button class="flow-btn ' + (has ? '' : 'primary') + '" data-diet-editbtn>' + (has ? '✏️ Edit plan' : '✍️ Write my meal plan') + '</button>' +
+      '</div></div>';
+    host.querySelector('[data-diet-editbtn]').addEventListener('click', () => {
+      DietPlan.editing = true; DietPlan.render(host);
+    });
+  }
+};
+
+/* =========================================================================
  * 21 · Accounts
  *
  * Talks to the optional server module (flow-auth.js). If that module is not
@@ -5885,6 +5952,7 @@ async function boot() {
   try { MoodChart.install(); } catch (e) { console.warn('[Flow] mood chart', e); }
   try { TodayGroups.install(); } catch (e) { console.warn('[Flow] today groups', e); }
   try { CompassPlus.install(); } catch (e) { console.warn('[Flow] compass plus', e); }
+  try { DietPlan.mount(); } catch (e) { console.warn('[Flow] diet plan', e); }
 
   console.log('%c The Flow · upgrade pack ' + window.__FLOW_UPGRADE__ + ' ready ',
     'background:#17bb92;color:#05231b;font-weight:700;border-radius:4px');
