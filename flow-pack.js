@@ -2092,8 +2092,13 @@ const Ask = {
 
 const Planner = {
   /* Which week the "Rest of the week" panel is showing. 0 = this week; negative
-     steps into past weeks so overdue tasks can be found and cleared there. */
+     steps into past weeks so overdue tasks can be found and cleared there;
+     positive steps into future weeks so plans can be built and edited ahead. */
   weekOffset: 0,
+
+  /* Key of the row currently being edited inline, or null. Only one row edits at
+     a time; entering edit mode re-renders that row as a text/date/time form. */
+  editing: null,
 
   /* First name of the signed-in account, else the display name from Settings,
      else a neutral word. Never a name baked into the file. */
@@ -2167,7 +2172,7 @@ const Planner = {
 
         <div class="flow-card">
           <h3>📅 Rest of the week</h3>
-          <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots. Delete anything you no longer want with ✕, and step through past weeks with ← → to clear old overdue tasks.</p>
+          <p class="flow-sub">Grouped by day. Overdue items float to the top so nothing quietly rots. Edit any task with ✏️, delete with ✕, and step through past or future weeks with ← → to fix old tasks or plan ahead.</p>
           <div class="flow-row between" style="margin:0 0 12px;gap:8px">
             <div class="flow-row" style="gap:6px">
               <button class="flow-btn sm" data-a="wkprev">← Prev</button>
@@ -2177,6 +2182,12 @@ const Planner = {
             <span class="flow-label">Week ${wkOff.week} · ${wkOff.year} — ${esc(relWeek)}</span>
           </div>
           ${Planner.weekList(overdue, weekItems, off)}
+          <div class="flow-row" style="margin-top:14px;gap:6px;flex-wrap:wrap">
+            <input class="flow-in grow" id="wk-new" placeholder="Plan something for ${esc(relWeek)}…">
+            <input class="flow-in" type="date" id="wk-date" value="${off === 0 ? today() : weekFrom}" min="${weekFrom}" max="${weekTo}" style="width:148px">
+            <input class="flow-in" type="time" id="wk-time" style="width:104px">
+            <button class="flow-btn primary" data-a="addweek">Add to week</button>
+          </div>
         </div>
       </div>
 
@@ -2272,6 +2283,18 @@ const Planner = {
           Planner.render(section);
           toast('Added to today ✓');
         }
+        else if (a === 'addweek') {
+          const t = section.querySelector('#wk-new');
+          const dt = section.querySelector('#wk-date');
+          const tm = section.querySelector('#wk-time');
+          const text = norm(t.value);
+          if (!text) { toast('Type something first.', 'warn'); return; }
+          const key = 'planner::' + uid('p');
+          Schedule.put(key, { text, tab: 'planner', date: dt.value || weekFrom, time: tm.value || '', dur: Settings.get('defaultDurationMin'), done: false, source: 'planner' });
+          await Schedule.saveNow();
+          Planner.render(section);
+          toast('Added to ' + relWeek + ' ✓');
+        }
       });
     });
 
@@ -2289,6 +2312,43 @@ const Planner = {
         await Schedule.saveNow(); TimeChips.repaintAll(); Planner.render(section);
       });
     });
+    section.querySelectorAll('[data-edit]').forEach(b => {
+      b.addEventListener('click', () => {
+        Planner.editing = b.getAttribute('data-edit');
+        Planner.render(section);
+        const inp = section.querySelector('[data-ef="text"]');
+        if (inp) { inp.focus(); inp.select(); }
+      });
+    });
+    const saveEdit = async (key, li) => {
+      if (!key || !li) return;
+      const text = norm((li.querySelector('[data-ef="text"]') || {}).value || '');
+      if (!text) { toast('Task text can’t be empty.', 'warn'); return; }
+      const date = (li.querySelector('[data-ef="date"]') || {}).value || '';
+      const time = (li.querySelector('[data-ef="time"]') || {}).value || '';
+      Schedule.put(key, { text, date, time });
+      await Schedule.saveNow();
+      Planner.editing = null;
+      TimeChips.repaintAll();
+      Planner.render(section);
+      toast('Saved ✓');
+    };
+    section.querySelectorAll('[data-save]').forEach(b => {
+      b.addEventListener('click', () => saveEdit(b.getAttribute('data-save'), b.closest('li')));
+    });
+    section.querySelectorAll('[data-cancel]').forEach(b => {
+      b.addEventListener('click', () => { Planner.editing = null; Planner.render(section); });
+    });
+    section.querySelectorAll('[data-ef="text"]').forEach(inp => {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); const li = inp.closest('li'); saveEdit(li.getAttribute('data-row'), li); }
+        else if (e.key === 'Escape') { e.preventDefault(); Planner.editing = null; Planner.render(section); }
+      });
+    });
+    const wkNew = section.querySelector('#wk-new');
+    if (wkNew) wkNew.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); const btn = section.querySelector('[data-a="addweek"]'); if (btn) btn.click(); }
+    });
   },
 
   timeline(items) {
@@ -2305,18 +2365,30 @@ const Planner = {
   },
 
   /* off = 0 shows the overdue float (relative to today) plus this week's
-     upcoming days. Any other offset shows that whole week grouped by day — for
-     a past week those are the overdue tasks, so they can be cleared there.
-     Every row carries a ✕ that removes the schedule entry (reusing the existing
-     [data-del] handler). */
+     upcoming days. Any other offset shows that whole week grouped by day — a
+     past week surfaces old overdue tasks to clear, a future week the plans you
+     are building ahead. Every row carries ✏️ to edit its text/date/time inline
+     (changing the date moves it to another week) and ✕ to delete it. */
   weekList(overdue, week, off) {
     off = off || 0;
+    const editing = Planner.editing;
     const del = (k) => `<button class="flow-btn ghost sm" data-del="${esc(k)}" title="Delete this task">✕</button>`;
+    const ed = (k) => `<button class="flow-btn ghost sm" data-edit="${esc(k)}" title="Edit this task">✏️</button>`;
+    const editRow = (r) =>
+      `<li class="editing" data-row="${esc(r.key)}">` +
+      `<span class="flow-row" style="gap:6px;width:100%;flex-wrap:wrap">` +
+      `<input class="flow-in grow" data-ef="text" value="${esc(r.text)}" placeholder="Task">` +
+      `<input class="flow-in" type="date" data-ef="date" value="${esc(r.date || '')}" style="width:148px">` +
+      `<input class="flow-in" type="time" data-ef="time" value="${esc(r.time || '')}" style="width:104px">` +
+      `<button class="flow-btn primary sm" data-save="${esc(r.key)}">Save</button>` +
+      `<button class="flow-btn ghost sm" data-cancel="1">Cancel</button>` +
+      `</span></li>`;
     const row = (r, timeText) =>
+      r.key === editing ? editRow(r) :
       `<li class="${r.done ? 'done' : ''}">` +
       `<span class="tm ${r.time ? '' : 'none'}">${esc(timeText)}</span>` +
       `<span class="tx">${esc(r.text)}<small>${esc(Rollup.labelFor(r.tab) || r.tab)}</small></span>` +
-      `<span class="flow-row">${del(r.key)}</span></li>`;
+      `<span class="flow-row">${ed(r.key)}${del(r.key)}</span></li>`;
 
     let html = '';
     if (off === 0 && overdue.length) {
