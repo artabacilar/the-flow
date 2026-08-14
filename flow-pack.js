@@ -4388,20 +4388,24 @@ const TodayPlus = {
       wk.textContent = 'Q' + q + (week ? ' · WK ' + week : '');
     }
 
-    /* A steady line beside the big "Today", set in an italic serif so it reads
-       as a mantra rather than UI. Re-added each render (the host rebuilds the
-       header), placed right after the title so it sits next to it and wraps
-       underneath on a narrow screen. */
+    /* A steady line for the big "Today", set in an italic serif so it reads as
+       a mantra rather than UI. On a phone it sits as its own clean block under
+       the title, left-aligned with it (no indent); on a wide screen it tucks
+       in beside the title. Re-added each render since the host rebuilds the
+       header. */
     const title = $('.td-head .td-title', feed);
     if (title && title.parentElement && !title.parentElement.querySelector('.flow-td-quote')) {
-      title.style.display = 'inline-block';
-      title.style.verticalAlign = 'baseline';
+      const narrow = (window.innerWidth || 999) < 640;
+      if (!narrow) { title.style.display = 'inline-block'; title.style.verticalAlign = 'baseline'; }
       const quote = document.createElement('div');
       quote.className = 'flow-td-quote';
-      quote.style.cssText = 'display:inline-block;vertical-align:baseline;margin-left:16px;max-width:540px';
+      quote.style.cssText = narrow
+        ? 'display:block;margin:12px 0 2px;max-width:560px'
+        : 'display:inline-block;vertical-align:baseline;margin-left:16px;max-width:540px';
+      const qs = narrow ? '14px' : '15px';
       quote.innerHTML =
-        '<span style="font-family:Georgia,serif;font-style:italic;font-size:15px;line-height:1.45;color:var(--muted)">“I am the master of my fate, I am the captain of my soul.”</span>' +
-        '<span style="display:block;font-family:Georgia,serif;font-size:11px;letter-spacing:.4px;color:var(--muted);opacity:.75;margin-top:3px">— William Ernest Henley, 1875</span>';
+        '<span style="font-family:Georgia,serif;font-style:italic;font-size:' + qs + ';line-height:1.5;color:var(--muted)">“I am the master of my fate, I am the captain of my soul.”</span>' +
+        '<span style="display:block;font-family:Georgia,serif;font-size:11px;letter-spacing:.4px;color:var(--muted);opacity:.7;margin-top:4px">— William Ernest Henley, 1875</span>';
       title.insertAdjacentElement('afterend', quote);
     }
 
