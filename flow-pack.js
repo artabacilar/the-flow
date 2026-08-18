@@ -4726,6 +4726,165 @@ const DietPlan = {
 };
 
 /* =========================================================================
+ * 20d · Shared tasks — collaborate on individual tasks with other accounts.
+ *
+ * A task you share becomes a live item: a link anyone signed in can open to
+ * join, plus invite-by-account-email. Every member can edit the text, move the
+ * status and comment; the owner can delete, members can leave. Talks to the
+ * /api/shared/* routes and shows as a panel in Work and Side Project.
+ * ====================================================================== */
+const Shared = {
+  items: [],
+  async list() {
+    try {
+      const r = await fetch('/api/shared/list', { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json().catch(() => null);
+      Shared.items = (j && j.items) || [];
+    } catch (e) { Shared.items = []; }
+    return Shared.items;
+  },
+  async call(path, body) {
+    const r = await fetch('/api/shared/' + path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Something went wrong.');
+    return j;
+  },
+  linkFor(token) { return location.origin + '/?shared=' + token; },
+  upsert(task) {
+    if (!task || !task.token) return;
+    const i = Shared.items.findIndex(x => x.token === task.token);
+    if (i >= 0) Shared.items[i] = task; else Shared.items.unshift(task);
+  },
+  drop(token) { Shared.items = Shared.items.filter(x => x.token !== token); }
+};
+
+const SharedUI = {
+  mounted: [],
+  STATUS: [['todo', 'To do'], ['in_progress', 'In progress'], ['blocked', 'Blocked'], ['done', 'Done']],
+  when(iso) { try { const d = new Date(iso); return isNaN(d.getTime()) ? '' : d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } },
+
+  async install() {
+    /* Opening a share link joins the task, then cleans the URL. */
+    try {
+      const tok = new URLSearchParams(location.search).get('shared');
+      if (tok) {
+        try { const j = await Shared.call('join', { token: tok }); Shared.upsert(j.task); toast('You joined a shared task ✓'); }
+        catch (e) { toast(e.message || 'Could not open that shared task.', 'warn'); }
+        try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      }
+    } catch (e) {}
+    if (!(window.Auth && Auth.user)) return;   /* sharing needs an account */
+    await Shared.list();
+    SharedUI.mountInto('tab-abko', 'abko');
+    SharedUI.mountInto('tab-dtc', 'dtc');
+  },
+
+  mountInto(sectionId, ws) {
+    const sec = document.getElementById(sectionId);
+    if (!sec || sec.querySelector('[data-flow-shared]')) return;
+    const panel = document.createElement('div');
+    panel.className = 'panel flow-x';
+    panel.setAttribute('data-flow-shared', ws);
+    panel.style.marginTop = '18px';
+    sec.appendChild(panel);
+    SharedUI.mounted.push({ el: panel, ws });
+    SharedUI.renderPanel(panel, ws);
+  },
+
+  renderAll() { SharedUI.mounted.forEach(m => { if (document.body.contains(m.el)) SharedUI.renderPanel(m.el, m.ws); }); },
+
+  card(t) {
+    const me = (window.Auth && Auth.user) ? Auth.user.id : null;
+    const owner = t.ownerId === me;
+    const ownerName = ((t.members || []).find(m => m && m.owner) || {}).name || 'someone';
+    const opts = SharedUI.STATUS.map(([v, l]) => `<option value="${v}"${t.status === v ? ' selected' : ''}>${l}</option>`).join('');
+    const comments = (t.comments || []).map(c =>
+      `<div style="padding:6px 0;border-top:1px solid var(--border)"><b style="font-size:12px">${esc(c.byName)}</b> <span style="font-size:11px;color:var(--muted)">${esc(SharedUI.when(c.at))}</span><div style="font-size:13px;white-space:pre-wrap;margin-top:2px">${esc(c.text)}</div></div>`
+    ).join('') || '<div style="font-size:12px;color:var(--muted);padding:4px 0">No comments yet.</div>';
+    return `<div class="flow-shared-card" data-token="${esc(t.token)}" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--card2)">
+      <div class="flow-row" style="gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <input class="flow-in" data-stitle style="flex:1;min-width:150px;font-size:15px;font-weight:700" value="${esc(t.title)}">
+        <select class="flow-in" data-sstatus style="width:140px">${opts}</select>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin:6px 0 8px">Shared by ${esc(ownerName)}${owner ? ' (you)' : ''} · ${(t.members || []).length} ${(t.members || []).length === 1 ? 'person' : 'people'} · updated ${esc(SharedUI.when(t.updatedAt))}</div>
+      <textarea class="flow-in" data-snotes placeholder="Details / notes…" style="width:100%;min-height:60px;font-size:13px;line-height:1.5">${esc(t.notes || '')}</textarea>
+      <div class="flow-row" style="gap:6px;flex-wrap:wrap;margin:8px 0">
+        <button class="flow-btn" data-scopy>🔗 Copy link</button>
+        <input class="flow-in" data-sinvite placeholder="invite by email" style="width:180px">
+        <button class="flow-btn" data-sinvitesend>Invite</button>
+        <span style="flex:1"></span>
+        ${owner ? '<button class="flow-btn ghost" data-sdelete>Delete</button>' : '<button class="flow-btn ghost" data-sleave>Leave</button>'}
+      </div>
+      <div style="margin-top:6px">${comments}</div>
+      <div class="flow-row" style="gap:6px;margin-top:8px">
+        <input class="flow-in grow" data-scomment placeholder="Add a comment…">
+        <button class="flow-btn primary" data-scommentsend>Comment</button>
+      </div>
+    </div>`;
+  },
+
+  renderPanel(panel, ws) {
+    const mine = Shared.items.filter(t => (t.ws || 'abko') === ws);
+    panel.innerHTML =
+      '<h3>🤝 Shared tasks <span style="color:var(--muted);font-weight:400;font-size:12px">(collaborate by link or invite — edit, status &amp; comments)</span></h3>' +
+      '<div class="flow-row" style="gap:6px;flex-wrap:wrap;margin:10px 0 14px">' +
+      '<input class="flow-in grow" data-snew placeholder="Share a new task with someone…">' +
+      '<button class="flow-btn primary" data-snewsend>Share task</button></div>' +
+      (mine.length ? mine.map(t => SharedUI.card(t)).join('')
+        : '<p class="flow-empty">Nothing shared yet. Type a task above and share it — you get a link to send, or invite by email.</p>');
+
+    const reload = () => SharedUI.renderAll();
+    const guard = async (fn) => { try { await fn(); } catch (e) { toast(e.message || 'Something went wrong.', 'err'); } };
+
+    const newBtn = panel.querySelector('[data-snewsend]');
+    if (newBtn) newBtn.addEventListener('click', () => guard(async () => {
+      const inp = panel.querySelector('[data-snew]');
+      const title = norm(inp.value);
+      if (!title) { toast('Type a task first.', 'warn'); return; }
+      const j = await Shared.call('create', { ws, title });
+      Shared.upsert(j.task); inp.value = '';
+      reload();
+      try { await navigator.clipboard.writeText(Shared.linkFor(j.task.token)); toast('Shared ✓ link copied'); }
+      catch (e) { toast('Shared ✓'); }
+    }));
+
+    panel.querySelectorAll('.flow-shared-card').forEach(card => {
+      const token = card.getAttribute('data-token');
+      const titleEl = card.querySelector('[data-stitle]');
+      if (titleEl) titleEl.addEventListener('change', () => guard(async () => { const j = await Shared.call('update', { token, patch: { title: titleEl.value } }); Shared.upsert(j.task); }));
+      const notesEl = card.querySelector('[data-snotes]');
+      if (notesEl) notesEl.addEventListener('change', () => guard(async () => { const j = await Shared.call('update', { token, patch: { notes: notesEl.value } }); Shared.upsert(j.task); }));
+      const statusEl = card.querySelector('[data-sstatus]');
+      if (statusEl) statusEl.addEventListener('change', () => guard(async () => { const j = await Shared.call('update', { token, patch: { status: statusEl.value } }); Shared.upsert(j.task); reload(); }));
+      const copyEl = card.querySelector('[data-scopy]');
+      if (copyEl) copyEl.addEventListener('click', () => guard(async () => { try { await navigator.clipboard.writeText(Shared.linkFor(token)); toast('Link copied ✓'); } catch (e) { toast(Shared.linkFor(token)); } }));
+      const invSend = card.querySelector('[data-sinvitesend]');
+      if (invSend) invSend.addEventListener('click', () => guard(async () => {
+        const inp = card.querySelector('[data-sinvite]'); const to = norm(inp.value);
+        if (!to) { toast('Type an email.', 'warn'); return; }
+        const j = await Shared.call('invite', { token, to }); Shared.upsert(j.task); inp.value = '';
+        reload(); toast('Invited ' + j.to + ' ✓');
+      }));
+      const del = card.querySelector('[data-sdelete]');
+      if (del) del.addEventListener('click', () => guard(async () => { await Shared.call('delete', { token }); Shared.drop(token); reload(); toast('Deleted'); }));
+      const leave = card.querySelector('[data-sleave]');
+      if (leave) leave.addEventListener('click', () => guard(async () => { await Shared.call('delete', { token }); Shared.drop(token); reload(); toast('Left the task'); }));
+      const cSend = card.querySelector('[data-scommentsend]');
+      if (cSend) cSend.addEventListener('click', () => guard(async () => {
+        const inp = card.querySelector('[data-scomment]'); const text = norm(inp.value);
+        if (!text) return;
+        const j = await Shared.call('comment', { token, text }); Shared.upsert(j.task); inp.value = '';
+        reload();
+      }));
+    });
+  }
+};
+
+/* =========================================================================
  * 21 · Accounts
  *
  * Talks to the optional server module (flow-auth.js). If that module is not
@@ -5974,6 +6133,7 @@ async function boot() {
   try { TodayGroups.install(); } catch (e) { console.warn('[Flow] today groups', e); }
   try { CompassPlus.install(); } catch (e) { console.warn('[Flow] compass plus', e); }
   try { DietPlan.mount(); } catch (e) { console.warn('[Flow] diet plan', e); }
+  try { SharedUI.install(); } catch (e) { console.warn('[Flow] shared', e); }
 
   console.log('%c The Flow · upgrade pack ' + window.__FLOW_UPGRADE__ + ' ready ',
     'background:#17bb92;color:#05231b;font-weight:700;border-radius:4px');
