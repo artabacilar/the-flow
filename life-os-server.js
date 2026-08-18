@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { URL } = require('url');
 
 // ── Auth ────────────────────────────────────────────────────
@@ -128,12 +129,57 @@ if (UP_URL && UP_TOK) {
 
 // ── Helpers ─────────────────────────────────────────────────
 function readBody(req) { return new Promise((r) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => r(b)); }); }
-function json(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); }
-function sendFile(res, file, type, headers) {
+// ── Compression ─────────────────────────────────────────────
+// The app is ~575 KB of raw JS/CSS/HTML; gzipped it is ~155 KB. Nothing else
+// in the serving path comes close to that difference for how fast the app
+// opens on a phone. The pack files are compressed ONCE at boot and served from
+// memory; the HTML shell and JSON replies are compressed per request (they
+// vary). Anything under a kilobyte is left as-is — not worth the header.
+let CURRENT_REQ = null;   // set per request so json()/sendFile() can negotiate
+function acceptsGzip(req) {
+  return /\bgzip\b/.test(String((req && req.headers && req.headers['accept-encoding']) || ''));
+}
+function sendCompressed(res, code, body, headers, req) {
+  const buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+  const h = Object.assign({}, headers || {});
+  const r = req || CURRENT_REQ;
+  if (buf.length > 1024 && acceptsGzip(r)) {
+    h['Content-Encoding'] = 'gzip';
+    h['Vary'] = h['Vary'] ? h['Vary'] + ', Accept-Encoding' : 'Accept-Encoding';
+    res.writeHead(code, h);
+    return res.end(zlib.gzipSync(buf, { level: 6 }));
+  }
+  res.writeHead(code, h);
+  res.end(buf);
+}
+function json(res, code, obj) { sendCompressed(res, code, JSON.stringify(obj), { 'Content-Type': 'application/json' }); }
+
+// Pack files: read + gzip once, keyed by name; refreshed if the file changes.
+const PACK_CACHE = {};
+function cachedPack(file) {
+  const full = path.join(APP_DIR, file);
+  let st; try { st = fs.statSync(full); } catch (e) { return null; }
+  const c = PACK_CACHE[file];
+  if (c && c.mtime === st.mtimeMs && c.size === st.size) return c;
+  const raw = fs.readFileSync(full);
+  const gz = zlib.gzipSync(raw, { level: 9 });
+  return (PACK_CACHE[file] = { raw, gz, mtime: st.mtimeMs, size: st.size });
+}
+function sendFile(res, file, type, headers, req) {
+  const r = req || CURRENT_REQ;
+  if (file === 'flow-pack.js' || file === 'flow-pack.css') {
+    const c = cachedPack(file);
+    if (!c) { res.writeHead(404); return res.end('Not found: ' + file); }
+    const h = Object.assign({ 'Content-Type': type }, headers || {});
+    if (acceptsGzip(r)) {
+      h['Content-Encoding'] = 'gzip'; h['Vary'] = 'Accept-Encoding';
+      res.writeHead(200, h); return res.end(c.gz);
+    }
+    res.writeHead(200, h); return res.end(c.raw);
+  }
   fs.readFile(path.join(APP_DIR, file), (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found: ' + file); }
-    res.writeHead(200, Object.assign({ 'Content-Type': type }, headers || {}));
-    res.end(data);
+    sendCompressed(res, 200, data, Object.assign({ 'Content-Type': type }, headers || {}), r);
   });
 }
 
@@ -251,6 +297,7 @@ store = flowAuth.protect(store);
 // -------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
+  CURRENT_REQ = req;
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -314,8 +361,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── App shell ──
     if (p === '/' || p === '/index.html') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      return res.end(shell());
+      return sendCompressed(res, 200, shell(), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, req);
     }
     if (p === '/languages' || p === '/languages.html' || p === '/lingua') return sendFile(res, 'LinguaCoach.html', 'text/html; charset=utf-8');
 
