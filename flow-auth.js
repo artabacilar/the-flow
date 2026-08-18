@@ -65,6 +65,17 @@ const INBOX_MAX = 50;                       /* so nobody can flood a mailbox  */
 const SHARE_DAILY_MAX = 50;                 /* and nobody can flood everyone  */
 const SHARE_SENT = (uid, day) => '__share:sent:' + uid + ':' + day;
 
+/* A single task shared with other accounts as a live, collaborative item —
+   every member can edit it, move its status and comment; only the owner can
+   delete it. Reached by a link (open it while signed in to join) or by
+   inviting an address. Like the inbox, it lives outside every namespace and is
+   touched only through the /api/shared/* routes. */
+const SHARED = (token) => '__shared:task:' + token;
+const SHARED_MEMBER = (uid) => '__shared:member:' + uid;   /* tokens a user belongs to */
+const SHARED_MAX_PER_USER = 200;
+const SHARED_COMMENTS_MAX = 500;
+const SHARED_MEMBERS_MAX = 25;
+
 /* The raw, un-namespaced store. Captured by protect(). */
 let raw = null;
 
@@ -247,6 +258,22 @@ function validTime(v) {
   return (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) ? s : '';
 }
 
+/* ---------- shared-task helpers ------------------------------------------ */
+const nowISO = () => new Date().toISOString();
+const SHARED_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+function sharedStatus(s) { return SHARED_STATUSES.indexOf(s) >= 0 ? s : 'todo'; }
+function isSharedMember(t, uid) {
+  return !!(t && Array.isArray(t.members) && t.members.some(m => m && m.id === uid));
+}
+async function sharedAddIndex(uid, token) {
+  const list = await getJSON(SHARED_MEMBER(uid), []);
+  if (list.indexOf(token) < 0) { list.unshift(token); await setJSON(SHARED_MEMBER(uid), list.slice(0, SHARED_MAX_PER_USER)); }
+}
+async function sharedDropIndex(uid, token) {
+  const list = (await getJSON(SHARED_MEMBER(uid), [])).filter(x => x !== token);
+  await setJSON(SHARED_MEMBER(uid), list);
+}
+
 /* ---------- the protected store ------------------------------------------ */
 function protect(store) {
   raw = store;
@@ -368,6 +395,171 @@ async function gate(req, res) {
     const [item] = inbox.splice(i, 1);
     await setJSON(INBOX(me.id), inbox);
     json(res, 200, { ok: true, item: p === '/api/share/accept' ? item : null, remaining: inbox.length });
+    return true;
+  }
+
+  /* ---- collaborative shared tasks ----
+     A task shared with other accounts as a live item. Reached by a link (open
+     it while signed in to join) or by inviting an address (it also lands in
+     their inbox as a heads-up). Every member can edit, set status and comment;
+     only the owner can delete. */
+  if (p === '/api/shared/create' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const title = String(b.title || '').trim().slice(0, 500);
+    if (!title) { json(res, 400, { error: 'Give the task a title.' }); return true; }
+    const mine = await getJSON(SHARED_MEMBER(me.id), []);
+    if (mine.length >= SHARED_MAX_PER_USER) { json(res, 429, { error: 'You already have a lot of shared tasks.' }); return true; }
+    const token = crypto.randomBytes(9).toString('hex');
+    const task = {
+      token, ownerId: me.id,
+      title,
+      notes: String(b.notes || '').slice(0, 4000),
+      status: sharedStatus(b.status),
+      ws: (String(b.ws || '') === 'dtc') ? 'dtc' : 'abko',
+      date: validDate(b.date), time: validTime(b.time),
+      members: [{ id: me.id, email: me.email, name: me.name || me.email, owner: true }],
+      comments: [],
+      createdAt: nowISO(), updatedAt: nowISO()
+    };
+    await setJSON(SHARED(token), task);
+    await sharedAddIndex(me.id, token);
+    json(res, 200, { ok: true, task });
+    return true;
+  }
+
+  if (p === '/api/shared/list' && req.method !== 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const tokens = await getJSON(SHARED_MEMBER(me.id), []);
+    const items = [], keep = [];
+    for (const tk of tokens) {
+      const t = await getJSON(SHARED(tk), null);
+      if (t && isSharedMember(t, me.id)) { items.push(t); keep.push(tk); }
+    }
+    if (keep.length !== tokens.length) await setJSON(SHARED_MEMBER(me.id), keep);
+    json(res, 200, { ok: true, items });
+    return true;
+  }
+
+  if ((p === '/api/shared/get' || p === '/api/shared/join') && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const token = String(b.token || '').trim();
+    const t = await getJSON(SHARED(token), null);
+    if (!t) { json(res, 404, { error: 'That shared task no longer exists.' }); return true; }
+    if (!isSharedMember(t, me.id)) {
+      if (p === '/api/shared/join') {
+        if ((t.members || []).length >= SHARED_MEMBERS_MAX) { json(res, 429, { error: 'That task already has the maximum number of people.' }); return true; }
+        t.members.push({ id: me.id, email: me.email, name: me.name || me.email });
+        t.updatedAt = nowISO();
+        await setJSON(SHARED(token), t);
+        await sharedAddIndex(me.id, token);
+      } else {
+        json(res, 403, { error: 'Open the share link to join this task first.' }); return true;
+      }
+    }
+    json(res, 200, { ok: true, task: t });
+    return true;
+  }
+
+  if (p === '/api/shared/invite' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const token = String(b.token || '').trim();
+    const to = String(b.to || '').trim().toLowerCase();
+    if (!emailOk(to)) { json(res, 400, { error: 'That does not look like an email address.' }); return true; }
+    const t = await getJSON(SHARED(token), null);
+    if (!t) { json(res, 404, { error: 'That shared task no longer exists.' }); return true; }
+    if (!isSharedMember(t, me.id)) { json(res, 403, { error: 'Only people on the task can invite others.' }); return true; }
+    if (to === me.email) { json(res, 400, { error: 'That is your own address.' }); return true; }
+    const rec = await userByEmail(to);
+    if (!rec) { json(res, 404, { error: 'Nobody here has that email address yet.' }); return true; }
+    if ((t.members || []).length >= SHARED_MEMBERS_MAX) { json(res, 429, { error: 'That task already has the maximum number of people.' }); return true; }
+    if (!isSharedMember(t, rec.id)) {
+      t.members.push({ id: rec.id, email: rec.email, name: rec.name || rec.email });
+      t.updatedAt = nowISO();
+      await setJSON(SHARED(token), t);
+      await sharedAddIndex(rec.id, token);
+      /* A heads-up in their existing inbox so they notice without a link. */
+      try {
+        const inbox = await getJSON(INBOX(rec.id), []);
+        if (inbox.length < INBOX_MAX) {
+          inbox.push({
+            id: crypto.randomBytes(8).toString('hex'), at: nowISO(),
+            from: { name: me.name || me.email, email: me.email },
+            shared: token,
+            task: { txt: t.title, note: 'Shared task — open “🤝 Shared tasks” in Work or Side Project to collaborate.', due: t.date || '', time: t.time || '', origin: 'shared' }
+          });
+          await setJSON(INBOX(rec.id), inbox);
+        }
+      } catch (e) {}
+    }
+    json(res, 200, { ok: true, task: t, to: rec.email });
+    return true;
+  }
+
+  if (p === '/api/shared/update' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const token = String(b.token || '').trim();
+    const t = await getJSON(SHARED(token), null);
+    if (!t) { json(res, 404, { error: 'That shared task no longer exists.' }); return true; }
+    if (!isSharedMember(t, me.id)) { json(res, 403, { error: 'Only people on the task can edit it.' }); return true; }
+    const patch = (b.patch && typeof b.patch === 'object') ? b.patch : {};
+    if ('title' in patch) { const v = String(patch.title || '').trim().slice(0, 500); if (v) t.title = v; }
+    if ('notes' in patch) t.notes = String(patch.notes || '').slice(0, 4000);
+    if ('status' in patch) t.status = sharedStatus(patch.status);
+    if ('date' in patch) t.date = validDate(patch.date);
+    if ('time' in patch) t.time = validTime(patch.time);
+    t.updatedAt = nowISO();
+    await setJSON(SHARED(token), t);
+    json(res, 200, { ok: true, task: t });
+    return true;
+  }
+
+  if (p === '/api/shared/comment' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const token = String(b.token || '').trim();
+    const text = String(b.text || '').trim().slice(0, 2000);
+    if (!text) { json(res, 400, { error: 'Type a comment first.' }); return true; }
+    const t = await getJSON(SHARED(token), null);
+    if (!t) { json(res, 404, { error: 'That shared task no longer exists.' }); return true; }
+    if (!isSharedMember(t, me.id)) { json(res, 403, { error: 'Only people on the task can comment.' }); return true; }
+    t.comments = Array.isArray(t.comments) ? t.comments : [];
+    t.comments.push({ id: crypto.randomBytes(6).toString('hex'), byId: me.id, byName: me.name || me.email, at: nowISO(), text });
+    if (t.comments.length > SHARED_COMMENTS_MAX) t.comments = t.comments.slice(-SHARED_COMMENTS_MAX);
+    t.updatedAt = nowISO();
+    await setJSON(SHARED(token), t);
+    json(res, 200, { ok: true, task: t });
+    return true;
+  }
+
+  if (p === '/api/shared/delete' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const token = String(b.token || '').trim();
+    const t = await getJSON(SHARED(token), null);
+    if (!t) { await sharedDropIndex(me.id, token); json(res, 200, { ok: true }); return true; }
+    if (t.ownerId !== me.id) {
+      /* A non-owner "delete" just leaves the task. */
+      t.members = (t.members || []).filter(m => m && m.id !== me.id);
+      t.updatedAt = nowISO();
+      await setJSON(SHARED(token), t);
+      await sharedDropIndex(me.id, token);
+      json(res, 200, { ok: true, left: true });
+      return true;
+    }
+    await raw.set(SHARED(token), '');
+    await sharedDropIndex(me.id, token);
+    json(res, 200, { ok: true, deleted: true });
     return true;
   }
 
