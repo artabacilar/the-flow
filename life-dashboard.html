@@ -16,7 +16,12 @@
 <meta name="apple-mobile-web-app-title" content="The Flow">
 <!-- Failsafe for the boot veil: whatever happens to the pack, the page shows.
      The pack lifts the veil itself the moment the navigation chrome exists. -->
-<script>setTimeout(function(){document.documentElement.classList.add('flow-ready')},4000)</script>
+<!-- Failsafe only: the pack raises .flow-ready itself the instant it's ready
+     (fast when the server is warm, ~30s on a cold free-tier start). Until then
+     the branded splash is what shows — so this timer no longer needs to fire
+     early to avoid a bare-layout flash; it exists purely so a pack that DIES
+     mid-boot cannot leave the splash up forever. Hence a long, safe window. -->
+<script>setTimeout(function(){document.documentElement.classList.add('flow-ready')},40000)</script>
 <!-- Apply the saved colour theme before first paint, so a returning visitor
      never sees the default flash before their theme loads. The pack reconciles
      this against the account value once it boots. -->
@@ -73,6 +78,28 @@ html{background:#0a0b0d;}
    .flow-ready; a timer below lifts the veil regardless, so a broken or
    blocked pack can never leave a black screen. */
 html:not(.flow-ready) body{visibility:hidden;}
+
+/* ── Boot splash ──
+   The veil alone hides the body, but on a slow (cold-started) load the failsafe
+   timer used to reveal this file's bare layout before the pack finished — the
+   "an older version loaded first, then updated" effect. Instead we paint a
+   clean, branded splash on TOP of everything from the very first frame and only
+   fade it out once the pack raises .flow-ready. So the sequence a person sees is
+   always: The Flow loading screen → the finished app. Never a half-built one. */
+#flow-splash{
+  position:fixed; inset:0; z-index:2147483000;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;
+  background:radial-gradient(900px 500px at 50% 30%,#15171d 0%,#0a0b0d 65%);
+  color:#f5f7fa; font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  transition:opacity .35s ease; opacity:1;
+}
+#flow-splash .fs-mark{font-size:27px;font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
+#flow-splash .fs-mark .fs-wave{color:#17bb92;font-weight:900;}
+#flow-splash .fs-bar{width:180px;height:3px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;}
+#flow-splash .fs-bar i{display:block;height:100%;width:38%;border-radius:3px;background:#17bb92;animation:fsSlide 1.05s ease-in-out infinite;}
+@keyframes fsSlide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}
+html.flow-ready #flow-splash{opacity:0;pointer-events:none;}
+@media (prefers-reduced-motion: reduce){ #flow-splash .fs-bar i{animation:none;width:100%;opacity:.5;} }
 
 /* ── Header ── */
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
@@ -731,6 +758,7 @@ canvas{width:100%;height:120px;}
 <link rel="stylesheet" href="/flow-pack.css?v=__PACK_V__">
 </head>
 <body>
+<div id="flow-splash"><div class="fs-mark"><span class="fs-wave">〜</span> The Flow</div><div class="fs-bar"><i></i></div></div>
 <script>/* Reserve the sidebar column before the pack boots so the layout does not jump; undone below if the pack never arrives. */
 try{document.body.classList.add('fn-on');setTimeout(function(){
   if(!document.getElementById('flow-side')&&!document.getElementById('flow-tabbar'))
