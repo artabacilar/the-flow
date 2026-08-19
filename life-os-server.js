@@ -226,24 +226,55 @@ const MANIFEST = JSON.stringify({
   ],
 });
 const SW = `
-const CACHE='life-os-v2';
+const CACHE='life-os-v4';
 const SHELL=['./','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{
-  const u=new URL(e.request.url);
-  if(u.pathname.startsWith('/api')) return; // never cache data — always live
-  // The pack is addressed by content hash and served immutable, so the HTTP
-  // cache already answers it without a network trip. Putting it in here too
-  // would just accumulate a copy of every version ever shipped.
+  const req=e.request;
+  const u=new URL(req.url);
+  if(req.method!=='GET') return;
+  if(u.pathname.startsWith('/api')) return; // data is always live — never cached
+  // The pack carries a content hash and is served immutable, so the browser's
+  // own HTTP cache already answers it from disk with no network trip. That is
+  // what makes the code bundle instant on a phone; we stay out of its way here.
   if(u.pathname.startsWith('/flow-pack.')) return;
-  e.respondWith(
-    fetch(e.request.mode==='navigate'?new Request(e.request.url,{cache:'no-store',credentials:'same-origin'}):e.request).then(r=>{
-      // only cache clean, same-origin 200s — never redirects (login gate) or errors
-      if(r.ok && r.status===200 && r.type==='basic'){ const cp=r.clone(); caches.open(CACHE).then(c=>c.put(e.request,cp)); }
-      return r;
-    }).catch(()=>caches.match(e.request).then(m=>m||caches.match('./')))
-  );
+
+  const isHTML = req.mode==='navigate' || u.pathname==='/' || u.pathname==='/index.html';
+  if(isHTML){
+    // App shell: stale-while-revalidate. This is THE thing that makes an
+    // installed iOS home-screen app open like a native app — the shell paints
+    // from the device instantly instead of waiting on a server round-trip that,
+    // on a cold free instance, can be many seconds. We refresh in the background
+    // so the next open already has the newest shell; the branded splash covers
+    // the swap, and the pack hash guarantees shell + code always match. The
+    // shell is public chrome with no per-user data (that all loads live from
+    // /api), so one cached copy is correct for everyone.
+    e.respondWith((async()=>{
+      const cache=await caches.open(CACHE);
+      const cached=await cache.match('./');
+      const net=fetch(new Request(req.url,{cache:'no-store',credentials:'same-origin'})).then(r=>{
+        // Only bank a clean, direct 200 — never a redirect (e.g. the login gate).
+        if(r && r.ok && r.status===200 && r.type==='basic' && !r.redirected) cache.put('./',r.clone());
+        return r;
+      }).catch(()=>null);
+      e.waitUntil(net);
+      // Serve the device copy now if we have one; only block on the network for
+      // the very first open (nothing cached yet) or right after signing in.
+      return cached || (await net) || cache.match('./');
+    })());
+    return;
+  }
+
+  // Everything else (icons, manifest, small static bits): cache-first, fill on miss.
+  e.respondWith((async()=>{
+    const cache=await caches.open(CACHE);
+    const hit=await cache.match(req);
+    if(hit) return hit;
+    const r=await fetch(req).catch(()=>null);
+    if(r && r.ok && r.status===200 && r.type==='basic'){ const cp=r.clone(); e.waitUntil(cache.put(req,cp)); }
+    return r || hit;
+  })());
 });`;
 
 // ── Login page ──────────────────────────────────────────────
