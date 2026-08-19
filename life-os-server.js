@@ -409,3 +409,32 @@ server.listen(PORT, '0.0.0.0', () => {
   }
   console.log('─────────────────────────────────────────────');
 });
+
+/* ── Keep the instance warm ─────────────────────────────────
+   A free Render web service spins DOWN after ~15 min with no traffic, and the
+   next visitor then waits ~30s for the container to cold-start. That single
+   fact is the biggest thing standing between this app and an "opens instantly"
+   feel. A light self-ping every few minutes generates just enough traffic that
+   the instance is never idle long enough to be spun down — so after the first
+   wake it stays warm and opens in ~1–2s for everyone.
+
+   Runs only when Render tells us our own public URL (RENDER_EXTERNAL_URL); it
+   does nothing locally. The very first open after a deploy or a Render-side
+   restart is still a cold start — only a paid, always-on plan removes that
+   too. */
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || '';
+if (SELF_URL) {
+  const https = require('https');
+  const http_ = require('http');
+  const ping = () => {
+    try {
+      const mod = SELF_URL.indexOf('https:') === 0 ? https : http_;
+      const r = mod.get(SELF_URL + '/healthz', (res) => { res.resume(); });
+      r.on('error', () => {});
+      r.setTimeout(8000, () => { try { r.destroy(); } catch (e) {} });
+    } catch (e) {}
+  };
+  setTimeout(ping, 30 * 1000);
+  setInterval(ping, 10 * 60 * 1000);
+  console.log('  Keep-warm: self-ping every 10 min → ' + SELF_URL + '/healthz');
+}
