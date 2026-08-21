@@ -1008,3 +1008,86 @@ html[data-flow-theme="whoop"]     .flow-x{
 }
 .theme-swatch .sw-nm{ font-size:13.5px; font-weight:700; }
 .theme-swatch .sw-sub{ font-size:11px; color:var(--f-muted); margin-left:auto; }
+
+/* ---------- North Star -------------------------------------------------- */
+.ns-hero{
+  background:
+    radial-gradient(600px 300px at 12% -40%, var(--f-accent-soft), transparent 70%),
+    var(--f-surface);
+  border-color: rgba(23,187,146,.28);
+}
+.ns-eyebrow{
+  font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--f-accent); margin-bottom:10px;
+}
+.ns-principle{
+  margin:0 0 14px; padding:0 0 0 16px;
+  border-left:3px solid var(--f-accent);
+  font-family:Georgia, "Times New Roman", serif; font-style:italic;
+  font-size:19px; line-height:1.5; color:var(--f-ink);
+}
+.ns-prin-edit{ width:100%; margin-bottom:10px; font-size:15px; line-height:1.5; resize:vertical; }
+@media (max-width:600px){ .ns-principle{ font-size:16.5px; } }
+
+/* Right-now matrix strip */
+.ns-q1{ list-style:none; margin:6px 0 0; padding:0; }
+.ns-q1 li{
+  display:flex; align-items:flex-start; gap:10px;
+  padding:9px 0; border-top:1px solid var(--f-line); font-size:14px; line-height:1.45;
+}
+.ns-q1 li:first-child{ border-top:0; }
+.ns-q1 .ns-dot{
+  flex:0 0 auto; width:8px; height:8px; margin-top:6px; border-radius:50%;
+  background:var(--f-critical); box-shadow:0 0 0 3px rgba(208,59,59,.16);
+}
+.ns-q1 .ns-more{ color:var(--f-muted); font-size:12.5px; }
+.ns-q1 .ns-more::before{ display:none; }
+.ns-empty{ margin:4px 0 0; font-size:13.5px; line-height:1.55; color:var(--f-ink-2); }
+.ns-empty em{ color:var(--f-accent); font-style:normal; font-weight:700; }
+.ns-q-meta{ margin-top:10px; font-size:11.5px; letter-spacing:.02em; color:var(--f-muted); }
+
+/* Focus-area goals */
+.ns-goals{ display:flex; flex-direction:column; gap:14px; margin-bottom:14px; }
+.ns-goal{ }
+.ns-goal-top{ display:flex; align-items:center; gap:9px; margin-bottom:7px; }
+.ns-goal-ic{ font-size:17px; flex:0 0 auto; }
+.ns-goal-name{ font-size:14px; font-weight:600; color:var(--f-ink); cursor:text; }
+.ns-goal-name:hover{ text-decoration:underline dotted; text-underline-offset:3px; }
+.ns-goal-pct{ margin-left:auto; font-size:12.5px; font-weight:700; color:var(--f-accent); font-variant-numeric:tabular-nums; }
+.ns-bar{
+  height:12px; border-radius:999px; background:var(--f-grid); overflow:hidden;
+  cursor:pointer; position:relative;
+}
+.ns-bar > i{
+  display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, var(--f-seq-3), var(--f-seq-5));
+  transition:width .22s ease;
+}
+.ns-goal-ctl{ display:flex; gap:6px; margin-top:7px; }
+.ns-goal-ctl .flow-btn{ min-width:38px; }
+
+.ns-x{
+  flex:0 0 auto; margin-left:4px; width:22px; height:22px; line-height:1;
+  border:0; border-radius:6px; background:transparent; color:var(--f-muted);
+  font-size:17px; cursor:pointer; transition:.14s;
+}
+.ns-x:hover{ background:rgba(208,59,59,.16); color:#ffbdbd; }
+
+/* Operating principles */
+.ns-tenets{ list-style:none; margin:0 0 14px; padding:0; }
+.ns-tenet{
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 0; border-top:1px solid var(--f-line);
+}
+.ns-tenet:first-child{ border-top:0; }
+.ns-tenet-txt{
+  flex:1 1 auto; font-size:14px; line-height:1.5; color:var(--f-ink-2); cursor:text;
+  padding-left:16px; position:relative;
+}
+.ns-tenet-txt::before{
+  content:""; position:absolute; left:0; top:9px;
+  width:6px; height:6px; border-radius:50%; background:var(--f-accent);
+}
+.ns-tenet-txt:hover{ color:var(--f-ink); }
+.ns-tenet .ns-x{ margin-top:2px; }
+.ns-addrow{ margin-top:2px; }
