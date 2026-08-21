@@ -5488,7 +5488,8 @@ const NAV_ICONS = {
   gear:     '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/>',
   plus:     '<path d="M12 5v14M5 12h14"/>',
   search:   '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
-  scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>'
+  scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>',
+  star:     '<path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.5-4.2 6.1-.8z"/>'
 };
 
 
@@ -5500,7 +5501,7 @@ const Nav = {
   GROUPS: [
     { id: 'today', label: 'Today', icon: 'today', tabs: ['today'] },
     { id: 'focus', label: 'Focus', icon: 'target',
-      tabs: ['quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
+      tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
     { id: 'body',  label: 'Body',  icon: 'dumbbell',
       tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
     { id: 'ask',   label: 'Ask',   icon: 'chat', tabs: ['ask'] }
@@ -5510,7 +5511,7 @@ const Nav = {
   MENU: ['journal', 'finance', 'artur', 'settings'],
 
   ICON: {
-    today: 'today', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
+    today: 'today', northstar: 'star', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
     brainstorm: 'bulb', time: 'clock', training: 'dumbbell', diet: 'food',
     sleep: 'moon', habits: 'check', mood: 'heart', journal: 'note',
     finance: 'money', ask: 'chat', artur: 'user', settings: 'gear'
@@ -5519,7 +5520,7 @@ const Nav = {
   /* Sidebar order and headings. */
   SIDE: [
     { head: '',       tabs: ['today'] },
-    { head: 'Focus',  tabs: ['quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
+    { head: 'Focus',  tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
     { head: 'Body',   tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
     { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
   ],
@@ -6026,6 +6027,294 @@ const Nav = {
   }
 };
 
+/* ======================================================================
+ * 20c · North Star — the operating philosophy, made daily
+ *
+ * The app already carries the Eisenhower matrix (the Priorities tab) and
+ * Today already surfaces its urgent+important quadrant. What it lacked was a
+ * home for the WHY: the one principle to steer by, the tenets to re-read, and
+ * the handful of focus areas whose progress is the real scoreboard. This tab
+ * is that home. It reads the live matrix for its "urgent + important right
+ * now" strip but never duplicates it — one matrix, surfaced in two places.
+ *
+ * Named "North Star" rather than "Compass" only because the weekly planner
+ * already owns the compass metaphor; this is the same idea the person asked
+ * for — a fixed point to keep the day pointed the right way.
+ * ==================================================================== */
+const NorthStar = {
+  sec: null,
+  loaded: false,
+  principle: '',
+  tenets: [],
+  goals: [],
+
+  K_PRIN: 'flow:ns:principle',
+  K_TEN:  'flow:ns:tenets',
+  K_GOAL: 'flow:ns:goals',
+
+  DEFAULT_PRINCIPLE:
+    'Protect my time, focus on what creates long-term value, execute on my ' +
+    'goals, build my businesses and creative abilities, improve myself ' +
+    'physically and mentally, and cut out the distractions that don’t ' +
+    'contribute to the person I want to become.',
+
+  DEFAULT_TENETS: [
+    'Say no more often — protect my time instead of doing everything.',
+    'Prioritise myself and my goals over being pulled in every direction.',
+    'Create value for others and improve the lives of people around me.',
+    'Grow my business and actively chase bigger possibilities.',
+    'Become my best self — physically, mentally, professionally, creatively.',
+    'Feel freer mentally, without needless pressure from money or expectations.',
+    'Execute on my goals — don’t just think about them.',
+    'Be the best version of myself and inspire others by example.',
+    'Be conscious and deliberate about how I spend my time.'
+  ],
+
+  DEFAULT_GOALS: [
+    { icon: '💪', name: 'Get fit / improve health',    pct: 0 },
+    { icon: '🎧', name: 'DJing — train with music', pct: 0 },
+    { icon: '🎵', name: 'Produce & learn music',        pct: 0 },
+    { icon: '📈', name: 'Learn more about business',     pct: 0 },
+    { icon: '♟️', name: 'Play more chess',               pct: 0 },
+    { icon: '💿', name: 'Produce a mixtape',             pct: 0 }
+  ],
+
+  host(name) { try { return eval(name); } catch (e) { return undefined; } },
+
+  async load() {
+    if (NorthStar.loaded) return;
+    const [p, t, g] = await Promise.all([
+      DB.get(NorthStar.K_PRIN, null),
+      DB.get(NorthStar.K_TEN, null),
+      DB.get(NorthStar.K_GOAL, null)
+    ]);
+    NorthStar.principle = (typeof p === 'string' && p.trim()) ? p : NorthStar.DEFAULT_PRINCIPLE;
+    NorthStar.tenets = Array.isArray(t) ? t.slice() : NorthStar.DEFAULT_TENETS.slice();
+    NorthStar.goals = Array.isArray(g)
+      ? g.map(x => ({ id: x.id || uid('g'), icon: x.icon || '⭐', name: String(x.name || ''), pct: clamp(parseInt(x.pct, 10) || 0, 0, 100) }))
+      : NorthStar.DEFAULT_GOALS.map(x => ({ id: uid('g'), icon: x.icon, name: x.name, pct: x.pct }));
+    NorthStar.loaded = true;
+  },
+
+  savePrinciple() { DB.set(NorthStar.K_PRIN, NorthStar.principle); },
+  saveTenets()    { DB.set(NorthStar.K_TEN, NorthStar.tenets); },
+  saveGoals()     { DB.set(NorthStar.K_GOAL, NorthStar.goals); },
+
+  async render(sec) {
+    NorthStar.sec = sec;
+    if (!NorthStar.loaded) {
+      sec.innerHTML = '<div class="flow-card"><p class="flow-sub">Loading your compass…</p></div>';
+      try { await NorthStar.load(); } catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; }
+    }
+    NorthStar.paint();
+  },
+
+  /* Live read of the matrix — never a copy of it. */
+  q1() {
+    const q = NorthStar.host('qData');
+    if (!q || !Array.isArray(q.items)) return null;
+    return q.items.filter(i => i && i.q === 1 && !i.done);
+  },
+  q2count() {
+    const q = NorthStar.host('qData');
+    if (!q || !Array.isArray(q.items)) return 0;
+    return q.items.filter(i => i && i.q === 2 && !i.done).length;
+  },
+
+  paint() {
+    const sec = NorthStar.sec;
+    if (!sec) return;
+    const avg = NorthStar.goals.length
+      ? Math.round(NorthStar.goals.reduce((a, g) => a + (g.pct || 0), 0) / NorthStar.goals.length)
+      : 0;
+
+    sec.innerHTML =
+      NorthStar.principleCard() +
+      NorthStar.matrixCard() +
+      NorthStar.goalsCard(avg) +
+      NorthStar.tenetsCard();
+
+    NorthStar.wire();
+  },
+
+  principleCard() {
+    return '' +
+      '<div class="flow-card ns-hero">' +
+        '<div class="ns-eyebrow">My North Star</div>' +
+        '<blockquote class="ns-principle" id="ns-prin">' + esc(NorthStar.principle) + '</blockquote>' +
+        '<div class="flow-row"><button class="flow-btn sm ghost" id="ns-prin-edit">Edit principle</button></div>' +
+      '</div>';
+  },
+
+  matrixCard() {
+    const q1 = NorthStar.q1();
+    let body;
+    if (q1 === null) {
+      body = '<p class="flow-sub">Open the Priorities matrix once to start sorting what matters.</p>';
+    } else if (!q1.length) {
+      body = '<p class="ns-empty">Nothing urgent <em>and</em> important is open right now. ' +
+             'That’s a good place to be — spend the freed time on Quadrant 2, where the real wins live.</p>';
+    } else {
+      body = '<ul class="ns-q1">' + q1.slice(0, 6).map(i =>
+        '<li><span class="ns-dot"></span>' + esc(i.txt || '') + '</li>').join('') +
+        (q1.length > 6 ? '<li class="ns-more">+' + (q1.length - 6) + ' more</li>' : '') +
+        '</ul>';
+    }
+    const q2 = NorthStar.q2count();
+    const meta = (q1 === null) ? '' :
+      '<div class="ns-q-meta">' + (q1.length) + ' urgent + important' +
+      (q2 ? ' · ' + q2 + ' important, not urgent' : '') + '</div>';
+    return '' +
+      '<div class="flow-card">' +
+        '<div class="flow-row between"><h3>Right now</h3>' +
+          '<button class="flow-btn sm" id="ns-open-matrix">Open the full matrix →</button></div>' +
+        '<p class="flow-sub">Straight from your Eisenhower matrix — the same list your Today screen pulls from.</p>' +
+        body + meta +
+      '</div>';
+  },
+
+  goalsCard(avg) {
+    const rows = NorthStar.goals.map(g =>
+      '<div class="ns-goal" data-id="' + g.id + '">' +
+        '<div class="ns-goal-top">' +
+          '<span class="ns-goal-ic">' + esc(g.icon) + '</span>' +
+          '<span class="ns-goal-name" data-act="rename" title="Rename">' + esc(g.name) + '</span>' +
+          '<span class="ns-goal-pct">' + (g.pct || 0) + '%</span>' +
+          '<button class="ns-x" data-act="del" title="Remove">×</button>' +
+        '</div>' +
+        '<div class="ns-bar" data-act="set" title="Tap to set progress">' +
+          '<i style="width:' + (g.pct || 0) + '%"></i></div>' +
+        '<div class="ns-goal-ctl">' +
+          '<button class="flow-btn tiny" data-act="minus">−</button>' +
+          '<button class="flow-btn tiny" data-act="plus">+</button>' +
+        '</div>' +
+      '</div>').join('');
+    return '' +
+      '<div class="flow-card">' +
+        '<div class="flow-row between"><h3>Focus areas</h3>' +
+          '<span class="flow-chip accent">' + avg + '% overall</span></div>' +
+        '<p class="flow-sub">The handful of things that actually move you. Tap a bar to set where you are, ' +
+          'or nudge it with − / +.</p>' +
+        '<div class="ns-goals">' + rows + '</div>' +
+        '<div class="flow-row ns-addrow">' +
+          '<input class="flow-in grow" id="ns-goal-new" placeholder="Add a focus area…" maxlength="80">' +
+          '<button class="flow-btn primary sm" id="ns-goal-add">Add</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  tenetsCard() {
+    const rows = NorthStar.tenets.map((t, i) =>
+      '<li class="ns-tenet" data-i="' + i + '">' +
+        '<span class="ns-tenet-txt" data-act="edit">' + esc(t) + '</span>' +
+        '<button class="ns-x" data-act="del" title="Remove">×</button>' +
+      '</li>').join('');
+    return '' +
+      '<div class="flow-card">' +
+        '<h3>How I operate</h3>' +
+        '<p class="flow-sub">The principles to re-read when the day tries to pull you off course.</p>' +
+        '<ul class="ns-tenets">' + rows + '</ul>' +
+        '<div class="flow-row ns-addrow">' +
+          '<input class="flow-in grow" id="ns-tenet-new" placeholder="Add a principle…" maxlength="160">' +
+          '<button class="flow-btn primary sm" id="ns-tenet-add">Add</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  wire() {
+    const sec = NorthStar.sec;
+
+    /* Principle — edit in place. */
+    const editBtn = $('#ns-prin-edit', sec);
+    if (editBtn) editBtn.addEventListener('click', () => {
+      const host = $('#ns-prin', sec);
+      const cur = NorthStar.principle;
+      host.outerHTML = '<textarea class="flow-in ns-prin-edit" id="ns-prin-ta" rows="4">' + esc(cur) + '</textarea>' +
+        '<div class="flow-row"><button class="flow-btn primary sm" id="ns-prin-save">Save</button>' +
+        '<button class="flow-btn ghost sm" id="ns-prin-cancel">Cancel</button></div>';
+      editBtn.style.display = 'none';
+      const ta = $('#ns-prin-ta', sec); ta.focus();
+      $('#ns-prin-save', sec).addEventListener('click', () => {
+        const v = ta.value.trim();
+        if (v) { NorthStar.principle = v; NorthStar.savePrinciple(); }
+        NorthStar.paint();
+      });
+      $('#ns-prin-cancel', sec).addEventListener('click', () => NorthStar.paint());
+    });
+
+    /* Matrix — jump to the real Priorities tab. */
+    const open = $('#ns-open-matrix', sec);
+    if (open) open.addEventListener('click', () => {
+      if (!Nav.go('quad')) { const p = document.querySelector('.tab[data-tab="quad"]'); if (p) p.click(); }
+    });
+
+    /* Goals. */
+    $$('.ns-goal', sec).forEach(row => {
+      const id = row.getAttribute('data-id');
+      const g = NorthStar.goals.find(x => x.id === id);
+      if (!g) return;
+      const bump = (d) => { g.pct = clamp((g.pct || 0) + d, 0, 100); NorthStar.saveGoals(); NorthStar.paint(); };
+      const minus = row.querySelector('[data-act="minus"]');
+      const plus = row.querySelector('[data-act="plus"]');
+      if (minus) minus.addEventListener('click', () => bump(-10));
+      if (plus) plus.addEventListener('click', () => bump(10));
+      const bar = row.querySelector('[data-act="set"]');
+      if (bar) bar.addEventListener('click', (e) => {
+        const r = bar.getBoundingClientRect();
+        const pct = clamp(Math.round(((e.clientX - r.left) / r.width) * 100 / 5) * 5, 0, 100);
+        g.pct = pct; NorthStar.saveGoals(); NorthStar.paint();
+      });
+      const del = row.querySelector('[data-act="del"]');
+      if (del) del.addEventListener('click', () => {
+        NorthStar.goals = NorthStar.goals.filter(x => x.id !== id);
+        NorthStar.saveGoals(); NorthStar.paint();
+      });
+      const name = row.querySelector('[data-act="rename"]');
+      if (name) name.addEventListener('click', () => {
+        const inp = document.createElement('input');
+        inp.className = 'flow-in'; inp.value = g.name; inp.maxLength = 80;
+        name.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => { const v = inp.value.trim(); if (v) { g.name = v; NorthStar.saveGoals(); } NorthStar.paint(); };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') NorthStar.paint(); });
+      });
+    });
+    const gAdd = $('#ns-goal-add', sec), gNew = $('#ns-goal-new', sec);
+    const addGoal = () => {
+      const v = (gNew.value || '').trim(); if (!v) return;
+      NorthStar.goals.push({ id: uid('g'), icon: '⭐', name: v, pct: 0 });
+      NorthStar.saveGoals(); NorthStar.paint();
+    };
+    if (gAdd) gAdd.addEventListener('click', addGoal);
+    if (gNew) gNew.addEventListener('keydown', (e) => { if (e.key === 'Enter') addGoal(); });
+
+    /* Tenets. */
+    $$('.ns-tenet', sec).forEach(li => {
+      const i = parseInt(li.getAttribute('data-i'), 10);
+      const del = li.querySelector('[data-act="del"]');
+      if (del) del.addEventListener('click', () => {
+        NorthStar.tenets.splice(i, 1); NorthStar.saveTenets(); NorthStar.paint();
+      });
+      const txt = li.querySelector('[data-act="edit"]');
+      if (txt) txt.addEventListener('click', () => {
+        const inp = document.createElement('input');
+        inp.className = 'flow-in'; inp.value = NorthStar.tenets[i]; inp.maxLength = 160;
+        txt.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => { const v = inp.value.trim(); if (v) { NorthStar.tenets[i] = v; NorthStar.saveTenets(); } NorthStar.paint(); };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') NorthStar.paint(); });
+      });
+    });
+    const tAdd = $('#ns-tenet-add', sec), tNew = $('#ns-tenet-new', sec);
+    const addTenet = () => {
+      const v = (tNew.value || '').trim(); if (!v) return;
+      NorthStar.tenets.push(v); NorthStar.saveTenets(); NorthStar.paint();
+    };
+    if (tAdd) tAdd.addEventListener('click', addTenet);
+    if (tNew) tNew.addEventListener('keydown', (e) => { if (e.key === 'Enter') addTenet(); });
+  }
+};
+
 async function boot() {
   /* Before anything else: if the server has accounts installed and nobody is
      signed in, put the sign-in screen up. Everything below still runs, so the
@@ -6067,6 +6356,7 @@ async function boot() {
   } catch (e) { console.error('[Flow] load failed', e); }
 
   Tabs.init();
+  Tabs.add('northstar', '⭐ North Star', (sec) => NorthStar.render(sec));
   Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
   Tabs.add('ask', '💬 Ask', (sec) => Ask.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
