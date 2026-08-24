@@ -2743,7 +2743,13 @@ function renderCompass(){
   // Rock list
   const rl=document.getElementById('rockList');
   rl.innerHTML=rocks.length?'':'<div style="color:var(--muted);font-size:13px;">No big rocks yet for this week. Add 1–3 per role above — or send items over from 🎯 Priorities.</div>';
-  rocks.forEach(r=>{
+  // Order by the day it lands on (closer days first), then by time; unscheduled sink to the bottom.
+  const rocksSorted=rocks.slice().sort((a,b)=>{
+    const da=(a.day>=0?a.day:99), db=(b.day>=0?b.day:99);
+    if(da!==db) return da-db;
+    return (a.time||'99:99').localeCompare(b.time||'99:99');
+  });
+  rocksSorted.forEach(r=>{
     const row=document.createElement('div'); row.className='rockrow'+(r.done?' done':'');
     row.innerHTML=`<input type="checkbox" ${r.done?'checked':''}><span class="rk-t">${r.title}</span>
       <button class="rk-del" title="Delete">×</button>
