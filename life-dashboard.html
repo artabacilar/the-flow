@@ -2601,7 +2601,12 @@ function renderToday(){
   const rocksDone=rocks.filter(r=>r.done).length;
   let rocksHtml='';
   if(rocks.length){
-    rocksHtml=rocks.map(r=>{
+    // Closer days on top, then by time — same order as the Week Compass.
+    rocksHtml=rocks.slice().sort((a,b)=>{
+      const da=(a.day>=0?a.day:99), db=(b.day>=0?b.day:99);
+      if(da!==db) return da-db;
+      return (a.time||'99:99').localeCompare(b.time||'99:99');
+    }).map(r=>{
       const when=r.day>=0?(DAY_NAMES[r.day]+(r.time?' '+r.time:'')):'';
       return `<div class="td-rock ${r.done?'done':''}" data-rockid="${r.id}">
         <div class="dot"></div>
