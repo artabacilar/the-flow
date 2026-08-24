@@ -2770,7 +2770,10 @@ function renderCompass(){
     const div=document.createElement('div');
     div.className='cday'+(iso===todayStr?' today':'');
     let chips='';
-    if(gym){ const tp=getDayPlan(wid,DAY_KEYS[i]); chips+='<div class="chip train">🏋️ 08:00 '+(tp&&tp.type!=='rest'?tp.title:'Training')+'</div>'; }
+    // Training comes straight from the Training tab: its plan decides which days
+    // are workouts (skip rest days) and its own per-day time — no hardcoded 08:00.
+    const tp=getDayPlan(wid,DAY_KEYS[i]);
+    if(tp && tp.type!=='rest'){ const tt=(tData.times[DAY_KEYS[i]]??tp.time)||''; chips+='<div class="chip train">🏋️ '+(tt?tt+' ':'')+tp.title+'</div>'; }
     rocks.filter(r=>r.day===i).sort((a,b)=>(a.time||'').localeCompare(b.time||'')).forEach(r=>{
       chips+=`<div class="chip rock ${r.done?'done':''}" data-rid="${r.id}" title="Click to toggle done">🪨 ${r.time?r.time+' ':''}${r.title}</div>`;
     });
