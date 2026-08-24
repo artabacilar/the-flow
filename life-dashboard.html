@@ -2756,7 +2756,7 @@ function renderCompass(){
     rl.appendChild(row);
   });
 
-  // Week grid: training + meals from the diet plan + scheduled rocks
+  // Week grid: training + scheduled rocks (diet/meals live in the Diet tab)
   const grid=document.getElementById('cGrid'); grid.innerHTML='';
   dates.forEach((d,i)=>{
     const iso=localISO(d);
@@ -2764,8 +2764,7 @@ function renderCompass(){
     const div=document.createElement('div');
     div.className='cday'+(iso===todayStr?' today':'');
     let chips='';
-    if(gym){ const tp=getDayPlan(wid,DAY_KEYS[i]); chips+='<div class="chip train">🏋️ 08:00 '+(tp&&tp.type!=='rest'?tp.title:'Training')+'</div><div class="chip shake">🥤 Post-workout smoothie</div>'; }
-    chips+=`<div class="chip meal">🍳 09–10 Öğün 1 ${gym?'(spor)':'(spor yok)'}</div><div class="chip meal">🥗 13–14 Öğün 2</div><div class="chip meal">🍽️ 18–19 Öğün 3</div>`;
+    if(gym){ const tp=getDayPlan(wid,DAY_KEYS[i]); chips+='<div class="chip train">🏋️ 08:00 '+(tp&&tp.type!=='rest'?tp.title:'Training')+'</div>'; }
     rocks.filter(r=>r.day===i).sort((a,b)=>(a.time||'').localeCompare(b.time||'')).forEach(r=>{
       chips+=`<div class="chip rock ${r.done?'done':''}" data-rid="${r.id}" title="Click to toggle done">🪨 ${r.time?r.time+' ':''}${r.title}</div>`;
     });
