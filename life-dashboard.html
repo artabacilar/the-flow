@@ -415,8 +415,26 @@ canvas{width:100%;height:120px;}
 .rockrow .rk-meta{grid-column:2 / 3;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;}
 .rockrow .rk-role{font-size:11px;padding:2px 8px;border-radius:20px;background:#3a2c4f;color:var(--purple);white-space:nowrap;}
 .rockrow .rk-when{color:var(--muted);font-size:12px;white-space:nowrap;}
-.rockrow .rk-del{grid-row:1;grid-column:3;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0 2px;flex:none;-webkit-tap-highlight-color:transparent;}
+.rockrow .rk-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0 2px;flex:none;-webkit-tap-highlight-color:transparent;}
 .rockrow .rk-del:hover{color:var(--red);}
+.rockrow .rk-actions{grid-row:1;grid-column:3;display:flex;align-items:center;gap:2px;}
+.rockrow .rk-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;flex:none;-webkit-tap-highlight-color:transparent;}
+.rockrow .rk-edit:hover{color:var(--accent);}
+.rockrow.editing{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+.rockrow .rk-note{grid-column:2 / 3;color:var(--muted);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px;}
+.rk-prio{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap;font-weight:600;}
+.rk-prio.high{background:rgba(255,41,77,.16);color:#ff6b85;}
+.rk-prio.med{background:rgba(255,194,0,.16);color:var(--orange);}
+.rk-prio.low{background:rgba(126,132,147,.18);color:var(--muted);}
+.rk-dash{color:var(--muted);align-self:center;}
+.rk-note-in{width:100%;margin:0 0 12px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit;resize:vertical;min-height:44px;}
+.chip.rock.p-high{box-shadow:inset 3px 0 0 var(--red);}
+.chip.rock.p-med{box-shadow:inset 3px 0 0 var(--orange);}
+.chip.rock.p-low{box-shadow:inset 3px 0 0 var(--muted);}
+.td-rock .dot.high{background:var(--red);}
+.td-rock .dot.med{background:var(--orange);}
+.td-rock.done .dot{background:var(--green);}
+.td-rk-note{font-size:12px;font-weight:400;color:var(--muted);line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px;}
 .sawgrid{display:grid;grid-template-columns:1fr;gap:8px;}
 .sawcard{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
 .habits7{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:24px;}
@@ -872,9 +890,18 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
         <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
         <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
       </select>
-      <input type="time" id="rkTime" value="10:00">
+      <input type="time" id="rkTime" value="10:00" title="Start time" aria-label="Start time">
+      <span class="rk-dash">–</span>
+      <input type="time" id="rkEnd" title="End time (optional)" aria-label="End time">
+      <select id="rkPrio" title="Priority">
+        <option value="high">🔴 High</option>
+        <option value="med" selected>🟡 Medium</option>
+        <option value="low">⚪ Low</option>
+      </select>
       <button class="btn btn-green" id="rkAdd">+ Add rock</button>
+      <button class="btn btn-ghost" id="rkCancel" style="display:none;">Cancel</button>
     </div>
+    <textarea id="rkNote" class="rk-note-in" rows="2" placeholder="📝 Optional note or details — who's there, what's still pending (e.g. flight ticket still needs to be bought)…"></textarea>
     <div class="rocklist" id="rockList"></div>
   </div>
 
@@ -2564,16 +2591,54 @@ document.getElementById('wkToday').addEventListener('click',()=>{ cOff=0; render
 
 (function(){ const sel=document.getElementById('rkRole'); sel.innerHTML=cData.roles.map(r=>`<option>${r}</option>`).join(''); })();
 
-document.getElementById('rkAdd').addEventListener('click',()=>{
-  const t=document.getElementById('rkTitle').value.trim(); if(!t) return;
-  addRock(t, document.getElementById('rkRole').value, parseInt(document.getElementById('rkDay').value), document.getElementById('rkTime').value, cWeekId());
+let cEditRockId=null;
+function rkFormReset(){
+  cEditRockId=null;
   document.getElementById('rkTitle').value='';
+  document.getElementById('rkEnd').value='';
+  document.getElementById('rkNote').value='';
+  document.getElementById('rkPrio').value='med';
+  document.getElementById('rkAdd').textContent='+ Add rock';
+  document.getElementById('rkCancel').style.display='none';
+}
+function rkBeginEdit(r){
+  cEditRockId=r.id;
+  document.getElementById('rkTitle').value=r.title||'';
+  const roleSel=document.getElementById('rkRole'); if(r.role) roleSel.value=r.role;
+  document.getElementById('rkDay').value=String(r.day);
+  document.getElementById('rkTime').value=r.time||'';
+  document.getElementById('rkEnd').value=r.end||'';
+  document.getElementById('rkPrio').value=r.prio||'med';
+  document.getElementById('rkNote').value=r.note||'';
+  document.getElementById('rkAdd').textContent='💾 Save changes';
+  document.getElementById('rkCancel').style.display='';
+  renderCompass();
+  const ti=document.getElementById('rkTitle'); ti.focus(); ti.scrollIntoView({behavior:'smooth',block:'center'});
+}
+document.getElementById('rkAdd').addEventListener('click',()=>{
+  const title=document.getElementById('rkTitle').value.trim(); if(!title) return;
+  const role=document.getElementById('rkRole').value;
+  const day=parseInt(document.getElementById('rkDay').value);
+  const time=document.getElementById('rkTime').value;
+  const end=document.getElementById('rkEnd').value;
+  const prio=document.getElementById('rkPrio').value;
+  const note=document.getElementById('rkNote').value.trim();
+  const wid=cWeekId();
+  if(cEditRockId){
+    const r=(cData.rocks[wid]||[]).find(x=>x.id===cEditRockId);
+    if(r){ Object.assign(r,{title,role,day,time,end,prio,note}); cSave(); J('planning','✏️ Big rock updated ('+wid+'): '+title); }
+    rkFormReset(); renderCompass();
+  } else {
+    addRock(title, role, day, time, wid, {end,prio,note}); rkFormReset();
+  }
 });
+document.getElementById('rkCancel').addEventListener('click',()=>{ rkFormReset(); renderCompass(); });
 document.getElementById('rkTitle').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('rkAdd').click(); });
 
-function addRock(title, role, day, time, wid){
+function addRock(title, role, day, time, wid, opts){
+  opts=opts||{};
   if(!cData.rocks[wid]) cData.rocks[wid]=[];
-  cData.rocks[wid].push({id:Date.now().toString(36)+Math.floor(Math.random()*1e4), title, role, day, time, done:false});
+  cData.rocks[wid].push({id:Date.now().toString(36)+Math.floor(Math.random()*1e4), title, role, day, time, end:opts.end||'', prio:opts.prio||'med', note:opts.note||'', done:false});
   cSave(); J('planning','🪨 Big rock added ('+wid+'): '+title);
   renderCompass();
 }
@@ -2613,10 +2678,11 @@ function renderToday(){
       if(da!==db) return da-db;
       return (a.time||'99:99').localeCompare(b.time||'99:99');
     }).map(r=>{
-      const when=r.day>=0?(DAY_NAMES[r.day]+(r.time?' '+r.time:'')):'';
+      const when=r.day>=0?(DAY_NAMES[r.day]+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'')):'';
+      const p=r.prio||'med';
       return `<div class="td-rock ${r.done?'done':''}" data-rockid="${r.id}">
-        <div class="dot"></div>
-        <div class="rk-title">${tdEsc(r.title)}</div>
+        <div class="dot ${p}"></div>
+        <div class="rk-title">${tdEsc(r.title)}${r.note?`<div class="td-rk-note">📝 ${tdEsc(r.note)}</div>`:''}</div>
         <div class="rk-meta">${when}</div>
       </div>`;
     }).join('');
@@ -2760,16 +2826,23 @@ function renderCompass(){
     if(da!==db) return da-db;
     return (a.time||'99:99').localeCompare(b.time||'99:99');
   });
+  const PRIO_LBL={high:'🔴 High',med:'🟡 Med',low:'⚪ Low'};
+  const cEsc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const rkWhen=r=> r.day>=0 ? (DAY_NAMES[r.day]+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'')) : 'unscheduled';
   rocksSorted.forEach(r=>{
-    const row=document.createElement('div'); row.className='rockrow'+(r.done?' done':'');
+    const p=r.prio||'med';
+    const row=document.createElement('div'); row.className='rockrow'+(r.done?' done':'')+(cEditRockId===r.id?' editing':'');
     row.innerHTML=`<input type="checkbox" ${r.done?'checked':''}><span class="rk-t">${r.title}</span>
-      <button class="rk-del" title="Delete">×</button>
+      <span class="rk-actions"><button class="rk-edit" title="Edit">✏️</button><button class="rk-del" title="Delete">×</button></span>
       <span class="rk-meta">
+        <span class="rk-prio ${p}">${PRIO_LBL[p]||PRIO_LBL.med}</span>
         <span class="rk-role">${(r.role||'').split('—')[0].trim()}</span>
-        <span class="rk-when">${r.day>=0?DAY_NAMES[r.day]+' '+(r.time||''):'unscheduled'}</span>
-      </span>`;
+        <span class="rk-when">${rkWhen(r)}</span>
+      </span>
+      ${r.note?`<div class="rk-note">📝 ${cEsc(r.note)}</div>`:''}`;
     row.querySelector('input').addEventListener('change',e=>{ r.done=e.target.checked; cSave(); J('planning',(r.done?'✅ Big rock done: ':'↩️ Big rock reopened: ')+r.title+' ('+wid+')'); renderCompass(); });
-    row.querySelector('.rk-del').addEventListener('click',()=>{ cData.rocks[wid]=rocks.filter(x=>x.id!==r.id); cSave(); renderCompass(); });
+    row.querySelector('.rk-del').addEventListener('click',()=>{ if(cEditRockId===r.id) rkFormReset(); cData.rocks[wid]=rocks.filter(x=>x.id!==r.id); cSave(); renderCompass(); });
+    row.querySelector('.rk-edit').addEventListener('click',()=>rkBeginEdit(r));
     rl.appendChild(row);
   });
 
@@ -2786,7 +2859,10 @@ function renderCompass(){
     const tp=getDayPlan(wid,DAY_KEYS[i]);
     if(tp && tp.type!=='rest'){ const tt=(tData.times[DAY_KEYS[i]]??tp.time)||''; chips+='<div class="chip train">🏋️ '+(tt?tt+' ':'')+tp.title+'</div>'; }
     rocks.filter(r=>r.day===i).sort((a,b)=>(a.time||'').localeCompare(b.time||'')).forEach(r=>{
-      chips+=`<div class="chip rock ${r.done?'done':''}" data-rid="${r.id}" title="Click to toggle done">🪨 ${r.time?r.time+' ':''}${r.title}</div>`;
+      const p=r.prio||'med';
+      const ts=r.time?(r.time+(r.end?'–'+r.end:'')+' '):'';
+      const tip=(r.note?r.note+' · ':'')+'Click to toggle done';
+      chips+=`<div class="chip rock p-${p} ${r.done?'done':''}" data-rid="${r.id}" title="${cEsc(tip).replace(/"/g,'&quot;')}">🪨 ${ts}${r.title}</div>`;
     });
     div.innerHTML=`<div class="cd-head"><b>${DAY_NAMES[i]}</b><span>${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}</span></div>${chips}`;
     grid.appendChild(div);
@@ -2863,16 +2939,18 @@ function buildICS(weeks, incRocks, incTrain, incMeals){
     // ── Big Rocks ──
     if(incRocks){
       (cData.rocks[wid]||[]).forEach(r=>{
+        const prioWord={high:'High',med:'Medium',low:'Low'}[r.prio||'med'];
+        const detail='Big Rock'+(r.role?' · '+r.role:'')+' · '+prioWord+' priority'+(r.done?' · ✅ done':'')+(r.note?'\n\n'+r.note:'')+'\nFrom The Flow — Week Compass';
         if(r.day>=0){
           const dayDate=new Date(monday); dayDate.setDate(monday.getDate()+r.day);
           const s=icsSetTime(dayDate, r.time||'10:00');
-          const e=new Date(s); e.setMinutes(e.getMinutes()+60);
-          evt('rock-'+wid+'-'+r.id+'@artur-life-os', s, e, false,
-            '🪨 '+r.title, 'Big Rock'+(r.role?' · '+r.role:'')+(r.done?' · ✅ done':'')+'\nFrom The Flow — Week Compass');
+          let e = r.end ? icsSetTime(dayDate, r.end) : new Date(s.getTime()+60*60000);
+          if(e<=s) e=new Date(s.getTime()+60*60000);
+          evt('rock-'+wid+'-'+r.id+'@artur-life-os', s, e, false, '🪨 '+r.title, detail);
         } else {
           const e=new Date(monday); e.setDate(monday.getDate()+1);
           evt('rock-'+wid+'-'+r.id+'@artur-life-os', monday, e, true,
-            '🪨 '+r.title+' (unscheduled)', 'Big Rock'+(r.role?' · '+r.role:'')+' — not yet time-blocked\nFrom The Flow');
+            '🪨 '+r.title+' (unscheduled)', 'Big Rock'+(r.role?' · '+r.role:'')+' · '+prioWord+' priority — not yet time-blocked'+(r.note?'\n\n'+r.note:'')+'\nFrom The Flow');
         }
         nRocks++;
       });
