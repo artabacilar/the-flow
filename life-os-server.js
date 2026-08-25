@@ -226,10 +226,18 @@ const MANIFEST = JSON.stringify({
   ],
 });
 const SW = `
-const CACHE='life-os-v4';
+const CACHE='life-os-v5';
 const SHELL=['./','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener('message',e=>{ if(e.data==='skip-waiting') self.skipWaiting(); });
+// Tell every open window to reload — used when a background revalidate finds the
+// app shell has changed (a new deploy), so an update applies itself without the
+// user having to hard-refresh or reinstall on each device.
+async function flowNotifyReload(){
+  const cs=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+  for(const c of cs){ try{ c.postMessage({type:'flow-shell-updated'}); }catch(_){} }
+}
 self.addEventListener('fetch',e=>{
   const req=e.request;
   const u=new URL(req.url);
@@ -250,12 +258,26 @@ self.addEventListener('fetch',e=>{
     // the swap, and the pack hash guarantees shell + code always match. The
     // shell is public chrome with no per-user data (that all loads live from
     // /api), so one cached copy is correct for everyone.
+    //
+    // The catch used to be: after a deploy, the device showed the OLD shell and
+    // only picked up the new one on the SECOND open (or not at all if the app
+    // was just resumed). The shell is served byte-identically within a deploy
+    // (built once at startup, pack referenced by content hash), so we can detect
+    // a real change cheaply: compare the freshly fetched shell to the one we just
+    // served, and if it differs, tell the page to reload itself. A deploy now
+    // self-applies within a second of opening — no manual refresh per device.
     e.respondWith((async()=>{
       const cache=await caches.open(CACHE);
       const cached=await cache.match('./');
-      const net=fetch(new Request(req.url,{cache:'no-store',credentials:'same-origin'})).then(r=>{
+      const cachedCmp=cached?cached.clone():null; // independent copy for comparison
+      const net=fetch(new Request(req.url,{cache:'no-store',credentials:'same-origin'})).then(async r=>{
         // Only bank a clean, direct 200 — never a redirect (e.g. the login gate).
-        if(r && r.ok && r.status===200 && r.type==='basic' && !r.redirected) cache.put('./',r.clone());
+        if(r && r.ok && r.status===200 && r.type==='basic' && !r.redirected){
+          let changed=false;
+          if(cachedCmp){ try{ const [a,b]=await Promise.all([cachedCmp.text(), r.clone().text()]); changed=(a!==b); }catch(_){} }
+          await cache.put('./',r.clone());
+          if(changed) await flowNotifyReload();
+        }
         return r;
       }).catch(()=>null);
       e.waitUntil(net);
