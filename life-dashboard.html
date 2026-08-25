@@ -35,10 +35,13 @@
         reg.update();
         // When a new service worker takes control, reload once to show the fresh version
         let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (refreshing) return;
-          refreshing = true;
-          window.location.reload();
+        const reloadOnce = () => { if (refreshing) return; refreshing = true; window.location.reload(); };
+        navigator.serviceWorker.addEventListener('controllerchange', reloadOnce);
+        // The worker also pings us when a background shell refresh finds a newer
+        // deploy (this catches HTML-only changes, where the worker binary itself
+        // is unchanged so 'controllerchange' never fires). Reload once to apply it.
+        navigator.serviceWorker.addEventListener('message', (ev) => {
+          if (ev.data && ev.data.type === 'flow-shell-updated') reloadOnce();
         });
         // If an updated worker is waiting, activate it immediately
         reg.addEventListener('updatefound', () => {
@@ -823,6 +826,18 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   <div class="section-header">🧭 Week Compass — Put First Things First</div>
   <div class="section-sub">Habit 2: begin with the end in mind (your mission). Habit 3: schedule the Big Rocks before the gravel fills the week. Use ← → to plan your upcoming weeks.</div>
 
+  <!-- Week-at-a-glance grid sits at the very top: opening the tab shows the actual
+       week first, with its Prev/Next nav directly above it. Mission, stats and the
+       Big Rocks manager follow below. -->
+  <div class="weeknav">
+    <button id="wkPrev">← Prev</button>
+    <h2 id="cWeekLabel">Week</h2>
+    <button id="wkNext">Next →</button>
+    <button class="thisweek" id="wkToday">jump to this week</button>
+  </div>
+
+  <div class="cgrid" id="cGrid"></div>
+
   <div class="mission">
     <h3>🪧 Personal Mission Statement <span style="color:var(--muted);font-weight:400;">(Habit 2 — your deepest values; everything below serves this)</span></h3>
     <div id="missionDisplay" style="display:none;background:var(--card2);border:2px solid var(--accent);border-radius:12px;padding:16px 18px;margin-bottom:12px;font-size:14px;line-height:1.7;font-style:italic;color:var(--text);">
@@ -845,13 +860,6 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     <div class="stat"><div class="num green" id="cpQ2">0</div><div class="lbl">Open Q2 priorities</div></div>
     <div class="stat"><div class="num orange" id="cpSaw">0/8</div><div class="lbl">Sharpen the Saw</div></div>
     <div class="stat"><div class="num blue" id="cpDiet">—</div><div class="lbl">Diet compliance (7d)</div></div>
-  </div>
-
-  <div class="weeknav">
-    <button id="wkPrev">← Prev</button>
-    <h2 id="cWeekLabel">Week</h2>
-    <button id="wkNext">Next →</button>
-    <button class="thisweek" id="wkToday">jump to this week</button>
   </div>
 
   <div class="panel" style="margin-bottom:16px;">
@@ -894,8 +902,6 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       <b style="color:var(--text);">Google Calendar:</b> open <a href="https://calendar.google.com" target="_blank" style="color:var(--accent);">calendar.google.com</a> → ⚙️ Settings → Import &amp; Export → Import → select the <code>.ics</code> file → it syncs everywhere you use Google.
     </div>
   </div>
-
-  <div class="cgrid" id="cGrid"></div>
 
   <div class="grid2">
     <div class="panel">
