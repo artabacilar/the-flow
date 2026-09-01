@@ -1451,76 +1451,114 @@ const DB_API = (location.protocol === 'file:') ? 'http://localhost:4000/api' : (
 window.__DB_ON = false;
 window.__DB_ENGINE = null;
 (function hydrateFromDB(){
-  /* Wipe every ld_* key this browser is holding. localStorage is a per-device
-     cache, not per-account: whatever it holds belongs to whoever used this
-     browser last. Leaving it in place is exactly how a guest, or a freshly
-     created account, or the sign-in screen itself, ended up showing the
-     previous person's board. */
+  /* The device cache belongs to whoever used this browser last, so it is only
+     ever painted for the account it was written by. The server stamps an
+     opaque, readable marker (flow_acct) beside the HttpOnly session cookie —
+     not a credential, just an answer to "whose copy is this?" that costs no
+     network call. That is what lets a signed-in device draw itself instantly
+     instead of freezing on a request, without ever showing one account's data
+     to another. */
+  const OWNER_KEY = 'ld__owner';
+
   function purgeLocal(){
     const del=[];
-    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) del.push(k); }
-    del.forEach(k=>localStorage.removeItem(k));
-  }
-  window.__flowPurgeLocalData = purgeLocal;   /* guest mode calls this too */
-
-  try{
-    /* First: does this server run the accounts system, and are we signed in?
-       /api/auth/me answers both — 200 with a user means signed in; 200 with
-       user:null and needsSetup:false means accounts exist but nobody is
-       signed in on this device. */
-    let accountsExist=false, signedIn=false;
     try{
-      const me=new XMLHttpRequest(); me.open('GET', DB_API+'/auth/me', false); me.send();
-      if(me.status===200){
-        const j=JSON.parse(me.responseText||'{}');
-        if(typeof j.ok!=='undefined'){
-          if(j.user){ accountsExist=true; signedIn=true; }
-          else if(!j.needsSetup){ accountsExist=true; signedIn=false; }
-        }
-      } else if(me.status===401){ accountsExist=true; signedIn=false; }
-    }catch(e){ /* no accounts module — fall through to open mode */ }
+      for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) del.push(k); }
+      del.forEach(k=>localStorage.removeItem(k));
+    }catch(e){}
+  }
+  window.__flowPurgeLocalData = purgeLocal;
 
-    if(accountsExist){
-      /* The device cache is never trustworthy across accounts. Clear it, then:
-         - anonymous (guest or sign-in screen): stop here, the app renders the
-           blank template and nothing personal is shown;
-         - signed in: load ONLY this account's data straight from the server,
-           with no merge of whatever the device happened to be holding. */
-      purgeLocal();
-      if(!signedIn) return;
-      const xhr=new XMLHttpRequest(); xhr.open('GET', DB_API+'/all', false); xhr.send();
-      if(xhr.status!==200) return;
-      const all=JSON.parse(xhr.responseText);
-      window.__FLOW_ALL=all;
-      Object.keys(all).forEach(k=>{ if(k.indexOf('ld_')===0 && all[k]!=null) localStorage.setItem(k, all[k]); });
-      window.__DB_ON=true;
+  function cookie(name){
+    try{ const m=('; '+document.cookie).match('; '+name+'=([^;]*)'); return m?decodeURIComponent(m[1]):''; }catch(e){ return ''; }
+  }
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+
+  let reloaded=false;
+  function reloadOnce(){
+    if(reloaded) return;
+    /* Hard stop against a reload loop, whatever goes wrong upstream. */
+    try{ if(Date.now()-(+(sessionStorage.getItem('__flowReloadedAt')||0)) < 4000) return; }catch(e){}
+    reloaded=true;
+    try{ sessionStorage.setItem('__flowReloadedAt', String(Date.now())); }catch(e){}
+    location.reload();
+  }
+
+  /* ── Paint phase: decided entirely from the device, so it costs nothing ── */
+  const acct = cookie('flow_acct');
+  const owner = lsGet(OWNER_KEY) || '';
+  if(acct){
+    if(owner !== acct) purgeLocal();   /* a different account's copy, or none */
+  } else if(owner){
+    purgeLocal();                       /* signed out — nothing personal on screen */
+  }
+
+  /* What we are about to draw. The reconcile below compares the server against
+     THIS, not against live storage, so the app's own start-up writes can never
+     be mistaken for a change arriving from the server. */
+  const painted={};
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY) painted[k]=localStorage.getItem(k);
+    }
+  }catch(e){}
+
+  window.__DB_ON = true;   /* mirror writes; switched off below if no server answers */
+
+  /* ── Reconcile phase: runs after the first paint and never blocks it ── */
+  async function reconcile(){
+    let me=null;
+    try{
+      const r=await fetch(DB_API+'/auth/me',{credentials:'same-origin',cache:'no-store'});
+      if(r.ok) me=await r.json();
+      else if(r.status===401) me={ok:false,user:null,needsSetup:false};
+    }catch(e){ window.__DB_ON=false; return; }   /* offline: the cache stands */
+
+    let accountsExist=false, signedIn=false;
+    if(me && typeof me.ok!=='undefined'){
+      if(me.user){ accountsExist=true; signedIn=true; }
+      else if(!me.needsSetup){ accountsExist=true; signedIn=false; }
+    }
+
+    if(accountsExist && !signedIn){
+      window.__DB_ON=false;
+      if(Object.keys(painted).length){ purgeLocal(); reloadOnce(); }
       return;
     }
 
-    /* ---- Open mode: no accounts installed, so localStorage really is the
-       store. This is the original single-user behaviour, unchanged. ---- */
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', DB_API+'/all', false); // synchronous: must finish before init reads storage
-    xhr.send();
-    if(xhr.status!==200) return;
-    const all = JSON.parse(xhr.responseText);
-    window.__FLOW_ALL = all;   /* the pack seeds its cache from this */
-    const serverKeys = Object.keys(all).filter(k=>k.indexOf('ld_')===0);
-    const localKeys = [];
-    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) localKeys.push(k); }
-    if(serverKeys.length===0 && localKeys.length>0){
-      // First run with existing data in THIS file → migrate it up into the database
-      const payload={}; localKeys.forEach(k=>payload[k]=localStorage.getItem(k));
-      const x=new XMLHttpRequest(); x.open('POST', DB_API+'/bulk', false); x.setRequestHeader('Content-Type','application/json'); x.send(JSON.stringify({data:payload}));
-    } else {
-      // Database is the source of truth → load it into this page
-      serverKeys.forEach(k=>{ if(all[k]!=null) localStorage.setItem(k, all[k]); });
-      // Push up any keys this file has that the DB doesn't yet
-      const missing={}; localKeys.forEach(k=>{ if(!(k in all)) missing[k]=localStorage.getItem(k); });
-      if(Object.keys(missing).length){ const x=new XMLHttpRequest(); x.open('POST', DB_API+'/bulk', false); x.setRequestHeader('Content-Type','application/json'); x.send(JSON.stringify({data:missing})); }
+    let all=null;
+    try{
+      const r=await fetch(DB_API+'/all',{credentials:'same-origin',cache:'no-store'});
+      if(!r.ok) return;
+      all=await r.json();
+    }catch(e){ window.__DB_ON=false; return; }
+    window.__FLOW_ALL=all;
+
+    const serverKeys=Object.keys(all).filter(k=>k.indexOf('ld_')===0);
+
+    /* Open mode, first run: this browser holds the only copy — send it up. */
+    if(!accountsExist && serverKeys.length===0 && Object.keys(painted).length){
+      try{
+        await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',body:JSON.stringify({data:painted})});
+      }catch(e){}
+      return;
     }
-    window.__DB_ON = true;
-  }catch(e){ /* server not running — use this file's local storage as before */ }
+
+    let changed=false;
+    serverKeys.forEach(k=>{
+      const v=all[k]; if(v==null) return;
+      if(painted[k]!==v){ try{ localStorage.setItem(k,v); changed=true; }catch(e){} }
+    });
+
+    const acctNow=cookie('flow_acct');
+    if(acctNow && lsGet(OWNER_KEY)!==acctNow){ try{ localStorage.setItem(OWNER_KEY,acctNow); }catch(e){} }
+
+    /* Only when what we drew was genuinely out of date. */
+    if(changed) reloadOnce();
+  }
+  try{ reconcile(); }catch(e){ window.__DB_ON=false; }
 })();
 function dbSet(fullKey, valueStr){
   if(!window.__DB_ON) return;
