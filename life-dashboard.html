@@ -1460,11 +1460,19 @@ window.__DB_ENGINE = null;
      to another. */
   const OWNER_KEY = 'ld__owner';
 
-  function purgeLocal(){
+  /* keep=true moves the keys aside instead of deleting them. Used only when the
+     cache carries no owner stamp at all — data from before this cookie existed,
+     which is almost certainly the signed-in user's own. A genuine account
+     mismatch still deletes outright, so one account's data is never retained on
+     another's device. */
+  function purgeLocal(keep){
     const del=[];
     try{
       for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ld_')===0) del.push(k); }
-      del.forEach(k=>localStorage.removeItem(k));
+      del.forEach(k=>{
+        if(keep){ try{ localStorage.setItem('bak1_'+k, localStorage.getItem(k)); }catch(e){} }
+        try{ localStorage.removeItem(k); }catch(e){}
+      });
     }catch(e){}
   }
   window.__flowPurgeLocalData = purgeLocal;
@@ -1488,9 +1496,10 @@ window.__DB_ENGINE = null;
   const acct = cookie('flow_acct');
   const owner = lsGet(OWNER_KEY) || '';
   if(acct){
-    if(owner !== acct) purgeLocal();   /* a different account's copy, or none */
+    if(!owner) purgeLocal(true);            /* unstamped: set aside, do not destroy */
+    else if(owner !== acct) purgeLocal();   /* a different account — remove for real */
   } else if(owner){
-    purgeLocal();                       /* signed out — nothing personal on screen */
+    purgeLocal();                            /* signed out — nothing personal on screen */
   }
 
   /* What we are about to draw. The reconcile below compares the server against
@@ -1504,7 +1513,11 @@ window.__DB_ENGINE = null;
     }
   }catch(e){}
 
-  window.__DB_ON = true;   /* mirror writes; switched off below if no server answers */
+  /* Writes stay local until the server has answered. The app seeds default
+     data for anything it finds missing at start-up, and until we know what the
+     server actually holds, mirroring those defaults up would overwrite the real
+     record with an empty one. Turned on at the end of a successful reconcile. */
+  window.__DB_ON = false;
 
   /* ── Reconcile phase: runs after the first paint and never blocks it ── */
   async function reconcile(){
@@ -1554,6 +1567,9 @@ window.__DB_ENGINE = null;
 
     const acctNow=cookie('flow_acct');
     if(acctNow && lsGet(OWNER_KEY)!==acctNow){ try{ localStorage.setItem(OWNER_KEY,acctNow); }catch(e){} }
+
+    /* The server has answered, so it is now safe to mirror writes upward. */
+    window.__DB_ON=true;
 
     /* Only when what we drew was genuinely out of date. */
     if(changed) reloadOnce();
