@@ -140,6 +140,22 @@ function sessionCookie(token, maxAgeSec) {
   if (PROD) bits.push('Secure');
   return bits.join('; ');
 }
+/* A second, deliberately readable cookie holding the opaque account id.
+   It is not a credential and cannot authenticate anything — the session
+   above stays HttpOnly. Its only job is to let the page know, with no
+   network call, which cached copy it is allowed to paint on open. That is
+   what lets a signed-in device render instantly instead of blocking on
+   the server, while still never showing one account's data to another. */
+function acctCookie(acct, maxAgeSec) {
+  const bits = [
+    'flow_acct=' + (acct || ''),
+    'Path=/',
+    'SameSite=Lax',
+    'Max-Age=' + maxAgeSec
+  ];
+  if (PROD) bits.push('Secure');
+  return bits.join('; ');
+}
 async function currentUser(req) {
   const token = parseJar(req.headers && req.headers.cookie)['flow_sid'];
   if (!token) return null;
@@ -294,6 +310,17 @@ function protect(store) {
     async set(key, value) {
       if (!uid()) return;
       return store.set(pre() + key, value);
+    },
+    /* Restoring a backup writes every key at once. Without this the wrapper
+       fell through to the unwrapped store, which has no bulk of its own on
+       some backends, and the restore failed with a 500 — namespaced here so
+       a restore lands in the signed-in account and nowhere else. */
+    async bulk(obj) {
+      if (!uid()) return;
+      const p = pre(), out = {};
+      for (const k of Object.keys(obj || {})) out[p + k] = obj[k];
+      if (typeof store.bulk === 'function') return store.bulk(out);
+      for (const k of Object.keys(out)) await store.set(k, out[k]);
     },
     async all() {
       if (!uid()) return {};
@@ -626,6 +653,9 @@ async function gate(req, res) {
   if (p === '/api/auth/me') {
     const me = await currentUser(req);
     if (!me) { json(res, 200, { ok: false, user: null, needsSetup: await isFirstRun() }); return true; }
+    /* Re-stamp the readable marker so a session created before this cookie
+       existed still gets one, and the next open can paint from cache. */
+    res.setHeader('Set-Cookie', acctCookie(me.id, SESSION_DAYS * 86400));
     const seed = await getJSON(SEED(me.id), 'template');
     /* Self-heal. Adoption used to run only at signup and login, so an owner
        holding a session from before a fix had no way to trigger it short of
@@ -737,7 +767,7 @@ async function gate(req, res) {
     await setJSON(SEED(id), adopted > 0 ? 'legacy' : 'template');
 
     const { token, expires } = await newSession(id);
-    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_DAYS * 86400));
+    res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(id, SESSION_DAYS * 86400)]);
     json(res, 200, { ok: true, user: { email, name, owner: !!owner }, adopted, seed: adopted > 0 ? 'legacy' : 'template', expires });
     return true;
   }
@@ -755,7 +785,7 @@ async function gate(req, res) {
 
     if (rec.owner) await adoptLegacyKeys(rec.id);
     const { token, expires } = await newSession(rec.id);
-    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_DAYS * 86400));
+    res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
     json(res, 200, { ok: true, user: { email: rec.email, name: rec.name, owner: !!rec.owner }, seed: await getJSON(SEED(rec.id), 'template'), expires });
     return true;
   }
@@ -763,7 +793,7 @@ async function gate(req, res) {
   if (p === '/api/auth/logout') {
     const token = parseJar(req.headers && req.headers.cookie)['flow_sid'];
     if (token) await raw.set(SESS(token), '');
-    res.setHeader('Set-Cookie', sessionCookie('', 0));
+    res.setHeader('Set-Cookie', [sessionCookie('', 0), acctCookie('', 0)]);
     json(res, 200, { ok: true });
     return true;
   }
