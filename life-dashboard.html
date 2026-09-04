@@ -508,6 +508,7 @@ canvas{width:100%;height:120px;}
 .dbind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:3px 9px;border-radius:100px;border:1px solid var(--border);}
 .dbind.on{color:var(--green);border-color:rgba(0,232,138,.4);}
 .dbind.off{color:var(--muted);}
+    .dbind.warn{color:#ffb020;border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.08);}
 .backupbtns{display:flex;gap:6px;justify-content:flex-end;}
 .backupbtns button,.backupbtns label{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
 .backupbtns button:hover,.backupbtns label:hover{border-color:var(--accent);color:var(--text);}
@@ -1450,6 +1451,57 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
 const DB_API = (location.protocol === 'file:') ? 'http://localhost:4000/api' : (location.origin + '/api');
 window.__DB_ON = false;
 window.__DB_ENGINE = null;
+/* What the sync indicator reads. 'on' = mirroring to the cloud; 'offline' =
+   the server did not answer, so writes are queued on this device; 'signedout'
+   = there is an account but this browser is not in it. */
+window.__FLOW_SYNC = { state:'connecting', pending:0, tries:0 };
+/* True until the app has finished drawing itself. See dirtyMark(). */
+window.__FLOW_SEEDING = true;
+
+/* ── The offline write queue ──────────────────────────────────────────────
+   A phone that opens the app while the server is waking (a free instance can
+   take fifteen seconds) used to fall into local-only mode for the whole
+   session, silently, with no retry — everything typed after that lived on
+   that one device and nowhere else. Two things fix it: keep retrying, and
+   remember which sections were written while we were cut off so the next
+   successful connection pushes THEM UP instead of overwriting them with the
+   server's older copy. The queue lives in storage, so it survives a reload,
+   an app switch, or the phone going to sleep mid-edit. */
+const DIRTY_KEY = 'ld__dirty';
+/* Writes made while the app is still drawing itself. They are held here rather
+   than sent, because at that moment the page may still be showing a stale copy
+   and the reconcile has not run — mirroring them up is how a newer record gets
+   overwritten by an older one. After the server has answered they are flushed,
+   but only for sections the server does not already have. */
+const seedBuf = {};
+window.__flowFlushSeed = function(){
+  const all = window.__FLOW_ALL || {};
+  const send = {};
+  Object.keys(seedBuf).forEach(k=>{
+    if(all[k]==null) send[k]=seedBuf[k];   /* the server has nothing — ours is the only copy */
+    delete seedBuf[k];                      /* otherwise the server's record stands */
+  });
+  if(Object.keys(send).length) dbBulk(send);
+};
+function dirtyRead(){ try{ return JSON.parse(localStorage.getItem(DIRTY_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function dirtyWrite(d){ try{ localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); }catch(e){} }
+function dirtyMark(k){
+  /* Start-up defaults are not edits. The app seeds an empty section for
+     anything it finds missing, and queueing those would push a blank record
+     over the real one the moment the connection came back — the exact way
+     data was lost before. Only what a person changes after the app is on
+     screen counts as newer than the server. */
+  if(window.__FLOW_SEEDING) return;
+  const d=dirtyRead(); if(!d[k]){ d[k]=Date.now(); dirtyWrite(d); } syncPaint();
+}
+function dirtyDrop(keys){ const d=dirtyRead(); keys.forEach(k=>{ delete d[k]; }); dirtyWrite(d); syncPaint(); }
+function syncPaint(){
+  try{
+    window.__FLOW_SYNC.pending = Object.keys(dirtyRead()).length;
+    if(typeof updateDbIndicator==='function') updateDbIndicator();
+  }catch(e){}
+}
+
 (function hydrateFromDB(){
   /* The device cache belongs to whoever used this browser last, so it is only
      ever painted for the account it was written by. The server stamps an
@@ -1462,9 +1514,10 @@ window.__DB_ENGINE = null;
 
   /* keep=true moves the keys aside instead of deleting them. Used only when the
      cache carries no owner stamp at all — data from before this cookie existed,
-     which is almost certainly the signed-in user's own. A genuine account
-     mismatch still deletes outright, so one account's data is never retained on
-     another's device. */
+     which is almost certainly the signed-in user's own — or when the queue
+     still holds writes that exist nowhere else. A genuine account mismatch
+     with nothing queued still deletes outright, so one account's data is never
+     retained on another's device. */
   function purgeLocal(keep){
     const del=[];
     try{
@@ -1499,7 +1552,7 @@ window.__DB_ENGINE = null;
     if(!owner) purgeLocal(true);            /* unstamped: set aside, do not destroy */
     else if(owner !== acct) purgeLocal();   /* a different account — remove for real */
   } else if(owner){
-    purgeLocal();                            /* signed out — nothing personal on screen */
+    purgeLocal(Object.keys(dirtyRead()).length>0);  /* signed out — keep nothing on screen */
   }
 
   /* What we are about to draw. The reconcile below compares the server against
@@ -1509,7 +1562,7 @@ window.__DB_ENGINE = null;
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
-      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY) painted[k]=localStorage.getItem(k);
+      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY) painted[k]=localStorage.getItem(k);
     }
   }catch(e){}
 
@@ -1519,6 +1572,35 @@ window.__DB_ENGINE = null;
      record with an empty one. Turned on at the end of a successful reconcile. */
   window.__DB_ON = false;
 
+  /* ── Retry ────────────────────────────────────────────────────────────────
+     Never give up after one failed request. Back off, but keep trying, and
+     try again immediately whenever the network or the screen comes back. */
+  let timer=null;
+  const WAITS=[2000,5000,10000,20000,30000,60000];
+  function schedule(){
+    if(timer) return;
+    const w=WAITS[Math.min(window.__FLOW_SYNC.tries, WAITS.length-1)];
+    timer=setTimeout(()=>{ timer=null; run(); }, w);
+  }
+  function fail(){
+    window.__DB_ON=false;
+    window.__FLOW_SYNC.state='offline';
+    syncPaint();
+    schedule();                    /* books the wait for THIS attempt … */
+    window.__FLOW_SYNC.tries++;    /* … then lengthens the next one */
+  }
+  function run(){ try{ reconcile().catch(fail); }catch(e){ fail(); } }
+  /* Called by the sync badge, and by any write that discovers the server gone. */
+  window.__flowSyncNow=function(){
+    window.__FLOW_SYNC.tries=0;
+    if(timer){ clearTimeout(timer); timer=null; }
+    run();
+  };
+  try{
+    addEventListener('online', ()=>window.__flowSyncNow());
+    addEventListener('visibilitychange', ()=>{ if(!document.hidden && !window.__DB_ON) window.__flowSyncNow(); });
+  }catch(e){}
+
   /* ── Reconcile phase: runs after the first paint and never blocks it ── */
   async function reconcile(){
     let me=null;
@@ -1526,7 +1608,8 @@ window.__DB_ENGINE = null;
       const r=await fetch(DB_API+'/auth/me',{credentials:'same-origin',cache:'no-store'});
       if(r.ok) me=await r.json();
       else if(r.status===401) me={ok:false,user:null,needsSetup:false};
-    }catch(e){ window.__DB_ON=false; return; }   /* offline: the cache stands */
+      else { fail(); return; }
+    }catch(e){ fail(); return; }   /* offline: the cache stands, and we try again */
 
     let accountsExist=false, signedIn=false;
     if(me && typeof me.ok!=='undefined'){
@@ -1536,53 +1619,113 @@ window.__DB_ENGINE = null;
 
     if(accountsExist && !signedIn){
       window.__DB_ON=false;
-      if(Object.keys(painted).length){ purgeLocal(); reloadOnce(); }
+      window.__FLOW_SYNC.state='signedout';
+      syncPaint();
+      if(Object.keys(painted).length){ purgeLocal(Object.keys(dirtyRead()).length>0); reloadOnce(); }
       return;
     }
 
     let all=null;
     try{
       const r=await fetch(DB_API+'/all',{credentials:'same-origin',cache:'no-store'});
-      if(!r.ok) return;
+      /* A refused session is not a broken network. Saying "offline, retrying"
+         here would hide the real problem and spin forever. */
+      if(r.status===401||r.status===403){
+        window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
+      }
+      if(!r.ok){ fail(); return; }
       all=await r.json();
-    }catch(e){ window.__DB_ON=false; return; }
+    }catch(e){ fail(); return; }
     window.__FLOW_ALL=all;
 
     const serverKeys=Object.keys(all).filter(k=>k.indexOf('ld_')===0);
 
+    /* Everything written while we were cut off. These are the newest copy of
+       that section anywhere, so they go up — they are never pulled down over. */
+    const dirty=dirtyRead();
+    const dirtyKeys=Object.keys(dirty);
+    const push={};
+    dirtyKeys.forEach(k=>{
+      const v=lsGet(k); if(v==null) return;
+      /* If this device held nothing for that section when it started, our copy
+         cannot be an edit of the server's — it is a fresh default. Keep it
+         aside and let the server's real record win. */
+      if(!(k in painted) && all[k]!=null){ try{ localStorage.setItem('bak2_'+k, v); }catch(e){} delete dirty[k]; return; }
+      push[k]=v;
+    });
+
     /* Open mode, first run: this browser holds the only copy — send it up. */
     if(!accountsExist && serverKeys.length===0 && Object.keys(painted).length){
       try{
-        await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
+        const r=await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
           credentials:'same-origin',body:JSON.stringify({data:painted})});
-      }catch(e){}
+        if(!r.ok){ fail(); return; }
+      }catch(e){ fail(); return; }
+      dirtyDrop(dirtyKeys);
+      window.__DB_ON=true; window.__FLOW_SYNC.state='on'; window.__FLOW_SYNC.tries=0; syncPaint();
       return;
     }
 
     let changed=false;
     serverKeys.forEach(k=>{
+      if(dirty[k]) return;                     /* ours is newer — do not clobber it */
+
       const v=all[k]; if(v==null) return;
-      if(painted[k]!==v){ try{ localStorage.setItem(k,v); changed=true; }catch(e){} }
+      if(painted[k]!==v){
+        /* Last-ditch net: whatever this device held is kept aside for one
+           generation before the server's copy replaces it. Nothing this app
+           overwrites is ever unrecoverable. */
+        try{ if(painted[k]!=null) localStorage.setItem('bak2_'+k, painted[k]); }catch(e){}
+        try{ localStorage.setItem(k,v); changed=true; }catch(e){}
+      }
     });
+
+    if(Object.keys(push).length){
+      try{
+        const r=await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',body:JSON.stringify({data:push})});
+        if(!r.ok){ fail(); return; }
+      }catch(e){ fail(); return; }
+      dirtyDrop(dirtyKeys);
+    }
 
     const acctNow=cookie('flow_acct');
     if(acctNow && lsGet(OWNER_KEY)!==acctNow){ try{ localStorage.setItem(OWNER_KEY,acctNow); }catch(e){} }
 
     /* The server has answered, so it is now safe to mirror writes upward. */
     window.__DB_ON=true;
+    window.__FLOW_SYNC.state='on';
+    window.__FLOW_SYNC.tries=0;
+    syncPaint();
+    try{ window.__flowFlushSeed(); }catch(e){}
 
     /* Only when what we drew was genuinely out of date. */
     if(changed) reloadOnce();
   }
-  try{ reconcile(); }catch(e){ window.__DB_ON=false; }
+  run();
 })();
 function dbSet(fullKey, valueStr){
-  if(!window.__DB_ON) return;
-  try{ fetch(DB_API+'/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:fullKey,value:valueStr})}).catch(()=>{}); }catch(e){}
+  if(window.__FLOW_SEEDING){ seedBuf[fullKey]=valueStr; return; }
+  if(!window.__DB_ON){ dirtyMark(fullKey); return; }
+  try{
+    fetch(DB_API+'/set',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',body:JSON.stringify({key:fullKey,value:valueStr})})
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); })
+      .catch(()=>{ window.__DB_ON=false; dirtyMark(fullKey);
+        try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
+  }catch(e){ window.__DB_ON=false; dirtyMark(fullKey); }
 }
 function dbBulk(obj){
-  if(!window.__DB_ON) return;
-  try{ fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:obj})}).catch(()=>{}); }catch(e){}
+  const keys=Object.keys(obj||{});
+  if(window.__FLOW_SEEDING){ keys.forEach(k=>{ seedBuf[k]=obj[k]; }); return; }
+  if(!window.__DB_ON){ keys.forEach(dirtyMark); return; }
+  try{
+    fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',body:JSON.stringify({data:obj})})
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); })
+      .catch(()=>{ window.__DB_ON=false; keys.forEach(dirtyMark);
+        try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
+  }catch(e){ window.__DB_ON=false; keys.forEach(dirtyMark); }
 }
 
 // ════════════════════════════════════════════
@@ -3359,15 +3502,27 @@ function updateDbIndicator(){
   const els=['dbInd','dbInd2','dbInd3'].map(id=>document.getElementById(id)).filter(Boolean);
   if(!els.length) return;
   const set=(cls,text,title)=>els.forEach(el=>{ el.className=cls; el.textContent=text; el.title=title; });
+  const sync = window.__FLOW_SYNC || {state:'connecting', pending:0};
+  /* Anything not synced is one tap from being sent. The badge is the retry. */
+  els.forEach(el=>{ el.style.cursor='pointer'; el.onclick=()=>{ try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} }; });
   if(window.__DB_ON){
     set('dbind on',
         '🟢 Database'+(window.__DB_ENGINE?' · '+window.__DB_ENGINE:''),
-        'Saving to your local database on disk (life-os-server.js). Safe across every copy of this file.');
+        'Saving to the cloud database. Every device signed into this account sees the same data.');
     try{ fetch(DB_API+'/status').then(r=>r.json()).then(s=>{ window.__DB_ENGINE=s.engine; els.forEach(el=>{ el.textContent='🟢 Database · '+s.engine+' · '+s.keys+' sets'; }); }).catch(()=>{}); }catch(e){}
+  } else if(sync.state==='signedout'){
+    set('dbind off', '🔒 Not signed in',
+        'This browser is not signed in, so nothing is being saved to your account. Sign in to sync.');
+  } else if(sync.pending){
+    /* The state that used to be invisible: this device is holding edits that
+       exist nowhere else. Say so, in words, with a count. */
+    set('dbind warn',
+        '🟠 '+sync.pending+' change'+(sync.pending===1?'':'s')+' waiting to sync',
+        'These edits are saved on this device only. They will be sent as soon as the server answers — tap to try now.');
   } else {
     set('dbind off',
-        '⚪ This file only',
-        'The database server is not running — data is saving inside THIS file only. Start life-os-server.js to sync across copies.');
+        sync.state==='offline' ? '⚪ Offline · retrying' : '⚪ Connecting…',
+        'Cannot reach the server right now. Your edits are safe on this device and will sync automatically — tap to try now.');
   }
 }
 
@@ -3684,6 +3839,21 @@ const wsDTC  = makeWorkspace({key:'work_dtc',  mountId:'ws-dtc',  name:'Side Pro
 if(!S.ok){ document.getElementById('storageBanner').style.display='block'; }
 updateDbIndicator();
 renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm(); renderToday(); wsABKO.render(); wsDTC.render(); S.saved();
+/* Everything above is the app drawing itself — and the upgrade pack, which
+   loads after this, seeds a little more. A write only counts as an edit worth
+   queueing once a person has actually touched the app, or once start-up has
+   demonstrably finished. Whichever comes first closes the gate. */
+(function closeSeedingGate(){
+  let done=false;
+  const close=()=>{ if(done) return; done=true; window.__FLOW_SEEDING=false;
+    try{ if(window.__DB_ON) window.__flowFlushSeed(); }catch(e){}
+    syncPaint(); };
+  ['pointerdown','keydown','touchstart','change'].forEach(ev=>{
+    try{ addEventListener(ev, close, {once:true, capture:true, passive:true}); }catch(e){}
+  });
+  if(document.readyState==='complete') setTimeout(close,2000);
+  else addEventListener('load', ()=>setTimeout(close,2000), {once:true});
+})();
 
 // ── APP MODE ── Only when launched from the iPhone/Android home-screen app
 // (standalone PWA), reveal the "Today" screen and make it the landing view.
