@@ -5934,11 +5934,20 @@ const Nav = {
     Nav.segEl = seg;
   },
 
+  /* The active pane, whoever owns it. Sections the pack adds are
+     `.flow-section`, not the host's `.section` — matching only the latter
+     left North Star, the one Focus tab we own, with no segment row at all,
+     and so no way back to the rest of the group except a link inside the
+     page. */
+  pane() {
+    return document.querySelector('.section.active, .flow-section.active');
+  },
+
   paintSeg(cur) {
     const seg = Nav.segEl;
     if (!seg) return;
     const g = Nav.groupOf(cur);
-    const host = document.querySelector('.section.active');
+    const host = Nav.pane();
 
     if (!g || g.tabs.length < 2 || !host) { seg.style.display = 'none'; return; }
 
@@ -5950,7 +5959,12 @@ const Nav = {
       b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-seg')));
     });
 
-    if (seg.parentElement !== host || host.firstChild !== seg) host.insertBefore(seg, host.firstChild);
+    /* Above the pane rather than inside it: a section that repaints itself
+       by rewriting its own innerHTML — North Star does, every time the
+       direction lands — would otherwise delete the row out from under us. */
+    const par = host.parentElement;
+    if (par && (seg.parentElement !== par || seg.nextElementSibling !== host)) par.insertBefore(seg, host);
+    else if (!par && seg.parentElement !== host) host.insertBefore(seg, host.firstChild);
     seg.style.display = '';
     /* A tab deep in its group used to leave the highlighted pill off-screen to
        the right — the row read as broken rather than scrollable. Center the
