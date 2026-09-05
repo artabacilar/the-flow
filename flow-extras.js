@@ -283,6 +283,24 @@ const SYSTEM = [
   '· Never invent entries, numbers or dates that are not in the snapshot.'
 ].join('\n');
 
+/** The system prompt as blocks, with the person's own data marked cacheable.
+ *
+ *  Every question re-sends the same twenty-odd kilobytes of record, and the
+ *  model has to read all of it before it can write the first word — which is
+ *  most of the wait. Marking that block cacheable means the second question
+ *  in a conversation starts from a warm prompt instead of a cold one.
+ *
+ *  Below Anthropic's minimum cacheable size there is nothing to gain, so the
+ *  marker is left off rather than sent and ignored.
+ */
+const CACHE_MIN_CHARS = 4000;
+function systemBlocks(snapshot) {
+  const data = '# The person\'s own data\n\n' + (snapshot || '(no data yet)');
+  const block = { type: 'text', text: data };
+  if (data.length >= CACHE_MIN_CHARS) block.cache_control = { type: 'ephemeral' };
+  return [{ type: 'text', text: SYSTEM }, block];
+}
+
 const todayKey = () => 'chat:' + new Date().toISOString().slice(0, 10);
 
 async function handleChat(p, req, res, ctx) {
@@ -317,7 +335,7 @@ async function handleChat(p, req, res, ctx) {
   const payload = {
     model: CHAT_MODEL,
     max_tokens: 1024,
-    system: SYSTEM + '\n\n# The person\'s own data\n\n' + (snapshot || '(no data yet)'),
+    system: systemBlocks(snapshot),
     messages: clean
   };
 
@@ -497,7 +515,7 @@ async function handleChatStream(p, req, res, ctx) {
       'x-api-key': key, 'anthropic-version': '2023-06-01'
     }, {
       model: CHAT_MODEL, max_tokens: 1024, stream: true,
-      system: SYSTEM + '\n\n# The person\'s own data\n\n' + (snapshot || '(no data yet)'),
+      system: systemBlocks(snapshot),
       messages: clean
     }, (ev) => {
       if (stopped) return;
@@ -838,3 +856,4 @@ module.exports._internals.buildDirectionContext = buildDirectionContext;
 module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
 module.exports._internals.postStream = postStream;
 module.exports._internals.sseFrames = sseFrames;
+module.exports._internals.systemBlocks = systemBlocks;
