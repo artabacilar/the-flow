@@ -1091,3 +1091,77 @@ html[data-flow-theme="whoop"]     .flow-x{
 .ns-tenet-txt:hover{ color:var(--f-ink); }
 .ns-tenet .ns-x{ margin-top:2px; }
 .ns-addrow{ margin-top:2px; }
+
+/* ======================================================================
+ * Scoreboard — one tap per thing done, and the week either shows it or not
+ * ==================================================================== */
+.sc-list{ display:flex; flex-direction:column; gap:15px; margin-bottom:15px; }
+.sc-metric{ padding-bottom:14px; border-bottom:1px solid var(--f-grid); }
+.sc-metric:last-child{ border-bottom:none; padding-bottom:0; }
+.sc-head{ display:flex; align-items:center; gap:9px; margin-bottom:8px; flex-wrap:wrap; }
+.sc-ic{ font-size:17px; flex:0 0 auto; line-height:1; }
+.sc-name{
+  background:none; border:none; padding:0; font:inherit; cursor:pointer;
+  font-size:14px; font-weight:600; color:var(--f-ink); text-align:left;
+}
+.sc-name:hover{ text-decoration:underline dotted; text-underline-offset:3px; }
+.sc-streak{ font-size:11.5px; font-weight:700; color:var(--f-warning); }
+.sc-count{
+  margin-left:auto; font-size:19px; font-weight:800; line-height:1;
+  color:var(--f-ink); font-variant-numeric:tabular-nums;
+}
+.sc-metric.done .sc-count{ color:var(--f-accent); }
+.sc-target{ font-size:11.5px; color:var(--f-ink-2); white-space:nowrap; }
+.sc-bar{ height:8px; border-radius:999px; background:var(--f-grid); overflow:hidden; }
+.sc-bar > i{
+  display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, var(--f-seq-3), var(--f-seq-5));
+  transition:width .22s ease;
+}
+.sc-foot{ display:flex; gap:7px; align-items:center; margin-top:8px; }
+.sc-foot .flow-btn{ min-width:40px; flex:0 0 auto; }
+.sc-spacer{ flex:1; }
+.sc-days{ display:flex; gap:3px; flex:1; min-width:0; }
+.sc-days .sc-day{
+  flex:1; min-width:0; height:15px; border-radius:4px; background:var(--f-grid);
+  display:flex; align-items:center; justify-content:center;
+  font-size:9.5px; font-weight:700; font-style:normal;
+  color:#05231b; font-variant-numeric:tabular-nums;
+}
+.sc-days .sc-day.on{ background:var(--f-accent); }
+.sc-days .sc-day.now{ box-shadow:0 0 0 1.5px var(--f-ink-2) inset; }
+.sc-days .sc-day.on.now{ box-shadow:0 0 0 1.5px var(--f-ink) inset; }
+.sc-plus span{ opacity:.72; font-weight:500; }
+.sc-edit{ display:flex; flex-direction:column; gap:8px; }
+.sc-e-ic{ width:56px; text-align:center; }
+.sc-e-n{ width:74px; }
+.flow-btn.danger{ color:var(--f-bad, #e5484d); }
+
+/* ======================================================================
+ * Direction — the read on where this is actually going
+ * ==================================================================== */
+.dir-card{ position:relative; }
+.dir-top{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.dir-sign{ font-size:12px; font-weight:700; color:var(--f-accent); letter-spacing:.06em; text-transform:uppercase; }
+.dir-when{ font-size:11.5px; color:var(--f-ink-2); margin-left:auto; }
+.dir-lede{
+  font-size:16.5px; line-height:1.5; font-weight:500; color:var(--f-ink);
+  margin:8px 0 14px;
+}
+.dir-block{ margin-top:15px; }
+.dir-block h4{
+  margin:0 0 7px; font-size:11.5px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--f-ink-2);
+}
+.dir-block p{ margin:0 0 8px; font-size:14px; line-height:1.55; color:var(--f-ink); }
+.dir-acts{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+.dir-acts li{ display:flex; gap:10px; font-size:14px; line-height:1.5; align-items:flex-start; }
+.dir-acts li::before{
+  content:''; flex:0 0 auto; width:6px; height:6px; border-radius:50%;
+  background:var(--f-accent); margin-top:7px;
+}
+.dir-watch{ color:var(--f-warning); }
+.dir-watch::before{ background:var(--f-warning) !important; }
+.dir-empty{ font-size:14px; line-height:1.55; color:var(--f-ink-2); margin:6px 0 12px; }
+.dir-birth{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+.dir-birth input{ width:170px; }
