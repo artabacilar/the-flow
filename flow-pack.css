@@ -1404,3 +1404,111 @@ html[data-flow-theme="whoop"]     .flow-x{
 .fr-sw b{ display:block; font-size:13px; font-weight:600; color:var(--f-ink); }
 .fr-sw em{ display:block; font-size:11.5px; font-style:normal; color:var(--f-ink-2); line-height:1.45; }
 .fr-note{ margin:2px 0 0; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * The routine audit
+ *
+ * The one screen in the app that is not about today. It should feel like
+ * sitting down with the evidence, so: the quote as the framing, then one
+ * plain row per recurring thing — the number, the direction, and three
+ * buttons. No colour until a decision is made.
+ * ────────────────────────────────────────────────────────────────────────── */
+.au-quote{
+  margin:0 0 16px; padding:0 0 0 15px; border-left:2px solid var(--f-accent);
+  display:flex; flex-direction:column; gap:3px;
+  font-size:14.5px; line-height:1.5; color:var(--f-ink); font-style:normal;
+}
+.au-quote span:first-child{ font-weight:600; }
+.au-quote span:last-child{ color:var(--f-ink-2); }
+
+.au-range{ margin:0 0 16px; }
+.au-group{ margin-bottom:20px; }
+.au-group h5{
+  margin:0 0 10px; font-size:11px; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--f-ink-2);
+}
+
+.au-row{
+  border:1px solid var(--f-grid); border-radius:14px; padding:13px 14px 12px;
+  margin-bottom:10px; transition:border-color .15s, opacity .15s;
+}
+.au-row.done{ border-color:rgba(23,187,146,.28); }
+.au-top{ display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+.au-ic{ font-size:15px; line-height:1; flex:0 0 auto; }
+.au-name{ font-size:14px; font-weight:600; color:var(--f-ink); flex:1; min-width:0; }
+.au-said{
+  font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  padding:3px 8px; border-radius:100px; white-space:nowrap;
+}
+.au-said.keep  { background:rgba(23,187,146,.14); color:var(--f-accent); }
+.au-said.cut   { background:rgba(224,90,90,.14);  color:var(--f-warn,#e0665e); }
+.au-said.change{ background:rgba(0,147,231,.14);  color:#63c2f7; }
+
+.au-bar{ height:5px; border-radius:999px; background:var(--f-grid); overflow:hidden; margin-bottom:8px; }
+.au-bar > i{ display:block; height:100%; border-radius:999px; }
+.au-bar > i.good{ background:var(--f-accent); }
+.au-bar > i.mid { background:linear-gradient(90deg,var(--f-seq-3),var(--f-seq-5)); }
+.au-bar > i.low { background:#6b7280; }
+
+.au-meta{ font-size:12px; line-height:1.55; color:var(--f-ink-2); margin-bottom:11px; }
+.au-meta b{ color:var(--f-ink); font-weight:600; }
+.au-up  { color:var(--f-accent); }
+.au-down{ color:var(--f-warn,#e0a33e); }
+.au-flat{ color:var(--f-ink-2); }
+
+.au-acts{ display:flex; gap:7px; }
+.au-btn{
+  flex:1; min-height:38px; border-radius:10px; cursor:pointer;
+  background:var(--card,rgba(255,255,255,.03)); border:1px solid var(--f-grid);
+  color:var(--f-ink-2); font-family:inherit; font-size:13px; font-weight:600;
+  transition:.14s; -webkit-tap-highlight-color:transparent;
+}
+.au-btn:hover{ color:var(--f-ink); }
+.au-btn.keep.on  { background:rgba(23,187,146,.16); border-color:rgba(23,187,146,.45); color:var(--f-accent); }
+.au-btn.change.on{ background:rgba(0,147,231,.16);  border-color:rgba(0,147,231,.45);  color:#63c2f7; }
+.au-btn.cut.on   { background:rgba(224,90,90,.16);  border-color:rgba(224,90,90,.45);  color:#e0665e; }
+
+.au-edit{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.au-edit label{ font-size:11.5px; color:var(--f-ink-2); }
+.au-edit .flow-in{ width:74px; flex:0 0 auto; text-align:center; min-height:0; height:38px; }
+.au-per{ font-size:11.5px; color:var(--f-ink-2); flex:1; min-width:0; }
+
+.au-foot{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px; }
+.au-left{ margin:0; flex:1; }
+.au-hist{ margin-top:18px; border-top:1px solid var(--f-grid); padding-top:14px; }
+.au-hist h5{
+  margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--f-ink-2);
+}
+.au-hist ul{ margin:0; padding-left:17px; }
+.au-hist li{ font-size:12.5px; color:var(--f-ink-2); margin-bottom:3px; }
+.au-hist li b{ color:var(--f-ink); font-weight:600; }
+
+/* The twice-a-year banner on Today. Deliberately not red: nothing is wrong,
+   something is due. */
+.td-audit{
+  display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+  background:linear-gradient(150deg,rgba(23,187,146,.10),rgba(23,187,146,.03));
+  border:1px solid rgba(23,187,146,.28); border-radius:18px;
+  padding:16px 18px; margin-bottom:22px;
+}
+.td-audit-body{ flex:1 1 240px; min-width:0; }
+.td-audit .lbl{
+  display:block; font-size:10.5px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--f-accent); margin-bottom:5px;
+}
+.td-audit p{ margin:0; font-size:14px; line-height:1.5; color:var(--f-ink); }
+.td-audit-acts{ display:flex; gap:8px; flex:0 0 auto; }
+
+/* The five lines on the sign-in screen. They are the reason the app exists,
+   so they sit above the form rather than under it, and they are quiet — a
+   creed read once, not a headline shouted every time. */
+.fa-creed{
+  margin:0 0 22px; padding:0 0 0 14px;
+  border-left:2px solid rgba(23,187,146,.5);
+  display:flex; flex-direction:column; gap:3px;
+  font-size:13.5px; line-height:1.5; font-style:normal;
+  color:var(--f-ink-2,#9aa4b2);
+}
+.fa-creed span:first-child{ color:var(--f-ink,#e7ebf0); font-weight:600; }
+.fa-creed .last{ color:rgba(23,187,146,.9); }
