@@ -913,13 +913,11 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     <div class="rockform form-row">
       <input type="text" id="rkTitle" placeholder="e.g. Launch CRM lead-gen campaign v1">
       <select id="rkRole"></select>
-      <!-- Options are relabelled with real dates on every render, so "Sun"
-           can never quietly mean a Sunday in another week. -->
-      <select id="rkDay">
-        <option value="-1">Unscheduled</option>
-        <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
-        <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
-      </select>
+      <!-- A real date, never a bare weekday. Filled from today forwards on
+           every render; the week it belongs to is worked out from the date
+           rather than from whichever week happens to be on screen. -->
+      <select id="rkDay" title="When"></select>
+      <input type="date" id="rkDate" style="display:none;" title="Pick a date">
       <input type="time" id="rkTime" value="10:00" title="Start time" aria-label="Start time">
       <span class="rk-dash">–</span>
       <input type="time" id="rkEnd" title="End time (optional)" aria-label="End time">
@@ -2783,30 +2781,90 @@ function cSave(){ S.set('compass', cData); }
 function rkWeekPaint(wid, isThis, dates){
   const h=document.getElementById('rkHeading');
   const warn=document.getElementById('rkWeekWarn');
-  const sel=document.getElementById('rkDay');
   const wkNum=wid.split('-W')[1];
   const fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
 
   if(h) h.textContent = isThis ? '🪨 Big Rocks for this week'
                                : '🪨 Big Rocks — week '+wkNum;
+  /* The banner is now only a note about what you are LOOKING at. Where a new
+     rock lands is decided by its date, not by this, so it no longer warns. */
   if(warn){
     warn.classList.toggle('on', !isThis);
     if(!isThis){
       const when = cOff<0 ? (cOff===-1?'last week':(-cOff)+' weeks ago')
                           : (cOff===1?'next week':'in '+cOff+' weeks');
-      warn.innerHTML = 'You are adding to <b>week '+wkNum+'</b> — '+when+
-        ' ('+fmt(dates[0])+' – '+fmt(dates[6])+'). Anything you add here will not appear on Today.' +
-        '<button type="button" id="rkJumpNow">Go to this week</button>';
+      warn.innerHTML = 'Showing <b>week '+wkNum+'</b> — '+when+
+        ' ('+fmt(dates[0])+' – '+fmt(dates[6])+'). New rocks still go to whatever date you pick.' +
+        '<button type="button" id="rkJumpNow">Back to this week</button>';
       const jump=document.getElementById('rkJumpNow');
       if(jump) jump.addEventListener('click',()=>{ cOff=0; renderCompass(); });
     } else warn.innerHTML='';
   }
-  if(sel && dates){
-    Array.prototype.forEach.call(sel.options, o=>{
-      const v=parseInt(o.value,10);
-      if(v>=0 && dates[v]) o.textContent = DAY_NAMES[v]+' '+fmt(dates[v]);
-    });
+  rkFillDates();
+}
+
+/* ── Dates, not weekdays ─────────────────────────────────────────────────
+   "Sun" is ambiguous: it meant the Sunday of whichever week the planner
+   happened to be showing, which is how a rock for tomorrow ended up on a
+   Sunday that had already passed. The picker now offers real dates from
+   today forwards, and the week a rock belongs to is derived from the date
+   it carries — so it files itself correctly no matter which week you are
+   looking at while you type. */
+const RK_HORIZON = 28;
+function rkIso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rkDayIndex(d){ return (d.getDay()+6)%7; }          /* 0 = Monday */
+function rkLabel(d, i){
+  if(i===0) return 'Today · '+DAY_NAMES[rkDayIndex(d)];
+  if(i===1) return 'Tomorrow · '+DAY_NAMES[rkDayIndex(d)];
+  return DAY_NAMES[rkDayIndex(d)]+' '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+/* Rebuilt on every render so "Today" is always today, even in a tab that has
+   been open since yesterday. The current choice is preserved across rebuilds. */
+function rkFillDates(){
+  const sel=document.getElementById('rkDay'); if(!sel) return;
+  const keep=sel.value;
+  const base=new Date(); base.setHours(0,0,0,0);
+  let html='<option value="-1">Unscheduled</option>';
+  for(let i=0;i<RK_HORIZON;i++){
+    const d=new Date(base); d.setDate(base.getDate()+i);
+    html+='<option value="'+rkIso(d)+'">'+rkLabel(d,i)+'</option>';
   }
+  html+='<option value="pick">Another date…</option>';
+  sel.innerHTML=html;
+  /* A date already chosen but outside the rolling window — an edit of an old
+     rock, say — is added back so it is not silently changed to today. */
+  if(keep && keep!=='-1' && keep!=='pick' && !Array.prototype.some.call(sel.options,o=>o.value===keep)){
+    const d=new Date(keep+'T00:00:00');
+    if(!isNaN(d)) sel.insertAdjacentHTML('afterbegin','<option value="'+keep+'">'+DAY_NAMES[rkDayIndex(d)]+' '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+'</option>');
+  }
+  if(keep) sel.value=keep;
+  if(!sel.value) sel.value=rkIso(base);
+}
+/* "Another date…" reveals the native picker; choosing a date folds it back
+   into the list so the control always reads as one thing. */
+(function wireRkDate(){
+  const sel=document.getElementById('rkDay'), inp=document.getElementById('rkDate');
+  if(!sel||!inp) return;
+  sel.addEventListener('change',()=>{
+    if(sel.value==='pick'){ inp.style.display=''; inp.value=inp.value||rkIso(new Date()); inp.focus(); try{ inp.showPicker&&inp.showPicker(); }catch(e){} }
+    else inp.style.display='none';
+  });
+  inp.addEventListener('change',()=>{
+    if(!inp.value) return;
+    rkFillDates();
+    if(!Array.prototype.some.call(sel.options,o=>o.value===inp.value)){
+      const d=new Date(inp.value+'T00:00:00');
+      sel.insertAdjacentHTML('beforeend','<option value="'+inp.value+'">'+DAY_NAMES[rkDayIndex(d)]+' '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+'</option>');
+    }
+    sel.value=inp.value; inp.style.display='none';
+  });
+})();
+/* The one place a date becomes a place to store a rock. */
+function rkResolve(value){
+  if(!value || value==='-1' || value==='pick') return { wid: cWeekId(), day: -1 };
+  const d=new Date(value+'T00:00:00');
+  if(isNaN(d)) return { wid: cWeekId(), day: -1 };
+  return { wid: weekId(d), day: rkDayIndex(d), date: d };
 }
 
 /* ── The week in words ───────────────────────────────────────────────────
@@ -2894,12 +2952,38 @@ function rkFormReset(){
   document.getElementById('rkPrio').value='med';
   document.getElementById('rkAdd').textContent='+ Add rock';
   document.getElementById('rkCancel').style.display='none';
+  const sel=document.getElementById('rkDay');
+  if(sel){ sel.value=''; rkFillDates(); }
+  const inp=document.getElementById('rkDate'); if(inp) inp.style.display='none';
 }
 function rkBeginEdit(r){
   cEditRockId=r.id;
   document.getElementById('rkTitle').value=r.title||'';
   const roleSel=document.getElementById('rkRole'); if(r.role) roleSel.value=r.role;
-  document.getElementById('rkDay').value=String(r.day);
+  /* Turn "week 36, day 6" back into the date it stands for, so the picker
+     shows what this rock is actually on. */
+  (function(){
+    const sel=document.getElementById('rkDay');
+    if(r.day==null || r.day<0){ sel.value='-1'; return; }
+    let iso=null;
+    Object.keys(cData.rocks||{}).some(w=>{
+      if(!(cData.rocks[w]||[]).some(x=>x.id===r.id)) return false;
+      const m=/^(\d{4})-W(\d{2})$/.exec(w); if(!m) return false;
+      /* Monday of that ISO week, then forward to the rock's own day. */
+      const jan4=new Date(+m[1],0,4);
+      const mon=new Date(jan4); mon.setDate(jan4.getDate()-((jan4.getDay()+6)%7)+(+m[2]-1)*7);
+      mon.setDate(mon.getDate()+r.day);
+      iso=rkIso(mon); return true;
+    });
+    rkFillDates();
+    if(iso){
+      if(!Array.prototype.some.call(sel.options,o=>o.value===iso)){
+        const d=new Date(iso+'T00:00:00');
+        sel.insertAdjacentHTML('afterbegin','<option value="'+iso+'">'+DAY_NAMES[rkDayIndex(d)]+' '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+'</option>');
+      }
+      sel.value=iso;
+    }
+  })();
   document.getElementById('rkTime').value=r.time||'';
   document.getElementById('rkEnd').value=r.end||'';
   document.getElementById('rkPrio').value=r.prio||'med';
@@ -2912,20 +2996,54 @@ function rkBeginEdit(r){
 document.getElementById('rkAdd').addEventListener('click',()=>{
   const title=document.getElementById('rkTitle').value.trim(); if(!title) return;
   const role=document.getElementById('rkRole').value;
-  const day=parseInt(document.getElementById('rkDay').value);
   const time=document.getElementById('rkTime').value;
   const end=document.getElementById('rkEnd').value;
   const prio=document.getElementById('rkPrio').value;
   const note=document.getElementById('rkNote').value.trim();
-  const wid=cWeekId();
+  /* The date decides the week. Not the week on screen. */
+  const at=rkResolve(document.getElementById('rkDay').value);
+  const wid=at.wid, day=at.day;
+
   if(cEditRockId){
-    const r=(cData.rocks[wid]||[]).find(x=>x.id===cEditRockId);
-    if(r){ Object.assign(r,{title,role,day,time,end,prio,note}); cSave(); J('planning','✏️ Big rock updated ('+wid+'): '+title); }
-    rkFormReset(); renderCompass();
+    /* An edit can move a rock to another week, so find it wherever it lives
+       and move it rather than writing a second copy. */
+    let from=null, r=null;
+    Object.keys(cData.rocks||{}).some(w=>{
+      const hit=(cData.rocks[w]||[]).find(x=>x.id===cEditRockId);
+      if(hit){ from=w; r=hit; return true; }
+      return false;
+    });
+    if(r){
+      Object.assign(r,{title,role,day,time,end,prio,note});
+      if(from!==wid){
+        cData.rocks[from]=cData.rocks[from].filter(x=>x.id!==r.id);
+        if(!cData.rocks[from].length) delete cData.rocks[from];
+        if(!cData.rocks[wid]) cData.rocks[wid]=[];
+        cData.rocks[wid].push(r);
+        J('planning','🪨 Big rock moved '+from+' → '+wid+': '+title);
+      } else J('planning','✏️ Big rock updated ('+wid+'): '+title);
+      cSave();
+    }
+    rkFormReset();
+    rkShowWeekOf(wid);
   } else {
-    addRock(title, role, day, time, wid, {end,prio,note}); rkFormReset();
+    addRock(title, role, day, time, wid, {end,prio,note});
+    rkFormReset();
+    rkShowWeekOf(wid);
   }
 });
+
+/* If a rock just landed in a week you are not looking at, go there — so you
+   see where it went instead of wondering where it vanished to. */
+function rkShowWeekOf(wid){
+  if(wid===cWeekId()){ renderCompass(); return; }
+  for(let off=-52; off<=52; off++){
+    if(weekId(offDate(off))===wid){ cOff=off; break; }
+  }
+  renderCompass();
+  const grid=document.getElementById('cGrid');
+  if(grid) grid.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 document.getElementById('rkCancel').addEventListener('click',()=>{ rkFormReset(); renderCompass(); });
 document.getElementById('rkTitle').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('rkAdd').click(); });
 
