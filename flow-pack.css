@@ -522,30 +522,124 @@
 .flow-inbox-row .a { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
 /* ---------- the assistant ------------------------------------------------ */
-.flow-ask-log { max-height: 46vh; overflow-y: auto; }
-.flow-ask-turn { margin: 10px 0; }
-.flow-ask-turn .who {
-  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--f-muted); margin-bottom: 3px;
+/* ======================================================================
+ * Ask — a chat surface, not a form
+ *
+ * The old panel was a card with a log inside it: the answer sat in a bubble
+ * the same colour as the question, the composer was a textarea with a green
+ * button beside it, and nothing about it said "conversation". This is the
+ * shape people already know — a scrolling thread with the composer docked
+ * beneath it, the person's words in a bubble and the assistant's as plain
+ * prose, because an answer with lists and paragraphs does not belong in a
+ * speech bubble.
+ * ==================================================================== */
+.ask-shell{
+  display:flex; flex-direction:column;
+  height:calc(100vh - 250px); min-height:440px; max-height:900px;
 }
-.flow-ask-turn .txt {
-  background: var(--f-surface-2); border: 1px solid var(--f-line);
-  border-radius: var(--f-radius-sm); padding: 9px 11px;
-  font-size: 13.5px; line-height: 1.55; white-space: normal;
-}
-.flow-ask-turn.user .txt { background: var(--f-accent-soft); border-color: transparent; }
+@media (max-width:760px){ .ask-shell{ height:calc(100dvh - 230px); min-height:0; } }
 
-/* Ask composer on a phone. Side by side, the send button became a big round
-   blob crammed against a tall textarea and the placeholder clipped at the
-   edge. Stack them: full-width textarea, a normal full-width send button
-   beneath it — a proper chat composer. Desktop keeps the inline row. */
-@media (max-width: 760px) {
-  #tab-ask .ask-compose { flex-direction: column; align-items: stretch; gap: 10px; }
-  #tab-ask .ask-compose #ask-in { width: 100%; }
-  #tab-ask .ask-compose #ask-go {
-    width: 100%; border-radius: 14px; padding: 13px 16px; font-size: 15px;
-  }
+.ask-scroll{ flex:1; overflow-y:auto; min-height:0; scrollbar-width:thin; }
+.ask-scroll::-webkit-scrollbar{ width:8px; }
+.ask-scroll::-webkit-scrollbar-thumb{ background:var(--f-line); border-radius:99px; }
+.ask-inner{ max-width:720px; margin:0 auto; padding:4px 2px 18px; }
+
+.ask-msg{ margin:20px 0; display:flex; }
+.ask-msg:first-child{ margin-top:6px; }
+.ask-msg.user{ justify-content:flex-end; }
+.ask-bubble{
+  background:var(--f-accent-soft); border:1px solid transparent;
+  color:var(--f-ink); border-radius:18px 18px 5px 18px;
+  padding:11px 15px; font-size:15px; line-height:1.55;
+  max-width:82%; white-space:normal; overflow-wrap:anywhere;
 }
+.ask-body{ font-size:15px; line-height:1.65; color:var(--f-ink); max-width:100%; overflow-wrap:anywhere; }
+.ask-body p{ margin:0 0 11px; }
+.ask-body p:last-child{ margin-bottom:0; }
+.ask-body h4{ margin:16px 0 7px; font-size:14px; font-weight:700; letter-spacing:-.01em; }
+.ask-body h4:first-child{ margin-top:0; }
+.ask-body ul, .ask-body ol{ margin:0 0 11px; padding-left:20px; }
+.ask-body li{ margin:0 0 5px; }
+.ask-body code{
+  background:var(--f-surface-2); border:1px solid var(--f-line);
+  border-radius:5px; padding:1px 5px; font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.ask-body pre{
+  background:var(--f-surface-2); border:1px solid var(--f-line);
+  border-radius:10px; padding:12px 14px; overflow-x:auto; margin:0 0 11px;
+}
+.ask-body pre code{ background:none; border:none; padding:0; font-size:12.5px; }
+.ask-body strong{ font-weight:700; }
+
+/* The caret that says the words are still arriving. */
+.ask-body.writing > :last-child::after{
+  content:''; display:inline-block; width:2px; height:1em;
+  background:var(--f-accent); margin-left:3px; vertical-align:-2px;
+  animation:askCaret 1s steps(2,start) infinite;
+}
+@keyframes askCaret{ 0%,49%{opacity:1} 50%,100%{opacity:0} }
+
+/* Thinking: three dots, and a word for what it is doing. Blank space is
+   what makes a wait feel like a failure. */
+.ask-think{ display:flex; align-items:center; gap:10px; color:var(--f-muted); font-size:13.5px; }
+.ask-dots{ display:inline-flex; gap:4px; }
+.ask-dots i{
+  width:6px; height:6px; border-radius:50%; background:var(--f-muted);
+  animation:askDot 1.2s ease-in-out infinite;
+}
+.ask-dots i:nth-child(2){ animation-delay:.16s }
+.ask-dots i:nth-child(3){ animation-delay:.32s }
+@keyframes askDot{ 0%,60%,100%{opacity:.25; transform:translateY(0)} 30%{opacity:1; transform:translateY(-3px)} }
+
+/* ---------- the composer ---------- */
+.ask-dock{ flex:none; padding-top:10px; }
+.ask-box{
+  max-width:720px; margin:0 auto; display:flex; align-items:flex-end; gap:8px;
+  background:var(--f-surface-2); border:1px solid var(--f-line);
+  border-radius:22px; padding:7px 7px 7px 16px;
+  transition:border-color .15s ease;
+}
+.ask-box:focus-within{ border-color:var(--f-accent); }
+.ask-box textarea{
+  /* .flow-x textarea sets min-height:80px for the app's note fields, which
+     would leave this one three rows tall with nothing in it. A composer
+     starts at one line and grows. */
+  flex:1; min-width:0; background:none; border:none; resize:none; outline:none;
+  color:var(--f-ink); font-family:inherit; font-size:15px; line-height:1.5;
+  padding:8px 0; min-height:0; height:38px; max-height:168px; overflow-y:auto;
+}
+.ask-box textarea::placeholder{ color:var(--f-muted); }
+.ask-send{
+  flex:none; width:36px; height:36px; border-radius:50%; border:none; cursor:pointer;
+  background:var(--f-accent); color:#05231b;
+  display:flex; align-items:center; justify-content:center; transition:background .15s ease;
+}
+.ask-send svg{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+.ask-send.stop svg{ fill:currentColor; stroke:none; }
+.ask-send:hover{ background:var(--f-seq-5); }
+
+.ask-foot{
+  max-width:720px; margin:7px auto 0; display:flex; justify-content:space-between;
+  align-items:center; gap:12px; font-size:11.5px; color:var(--f-muted);
+}
+.ask-clear{
+  background:none; border:none; color:var(--f-muted); font:inherit; font-size:11.5px;
+  cursor:pointer; padding:2px 0; text-decoration:underline; text-underline-offset:3px;
+}
+.ask-clear:hover{ color:var(--f-ink); }
+
+/* ---------- the empty state ---------- */
+.ask-empty{ padding:34px 4px 10px; max-width:620px; }
+.ask-empty-h{ font-size:21px; font-weight:700; letter-spacing:-.02em; margin-bottom:8px; }
+.ask-empty p{ margin:0 0 18px; font-size:14px; line-height:1.6; color:var(--f-muted); }
+.ask-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.ask-chip{
+  background:var(--f-surface-2); border:1px solid var(--f-line); color:var(--f-ink);
+  border-radius:999px; padding:9px 14px; font:inherit; font-size:13px; cursor:pointer;
+  text-align:left;
+}
+.ask-chip:hover{ border-color:var(--f-accent); color:var(--f-accent); }
 
 /* ---------- guest mode ---------------------------------------------------- */
 .fa-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--f-muted); font-size: 12px; }
