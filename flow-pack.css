@@ -1189,6 +1189,31 @@ html[data-flow-theme="whoop"]     .flow-x{
 /* ======================================================================
  * Scoreboard — one tap per thing done, and the week either shows it or not
  * ==================================================================== */
+/* The section folds like the Diet block on Today: header, summary, chevron.
+   The progress bar under the header is deliberately outside the folding
+   part — folded, it is the whole answer. */
+.sc-head-row{
+  display:flex; align-items:center; gap:12px; cursor:pointer; position:relative;
+  padding-right:20px; -webkit-tap-highlight-color:transparent; user-select:none;
+}
+.sc-head-row:active{ opacity:.7; }
+.sc-head-row h3{ margin:0; }
+.sc-head-row .flow-chip{ margin-left:auto; }
+.sc-head-row .flow-chip.zero{ color:var(--f-muted); border-color:var(--f-line); background:none; }
+.sc-head-row .flow-fold-chev{
+  position:absolute; right:0; top:50%;
+  width:7px; height:7px; margin-top:-5px;
+  border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor;
+  opacity:.5; transform:rotate(45deg);
+  transition:transform .18s ease, opacity .18s ease;
+}
+.sc-fold.is-open .sc-head-row .flow-fold-chev{ transform:rotate(-135deg); margin-top:-2px; opacity:.8; }
+.sc-prog{ margin:11px 0 0; }
+.sc-fold.is-open .sc-prog{ margin-bottom:2px; }
+.sc-body{ display:none; }
+.sc-fold.is-open .sc-body{ display:block; }
+@media (prefers-reduced-motion: reduce){ .sc-head-row .flow-fold-chev{ transition:none; } }
+
 .sc-list{ display:flex; flex-direction:column; gap:15px; margin-bottom:15px; }
 .sc-metric{ padding-bottom:14px; border-bottom:1px solid var(--f-grid); }
 .sc-metric:last-child{ border-bottom:none; padding-bottom:0; }
