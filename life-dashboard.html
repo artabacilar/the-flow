@@ -757,6 +757,16 @@ canvas{width:100%;height:120px;}
 .td-rock .rk-meta{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
 .td-rocks-empty{color:var(--muted);font-size:14px;padding:6px 0 14px;line-height:1.5;}
 
+/* The week in your own words, on the screen you actually open. Shown only
+   once it has been written — an empty prompt every morning is noise. */
+.td-plan{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px 17px;margin-bottom:20px;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-color .15s;}
+.td-plan:active{opacity:.7;}
+.td-plan:hover{border-color:rgba(255,255,255,.16);}
+.td-plan-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;}
+.td-plan-head .lbl{font-size:12px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);}
+.td-plan-head .edit{font-size:12px;color:var(--muted);}
+.td-plan-body{font-size:15px;line-height:1.6;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;}
+
 /* Section groups */
 .td-group{margin-bottom:30px;}
 .td-group-head{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 4px;margin-bottom:6px;}
@@ -3079,6 +3089,15 @@ function renderToday(){
   const wid=weekId(now);
   const wkNum=wid.split('-W')[1]||'';
 
+  // ── This week's plan (only once it says something) ──
+  const weekPlan=((cData.plans&&cData.plans[wid])||'').trim();
+  const planHtml = weekPlan
+    ? `<div class="td-plan" data-goplan="1">
+         <div class="td-plan-head"><span class="lbl">This Week · Plan</span><span class="edit">edit ›</span></div>
+         <div class="td-plan-body">${tdEsc(weekPlan)}</div>
+       </div>`
+    : '';
+
   // ── Big Rocks (this week) ──
   const rocks=(cData.rocks&&cData.rocks[wid])||[];
   const rocksDone=rocks.filter(r=>r.done).length;
@@ -3161,6 +3180,8 @@ function renderToday(){
       <div class="td-wk">WK ${wkNum}</div>
     </div>
 
+    ${planHtml}
+
     <div class="td-rocks">
       <div class="td-rocks-head"><span class="lbl">This Week · Big Rocks</span><span class="cnt">${rocksDone} / ${rocks.length}</span></div>
       ${rocksHtml}
@@ -3190,6 +3211,13 @@ function renderToday(){
       if(r.done) J('planning','🪨 Big rock done: '+r.title);
       renderToday(); if(typeof renderCompass==='function') renderCompass();
     });
+  });
+
+  const planCard=mount.querySelector('[data-goplan]');
+  if(planCard) planCard.addEventListener('click',()=>{
+    const tab=document.querySelector('.tab[data-tab="compass"]');
+    if(tab) tab.click();
+    setTimeout(()=>{ const ta=document.getElementById('cPlan'); if(ta) ta.scrollIntoView({behavior:'smooth',block:'center'}); },120);
   });
 
   const trainRow=mount.querySelector('[data-train]');
