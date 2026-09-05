@@ -98,6 +98,10 @@ html:not(.flow-ready) body{visibility:hidden;}
 }
 #flow-splash .fs-mark{font-size:27px;font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
 #flow-splash .fs-mark .fs-wave{color:#17bb92;font-weight:900;}
+/* The cold start on a free dyno is about twelve seconds. Rather than an
+   apology, give it the one line the whole app is built on — by the time it
+   has been read, the app is there. */
+#flow-splash .fs-line{font-size:13.5px;line-height:1.5;color:rgba(245,247,250,.55);max-width:280px;text-align:center;margin-top:-8px;}
 #flow-splash .fs-bar{width:180px;height:3px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;}
 #flow-splash .fs-bar i{display:block;height:100%;width:38%;border-radius:3px;background:#17bb92;animation:fsSlide 1.05s ease-in-out infinite;}
 @keyframes fsSlide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}
@@ -806,7 +810,7 @@ canvas{width:100%;height:120px;}
 <link rel="stylesheet" href="/flow-pack.css?v=__PACK_V__">
 </head>
 <body>
-<div id="flow-splash"><div class="fs-mark"><span class="fs-wave">〜</span> The Flow</div><div class="fs-bar"><i></i></div></div>
+<div id="flow-splash"><div class="fs-mark"><span class="fs-wave">〜</span> The Flow</div><div class="fs-line">70% of our life is things we do everyday</div><div class="fs-bar"><i></i></div></div>
 <script>/* Reserve the sidebar column before the pack boots so the layout does not jump; undone below if the pack never arrives. */
 try{document.body.classList.add('fn-on');setTimeout(function(){
   if(!document.getElementById('flow-side')&&!document.getElementById('flow-tabbar'))
@@ -3093,6 +3097,15 @@ function addRock(title, role, day, time, wid, opts){
   renderCompass();
 }
 
+/* The full catalogue never shrinks — the routine audit turns rows off rather
+   than deleting them, so a line cut in March can be read back in September
+   and put back. Everything that RENDERS the weekly rhythm asks sawActive();
+   only the audit and the catalogue itself see the whole list. */
+function sawActive(){
+  let off=[];
+  try{ const v=S.get('sawOff',[]); if(Array.isArray(v)) off=v; }catch(e){}
+  return SAW_ITEMS.filter(([k])=>off.indexOf(k)<0);
+}
 const SAW_ITEMS=[
   ['phys1','💪 Physical — train 4× this week'],
   ['phys2','🥗 Physical — eat to plan most days'],
@@ -3182,8 +3195,9 @@ function renderToday(){
   if(!cData.saw) cData.saw={};
   if(!cData.saw[wid]) cData.saw[wid]={};
   const saw=cData.saw[wid];
-  const sawDone=SAW_ITEMS.filter(([k])=>saw[k]).length;
-  const sawHtml=SAW_ITEMS.map(([k,label])=>{
+  const sawOn=sawActive();
+  const sawDone=sawOn.filter(([k])=>saw[k]).length;
+  const sawHtml=sawOn.map(([k,label])=>{
     return `<div class="td-row ${saw[k]?'done':''}" data-saw="${k}">
       <div class="td-check">${TD_CHECK}</div>
       <div class="r-body"><div class="r-title">${tdEsc(label)}</div></div>
@@ -3223,7 +3237,7 @@ function renderToday(){
     </div>
 
     <div class="td-group">
-      ${groupHead('Sharpen the Saw',sawDone,SAW_ITEMS.length)}
+      ${groupHead('Sharpen the Saw',sawDone,sawOn.length)}
       ${sawHtml}
     </div>
   `;
@@ -3352,7 +3366,7 @@ function renderCompass(){
   const saw=cData.saw[wid];
   const sg=document.getElementById('sawGrid');
   sg.innerHTML='';
-  SAW_ITEMS.forEach(([k,label])=>{
+  sawActive().forEach(([k,label])=>{
     const li=document.createElement('div'); li.className='sawcard';
     li.innerHTML=`<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13px;"><input type="checkbox" style="accent-color:var(--green);margin-top:2px;" ${saw[k]?'checked':''}><span style="${saw[k]?'color:var(--muted);text-decoration:line-through;':''}">${label}</span></label>`;
     li.querySelector('input').addEventListener('change',e=>{ if(e.target.checked){ saw[k]=true; J('planning','🪚 Sharpen the Saw: '+label+' ('+wid+')'); } else delete saw[k]; cSave(); renderCompass(); });
@@ -3366,7 +3380,7 @@ function renderCompass(){
   // Stats
   document.getElementById('cpRocksDone').textContent=rocks.filter(r=>r.done).length+'/'+rocks.length;
   document.getElementById('cpQ2').textContent=(typeof qData!=='undefined'&&qData?qData.items.filter(i=>i.q===2&&!i.done).length:0);
-  document.getElementById('cpSaw').textContent=Object.keys(saw).length+'/'+SAW_ITEMS.length;
+  document.getElementById('cpSaw').textContent=Object.keys(saw).length+'/'+sawActive().length;
   document.getElementById('cpDiet').textContent=dietAvg7();
 }
 document.getElementById('wkReviewSave').addEventListener('click',()=>{
