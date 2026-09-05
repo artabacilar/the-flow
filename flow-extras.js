@@ -361,6 +361,186 @@ async function handleChat(p, req, res, ctx) {
 
 
 /* ==========================================================================
+ * Streaming — the same answer, arriving as it is written
+ * --------------------------------------------------------------------------
+ * The buffered endpoint above is honest but feels broken: a question sits
+ * there for eight or ten seconds with nothing on screen, and on a free
+ * instance that has gone to sleep it can be twenty. The words are being
+ * written the whole time; they were simply being held back until the last
+ * one arrived.
+ *
+ * This streams them. Anthropic sends server-sent events; we forward the text
+ * deltas to the browser as our own, much smaller, events. The first word
+ * lands about a second after the model starts, so the wait becomes something
+ * you watch rather than something you endure.
+ *
+ * Everything the buffered endpoint guards, this guards identically: no key,
+ * no answer; over the cap, no answer; and the only data it can see is what
+ * the caller-scoped reader hands it.
+ * ========================================================================== */
+
+/** Whole server-sent events out of a buffer, and whatever is left over.
+ *
+ *  Events are separated by a blank line, but a network chunk boundary can
+ *  fall anywhere — mid-word, mid-JSON, between the two newlines that end a
+ *  frame. So only complete frames are returned and the remainder is handed
+ *  back to be prepended to the next chunk. Getting this wrong does not fail
+ *  loudly; it drops the occasional word out of the middle of an answer.
+ */
+function sseFrames(buf) {
+  const events = [];
+  let rest = String(buf == null ? '' : buf);
+  let i;
+  while ((i = rest.indexOf('\n\n')) >= 0) {
+    const block = rest.slice(0, i);
+    rest = rest.slice(i + 2);
+    let data = '';
+    for (const line of block.split('\n')) {
+      if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+    }
+    if (!data || data === '[DONE]') continue;
+    try { events.push(JSON.parse(data)); } catch (e) { /* not our frame */ }
+  }
+  return { events, rest };
+}
+
+/** POST that hands back parsed SSE events as they arrive instead of a body. */
+function postStream(url, headers, payload, onEvent, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const u = new URL(url);
+    const req = https.request({
+      method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
+      headers: Object.assign({
+        'Content-Type': 'application/json',
+        'Content-Length': body.length
+      }, headers)
+    }, (res) => {
+      res.setEncoding('utf8');
+
+      /* A refusal comes back as ordinary JSON, not a stream. Collect the
+         little of it we need and let the caller turn it into a message. */
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let out = '';
+        res.on('data', (c) => { out += c; if (out.length > 4000) res.destroy(); });
+        res.on('end', () => resolve({ status: res.statusCode, raw: out }));
+        return;
+      }
+
+      let buf = '';
+      res.on('data', (chunk) => {
+        const cut = sseFrames(buf + chunk);
+        buf = cut.rest;
+        for (const ev of cut.events) {
+          try { onEvent(ev); } catch (e) { /* a bad frame must not kill the stream */ }
+        }
+      });
+      res.on('end', () => resolve({ status: 200 }));
+      res.on('error', reject);
+    });
+    req.setTimeout(timeoutMs || 120000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+async function handleChatStream(p, req, res, ctx) {
+  if (p !== '/api/flow/chat/stream' || req.method !== 'POST') return false;
+
+  /* Once the stream is open we can no longer send a JSON error, so every
+     refusal has to be decided before the first byte goes out. */
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) {
+    ctx.json(res, 503, { error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' });
+    return true;
+  }
+  const used = (await ctx.counter.get(todayKey())) || 0;
+  if (CHAT_DAILY_CAP > 0 && used >= CHAT_DAILY_CAP) {
+    ctx.json(res, 429, { error: 'You have reached today\'s limit of ' + CHAT_DAILY_CAP + ' messages. It resets at midnight UTC.', used, cap: CHAT_DAILY_CAP });
+    return true;
+  }
+
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const turns = Array.isArray(body.messages) ? body.messages : [];
+  const clean = turns
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-12)
+    .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
+  if (!clean.length || clean[clean.length - 1].role !== 'user') {
+    ctx.json(res, 400, { error: 'Say something first.' });
+    return true;
+  }
+
+  const snapshot = await buildContext(ctx.mine);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    /* Some proxies buffer a response until it ends, which would undo the
+       entire point of this endpoint. This is the header that stops nginx. */
+    'X-Accel-Buffering': 'no'
+  });
+  const send = (obj) => { try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch (e) {} };
+
+  /* Tells the client the request landed, so it can drop the "waking the
+     server" note and show that it is thinking rather than connecting. */
+  send({ t: 'open' });
+
+  let any = false, stopped = false;
+  req.on('close', () => { stopped = true; });
+
+  let out;
+  try {
+    out = await postStream('https://api.anthropic.com/v1/messages', {
+      'x-api-key': key, 'anthropic-version': '2023-06-01'
+    }, {
+      model: CHAT_MODEL, max_tokens: 1024, stream: true,
+      system: SYSTEM + '\n\n# The person\'s own data\n\n' + (snapshot || '(no data yet)'),
+      messages: clean
+    }, (ev) => {
+      if (stopped) return;
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
+        any = true;
+        send({ t: 'd', v: ev.delta.text });
+      } else if (ev.type === 'error') {
+        send({ t: 'err', v: 'The assistant stopped part-way through.' });
+      }
+    });
+  } catch (e) {
+    send({ t: 'err', v: 'Could not reach the assistant.' });
+    send({ t: 'end' });
+    try { res.end(); } catch (e2) {}
+    return true;
+  }
+
+  if (out && out.status !== 200) {
+    const msg = out.status === 401 || out.status === 403
+      ? 'The API key was rejected. Check ANTHROPIC_API_KEY in Render.'
+      : out.status === 429
+        ? 'Anthropic is rate-limiting this key. Try again shortly.'
+        : out.status === 404
+          ? 'Model "' + CHAT_MODEL + '" is not available on this key. Set FLOW_CHAT_MODEL in Render to one that is.'
+          : 'The assistant could not answer just now (upstream ' + out.status + ').';
+    send({ t: 'err', v: msg });
+    send({ t: 'end' });
+    try { res.end(); } catch (e) {}
+    return true;
+  }
+
+  /* Only a reply that produced words costs a message. A stream that died
+     before the first token should not be charged to the day's allowance. */
+  if (any) {
+    await ctx.counter.set(todayKey(), used + 1);
+    send({ t: 'meta', used: used + 1, cap: CHAT_DAILY_CAP });
+  }
+  send({ t: 'end' });
+  try { res.end(); } catch (e) {}
+  return true;
+}
+
+/* ==========================================================================
  * Direction — the read on where this is actually going
  * --------------------------------------------------------------------------
  * The chat assistant answers questions. This answers the question nobody
@@ -643,6 +823,7 @@ const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
   if (await _prices(p, req, res, ctx)) return true;
   if (await handleChat(p, req, res, ctx)) return true;
+  if (await handleChatStream(p, req, res, ctx)) return true;
   if (await handleDirection(p, req, res, ctx)) return true;
   return false;
 };
@@ -655,3 +836,5 @@ module.exports._internals.recentPlans = recentPlans;
 module.exports._internals.parseDirection = parseDirection;
 module.exports._internals.buildDirectionContext = buildDirectionContext;
 module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
+module.exports._internals.postStream = postStream;
+module.exports._internals.sseFrames = sseFrames;
