@@ -68,6 +68,7 @@ const SUITES = [
   ['direction','test-direction.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['stream',   'test-stream.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['askmd',    'test-askmd.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['rockdate', 'test-rockdate.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['qwrap',    'test-qwrap.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['share',    'test-share.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   /* test-client signs up three ordinary people, so the owner rule would
