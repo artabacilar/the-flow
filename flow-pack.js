@@ -6517,6 +6517,12 @@ const Score = {
       : Score.DEFAULTS.map(x => Object.assign({ id: uid('m') }, x));
     Score.log = (l && typeof l === 'object' && !Array.isArray(l)) ? l : {};
     Score.loaded = true;
+    /* The ledger keys every tap by metric id, so those ids have to be the same
+       tomorrow as they are today. Left unsaved, the shipped defaults would be
+       regenerated with fresh ids on the next load and every tap logged before
+       the first edit would point at a metric that no longer exists. Write them
+       down the first time we invent them. */
+    if (!(Array.isArray(m) && m.length)) Score.saveMetrics();
   },
 
   saveMetrics() { DB.set(Score.K_MET, Score.metrics); },
