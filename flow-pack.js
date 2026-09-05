@@ -6102,9 +6102,10 @@ const NorthStar = {
 
   async render(sec) {
     NorthStar.sec = sec;
-    if (!NorthStar.loaded) {
+    if (!NorthStar.loaded || !Score.loaded) {
       sec.innerHTML = '<div class="flow-card"><p class="flow-sub">Loading your compass…</p></div>';
-      try { await NorthStar.load(); } catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; }
+      try { await Promise.all([NorthStar.load(), Score.load(), Direction.load()]); }
+      catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; Score.loaded = true; Direction.loaded = true; }
     }
     NorthStar.paint();
   },
@@ -6130,11 +6131,15 @@ const NorthStar = {
 
     sec.innerHTML =
       NorthStar.principleCard() +
+      Direction.card() +
       NorthStar.matrixCard() +
+      Score.card() +
       NorthStar.goalsCard(avg) +
       NorthStar.tenetsCard();
 
     NorthStar.wire();
+    Score.wire(sec);
+    Direction.wire(sec);
   },
 
   principleCard() {
@@ -6315,6 +6320,425 @@ const NorthStar = {
   }
 };
 
+/* ======================================================================
+ * 20e · Direction — where this is going, read every morning
+ *
+ * The Ask tab answers questions. This answers the one nobody remembers to
+ * ask. It is a single call a day, written server-side and cached there, so
+ * opening the tab ten times costs nothing and the reading does not change
+ * under you between two glances at the same morning.
+ *
+ * The star sign is voice, not evidence: the birth date is stored so the
+ * server can address the reading to a Virgo or a Scorpio, and every claim
+ * underneath still has to come from the record.
+ * ==================================================================== */
+const Direction = {
+  loaded: false,
+  data: null,
+  birth: '',
+  busy: false,
+  error: '',
+  asking: false,
+
+  K_BIRTH: 'flow:ns:birth',
+
+  async load() {
+    if (Direction.loaded) return;
+    Direction.birth = (await DB.get(Direction.K_BIRTH, '')) || '';
+    Direction.loaded = true;
+    /* Fire and forget: the panel paints its own placeholder and fills in. */
+    Direction.fetch(false);
+  },
+
+  async fetch(refresh) {
+    if (Direction.busy) return;
+    Direction.busy = true;
+    Direction.error = '';
+    if (refresh) Direction.paintInto();
+    try {
+      const r = await fetch('/api/flow/direction', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: !!refresh })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) Direction.error = j.error || 'The direction could not be written just now.';
+      else Direction.data = j;
+    } catch (e) {
+      Direction.error = 'Could not reach the server.';
+    }
+    Direction.busy = false;
+    Direction.paintInto();
+  },
+
+  /* Repaint only this card. Redrawing the whole tab would throw away a
+     half-typed focus area or metric name somewhere further down. */
+  paintInto() {
+    const host = document.getElementById('dir-card');
+    if (!host) return;
+    host.outerHTML = Direction.card();
+    const sec = NorthStar.sec || document;
+    Direction.wire(sec);
+  },
+
+  card() {
+    let body;
+    if (Direction.busy) {
+      body = '<p class="dir-empty">Reading the last eight weeks…</p>';
+    } else if (Direction.error) {
+      body = '<p class="dir-empty">' + esc(Direction.error) + '</p>' +
+             '<button class="flow-btn sm" id="dir-retry">Try again</button>';
+    } else if (!Direction.data) {
+      body = '<p class="dir-empty">Working out where this is going…</p>';
+    } else {
+      const d = Direction.data;
+      body =
+        (d.lede ? '<p class="dir-lede">' + esc(d.lede) + '</p>' : '') +
+        (d.today ? '<div class="dir-block"><h4>Today</h4><p>' + esc(d.today) + '</p></div>' : '') +
+        (d.trajectory ? '<div class="dir-block"><h4>Where this is going</h4><p>' + esc(d.trajectory) + '</p></div>' : '') +
+        ((d.actions && d.actions.length)
+          ? '<div class="dir-block"><h4>Do these</h4><ul class="dir-acts">' +
+              d.actions.map(a => '<li>' + esc(a) + '</li>').join('') + '</ul></div>' : '') +
+        ((d.watch && d.watch.length)
+          ? '<div class="dir-block"><h4>Slipping</h4><ul class="dir-acts">' +
+              d.watch.map(a => '<li class="dir-watch">' + esc(a) + '</li>').join('') + '</ul></div>' : '') +
+        '<div class="flow-row" style="margin-top:15px">' +
+          '<button class="flow-btn sm ghost" id="dir-refresh">Rewrite it</button>' +
+          (Direction.birth ? '<button class="flow-btn sm ghost" id="dir-birth-edit">Birth date</button>' : '') +
+        '</div>';
+    }
+
+    /* Asked once, never nagged: the panel works without it, the sign just
+       changes the voice. */
+    const askBirth = (!Direction.birth && !Direction.asking)
+      ? '<div class="dir-block"><h4>Optional</h4>' +
+        '<p class="flow-sub">Give your birth date and the daily read is written for your sign. ' +
+          'Everything it claims still comes from your own record.</p>' +
+        '<button class="flow-btn sm" id="dir-birth-add">Add birth date</button></div>'
+      : '';
+
+    const birthForm = Direction.asking
+      ? '<div class="dir-birth">' +
+          '<input class="flow-in" type="date" id="dir-birth-in" value="' + esc(Direction.birth) + '" aria-label="Birth date">' +
+          '<button class="flow-btn primary sm" id="dir-birth-save">Save</button>' +
+          '<button class="flow-btn ghost sm" id="dir-birth-cancel">Cancel</button>' +
+          (Direction.birth ? '<button class="flow-btn ghost sm danger" id="dir-birth-clear">Remove</button>' : '') +
+        '</div>'
+      : '';
+
+    const when = (Direction.data && Direction.data.generatedAt)
+      ? new Date(Direction.data.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    return '' +
+      '<div class="flow-card dir-card" id="dir-card">' +
+        '<div class="dir-top">' +
+          '<h3 style="margin:0">Direction</h3>' +
+          (Direction.data && Direction.data.sign ? '<span class="dir-sign">' + esc(Direction.data.sign) + '</span>' : '') +
+          (when ? '<span class="dir-when">written ' + when + '</span>' : '') +
+        '</div>' +
+        body + askBirth + birthForm +
+      '</div>';
+  },
+
+  wire(sec) {
+    const on = (id, fn) => { const el = $('#' + id, sec) || document.getElementById(id); if (el) el.addEventListener('click', fn); };
+    on('dir-refresh', () => Direction.fetch(true));
+    on('dir-retry', () => Direction.fetch(false));
+    on('dir-birth-add', () => { Direction.asking = true; Direction.paintInto(); });
+    on('dir-birth-edit', () => { Direction.asking = true; Direction.paintInto(); });
+    on('dir-birth-cancel', () => { Direction.asking = false; Direction.paintInto(); });
+    on('dir-birth-save', () => {
+      const el = document.getElementById('dir-birth-in');
+      const v = (el && el.value || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('Pick a date first.', 'warn'); return; }
+      Direction.birth = v;
+      DB.set(Direction.K_BIRTH, v);
+      Direction.asking = false;
+      /* A new sign means the reading is addressed to the wrong person until
+         it is rewritten, so rewrite it now rather than tomorrow. */
+      Direction.fetch(true);
+    });
+    on('dir-birth-clear', () => {
+      Direction.birth = '';
+      DB.set(Direction.K_BIRTH, '');
+      Direction.asking = false;
+      Direction.fetch(true);
+    });
+  }
+};
+
+/* ======================================================================
+ * 20d · Scoreboard — the metrics that actually say whether it happened
+ *
+ * Focus areas are a feeling ("DJing: 40%"). This is the evidence. One tap
+ * per set played, demo sent, session produced, workout done, and the week
+ * either shows the work or it doesn't.
+ *
+ * Stored as a daily ledger — { 'YYYY-MM-DD': { metricId: n } } — rather
+ * than a running total, because a total can only ever answer "how many";
+ * the ledger answers "when", which is what a trajectory is made of. It is
+ * also what the Direction engine reads.
+ * ==================================================================== */
+const Score = {
+  sec: null,
+  loaded: false,
+  metrics: [],
+  log: {},
+
+  K_MET: 'flow:ns:metrics',
+  K_LOG: 'flow:ns:log',
+
+  KEEP_DAYS: 500,
+
+  DEFAULTS: [
+    { icon: '🎧', name: 'DJ sets',        unit: 'sets',     target: 2, period: 'week'  },
+    { icon: '📤', name: 'Demos sent out', unit: 'send-outs',target: 3, period: 'week'  },
+    { icon: '🎵', name: 'Music production',unit:'sessions', target: 3, period: 'week'  },
+    { icon: '📡', name: 'Live streams',   unit: 'streams',  target: 1, period: 'week'  },
+    { icon: '🎤', name: 'Performances',   unit: 'shows',    target: 1, period: 'month' },
+    { icon: '🏋️', name: 'Workouts',       unit: 'sessions', target: 4, period: 'week'  },
+    { icon: '🏢', name: 'ABKO',           unit: 'sessions', target: 5, period: 'week'  },
+    { icon: '🚀', name: 'DTC business',   unit: 'sessions', target: 4, period: 'week'  }
+  ],
+
+  async load() {
+    if (Score.loaded) return;
+    const [m, l] = await Promise.all([DB.get(Score.K_MET, null), DB.get(Score.K_LOG, null)]);
+    Score.metrics = Array.isArray(m) && m.length
+      ? m.map(x => ({
+          id: x.id || uid('m'),
+          icon: x.icon || '⭐',
+          name: String(x.name || 'Metric'),
+          unit: String(x.unit || ''),
+          target: Math.max(0, parseInt(x.target, 10) || 0),
+          period: x.period === 'month' ? 'month' : 'week'
+        }))
+      : Score.DEFAULTS.map(x => Object.assign({ id: uid('m') }, x));
+    Score.log = (l && typeof l === 'object' && !Array.isArray(l)) ? l : {};
+    Score.loaded = true;
+  },
+
+  saveMetrics() { DB.set(Score.K_MET, Score.metrics); },
+  saveLog() {
+    /* A ledger this app writes to for years would otherwise grow without
+       bound. Five hundred days is more than a year of trend and still a
+       few kilobytes. */
+    const keys = Object.keys(Score.log).sort();
+    if (keys.length > Score.KEEP_DAYS) {
+      keys.slice(0, keys.length - Score.KEEP_DAYS).forEach(k => { delete Score.log[k]; });
+    }
+    DB.set(Score.K_LOG, Score.log);
+  },
+
+  /* ---- the maths, kept pure so it can be tested without a browser ---- */
+
+  /** Every date in the period containing `ref`, as ISO strings. */
+  periodDays(period, ref) {
+    const d = ref ? new Date(ref.getTime()) : new Date();
+    const out = [];
+    if (period === 'month') {
+      const y = d.getFullYear(), m = d.getMonth();
+      const last = new Date(y, m + 1, 0).getDate();
+      for (let i = 1; i <= last; i++) out.push(isoDate(new Date(y, m, i)));
+    } else {
+      const s = startOfWeek(d, 1);                    /* weeks start Monday */
+      for (let i = 0; i < 7; i++) out.push(isoDate(addDays(s, i)));
+    }
+    return out;
+  },
+
+  /** How many of `metricId` were logged across those days. */
+  countOver(metricId, days) {
+    let n = 0;
+    for (const day of days) {
+      const row = Score.log[day];
+      if (row && row[metricId]) n += row[metricId];
+    }
+    return n;
+  },
+
+  count(m, ref) { return Score.countOver(m.id, Score.periodDays(m.period, ref)); },
+
+  /** Consecutive completed periods that hit target, plus this one if it has. */
+  streak(m) {
+    if (!m.target) return 0;
+    let n = 0;
+    const step = (i) => {
+      const d = new Date();
+      if (m.period === 'month') d.setMonth(d.getMonth() - i);
+      else d.setDate(d.getDate() - i * 7);
+      return d;
+    };
+    for (let i = 0; i < 60; i++) {
+      const hit = Score.countOver(m.id, Score.periodDays(m.period, step(i))) >= m.target;
+      if (hit) n++;
+      else if (i > 0) break;      /* an unfinished current period never breaks it */
+    }
+    return n;
+  },
+
+  bump(m, delta) {
+    const day = today();
+    if (!Score.log[day]) Score.log[day] = {};
+    const next = Math.max(0, (Score.log[day][m.id] || 0) + delta);
+    if (next) Score.log[day][m.id] = next;
+    else delete Score.log[day][m.id];
+    if (!Object.keys(Score.log[day]).length) delete Score.log[day];
+    Score.saveLog();
+    if (delta > 0) {
+      /* Same activity log the rest of the app writes to, so a tap here shows
+         up in the journal and in what the Direction engine reads. */
+      try { const j = NorthStar.host('J'); if (typeof j === 'function') j('planning', '📊 ' + m.name + ' +1'); } catch (e) {}
+    }
+  },
+
+  /** What the Direction engine reads: last 12 weeks, per metric. */
+  summary() {
+    return Score.metrics.map(m => {
+      const now = Score.count(m);
+      const prev = (() => {
+        const d = new Date();
+        if (m.period === 'month') d.setMonth(d.getMonth() - 1); else d.setDate(d.getDate() - 7);
+        return Score.countOver(m.id, Score.periodDays(m.period, d));
+      })();
+      return { name: m.name, unit: m.unit, period: m.period, target: m.target,
+               thisPeriod: now, lastPeriod: prev, streak: Score.streak(m) };
+    });
+  },
+
+  /* ---------------------------- the card ---------------------------- */
+
+  card() {
+    const withTarget = Score.metrics.filter(m => m.target > 0);
+    const hit = withTarget.filter(m => Score.count(m) >= m.target).length;
+    const rows = Score.metrics.map(m => Score.row(m)).join('');
+    return '' +
+      '<div class="flow-card">' +
+        '<div class="flow-row between"><h3>Scoreboard</h3>' +
+          (withTarget.length
+            ? '<span class="flow-chip accent">' + hit + ' of ' + withTarget.length + ' on target</span>'
+            : '') +
+        '</div>' +
+        '<p class="flow-sub">One tap each time you do the thing. Weeks run Monday to Sunday. ' +
+          'Tap the name to rename it or change the target.</p>' +
+        '<div class="sc-list">' + rows + '</div>' +
+        '<div class="flow-row ns-addrow">' +
+          '<input class="flow-in grow" id="sc-new" placeholder="Track something else…" maxlength="60">' +
+          '<button class="flow-btn primary sm" id="sc-add">Add</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  row(m) {
+    const days = Score.periodDays(m.period);
+    const n = Score.countOver(m.id, days);
+    const pct = m.target ? clamp(Math.round((n / m.target) * 100), 0, 100) : 0;
+    const done = m.target && n >= m.target;
+    const st = Score.streak(m);
+
+    /* A week gets a bar per day; a month would be 31 slivers, so it gets the
+       bar alone. */
+    let strip = '';
+    if (m.period === 'week') {
+      const todayISO = today();
+      strip = '<div class="sc-days">' + days.map((d, i) => {
+        const c = (Score.log[d] || {})[m.id] || 0;
+        return '<i class="sc-day' + (c ? ' on' : '') + (d === todayISO ? ' now' : '') + '"' +
+               ' title="' + ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i] + ' — ' + c + '">' +
+               (c > 1 ? c : '') + '</i>';
+      }).join('') + '</div>';
+    }
+
+    const goal = m.target
+      ? '<span class="sc-target">of ' + m.target + ' this ' + m.period + '</span>'
+      : '<span class="sc-target">no target</span>';
+
+    return '' +
+      '<div class="sc-metric' + (done ? ' done' : '') + '" data-id="' + m.id + '">' +
+        '<div class="sc-head">' +
+          '<span class="sc-ic">' + esc(m.icon) + '</span>' +
+          '<button class="sc-name" data-act="edit">' + esc(m.name) + '</button>' +
+          (st > 1 ? '<span class="sc-streak" title="' + st + ' ' + m.period + 's in a row">🔥 ' + st + '</span>' : '') +
+          '<span class="sc-count">' + n + '</span>' + goal +
+        '</div>' +
+        (m.target ? '<div class="sc-bar"><i style="width:' + pct + '%"></i></div>' : '') +
+        /* Strip and buttons share a row: eight metrics on a phone is a long
+           scroll already, and a row that only holds two buttons earns nothing. */
+        '<div class="sc-foot">' +
+          (strip || '<span class="sc-spacer"></span>') +
+          '<button class="flow-btn tiny ghost" data-act="minus" aria-label="Undo one">−</button>' +
+          '<button class="flow-btn tiny primary sc-plus" data-act="plus">+1' +
+            (m.unit ? ' <span>' + esc(m.unit) + '</span>' : '') + '</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  wire(sec) {
+    Score.sec = sec;
+    $$('.sc-metric', sec).forEach(row => {
+      const id = row.getAttribute('data-id');
+      const m = Score.metrics.find(x => x.id === id);
+      if (!m) return;
+      const plus = row.querySelector('[data-act="plus"]');
+      const minus = row.querySelector('[data-act="minus"]');
+      if (plus) plus.addEventListener('click', () => { Score.bump(m, +1); NorthStar.paint(); });
+      if (minus) minus.addEventListener('click', () => { Score.bump(m, -1); NorthStar.paint(); });
+      const name = row.querySelector('[data-act="edit"]');
+      if (name) name.addEventListener('click', () => Score.editor(m));
+    });
+    const add = $('#sc-add', sec), inp = $('#sc-new', sec);
+    const doAdd = () => {
+      const v = (inp.value || '').trim(); if (!v) return;
+      Score.metrics.push({ id: uid('m'), icon: '⭐', name: v, unit: '', target: 1, period: 'week' });
+      Score.saveMetrics(); NorthStar.paint();
+    };
+    if (add) add.addEventListener('click', doAdd);
+    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+  },
+
+  /** Rename, re-target, change cadence, or remove — in place, no dialogs. */
+  editor(m) {
+    const row = $('.sc-metric[data-id="' + m.id + '"]', Score.sec || document);
+    if (!row) return;
+    row.innerHTML =
+      '<div class="sc-edit">' +
+        '<div class="flow-row">' +
+          '<input class="flow-in sc-e-ic" id="sc-e-ic" value="' + esc(m.icon) + '" maxlength="4" aria-label="Icon">' +
+          '<input class="flow-in grow" id="sc-e-name" value="' + esc(m.name) + '" maxlength="60" aria-label="Name">' +
+        '</div>' +
+        '<div class="flow-row">' +
+          '<input class="flow-in sc-e-n" id="sc-e-target" type="number" min="0" max="999" value="' + m.target + '" aria-label="Target">' +
+          '<select class="flow-in" id="sc-e-period" aria-label="Per">' +
+            '<option value="week"' + (m.period === 'week' ? ' selected' : '') + '>per week</option>' +
+            '<option value="month"' + (m.period === 'month' ? ' selected' : '') + '>per month</option>' +
+          '</select>' +
+          '<input class="flow-in grow" id="sc-e-unit" value="' + esc(m.unit) + '" maxlength="16" placeholder="unit (sets, sessions…)" aria-label="Unit">' +
+        '</div>' +
+        '<div class="flow-row">' +
+          '<button class="flow-btn primary sm" id="sc-e-save">Save</button>' +
+          '<button class="flow-btn ghost sm" id="sc-e-cancel">Cancel</button>' +
+          '<button class="flow-btn ghost sm danger" id="sc-e-del">Remove</button>' +
+        '</div>' +
+      '</div>';
+    $('#sc-e-name', row).focus();
+    $('#sc-e-save', row).addEventListener('click', () => {
+      const nm = ($('#sc-e-name', row).value || '').trim();
+      if (nm) m.name = nm;
+      m.icon = ($('#sc-e-ic', row).value || '⭐').trim() || '⭐';
+      m.unit = ($('#sc-e-unit', row).value || '').trim();
+      m.target = clamp(parseInt($('#sc-e-target', row).value, 10) || 0, 0, 999);
+      m.period = $('#sc-e-period', row).value === 'month' ? 'month' : 'week';
+      Score.saveMetrics(); NorthStar.paint();
+    });
+    $('#sc-e-cancel', row).addEventListener('click', () => NorthStar.paint());
+    $('#sc-e-del', row).addEventListener('click', () => {
+      Score.metrics = Score.metrics.filter(x => x.id !== m.id);
+      Score.saveMetrics(); NorthStar.paint();
+    });
+  }
+};
+
 async function boot() {
   /* Before anything else: if the server has accounts installed and nobody is
      signed in, put the sign-in screen up. Everything below still runs, so the
@@ -6413,7 +6837,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
-    Markets, Inbox, Ask, Planner, Nav, MoodChart,
+    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
