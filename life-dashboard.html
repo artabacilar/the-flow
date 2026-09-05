@@ -508,6 +508,11 @@ canvas{width:100%;height:120px;}
 .dbind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:3px 9px;border-radius:100px;border:1px solid var(--border);}
 .dbind.on{color:var(--green);border-color:rgba(0,232,138,.4);}
 .dbind.off{color:var(--muted);}
+    .wplan{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:18px 0;}
+    .wplan h3{margin:0 0 10px;font-size:15px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+    .wplan-hint{font-weight:400;font-size:12px;color:var(--muted);}
+    .wplan textarea{width:100%;min-height:96px;resize:vertical;}
+    .wplan-foot{display:flex;justify-content:flex-end;min-height:16px;margin-top:6px;font-size:12px;color:var(--muted);}
     .dbind.warn{color:#ffb020;border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.08);}
 .backupbtns{display:flex;gap:6px;justify-content:flex-end;}
 .backupbtns button,.backupbtns label{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
@@ -856,6 +861,16 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   </div>
 
   <div class="cgrid" id="cGrid"></div>
+
+  <!-- The week in words, before it becomes a grid. The Big Rocks say WHEN;
+       this says WHAT and WHY, and it is what the Direction engine reads to
+       tell whether the week you planned is the week you had. -->
+  <div class="wplan">
+    <h3>🗒️ <span id="cPlanTitle">This week's plan</span>
+      <span class="wplan-hint">what you intend to do — in your own words</span></h3>
+    <textarea id="cPlan" rows="4" placeholder="What does a good version of this week look like? The two or three things that would make it count, anything you're deliberately not doing, anyone you need to see…"></textarea>
+    <div class="wplan-foot"><span id="cPlanSaved"></span></div>
+  </div>
 
   <div class="mission">
     <h3>🪧 Personal Mission Statement <span style="color:var(--muted);font-weight:400;">(Habit 2 — your deepest values; everything below serves this)</span></h3>
@@ -2744,6 +2759,38 @@ const DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 function cSave(){ S.set('compass', cData); }
 
+/* ── The week in words ───────────────────────────────────────────────────
+   Kept per week id on cData, beside that week's rocks, so paging back
+   through the planner shows what you meant to do then — not just what you
+   scheduled. Saved as you type, debounced, because a plan half-written and
+   lost is worse than no box at all. */
+if(!cData.plans) cData.plans={};
+let cPlanTimer=null, cPlanWid=null;
+function cPlanPaint(wid, isThis){
+  const ta=document.getElementById('cPlan'); if(!ta) return;
+  cPlanWid=wid;
+  if(document.activeElement!==ta) ta.value=cData.plans[wid]||'';
+  const t=document.getElementById('cPlanTitle');
+  if(t) t.textContent = isThis ? "This week's plan" : 'Plan for week '+wid.split('-W')[1];
+  const s=document.getElementById('cPlanSaved');
+  if(s) s.textContent = (cData.plans[wid]||'').trim() ? 'saved' : '';
+}
+(function wireWeekPlan(){
+  const ta=document.getElementById('cPlan'); if(!ta) return;
+  const commit=()=>{
+    const wid=cPlanWid||cWeekId();
+    const v=ta.value;
+    const had=(cData.plans[wid]||'').trim();
+    if(v.trim()) cData.plans[wid]=v; else delete cData.plans[wid];
+    cSave();
+    const s=document.getElementById('cPlanSaved');
+    if(s) s.textContent = v.trim() ? 'saved' : '';
+    if(!had && v.trim()) J('planning','🗒️ Week plan written ('+wid+')');
+  };
+  ta.addEventListener('input',()=>{ clearTimeout(cPlanTimer); cPlanTimer=setTimeout(commit,700); });
+  ta.addEventListener('blur',()=>{ clearTimeout(cPlanTimer); commit(); });
+})();
+
 function updateMissionDisplay(){
   const display=document.getElementById('missionDisplay');
   const editor=document.getElementById('missionEditor');
@@ -3011,6 +3058,7 @@ function renderToday(){
 function renderCompass(){
   const wid=cWeekId(), dates=cWeekDates();
   const isThis=cOff===0;
+  cPlanPaint(wid, isThis);
   document.getElementById('cWeekLabel').textContent='Week '+wid.split('-W')[1]+' · '+wid.split('-W')[0]+(isThis?' — this week':(cOff>0?' — in '+cOff+' week'+(cOff>1?'s':''):' — '+(-cOff)+' week'+(cOff<-1?'s':'')+' ago'));
   const rocks=cData.rocks[wid]||[];
 
