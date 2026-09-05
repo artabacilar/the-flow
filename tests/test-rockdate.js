@@ -17,7 +17,7 @@ const weekId = new Function('return ' + grab('function weekId(', '\nfunction tOf
 const helpers = new Function(
   "const DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];" +
   grab('function rkIso(', 'function rkFillDates(') +
-  '; return { rkIso, rkDayIndex, rkLabel };')();
+  '; return { rkIso, rkDayIndex, rkLabel, rkFeedOrder, rkFeedLate, rkFeedWhen };')();
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n))
@@ -64,6 +64,58 @@ ok('no option is ever a bare weekday',
 console.log('\n— the markup no longer offers a bare weekday —');
 ok('the old weekday options are gone', src.indexOf('<option value="0">Mon</option>') < 0);
 ok('there is a date input for anything further out', src.indexOf('id="rkDate"') > 0);
+
+/* ------------------------------------------------------------------------
+   The order the Today feed puts them in. The bug: a week runs Mon–Sun, so on
+   Saturday 5 September a plain day-index sort put three Monday rocks — the
+   Monday five days earlier — above a meeting happening the next day.
+   ---------------------------------------------------------------------- */
+const { rkFeedOrder, rkFeedLate, rkFeedWhen } = helpers;
+const rock = (id, day, opts) => Object.assign({ id, day, title: id, time: '' }, opts || {});
+const ids = (list, todayIdx) => rkFeedOrder(list, todayIdx).map(r => r.id);
+
+console.log('\n— Today orders from now forward, not from Monday —');
+/* His real week: Mon 31 Aug is five days gone, Sun 6 Sep is tomorrow. */
+const theWeek = [
+  rock('yunus', 0, { time: '10:00' }),
+  rock('salonboost', 0, { time: '10:00' }),
+  rock('djset', 0, { time: '10:00' }),
+  rock('omer', 6, { time: '10:00' })
+];
+ok('tomorrow comes before a Monday that has gone', ids(theWeek, 5)[0] === 'omer', ids(theWeek, 5));
+ok('and the three passed ones follow it', ids(theWeek, 5).slice(1).length === 3, ids(theWeek, 5));
+
+console.log('\n— but only once that day has actually passed —');
+ok('on the Monday itself the Monday rocks lead', ids(theWeek, 0)[0] !== 'omer', ids(theWeek, 0));
+ok('and Sunday is last, as the week runs', ids(theWeek, 0)[3] === 'omer', ids(theWeek, 0));
+
+console.log('\n— ties and the unscheduled —');
+const mixed = [
+  rock('fri', 4, { time: '09:00' }),
+  rock('none', -1),
+  rock('sun-early', 6, { time: '08:00' }),
+  rock('sun-late', 6, { time: '20:00' }),
+  rock('sat', 5, { time: '12:00' })
+];
+ok('the same day sorts by time', ids(mixed, 5).indexOf('sun-early') < ids(mixed, 5).indexOf('sun-late'), ids(mixed, 5));
+ok('today leads, then tomorrow', ids(mixed, 5).slice(0, 2).join() === 'sat,sun-early', ids(mixed, 5));
+ok('unscheduled sinks below even the overdue', ids(mixed, 5)[4] === 'none', ids(mixed, 5));
+
+console.log('\n— what counts as overdue —');
+ok('a passed day, still open, is overdue', rkFeedLate(rock('a', 0), 5) === true);
+ok('a passed day, done, is not', rkFeedLate(rock('a', 0, { done: true }), 5) === false);
+ok('today is never overdue', rkFeedLate(rock('a', 5), 5) === false);
+ok('nor is tomorrow', rkFeedLate(rock('a', 6), 5) === false);
+ok('nor is anything unscheduled', rkFeedLate(rock('a', -1), 5) === false);
+
+console.log('\n— how the day reads —');
+ok('today says Today', rkFeedWhen(rock('a', 5, { time: '10:00' }), 5) === 'Today 10:00', rkFeedWhen(rock('a', 5, { time: '10:00' }), 5));
+ok('tomorrow says Tomorrow', rkFeedWhen(rock('a', 6, { time: '10:00' }), 5) === 'Tomorrow 10:00', rkFeedWhen(rock('a', 6, { time: '10:00' }), 5));
+ok('anything else keeps its day name', rkFeedWhen(rock('a', 0, { time: '10:00' }), 5) === 'Mon 10:00', rkFeedWhen(rock('a', 0, { time: '10:00' }), 5));
+ok('a range keeps both ends', rkFeedWhen(rock('a', 0, { time: '10:00', end: '22:19' }), 5) === 'Mon 10:00–22:19');
+ok('unscheduled says nothing at all', rkFeedWhen(rock('a', -1), 5) === '');
+/* Sunday is index 6, so "tomorrow" would be day 7 — a day that does not exist. */
+ok('on a Sunday nothing claims to be tomorrow', rkFeedWhen(rock('a', 0), 6) === 'Mon');
 
 console.log('\n' + (fail ? '✗ ' + fail + ' failed' : '✓ all ' + pass + ' passed') + ' (' + (pass + fail) + ' checks)');
 process.exit(fail ? 1 : 0);
