@@ -755,6 +755,9 @@ canvas{width:100%;height:120px;}
 .td-rock .rk-title{flex:1;font-size:16px;font-weight:500;letter-spacing:-0.01em;}
 .td-rock.done .rk-title{color:var(--muted);}
 .td-rock .rk-meta{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+/* Its own line: "overdue · Mon 10:00–22:19" on one row does not fit a phone. */
+.td-rock .rk-meta.late{text-align:right;}
+.td-rock .rk-meta .rk-late{display:block;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--red);}
 .td-rocks-empty{color:var(--muted);font-size:14px;padding:6px 0 14px;line-height:1.5;}
 
 /* The week in your own words, on the screen you actually open. Shown only
@@ -2830,6 +2833,31 @@ function rkLabel(d, i){
 }
 /* Rebuilt on every render so "Today" is always today, even in a tab that has
    been open since yesterday. The current choice is preserved across rebuilds. */
+/* ---- how the Today feed orders the week's rocks ----------------------------
+   A week runs Monday to Sunday, so a plain day-index sort is right for the
+   planner and wrong for Today: on a Saturday it puts Monday — five days gone
+   — above something happening tomorrow, and the screen you open to ask "what
+   now?" answers with the past. Ordered from now forward instead: what is
+   still ahead first, soonest first; what has been and gone and is still not
+   done underneath, saying so rather than quietly passing for upcoming.
+   Unscheduled sinks to the bottom, as it always did. */
+function rkFeedRank(r, todayIdx){ return r.day<0 ? 2 : (r.day>=todayIdx ? 0 : 1); }
+function rkFeedOrder(rocks, todayIdx){
+  return rocks.slice().sort((a,b)=>{
+    const ra=rkFeedRank(a,todayIdx), rb=rkFeedRank(b,todayIdx);
+    if(ra!==rb) return ra-rb;
+    if(a.day!==b.day) return a.day-b.day;
+    return (a.time||'99:99').localeCompare(b.time||'99:99');
+  });
+}
+/* Done is never late — a rock finished on Monday is finished, not overdue. */
+function rkFeedLate(r, todayIdx){ return !r.done && r.day>=0 && r.day<todayIdx; }
+/* "Tomorrow" beats "Sun" on a screen about the next few hours. */
+function rkFeedWhen(r, todayIdx){
+  if(r.day<0) return '';
+  const name = r.day===todayIdx ? 'Today' : (r.day===todayIdx+1 ? 'Tomorrow' : DAY_NAMES[r.day]);
+  return name+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'');
+}
 function rkFillDates(){
   const sel=document.getElementById('rkDay'); if(!sel) return;
   const keep=sel.value;
@@ -3103,18 +3131,15 @@ function renderToday(){
   const rocksDone=rocks.filter(r=>r.done).length;
   let rocksHtml='';
   if(rocks.length){
-    // Closer days on top, then by time — same order as the Week Compass.
-    rocksHtml=rocks.slice().sort((a,b)=>{
-      const da=(a.day>=0?a.day:99), db=(b.day>=0?b.day:99);
-      if(da!==db) return da-db;
-      return (a.time||'99:99').localeCompare(b.time||'99:99');
-    }).map(r=>{
-      const when=r.day>=0?(DAY_NAMES[r.day]+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'')):'';
+    const rkToday=(now.getDay()+6)%7;                      // 0=Mon … 6=Sun
+    rocksHtml=rkFeedOrder(rocks, rkToday).map(r=>{
+      const when=rkFeedWhen(r, rkToday);
+      const late=rkFeedLate(r, rkToday);
       const p=r.prio||'med';
       return `<div class="td-rock ${r.done?'done':''}" data-rockid="${r.id}">
         <div class="dot ${p}"></div>
         <div class="rk-title">${tdEsc(r.title)}${r.note?`<div class="td-rk-note">📝 ${tdEsc(r.note)}</div>`:''}</div>
-        <div class="rk-meta">${when}</div>
+        <div class="rk-meta${late?' late':''}">${late?'<span class="rk-late">overdue</span>':''}${when}</div>
       </div>`;
     }).join('');
   } else {
@@ -3270,7 +3295,15 @@ function renderCompass(){
   });
   const PRIO_LBL={high:'🔴 High',med:'🟡 Med',low:'⚪ Low'};
   const cEsc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const rkWhen=r=> r.day>=0 ? (DAY_NAMES[r.day]+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'')) : 'unscheduled';
+  /* The compass stays in week order — laid out Monday to Sunday is what a
+     week plan is for. But an unfinished day that has already passed should
+     not read the same as one still to come. */
+  const rkTodayIdx=(new Date().getDay()+6)%7;
+  const rkWhen=r=>{
+    if(r.day<0) return 'unscheduled';
+    const late=isThis && !r.done && r.day<rkTodayIdx;
+    return (late?'⚠️ overdue · ':'')+DAY_NAMES[r.day]+(r.time?' '+r.time:'')+(r.time&&r.end?'–'+r.end:'');
+  };
   rocksSorted.forEach(r=>{
     const p=r.prio||'med';
     const row=document.createElement('div'); row.className='rockrow'+(r.done?' done':'')+(cEditRockId===r.id?' editing':'');
