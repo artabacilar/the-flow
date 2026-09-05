@@ -70,6 +70,37 @@ const SHARE_SENT = (uid, day) => '__share:sent:' + uid + ':' + day;
    delete it. Reached by a link (open it while signed in to join) or by
    inviting an address. Like the inbox, it lives outside every namespace and is
    touched only through the /api/shared/* routes. */
+/* ---------- friends ----------
+   Pairing is a mutual, permanent-until-broken link between two accounts,
+   opened with a code that works exactly once. What a friend can see is never
+   read out of their storage: each person PUBLISHES a card holding only the
+   things they agreed to share, and the friend list serves those cards. There
+   is deliberately no code path anywhere that reads one account's keys on
+   behalf of another. */
+const FR_CODE  = (code) => '__friend:code:' + code;
+const FR_CODES = (uid)  => '__friend:codes:' + uid;
+const FR_LIST  = (uid)  => '__friend:list:' + uid;
+const FR_CARD  = (uid)  => '__friend:card:' + uid;
+const FR_TRY   = (uid, day) => '__friend:try:' + uid + ':' + day;
+const FR_MAX_FRIENDS = 25;
+const FR_MAX_CODES   = 10;   /* outstanding, unused codes per person        */
+const FR_CODE_DAYS   = 14;
+const FR_TRY_MAX     = 30;   /* redeem attempts per person per day          */
+/* No I, O, 0 or 1: this is a code people read aloud and retype. */
+const FR_ALPHABET    = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function newFriendCode() {
+  const b = crypto.randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) out += FR_ALPHABET[b[i] % FR_ALPHABET.length];
+  return out.slice(0, 4) + '-' + out.slice(4);
+}
+/* Typed by hand, so accept it in any case and with any punctuation. */
+function normFriendCode(v) {
+  const s = String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s.length === 8 ? s.slice(0, 4) + '-' + s.slice(4) : '';
+}
+
 const SHARED = (token) => '__shared:task:' + token;
 const SHARED_MEMBER = (uid) => '__shared:member:' + uid;   /* tokens a user belongs to */
 const SHARED_MAX_PER_USER = 200;
@@ -239,6 +270,13 @@ async function userByEmail(email) {
   const users = await getJSON(USERS_KEY, {});
   return users[String(email || '').trim().toLowerCase()] || null;
 }
+/* The users map is keyed by email; friends are keyed by account id, which is
+   the thing that survives someone changing either name or address. */
+async function userById(id) {
+  if (!id) return null;
+  const users = await getJSON(USERS_KEY, {});
+  return Object.values(users).find(u => u && u.id === id) || null;
+}
 
 /* Only the fields we promise to carry. Anything else the client sends is
    dropped here rather than trusted onward — the recipient's app renders this. */
@@ -288,6 +326,107 @@ async function sharedAddIndex(uid, token) {
 async function sharedDropIndex(uid, token) {
   const list = (await getJSON(SHARED_MEMBER(uid), [])).filter(x => x !== token);
   await setJSON(SHARED_MEMBER(uid), list);
+}
+
+/* ---------- friend helpers ------------------------------------------------ */
+
+/* Everything a card may contain, and nothing else. The client decides WHAT to
+   publish (it can leave the plan or the check-in out); the server decides what
+   a card is ALLOWED to be. Anything not named here is dropped, every string is
+   cut to length and every number is clamped — a card is shown to another
+   person, so it is never trusted to be the shape the client claimed. */
+function cleanCard(c, me) {
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const num = (v, lo, hi) => {
+    const x = parseInt(v, 10);
+    return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : 0;
+  };
+  const src = (c && typeof c === 'object') ? c : {};
+  const out = {
+    at: nowISO(),
+    /* Taken from the account record, never from the body: a card carries a
+       name to somebody else's screen and must not be able to claim one. */
+    name: str(me.name || me.email, 60),
+    metrics: [], plan: null, rocks: null, checkin: null
+  };
+
+  if (Array.isArray(src.metrics)) {
+    out.metrics = src.metrics.slice(0, 24).map(m => ({
+      icon:   str(m && m.icon, 4),
+      name:   str(m && m.name, 40),
+      unit:   str(m && m.unit, 20),
+      period: (m && m.period === 'month') ? 'month' : 'week',
+      target: num(m && m.target, 0, 9999),
+      count:  num(m && m.count, 0, 99999),
+      streak: num(m && m.streak, 0, 9999)
+    })).filter(m => m.name);
+  }
+
+  if (src.plan && typeof src.plan === 'object') {
+    const text = str(src.plan.text, 1200).trim();
+    if (text) out.plan = { week: str(src.plan.week, 10), text };
+  }
+
+  if (src.rocks && typeof src.rocks === 'object') {
+    out.rocks = {
+      week:  str(src.rocks.week, 10),
+      done:  num(src.rocks.done, 0, 999),
+      total: num(src.rocks.total, 0, 999),
+      items: Array.isArray(src.rocks.items)
+        ? src.rocks.items.slice(0, 12)
+            .map(r => ({ title: str(r && r.title, 120), done: !!(r && r.done) }))
+            .filter(r => r.title)
+        : []
+    };
+  }
+
+  if (src.checkin && typeof src.checkin === 'object') {
+    const text = str(src.checkin.text, 400).trim();
+    if (text) out.checkin = { text, day: validDate(src.checkin.day), at: nowISO() };
+  }
+
+  return out;
+}
+
+async function friendList(uid) {
+  const l = await getJSON(FR_LIST(uid), []);
+  return Array.isArray(l) ? l.filter(f => f && f.id) : [];
+}
+function areFriends(list, id) { return list.some(f => f.id === id); }
+
+/* Both directions, always together. A one-sided link would mean somebody
+   still publishing to a person who no longer appears in their own list. */
+async function friendLink(a, b) {
+  const la = await friendList(a.id);
+  if (!areFriends(la, b.id)) {
+    la.push({ id: b.id, name: b.name || b.email, email: b.email, since: nowISO() });
+    await setJSON(FR_LIST(a.id), la.slice(0, FR_MAX_FRIENDS));
+  }
+  const lb = await friendList(b.id);
+  if (!areFriends(lb, a.id)) {
+    lb.push({ id: a.id, name: a.name || a.email, email: a.email, since: nowISO() });
+    await setJSON(FR_LIST(b.id), lb.slice(0, FR_MAX_FRIENDS));
+  }
+}
+async function friendUnlink(aId, bId) {
+  await setJSON(FR_LIST(aId), (await friendList(aId)).filter(f => f.id !== bId));
+  await setJSON(FR_LIST(bId), (await friendList(bId)).filter(f => f.id !== aId));
+}
+
+/* Used and expired codes are cleared out whenever the list is touched, so an
+   old code never counts against the outstanding cap. */
+async function friendCodes(uid) {
+  const raw0 = await getJSON(FR_CODES(uid), []);
+  const codes = Array.isArray(raw0) ? raw0 : [];
+  const now = Date.now(), keep = [], out = [];
+  for (const c of codes) {
+    const rec = await getJSON(FR_CODE(c), null);
+    if (!rec || rec.by !== uid || rec.usedBy || new Date(rec.exp).getTime() < now) continue;
+    keep.push(c);
+    out.push({ code: c, at: rec.at, exp: rec.exp });
+  }
+  if (keep.length !== codes.length) await setJSON(FR_CODES(uid), keep);
+  return out;
 }
 
 /* ---------- the protected store ------------------------------------------ */
@@ -587,6 +726,149 @@ async function gate(req, res) {
     await raw.set(SHARED(token), '');
     await sharedDropIndex(me.id, token);
     json(res, 200, { ok: true, deleted: true });
+    return true;
+  }
+
+  /* ---- friends: pairing two accounts with a single-use code ----
+     Kept here, beside the account records, for the same reason task sharing
+     is: these are the handlers where one person's data becomes visible to
+     another, and that should be obvious from one file.
+
+     A code works exactly once. Redeeming it links both accounts in both
+     directions at the same moment; there is no state where one person thinks
+     they are paired and the other does not. */
+
+  if (p === '/api/friends/code' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const open = await friendCodes(me.id);
+    if (open.length >= FR_MAX_CODES) {
+      json(res, 429, { error: 'You already have ' + FR_MAX_CODES + ' codes waiting to be used. Cancel one first.' });
+      return true;
+    }
+    const friends = await friendList(me.id);
+    if (friends.length >= FR_MAX_FRIENDS) {
+      json(res, 429, { error: 'You are paired with as many people as this allows.' });
+      return true;
+    }
+    let code = '';
+    for (let i = 0; i < 6 && !code; i++) {
+      const c = newFriendCode();
+      if (!(await getJSON(FR_CODE(c), null))) code = c;
+    }
+    if (!code) { json(res, 503, { error: 'Could not make a code just now. Try again.' }); return true; }
+    const rec = {
+      code, by: me.id, byName: me.name || me.email, byEmail: me.email,
+      at: nowISO(),
+      exp: new Date(Date.now() + FR_CODE_DAYS * 86400000).toISOString(),
+      usedBy: null, usedAt: null
+    };
+    await setJSON(FR_CODE(code), rec);
+    const list = (await getJSON(FR_CODES(me.id), [])) || [];
+    list.push(code);
+    await setJSON(FR_CODES(me.id), list.slice(-FR_MAX_CODES * 3));
+    json(res, 200, { ok: true, code, exp: rec.exp, days: FR_CODE_DAYS });
+    return true;
+  }
+
+  if (p === '/api/friends/codes' && req.method !== 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    json(res, 200, { ok: true, codes: await friendCodes(me.id), max: FR_MAX_CODES });
+    return true;
+  }
+
+  if (p === '/api/friends/code/revoke' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const code = normFriendCode(b.code);
+    const rec = code ? await getJSON(FR_CODE(code), null) : null;
+    /* Only the person who made it, and only while it is still unused —
+       cancelling a code someone has already redeemed would not unpair them,
+       so pretending otherwise would be a lie. */
+    if (!rec || rec.by !== me.id) { json(res, 404, { error: 'That is not one of your codes.' }); return true; }
+    if (rec.usedBy) { json(res, 409, { error: 'That code has already been used.' }); return true; }
+    await raw.set(FR_CODE(code), '');
+    await setJSON(FR_CODES(me.id), ((await getJSON(FR_CODES(me.id), [])) || []).filter(c => c !== code));
+    json(res, 200, { ok: true, codes: await friendCodes(me.id) });
+    return true;
+  }
+
+  if (p === '/api/friends/redeem' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const day = new Date().toISOString().slice(0, 10);
+    const tries = (await getJSON(FR_TRY(me.id, day), 0)) || 0;
+    if (tries >= FR_TRY_MAX) {
+      json(res, 429, { error: 'Too many tries today. Ask your friend to send the code again tomorrow.' });
+      return true;
+    }
+    await setJSON(FR_TRY(me.id, day), tries + 1);
+
+    const b = safeParse(await readBody(req));
+    const code = normFriendCode(b.code);
+    const rec = code ? await getJSON(FR_CODE(code), null) : null;
+    if (!rec) { json(res, 404, { error: 'That code is not right.' }); return true; }
+    if (rec.usedBy) { json(res, 409, { error: 'That code has already been used.' }); return true; }
+    if (new Date(rec.exp).getTime() < Date.now()) { json(res, 410, { error: 'That code has expired.' }); return true; }
+    if (rec.by === me.id) { json(res, 400, { error: 'That is your own code — send it to your friend.' }); return true; }
+
+    const them = await userById(rec.by);
+    if (!them) { json(res, 404, { error: 'The person who made that code is no longer here.' }); return true; }
+
+    const mineList = await friendList(me.id), theirList = await friendList(rec.by);
+    if (areFriends(mineList, rec.by)) { json(res, 409, { error: 'You are already paired with ' + (them.name || them.email) + '.' }); return true; }
+    if (mineList.length >= FR_MAX_FRIENDS || theirList.length >= FR_MAX_FRIENDS) {
+      json(res, 429, { error: 'One of you is paired with as many people as this allows.' });
+      return true;
+    }
+
+    await friendLink(me, { id: rec.by, name: them.name, email: them.email });
+    rec.usedBy = me.id; rec.usedAt = nowISO();
+    await setJSON(FR_CODE(code), rec);
+    await setJSON(FR_CODES(rec.by), ((await getJSON(FR_CODES(rec.by), [])) || []).filter(c => c !== code));
+    json(res, 200, { ok: true, friend: { id: rec.by, name: them.name || them.email, email: them.email, since: nowISO() } });
+    return true;
+  }
+
+  if (p === '/api/friends/list' && req.method !== 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const list = await friendList(me.id);
+    const out = [];
+    for (const f of list) {
+      const card = await getJSON(FR_CARD(f.id), null);
+      out.push({
+        id: f.id, email: f.email, since: f.since,
+        /* The card carries the live name; the stored one is the fallback for
+           a friend who has not published anything yet. */
+        name: (card && card.name) || f.name || f.email,
+        card: card || null
+      });
+    }
+    json(res, 200, { ok: true, friends: out, max: FR_MAX_FRIENDS });
+    return true;
+  }
+
+  if (p === '/api/friends/card' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    await setJSON(FR_CARD(me.id), cleanCard(b.card, me));
+    json(res, 200, { ok: true });
+    return true;
+  }
+
+  if (p === '/api/friends/unpair' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const id = String(b.id || '');
+    await friendUnlink(me.id, id);
+    /* Nothing of theirs is deleted and nothing of ours is either — the card
+       simply stops being reachable, because neither list names the other. */
+    json(res, 200, { ok: true, friends: (await friendList(me.id)).map(f => f.id) });
     return true;
   }
 
