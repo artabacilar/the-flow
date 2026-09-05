@@ -62,13 +62,33 @@ const H = 'http://localhost:4222';
     document.querySelector('[data-fn-group="focus"]').classList.contains('on')));
   ok('a segment row appears', await p.isVisible('#flow-seg'));
   const segs = await p.evaluate(() => [...document.querySelectorAll('#flow-seg button')].map(b => b.textContent));
-  ok('with all six Focus sections', segs.length === 6, segs);
+  ok('with all seven Focus sections', segs.length === 7, segs);
   ok('and Priorities is the selected one', await p.evaluate(() =>
     (document.querySelector('#flow-seg button.on') || {}).getAttribute('data-fn-seg')) === 'quad');
-  ok('the row sits at the top of the section', await p.evaluate(() => {
-    const s = document.querySelector('.section.active');
-    return !!s && s.firstElementChild && s.firstElementChild.id === 'flow-seg';
+  /* Above the pane, not inside it. A section that repaints itself by
+     rewriting its own innerHTML would delete a row that lived inside it. */
+  ok('the row sits directly above the open section', await p.evaluate(() => {
+    const s = document.querySelector('.section.active, .flow-section.active');
+    const g = document.getElementById('flow-seg');
+    return !!s && !!g && g.nextElementSibling === s;
   }));
+
+  /* North Star is the one Focus section the pack owns, so it is a
+     `.flow-section`. Matching only the host's `.section` used to leave it
+     with no segment row at all — the only way out was a link inside the
+     page. */
+  console.log('\n— North Star is reachable and leavable like the rest —');
+  await p.click('#flow-seg [data-fn-seg="northstar"]'); await p.waitForTimeout(1200);
+  ok('it opens North Star', await activeTab(p) === 'northstar', await activeTab(p));
+  ok('the segment row is still there', await p.isVisible('#flow-seg'));
+  ok('and North Star is the selected one', await p.evaluate(() =>
+    (document.querySelector('#flow-seg button.on') || {}).getAttribute('data-fn-seg')) === 'northstar');
+  /* The section rewrites itself whenever the direction lands. */
+  await p.evaluate(() => { try { window.Flow.NorthStar.paint(); } catch (e) {} });
+  await p.waitForTimeout(300);
+  ok('and it survives the section repainting itself', await p.isVisible('#flow-seg'));
+  await p.click('#flow-seg [data-fn-seg="quad"]'); await p.waitForTimeout(900);
+  ok('so you can leave without the in-page link', await activeTab(p) === 'quad', await activeTab(p));
 
   console.log('\n— the second level moves without leaving the group —');
   await p.click('#flow-seg [data-fn-seg="compass"]'); await p.waitForTimeout(900);
