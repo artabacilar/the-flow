@@ -6788,6 +6788,13 @@ const Score = {
   K_MET: 'flow:ns:metrics',
   K_LOG: 'flow:ns:log',
 
+  /* Open or closed is UI, not data: it belongs to this device, never to the
+     account, so it lives in the pack's own localStorage namespace alongside
+     the Today groups it is modelled on. */
+  LS_OPEN: 'flowpack:scoreOpen',
+  isOpen() { try { return localStorage.getItem(Score.LS_OPEN) === '1'; } catch (e) { return false; } },
+  setOpen(v) { try { v ? localStorage.setItem(Score.LS_OPEN, '1') : localStorage.removeItem(Score.LS_OPEN); } catch (e) {} },
+
   KEEP_DAYS: 500,
 
   DEFAULTS: [
@@ -6914,23 +6921,39 @@ const Score = {
 
   /* ---------------------------- the card ---------------------------- */
 
+  /* One tap-to-open section, like the Diet block on Today. Eight metrics is a
+     lot of screen for something you glance at; the header and the bar under
+     it carry the whole summary, so folded is a real answer and not a stub. */
   card() {
     const withTarget = Score.metrics.filter(m => m.target > 0);
     const hit = withTarget.filter(m => Score.count(m) >= m.target).length;
+    const pct = withTarget.length ? Math.round((hit / withTarget.length) * 100) : 0;
+    const open = Score.isOpen();
     const rows = Score.metrics.map(m => Score.row(m)).join('');
+    const summary = withTarget.length
+      ? hit + ' of ' + withTarget.length + ' on target'
+      : Score.metrics.length + ' tracked';
+
     return '' +
-      '<div class="flow-card">' +
-        '<div class="flow-row between"><h3>Scoreboard</h3>' +
-          (withTarget.length
-            ? '<span class="flow-chip accent">' + hit + ' of ' + withTarget.length + ' on target</span>'
-            : '') +
+      '<div class="flow-card sc-fold' + (open ? ' is-open' : '') + '" id="sc-card">' +
+        '<div class="sc-head-row" id="sc-head" role="button" tabindex="0" ' +
+          'aria-expanded="' + (open ? 'true' : 'false') + '" ' +
+          'aria-label="Scoreboard, ' + (open ? 'collapse' : 'expand') + '">' +
+          '<h3>Scoreboard</h3>' +
+          '<span class="flow-chip accent' + (hit ? '' : ' zero') + '">' + summary + '</span>' +
+          '<span class="flow-fold-chev" aria-hidden="true"></span>' +
         '</div>' +
-        '<p class="flow-sub">One tap each time you do the thing. Weeks run Monday to Sunday. ' +
-          'Tap the name to rename it or change the target.</p>' +
-        '<div class="sc-list">' + rows + '</div>' +
-        '<div class="flow-row ns-addrow">' +
-          '<input class="flow-in grow" id="sc-new" placeholder="Track something else…" maxlength="60">' +
-          '<button class="flow-btn primary sm" id="sc-add">Add</button>' +
+        /* The bar stays whether open or shut — it is what makes the folded
+           header worth reading. */
+        '<div class="td-prog sc-prog"><div class="fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="sc-body">' +
+          '<p class="flow-sub">One tap each time you do the thing. Weeks run Monday to Sunday. ' +
+            'Tap the name to rename it or change the target.</p>' +
+          '<div class="sc-list">' + rows + '</div>' +
+          '<div class="flow-row ns-addrow">' +
+            '<input class="flow-in grow" id="sc-new" placeholder="Track something else…" maxlength="60">' +
+            '<button class="flow-btn primary sm" id="sc-add">Add</button>' +
+          '</div>' +
         '</div>' +
       '</div>';
   },
@@ -6981,12 +7004,30 @@ const Score = {
 
   wire(sec) {
     Score.sec = sec;
+
+    const head = $('#sc-head', sec), card = $('#sc-card', sec);
+    if (head && card) {
+      const toggle = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const now = !card.classList.contains('is-open');
+        card.classList.toggle('is-open', now);
+        head.setAttribute('aria-expanded', now ? 'true' : 'false');
+        head.setAttribute('aria-label', 'Scoreboard, ' + (now ? 'collapse' : 'expand'));
+        Score.setOpen(now);
+      };
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') toggle(e); });
+    }
+
     $$('.sc-metric', sec).forEach(row => {
       const id = row.getAttribute('data-id');
       const m = Score.metrics.find(x => x.id === id);
       if (!m) return;
       const plus = row.querySelector('[data-act="plus"]');
       const minus = row.querySelector('[data-act="minus"]');
+      /* NorthStar.paint() redraws the whole tab, and the card reads its own
+         open state back out of storage — so a tap cannot close the list
+         under your finger. */
       if (plus) plus.addEventListener('click', () => { Score.bump(m, +1); NorthStar.paint(); });
       if (minus) minus.addEventListener('click', () => { Score.bump(m, -1); NorthStar.paint(); });
       const name = row.querySelector('[data-act="edit"]');
@@ -6996,6 +7037,7 @@ const Score = {
     const doAdd = () => {
       const v = (inp.value || '').trim(); if (!v) return;
       Score.metrics.push({ id: uid('m'), icon: '⭐', name: v, unit: '', target: 1, period: 'week' });
+      Score.setOpen(true);
       Score.saveMetrics(); NorthStar.paint();
     };
     if (add) add.addEventListener('click', doAdd);
@@ -7006,6 +7048,7 @@ const Score = {
   editor(m) {
     const row = $('.sc-metric[data-id="' + m.id + '"]', Score.sec || document);
     if (!row) return;
+    Score.setOpen(true);
     row.innerHTML =
       '<div class="sc-edit">' +
         '<div class="flow-row">' +
