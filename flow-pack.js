@@ -2017,76 +2017,375 @@ const Inbox = {
 /* =========================================================================
  * 28 · The assistant — read-only, over your own data
  * ======================================================================= */
+/* ======================================================================
+ * Ask — a conversation, not a form submission
+ *
+ * The old version posted a question and waited for the whole answer before
+ * showing anything: eight seconds of a bare ellipsis, twenty if the free
+ * instance had gone to sleep, and no way to tell a slow answer from a
+ * broken one. The words were being written the entire time; they were just
+ * being held back until the last one arrived.
+ *
+ * This streams them, so the first ones land about a second in and the wait
+ * becomes something you watch. Three states are visible and distinct:
+ * reaching the server, thinking, and writing — because "nothing on screen"
+ * is what makes software feel broken, not slowness itself.
+ * ==================================================================== */
+
+/* A small markdown renderer. The model writes lists and emphasis; rendering
+   them as literal asterisks is the difference between a chat and a log file.
+   Everything is escaped before any markup is introduced, so nothing the
+   model returns can become live HTML. */
+function askMd(src) {
+  const text = String(src == null ? '' : src);
+  const blocks = [];
+  /* Fenced code is lifted out first so nothing inside it is treated as
+     markup, then put back at the end. */
+  const stripped = text.replace(/```([\s\S]*?)```/g, (m, code) => {
+    blocks.push(code.replace(/^\w*\n/, ''));
+    return '  CODE' + (blocks.length - 1) + '  ';
+  });
+
+  const inline = (s) => esc(s)
+    .replace(/`([^`]+)`/g, (m, c) => '<code>' + c + '</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
+
+  const out = [];
+  let list = null;                       /* 'ul' | 'ol' | null */
+  const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+
+  stripped.split('\n').forEach((raw) => {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) { closeList(); return; }
+
+    const code = /^ CODE(\d+) $/.exec(line.trim());
+    if (code) { closeList(); out.push('<pre><code>' + esc(blocks[+code[1]]) + '</code></pre>'); return; }
+
+    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (h) { closeList(); out.push('<h4>' + inline(h[2]) + '</h4>'); return; }
+
+    const ul = /^\s*[-*•]\s+(.*)$/.exec(line);
+    if (ul) {
+      if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+      out.push('<li>' + inline(ul[1]) + '</li>'); return;
+    }
+    const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ol) {
+      if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+      out.push('<li>' + inline(ol[1]) + '</li>'); return;
+    }
+    closeList();
+    out.push('<p>' + inline(line) + '</p>');
+  });
+  closeList();
+  return out.join('');
+}
+
 const Ask = {
   turns: [],
   busy: false,
+  phase: '',            /* 'reaching' | 'thinking' | 'writing' */
+  meta: '',
+  loaded: false,
+  held: false,          /* true once the person scrolls up to re-read */
+  ctrl: null,           /* the in-flight request, so Stop can end it */
+  sec: null,
 
-  render(sec) {
-    sec.innerHTML = `
-      <div class="flow-hero-wrap">
-        <div class="flow-eyebrow">READS YOUR FLOW · NEVER CHANGES IT</div>
-        <div class="flow-hero">Ask</div>
-      </div>
-      <div class="flow-card">
-        <p class="flow-sub">It can see your priorities, week, journal, training, habits, sleep and spending, and answer questions about them. It cannot add or edit anything — that is deliberate.</p>
-        <div id="ask-log" class="flow-ask-log"></div>
-        <div class="flow-row ask-compose" style="margin-top:12px">
-          <textarea class="flow-in grow" id="ask-in" rows="2" placeholder="What should I focus on this week?"></textarea>
-          <button class="flow-btn primary" id="ask-go">Ask</button>
-        </div>
-        <div class="flow-sub" id="ask-meta" style="margin-top:8px"></div>
-        <div class="flow-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
-          ${['What should I focus on this week?', 'How has my sleep been?', 'Am I keeping up with training?', 'Where is my money going?']
-            .map(q => `<button class="flow-btn tiny ghost" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}
-        </div>
-      </div>`;
+  K_THREAD: 'flow:ask:thread',
+  MAX_KEPT: 40,
 
-    const log = $('#ask-log', sec), input = $('#ask-in', sec), meta = $('#ask-meta', sec);
-    const draw = () => {
-      log.innerHTML = Ask.turns.map(t =>
-        `<div class="flow-ask-turn ${t.role}"><div class="who">${t.role === 'user' ? 'You' : 'Flow'}</div><div class="txt">${esc(t.content).replace(/\n/g, '<br>')}</div></div>`).join('');
-      log.scrollTop = log.scrollHeight;
-    };
+  SUGGESTIONS: [
+    'What should I focus on this week?',
+    'Am I keeping up with training?',
+    'How has my sleep been?',
+    'Where is my money going?'
+  ],
 
-    const ask = async (text) => {
-      const q = String(text || input.value || '').trim();
-      if (!q || Ask.busy) return;
-      Ask.busy = true;
-      input.value = '';
-      Ask.turns.push({ role: 'user', content: q });
-      Ask.turns.push({ role: 'assistant', content: '…' });
-      draw();
-      try {
-        const r = await fetch('/api/flow/chat', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: Ask.turns.filter(t => t.content !== '…') })
-        });
-        const j = await r.json().catch(() => ({}));
-        Ask.turns.pop();
-        if (!r.ok) {
-          Ask.turns.push({ role: 'assistant', content: j.error || 'That did not work.' });
-        } else {
-          Ask.turns.push({ role: 'assistant', content: j.reply || '(no answer)' });
-          meta.textContent = j.used != null ? j.used + ' of ' + j.cap + ' messages used today' : '';
+  async load() {
+    if (Ask.loaded) return;
+    const saved = await DB.get(Ask.K_THREAD, null);
+    if (Array.isArray(saved)) {
+      Ask.turns = saved.filter(t => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string');
+    }
+    Ask.loaded = true;
+  },
+  save() {
+    /* A thread that grew forever would eventually be a slow read on every
+       app start, so only the recent stretch is kept. */
+    DB.set(Ask.K_THREAD, Ask.turns.slice(-Ask.MAX_KEPT));
+  },
+
+  async render(sec) {
+    Ask.sec = sec;
+    if (!Ask.loaded) {
+      sec.innerHTML = '<div class="flow-card"><p class="flow-sub">Loading…</p></div>';
+      try { await Ask.load(); } catch (e) { Ask.loaded = true; }
+    }
+    sec.innerHTML =
+      '<div class="ask-shell">' +
+        '<div class="ask-scroll" id="ask-scroll"><div class="ask-inner" id="ask-log"></div></div>' +
+        '<div class="ask-dock">' +
+          '<div class="ask-box">' +
+            '<textarea id="ask-in" rows="1" placeholder="Ask about your week…" aria-label="Message"></textarea>' +
+            '<button class="ask-send" id="ask-go" aria-label="Send">' +
+              '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>' +
+          '</div>' +
+          '<div class="ask-foot"><span id="ask-meta"></span>' +
+            '<button class="ask-clear" id="ask-clear">New conversation</button></div>' +
+        '</div>' +
+      '</div>';
+
+    Ask.paint();
+    Ask.wire();
+  },
+
+  /* ------------------------------ painting ------------------------------ */
+
+  paint() {
+    const log = document.getElementById('ask-log');
+    if (!log) return;
+
+    if (!Ask.turns.length && !Ask.busy) {
+      log.innerHTML =
+        '<div class="ask-empty">' +
+          '<div class="ask-empty-h">Ask about your own record</div>' +
+          '<p>It can see your priorities, this week, your journal, training, habits, sleep, ' +
+            'metrics and spending — and answer questions about them. It cannot change anything, ' +
+            'which is deliberate.</p>' +
+          '<div class="ask-chips">' +
+            Ask.SUGGESTIONS.map(q => '<button class="ask-chip" data-ask="' + esc(q) + '">' + esc(q) + '</button>').join('') +
+          '</div>' +
+        '</div>';
+    } else {
+      log.innerHTML = Ask.turns.map((t, i) => {
+        const last = i === Ask.turns.length - 1;
+        if (t.role === 'user') {
+          return '<div class="ask-msg user"><div class="ask-bubble">' +
+                 esc(t.content).replace(/\n/g, '<br>') + '</div></div>';
         }
-      } catch (e) {
-        Ask.turns.pop();
-        Ask.turns.push({ role: 'assistant', content: 'Could not reach the server.' });
-      }
-      Ask.busy = false;
-      draw();
+        const writing = last && Ask.phase === 'writing';
+        return '<div class="ask-msg bot">' +
+                 '<div class="ask-body' + (writing ? ' writing' : '') + '">' + askMd(t.content) + '</div>' +
+               '</div>';
+      }).join('') + Ask.pending();
+    }
+    Ask.stick();
+    Ask.paintFoot();
+  },
+
+  /* The waiting states, said in words rather than left blank. */
+  pending() {
+    if (Ask.phase === 'reaching') {
+      return '<div class="ask-msg bot"><div class="ask-think">' + Ask.dots() +
+             '<span class="ask-think-t">Reaching the server…</span></div></div>';
+    }
+    if (Ask.phase === 'thinking') {
+      return '<div class="ask-msg bot"><div class="ask-think">' + Ask.dots() +
+             '<span class="ask-think-t">Reading your week…</span></div></div>';
+    }
+    return '';
+  },
+  dots() { return '<span class="ask-dots"><i></i><i></i><i></i></span>'; },
+
+  paintFoot() {
+    const m = document.getElementById('ask-meta');
+    if (m) m.textContent = Ask.meta;
+    /* Nothing to clear yet — offering to is just noise. */
+    const clear = document.getElementById('ask-clear');
+    if (clear) clear.style.display = Ask.turns.length ? '' : 'none';
+    const go = document.getElementById('ask-go');
+    if (go) {
+      go.classList.toggle('stop', Ask.busy);
+      go.setAttribute('aria-label', Ask.busy ? 'Stop' : 'Send');
+      go.innerHTML = Ask.busy
+        ? '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+    }
+  },
+
+  /* Follow the answer as it is written, but stop following the moment the
+     person scrolls up to re-read something. */
+  stick() {
+    const sc = document.getElementById('ask-scroll');
+    if (!sc || Ask.held) return;
+    sc.scrollTop = sc.scrollHeight;
+  },
+
+  /* --------------------------- the conversation -------------------------- */
+
+  async send(text) {
+    const input = document.getElementById('ask-in');
+    const q = String(text || (input && input.value) || '').trim();
+    if (!q || Ask.busy) return;
+    if (input) { input.value = ''; Ask.grow(input); }
+
+    Ask.turns.push({ role: 'user', content: q });
+    Ask.busy = true;
+    Ask.phase = 'reaching';
+    Ask.held = false;
+    Ask.paint();
+
+    const history = Ask.turns.slice(-12);
+    let reply = '', opened = false;
+    const ctrl = ('AbortController' in window) ? new AbortController() : null;
+    Ask.ctrl = ctrl;
+
+    const fail = (msg) => { Ask.turns.push({ role: 'assistant', content: msg }); Ask.finish(); };
+
+    let r;
+    try {
+      r = await fetch('/api/flow/chat/stream', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history }),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') { Ask.finish(); return; }
+      fail('Could not reach the server. Try again in a moment.');
+      return;
+    }
+
+    if (!r.ok || !r.body) {
+      /* A refusal arrives as ordinary JSON; a browser too old for streams
+         gets the buffered endpoint rather than an error. */
+      let j = null;
+      try { j = await r.json(); } catch (e) {}
+      if (j && j.error) { fail(j.error); return; }
+      if (!r.body) { await Ask.sendBuffered(history); return; }
+      fail('That did not work.');
+      return;
+    }
+
+    Ask.phase = 'thinking';
+    Ask.paint();
+
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', painting = false;
+    const repaint = () => {
+      if (painting) return;
+      painting = true;
+      requestAnimationFrame(() => { painting = false; Ask.paint(); });
     };
 
-    $('#ask-go', sec).addEventListener('click', () => ask());
-    input.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') ask();
+    try {
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        buf += dec.decode(step.value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          const line = block.split('\n').filter(l => l.indexOf('data:') === 0)[0];
+          if (!line) continue;
+          let ev = null;
+          try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+
+          if (ev.t === 'open') { Ask.phase = 'thinking'; repaint(); }
+          else if (ev.t === 'd') {
+            if (!opened) {
+              opened = true;
+              Ask.phase = 'writing';
+              Ask.turns.push({ role: 'assistant', content: '' });
+            }
+            reply += ev.v;
+            Ask.turns[Ask.turns.length - 1].content = reply;
+            repaint();
+          }
+          else if (ev.t === 'meta') { Ask.meta = ev.used + ' of ' + ev.cap + ' messages today'; }
+          else if (ev.t === 'err') {
+            if (!opened) { Ask.turns.push({ role: 'assistant', content: ev.v }); opened = true; }
+            else { Ask.turns[Ask.turns.length - 1].content = reply + '\n\n_' + ev.v + '_'; }
+          }
+        }
+      }
+    } catch (e) {
+      if (!(e && e.name === 'AbortError') && !opened) {
+        Ask.turns.push({ role: 'assistant', content: 'The answer was cut off. Try again?' });
+        opened = true;
+      }
+    }
+
+    if (!opened) Ask.turns.push({ role: 'assistant', content: 'No answer came back. Try again?' });
+    Ask.finish();
+  },
+
+  /* Older browsers with no streaming body: ask the buffered endpoint rather
+     than show an error for something that works perfectly well. */
+  async sendBuffered(history) {
+    Ask.phase = 'thinking'; Ask.paint();
+    try {
+      const r = await fetch('/api/flow/chat', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history })
+      });
+      const j = await r.json().catch(() => ({}));
+      Ask.turns.push({ role: 'assistant', content: (r.ok ? (j.reply || '(no answer)') : (j.error || 'That did not work.')) });
+      if (r.ok && j.used != null) Ask.meta = j.used + ' of ' + j.cap + ' messages today';
+    } catch (e) {
+      Ask.turns.push({ role: 'assistant', content: 'Could not reach the server.' });
+    }
+    Ask.finish();
+  },
+
+  finish() {
+    Ask.busy = false;
+    Ask.phase = '';
+    Ask.ctrl = null;
+    Ask.save();
+    Ask.paint();
+    const input = document.getElementById('ask-in');
+    if (input && window.innerWidth > 760) input.focus();
+  },
+
+  stop() {
+    if (Ask.ctrl) { try { Ask.ctrl.abort(); } catch (e) {} }
+    Ask.busy = false; Ask.phase = ''; Ask.ctrl = null;
+    Ask.save(); Ask.paint();
+  },
+
+  /* ------------------------------- wiring ------------------------------- */
+
+  grow(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 168) + 'px';
+  },
+
+  wire() {
+    const sec = Ask.sec;
+    const input = $('#ask-in', sec);
+    const go = $('#ask-go', sec);
+    const sc = $('#ask-scroll', sec);
+
+    if (input) {
+      Ask.grow(input);
+      input.addEventListener('input', () => Ask.grow(input));
+      input.addEventListener('keydown', (e) => {
+        /* Enter sends, Shift+Enter starts a line — the convention everywhere
+           else a person types a message. */
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); Ask.send(); }
+      });
+    }
+    if (go) go.addEventListener('click', () => (Ask.busy ? Ask.stop() : Ask.send()));
+
+    if (sc) sc.addEventListener('scroll', () => {
+      Ask.held = (sc.scrollHeight - sc.scrollTop - sc.clientHeight) > 90;
     });
+
+    const clear = $('#ask-clear', sec);
+    if (clear) clear.addEventListener('click', () => {
+      if (Ask.busy) Ask.stop();
+      Ask.turns = []; Ask.meta = ''; Ask.save(); Ask.paint();
+    });
+
     sec.addEventListener('click', (e) => {
       const b = e.target.closest('[data-ask]');
-      if (b) ask(b.getAttribute('data-ask'));
+      if (b) Ask.send(b.getAttribute('data-ask'));
     });
-    draw();
   }
 };
 
