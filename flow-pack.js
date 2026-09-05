@@ -4511,6 +4511,61 @@ const SleepChart = {
  * Open/closed state is UI, not data — it lives in localStorage under the
  * pack's own namespace and never touches the database.
  * ====================================================================== */
+/* An audit nobody remembers to run is not a routine. Twice a year — and only
+   twice — the screen you actually open says so, once, at the top. It is
+   dismissible for the day, because a banner you cannot silence stops being
+   information and becomes furniture. */
+const AuditNudge = {
+  LS: 'flowpack:auditSnooze',
+
+  snoozed() { try { return localStorage.getItem(AuditNudge.LS) === today(); } catch (e) { return false; } },
+  snooze()  { try { localStorage.setItem(AuditNudge.LS, today()); } catch (e) {} },
+
+  apply() {
+    const mount = document.getElementById('today-feed');
+    if (!mount) return;
+    const old = mount.querySelector('.td-audit');
+    if (old) old.remove();
+    /* Nothing is claimed before the audit's own data has loaded — a banner
+       saying "due" that turns out not to be is worse than a late one. */
+    if (!Audit.loaded) return;
+    if (AuditNudge.snoozed()) return;
+    const due = Audit.due();
+    if (!due.due && !Audit.draft) return;
+
+    const el = document.createElement('div');
+    /* flow-x as well as td-audit: the pack's colours live on that class, and
+       this banner is mounted inside the host's own feed where they would
+       otherwise be undefined — which is how you get an invisible button on a
+       card that looks fine everywhere else. */
+    el.className = 'td-audit flow-x';
+    el.innerHTML =
+      '<div class="td-audit-body">' +
+        '<span class="lbl">' + (Audit.draft ? 'Audit in progress' : 'Routine audit') + '</span>' +
+        '<p>' + (Audit.draft
+          ? Audit.decided() + ' of ' + Audit.total() + ' decided. Finish it while the last ' + Audit.cfg.months + ' months are still in front of you.'
+          : "Six months of things you do every day are sitting in the record. Keep what's working, get rid of what isn't.") +
+        '</p>' +
+      '</div>' +
+      '<div class="td-audit-acts">' +
+        '<button type="button" class="flow-btn sm primary" data-au-go="1">' + (Audit.draft ? 'Carry on' : 'Open it') + '</button>' +
+        '<button type="button" class="flow-btn sm ghost" data-au-later="1">Later</button>' +
+      '</div>';
+    mount.insertBefore(el, mount.firstChild);
+
+    el.querySelector('[data-au-go]').addEventListener('click', () => {
+      Fold.setOpen('audit', true);
+      const pill = document.querySelector('.tab[data-tab="northstar"]');
+      if (pill) pill.click();
+      setTimeout(() => {
+        const card = document.querySelector('[data-foldcard="audit"]');
+        if (card) { card.classList.add('is-open'); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      }, 400);
+    });
+    el.querySelector('[data-au-later]').addEventListener('click', () => { AuditNudge.snooze(); el.remove(); });
+  }
+};
+
 const TodayGroups = {
   LS: 'flowpack:todayOpen',
   COLLAPSIBLE: [/^diet$/i, /^sharpen the saw$/i],
@@ -4530,6 +4585,7 @@ const TodayGroups = {
       const r = original.apply(this, arguments);
       try { TodayPlus.apply(); } catch (e) { console.warn('[Flow] today plus', e); }
       try { TodayGroups.apply(); } catch (e) { console.warn('[Flow] today groups', e); }
+      try { AuditNudge.apply(); } catch (e) { console.warn('[Flow] audit nudge', e); }
       return r;
     };
     wrapped.__flowWrapped = 1;
@@ -5233,6 +5289,15 @@ const Auth = {
     el.innerHTML = `
       <div class="fa-card">
         <div class="fa-brand">The <b>Flow</b></div>
+        <!-- What the app is, before anyone has used it. Not a slogan about
+             the software — the idea the software exists to carry out. -->
+        <blockquote class="fa-creed">
+          <span>70% of our life is things we do everyday</span>
+          <span>audit your routine every 6 months</span>
+          <span>keep what&rsquo;s working</span>
+          <span>get rid of what isn&rsquo;t</span>
+          <span class="last">&hellip;watch your life change</span>
+        </blockquote>
         <h2 class="fa-h" id="fa-h">${firstRun ? 'Set up your account' : 'Sign in'}</h2>
         <p class="fa-sub" id="fa-sub">${firstRun
           ? 'This is the first account on this server, so it becomes the owner — everything already in The Flow becomes yours.'
@@ -6415,10 +6480,10 @@ const NorthStar = {
 
   async render(sec) {
     NorthStar.sec = sec;
-    if (!NorthStar.loaded || !Score.loaded || !Friends.loaded) {
+    if (!NorthStar.loaded || !Score.loaded || !Friends.loaded || !Audit.loaded) {
       sec.innerHTML = '<div class="flow-card"><p class="flow-sub">Loading your compass…</p></div>';
-      try { await Promise.all([NorthStar.load(), Score.load(), Direction.load(), Friends.load()]); }
-      catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; Score.loaded = true; Direction.loaded = true; Friends.loaded = true; }
+      try { await Promise.all([NorthStar.load(), Score.load(), Direction.load(), Friends.load(), Audit.load()]); }
+      catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; Score.loaded = true; Direction.loaded = true; Friends.loaded = true; Audit.loaded = true; }
     }
     NorthStar.paint();
     /* After the paint, never before it: this is a network call and the tab
@@ -6451,6 +6516,7 @@ const NorthStar = {
       NorthStar.matrixCard() +
       Score.card() +
       Friends.card() +
+      Audit.card() +
       NorthStar.goalsCard(avg) +
       NorthStar.tenetsCard();
 
@@ -6458,6 +6524,7 @@ const NorthStar = {
     Score.wire(sec);
     Direction.wire(sec);
     Friends.wire(sec);
+    Audit.wire(sec);
     Fold.wire(sec);
     /* A tap on the scoreboard changes what a friend is looking at, so the
        card follows the paint. It sends only when something actually moved. */
@@ -6874,6 +6941,114 @@ const Fold = {
  * the ledger answers "when", which is what a trajectory is made of. It is
  * also what the Direction engine reads.
  * ==================================================================== */
+/* ======================================================================
+ * 20d-0 · The routine audit — the maths
+ *
+ *   70% of our life is things we do everyday
+ *   audit your routine every 6 months
+ *   keep what's working
+ *   get rid of what isn't
+ *   ...watch your life change
+ *
+ * Every other part of this app is about the day. This is the twice-a-year
+ * step back: every recurring thing you track, put next to what actually
+ * happened, and a decision on each one. The app does not decide — it has no
+ * business telling anyone which parts of their life to cut. It only refuses
+ * to let the question be answered from memory, which is where a routine that
+ * stopped working six months ago survives.
+ *
+ * Kept pure and separate from the UI so the arithmetic can be tested without
+ * a browser: everything below takes data in and returns numbers out.
+ * ==================================================================== */
+const AuditMath = {
+  /* The window: `months` back from `to`, by calendar month, so a six-month
+     audit run in March covers September — not "183 days ago". */
+  window(months, to) {
+    const end = to ? new Date(to.getTime()) : new Date();
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end.getTime());
+    start.setMonth(start.getMonth() - months);
+    return { from: isoDate(start), to: isoDate(end), days: Math.round((end - start) / 86400000) };
+  },
+
+  /* Every ISO date in [from, to]. Six months is ~183 strings — small enough
+     to just hold, and it makes every count below a one-liner. */
+  daysIn(from, to) {
+    const out = [];
+    let d = parseISO(from);
+    const end = parseISO(to);
+    while (d <= end && out.length < 4000) { out.push(isoDate(d)); d = addDays(d, 1); }
+    return out;
+  },
+
+  /* Split in two so a routine that is quietly dying can be seen dying rather
+     than averaged into looking fine. */
+  halves(days) {
+    const mid = Math.floor(days.length / 2);
+    return { first: days.slice(0, mid), second: days.slice(mid) };
+  },
+
+  /* -1 falling, 0 level, +1 rising. A tenth of the first half is the noise
+     floor: below that the two halves are the same half. */
+  trend(a, b) {
+    const floor = Math.max(1, a * 0.1);
+    if (b - a > floor) return 1;
+    if (a - b > floor) return -1;
+    return 0;
+  },
+
+  /* What the record says, for one thing you meant to do repeatedly.
+     `hits` is the set of days it happened; `expected` is how many times the
+     target implies over this window. */
+  read(hits, days, expected) {
+    const set = {};
+    hits.forEach(h => { set[h] = (set[h] || 0) + 1; });
+    const count = (list) => list.reduce((n, d) => n + (set[d] || 0), 0);
+    const done = count(days);
+    const h = AuditMath.halves(days);
+    const first = count(h.first), second = count(h.second);
+    const withIt = days.filter(d => set[d]).length;
+    let last = '';
+    for (let i = days.length - 1; i >= 0; i--) if (set[days[i]]) { last = days[i]; break; }
+    return {
+      done, expected: Math.round(expected || 0),
+      rate: expected > 0 ? done / expected : (done > 0 ? 1 : 0),
+      first, second, trend: AuditMath.trend(first, second),
+      daysWithIt: withIt, lastDone: last,
+      /* Days since it last happened — the number that says "this stopped"
+         more plainly than any percentage. */
+      quietFor: last ? days.length - 1 - days.indexOf(last) : days.length
+    };
+  },
+
+  /* A word for the number, so the row can be read at a glance. Deliberately
+     descriptive, never advisory: "not happening" is a fact, "drop this" would
+     be a decision, and the decision is not the app's to make. */
+  verdict(r) {
+    if (!r.done) return 'never happened';
+    if (r.rate >= 0.85) return 'holding';
+    if (r.rate >= 0.5)  return 'most weeks';
+    if (r.rate >= 0.2)  return 'patchy';
+    return 'barely happened';
+  },
+
+  /* How many weeks and months the window spans, for turning a per-week or
+     per-month target into "times expected across six months". */
+  spans(days) {
+    return { weeks: days.length / 7, months: days.length / 30.4375 };
+  },
+
+  /* When the next one falls due, and whether it already has. */
+  due(lastAt, months, now) {
+    const n = now ? new Date(now.getTime()) : new Date();
+    if (!lastAt) return { due: true, on: isoDate(n), never: true };
+    const d = parseISO(String(lastAt).slice(0, 10));
+    d.setMonth(d.getMonth() + months);
+    return { due: n >= d, on: isoDate(d), never: false,
+             daysAway: Math.round((d - n) / 86400000) };
+  }
+};
+
 /* ======================================================================
  * 20d-i · Friends — two accounts, paired by a code that works once
  *
@@ -7292,6 +7467,429 @@ const Friends = {
   }
 };
 
+/* ======================================================================
+ * 20d-ii · The routine audit — the review itself
+ *
+ * Twice a year, everything you do on repeat, next to what actually happened,
+ * with one decision each: keep it, change it, or cut it. Cutting archives —
+ * six months of evidence is exactly what makes the next audit worth doing,
+ * so nothing is ever deleted to get a row off the screen.
+ * ==================================================================== */
+const Audit = {
+  loaded: false,
+  cfg: null,
+  log: [],
+  draft: null,
+  view: null,          /* the collected items for the audit in progress */
+  editing: '',         /* key of the metric whose target is being changed */
+
+  K_CFG:   'flow:audit:cfg',
+  K_LOG:   'flow:audit:log',
+  K_DRAFT: 'flow:audit:draft',
+  K_ARCH:  'flow:audit:archivedMetrics',
+
+  DEFAULT_CFG: { months: 6 },
+  KEEP_LOGS: 12,
+
+  QUOTE: [
+    '70% of our life is things we do everyday',
+    'audit your routine every 6 months',
+    "keep what's working",
+    "get rid of what isn't",
+    '…watch your life change'
+  ],
+
+  async load() {
+    if (Audit.loaded) return;
+    const [c, l, d] = await Promise.all([
+      DB.get(Audit.K_CFG, null), DB.get(Audit.K_LOG, null), DB.get(Audit.K_DRAFT, null)
+    ]);
+    Audit.cfg = Object.assign({}, Audit.DEFAULT_CFG, (c && typeof c === 'object') ? c : {});
+    Audit.log = Array.isArray(l) ? l : [];
+    Audit.draft = (d && typeof d === 'object' && d.startedAt) ? d : null;
+    Audit.loaded = true;
+    if (Audit.draft) Audit.view = Audit.collect();
+  },
+
+  saveCfg()   { DB.set(Audit.K_CFG, Audit.cfg); },
+  saveLog()   { DB.set(Audit.K_LOG, Audit.log.slice(-Audit.KEEP_LOGS)); },
+  saveDraft() { DB.set(Audit.K_DRAFT, Audit.draft); },
+
+  last()  { return Audit.log.length ? Audit.log[Audit.log.length - 1] : null; },
+  due()   { const l = Audit.last(); return AuditMath.due(l && l.at, Audit.cfg.months); },
+
+  /* ---- the host's own recurring things ---------------------------------- */
+
+  sawOff() {
+    try {
+      const S = NorthStar.host('S');
+      const v = S && S.get('sawOff', []);
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  setSawOff(list) {
+    try {
+      const S = NorthStar.host('S');
+      if (S) S.set('sawOff', list);
+    } catch (e) {}
+  },
+
+  /* Everything recurring, with the record beside it. */
+  collect() {
+    const w = AuditMath.window(Audit.cfg.months);
+    const days = AuditMath.daysIn(w.from, w.to);
+    const spans = AuditMath.spans(days);
+    const items = [];
+
+    /* Scoreboard metrics — the daily ledger is exactly the evidence. */
+    const log = (Score && Score.log) || {};
+    ((Score && Score.metrics) || []).forEach(m => {
+      const hits = [];
+      days.forEach(d => {
+        const n = (log[d] && log[d][m.id]) || 0;
+        for (let i = 0; i < n; i++) hits.push(d);
+      });
+      const expected = (m.target || 0) * (m.period === 'month' ? spans.months : spans.weeks);
+      items.push({
+        key: 'metric:' + m.id, kind: 'metric', id: m.id,
+        icon: m.icon || '⭐', name: m.name, unit: m.unit || 'times',
+        every: m.period === 'month' ? 'a month' : 'a week', target: m.target || 0,
+        span: 'days', read: AuditMath.read(hits, days, expected)
+      });
+    });
+
+    /* Habits — doing it every day is the whole idea, so the window is the
+       target and no separate number is needed. */
+    const hb = NorthStar.host('hbData');
+    if (hb && Array.isArray(hb.habits)) hb.habits.forEach(h => {
+      const c = (hb.completions && hb.completions[h.id]) || {};
+      const hits = days.filter(d => c[d]);
+      items.push({
+        key: 'habit:' + h.id, kind: 'habit', id: h.id,
+        icon: '🔁', name: h.name, unit: 'days', every: 'a day', target: 1,
+        span: 'days', read: AuditMath.read(hits, days, days.length)
+      });
+    });
+
+    /* The weekly rhythm — ticked once a week, so weeks are the unit. */
+    const saw = NorthStar.host('SAW_ITEMS') || [];
+    const cd = NorthStar.host('cData');
+    const wkId = NorthStar.host('weekId');
+    if (saw.length && cd && typeof wkId === 'function') {
+      const weeks = [], seen = {};
+      days.forEach(d => { const id = wkId(parseISO(d)); if (!seen[id]) { seen[id] = 1; weeks.push(id); } });
+      const off = Audit.sawOff();
+      saw.forEach(row => {
+        const k = row[0], label = String(row[1] || '');
+        const hits = weeks.filter(id => cd.saw && cd.saw[id] && cd.saw[id][k]);
+        const icon = (label.match(/^\S+/) || [''])[0];
+        items.push({
+          key: 'saw:' + k, kind: 'saw', id: k,
+          icon: /[a-z0-9]/i.test(icon) ? '🪚' : icon,
+          name: label.replace(/^\S+\s*/, '') || label,
+          unit: 'weeks', every: 'a week', target: 1, span: 'weeks',
+          off: off.indexOf(k) >= 0,
+          read: AuditMath.read(hits, weeks, weeks.length)
+        });
+      });
+    }
+
+    return { window: w, days, items: items.filter(i => !i.off) };
+  },
+
+  /* ---- running one ------------------------------------------------------ */
+
+  start() {
+    Audit.view = Audit.collect();
+    Audit.draft = {
+      startedAt: new Date().toISOString(),
+      from: Audit.view.window.from, to: Audit.view.window.to,
+      months: Audit.cfg.months,
+      decisions: {}
+    };
+    Audit.saveDraft();
+    Audit.paintInto();
+  },
+
+  abandon() {
+    Audit.draft = null; Audit.view = null; Audit.editing = '';
+    DB.set(Audit.K_DRAFT, null);
+    Audit.paintInto();
+  },
+
+  decide(key, decision, extra) {
+    if (!Audit.draft) return;
+    Audit.draft.decisions[key] = Object.assign({ decision }, extra || {});
+    Audit.saveDraft();
+    Audit.paintInto();
+  },
+
+  decided() { return Audit.draft ? Object.keys(Audit.draft.decisions).length : 0; },
+  total()   { return Audit.view ? Audit.view.items.length : 0; },
+
+  /* Apply what was decided, then write it down. The write happens last: if
+     something below throws, the audit is still there to finish rather than
+     recorded as done with half of it applied. */
+  async finish() {
+    if (!Audit.draft || !Audit.view) return;
+    const applied = { kept: 0, changed: 0, cut: 0 };
+    const record = [];
+
+    const cutSaw = [];
+    let metricsTouched = false, habitsTouched = false;
+
+    Audit.view.items.forEach(it => {
+      const d = Audit.draft.decisions[it.key];
+      if (!d) return;
+      record.push({
+        key: it.key, kind: it.kind, name: it.name,
+        decision: d.decision, target: it.target, newTarget: d.target,
+        done: it.read.done, expected: it.read.expected,
+        rate: Math.round(it.read.rate * 100), trend: it.read.trend
+      });
+
+      if (d.decision === 'keep') { applied.kept++; return; }
+
+      if (d.decision === 'change' && it.kind === 'metric') {
+        const m = Score.metrics.find(x => x.id === it.id);
+        if (m) { m.target = Math.max(0, parseInt(d.target, 10) || 0); metricsTouched = true; }
+        applied.changed++;
+        return;
+      }
+
+      if (d.decision === 'cut') {
+        applied.cut++;
+        if (it.kind === 'metric') {
+          const i = Score.metrics.findIndex(x => x.id === it.id);
+          if (i >= 0) {
+            /* Archived, never deleted — the ledger stays keyed by this id and
+               is the whole reason the next audit is worth anything. */
+            const [m] = Score.metrics.splice(i, 1);
+            DB.get(Audit.K_ARCH, []).then(a => {
+              const arr = Array.isArray(a) ? a : [];
+              arr.push(Object.assign({ cutAt: new Date().toISOString() }, m));
+              DB.set(Audit.K_ARCH, arr);
+            });
+            metricsTouched = true;
+          }
+        } else if (it.kind === 'habit') {
+          const hb = NorthStar.host('hbData');
+          const S = NorthStar.host('S');
+          if (hb && Array.isArray(hb.habits)) {
+            const i = hb.habits.findIndex(h => h.id === it.id);
+            if (i >= 0) {
+              const [h] = hb.habits.splice(i, 1);
+              hb.archived = Array.isArray(hb.archived) ? hb.archived : [];
+              hb.archived.push(Object.assign({ cutAt: new Date().toISOString() }, h));
+              /* completions are left exactly where they are */
+              if (S) S.set('habits', hb);
+              habitsTouched = true;
+            }
+          }
+        } else if (it.kind === 'saw') {
+          cutSaw.push(it.id);
+        }
+      }
+    });
+
+    if (metricsTouched) Score.saveMetrics();
+    if (cutSaw.length) Audit.setSawOff(Audit.sawOff().concat(cutSaw));
+
+    Audit.log.push({
+      at: new Date().toISOString(),
+      from: Audit.draft.from, to: Audit.draft.to, months: Audit.draft.months,
+      counts: applied, items: record
+    });
+    Audit.saveLog();
+    Audit.draft = null; Audit.view = null; Audit.editing = '';
+    await DB.set(Audit.K_DRAFT, null);
+
+    try { if (habitsTouched) { const r = NorthStar.host('renderHabits'); if (typeof r === 'function') r(); } } catch (e) {}
+    try { const r = NorthStar.host('renderToday'); if (typeof r === 'function') r(); } catch (e) {}
+    try { const j = NorthStar.host('J'); if (typeof j === 'function')
+      j('planning', '🔎 Routine audit — kept ' + applied.kept + ', changed ' + applied.changed + ', cut ' + applied.cut); } catch (e) {}
+
+    toast('Audit done — kept ' + applied.kept + ', changed ' + applied.changed + ', cut ' + applied.cut);
+    NorthStar.paint();
+  },
+
+  /* ---- the card --------------------------------------------------------- */
+
+  card() {
+    const due = Audit.due();
+    const chip = Audit.draft ? (Audit.decided() + ' of ' + Audit.total() + ' decided')
+               : due.due ? 'due now'
+               : (due.daysAway > 45 ? 'in ' + Math.round(due.daysAway / 30) + ' months' : 'in ' + due.daysAway + ' days');
+
+    return Fold.card('audit',
+      Fold.head('audit', 'Routine audit', chip, !Audit.draft && !due.due) +
+      (Audit.draft ? Fold.bar(Audit.total() ? Math.round(Audit.decided() / Audit.total() * 100) : 0) : '') +
+      Fold.body(Audit.draft ? Audit.runHtml() : Audit.introHtml(due))
+    );
+  },
+
+  introHtml(due) {
+    const last = Audit.last();
+    const lines = '<blockquote class="au-quote">' +
+      Audit.QUOTE.map(l => '<span>' + esc(l) + '</span>').join('') + '</blockquote>';
+
+    const when = last
+      ? '<p class="flow-sub">Last audit ' + esc(prettyDate(String(last.at).slice(0, 10))) +
+        ' — kept ' + last.counts.kept + ', changed ' + last.counts.changed + ', cut ' + last.counts.cut + '. ' +
+        (due.due ? 'The next one is due.' : 'Next due ' + esc(prettyDate(due.on)) + '.') + '</p>'
+      : '<p class="flow-sub">You have not run one yet. It reads the last ' + Audit.cfg.months +
+        ' months of your own record — nothing to fill in.</p>';
+
+    const prev = (Audit.log.length > 1 || (last && last.items && last.items.length))
+      ? Audit.historyHtml() : '';
+
+    return lines + when +
+      '<div class="flow-row">' +
+        '<button type="button" class="flow-btn' + (due.due ? ' primary' : '') + '" id="au-start">' +
+          (due.due ? 'Start the audit' : 'Run one anyway') + '</button>' +
+        '<button type="button" class="flow-btn sm ghost" id="au-every">Every ' + Audit.cfg.months + ' months</button>' +
+      '</div>' + prev;
+  },
+
+  historyHtml() {
+    const rows = Audit.log.slice().reverse().slice(0, 4).map(a =>
+      '<li><b>' + esc(prettyDate(String(a.at).slice(0, 10))) + '</b> · kept ' + a.counts.kept +
+      ', changed ' + a.counts.changed + ', cut ' + a.counts.cut + '</li>').join('');
+    return '<div class="au-hist"><h5>Before</h5><ul>' + rows + '</ul></div>';
+  },
+
+  runHtml() {
+    const v = Audit.view;
+    if (!v || !v.items.length) {
+      return '<p class="flow-sub">There is nothing recurring to audit yet — add a metric to the scoreboard or a habit first.</p>' +
+             '<div class="flow-row"><button type="button" class="flow-btn sm ghost" id="au-cancel">Close</button></div>';
+    }
+    const groups = [
+      ['metric', 'Scoreboard'],
+      ['habit',  'Habits'],
+      ['saw',    'Weekly rhythm']
+    ];
+    const body = groups.map(([kind, title]) => {
+      const rows = v.items.filter(i => i.kind === kind);
+      if (!rows.length) return '';
+      return '<div class="au-group"><h5>' + esc(title) + '</h5>' + rows.map(Audit.rowHtml).join('') + '</div>';
+    }).join('');
+
+    const left = Audit.total() - Audit.decided();
+    const foot = left
+      ? '<p class="flow-sub au-left">' + left + ' still to decide.</p>'
+      : '<button type="button" class="flow-btn primary" id="au-finish">Finish the audit</button>';
+
+    return '<p class="flow-sub au-range">' + esc(prettyDate(v.window.from)) + ' → ' + esc(prettyDate(v.window.to)) +
+             ' · ' + v.days.length + ' days of your own record.</p>' +
+           body +
+           '<div class="au-foot">' + foot +
+             '<button type="button" class="flow-btn sm ghost" id="au-cancel">Stop for now</button></div>';
+  },
+
+  rowHtml(it) {
+    const r = it.read;
+    const d = (Audit.draft && Audit.draft.decisions[it.key]) || null;
+    const pct = Math.round(clamp(r.rate * 100, 0, 100));
+    const arrow = r.trend > 0 ? '<span class="au-up">↑ rising</span>'
+                : r.trend < 0 ? '<span class="au-down">↓ fading</span>'
+                : '<span class="au-flat">→ level</span>';
+
+    /* "1 streams a week" is the kind of small wrongness that makes a screen
+       feel machine-written. Every unit here pluralises with a plain s. */
+    const unit = (n, u) => (n === 1 && /s$/i.test(u)) ? u.slice(0, -1) : u;
+    const numbers = it.kind === 'habit'
+      ? r.done + ' of ' + r.expected + ' days'
+      : r.done + ' · ' + (it.target
+          ? 'aiming at ' + it.target + ' ' + esc(unit(it.target, it.unit)) + ' ' + it.every + ', so ' + r.expected + ' by now'
+          : 'no target set');
+
+    const quiet = r.lastDone
+      ? (r.quietFor > 0 ? 'last ' + r.quietFor + ' ' + (it.span === 'weeks' ? (r.quietFor === 1 ? 'week' : 'weeks') : (r.quietFor === 1 ? 'day' : 'days')) + ' ago' : 'today')
+      : 'not once';
+
+    const editing = Audit.editing === it.key;
+    const controls = editing
+      ? '<div class="au-edit">' +
+          '<label>New target</label>' +
+          '<input class="flow-in" type="number" min="0" max="99" id="au-target" value="' + (it.target || 0) + '">' +
+          '<span class="au-per">' + esc(it.unit) + ' ' + it.every + '</span>' +
+          '<button type="button" class="flow-btn sm primary" data-au-save="' + esc(it.key) + '">Save</button>' +
+          '<button type="button" class="flow-btn sm ghost" data-au-editcancel="1">Cancel</button>' +
+        '</div>'
+      : '<div class="au-acts">' +
+          '<button type="button" class="au-btn keep' + (d && d.decision === 'keep' ? ' on' : '') + '" data-au-keep="' + esc(it.key) + '">Keep</button>' +
+          (it.kind === 'metric'
+            ? '<button type="button" class="au-btn change' + (d && d.decision === 'change' ? ' on' : '') + '" data-au-change="' + esc(it.key) + '">Change</button>' : '') +
+          '<button type="button" class="au-btn cut' + (d && d.decision === 'cut' ? ' on' : '') + '" data-au-cut="' + esc(it.key) + '">Cut</button>' +
+        '</div>';
+
+    const said = d
+      ? '<span class="au-said ' + d.decision + '">' +
+        (d.decision === 'keep' ? 'keeping' : d.decision === 'cut' ? 'cutting' : 'target → ' + esc(String(d.target))) +
+        '</span>' : '';
+
+    return '<div class="au-row' + (d ? ' done' : '') + '" data-au-row="' + esc(it.key) + '">' +
+      '<div class="au-top">' +
+        '<span class="au-ic">' + esc(it.icon) + '</span>' +
+        '<span class="au-name">' + esc(it.name) + '</span>' + said +
+      '</div>' +
+      '<div class="au-bar"><i style="width:' + pct + '%" class="' + (pct >= 85 ? 'good' : pct >= 50 ? 'mid' : 'low') + '"></i></div>' +
+      '<div class="au-meta"><b>' + esc(AuditMath.verdict(r)) + '</b> · ' + esc(numbers) + ' · ' + arrow + ' · ' + esc(quiet) + '</div>' +
+      controls +
+    '</div>';
+  },
+
+  /* ---- wiring ----------------------------------------------------------- */
+
+  paintInto() {
+    const host = document.querySelector('[data-foldcard="audit"]');
+    if (!host) return;
+    const open = host.classList.contains('is-open');
+    host.outerHTML = Audit.card();
+    const fresh = document.querySelector('[data-foldcard="audit"]');
+    if (fresh && open) fresh.classList.add('is-open');
+    const sec = NorthStar.sec || document;
+    Audit.wire(sec);
+    Fold.wire(sec);
+  },
+
+  wire(sec) {
+    const root = sec || document;
+    const on = (sel, fn) => {
+      const el = root.querySelector(sel);
+      if (el && !el.__auWired) { el.__auWired = 1; el.addEventListener('click', fn); }
+    };
+    const each = (sel, fn) => root.querySelectorAll(sel).forEach(b => {
+      if (b.__auWired) return; b.__auWired = 1;
+      b.addEventListener('click', () => fn(b));
+    });
+
+    on('#au-start', () => Audit.start());
+    on('#au-cancel', () => Audit.abandon());
+    on('#au-finish', () => Audit.finish());
+    on('#au-every', () => {
+      const order = [3, 6, 12];
+      Audit.cfg.months = order[(order.indexOf(Audit.cfg.months) + 1) % order.length];
+      Audit.saveCfg();
+      if (Audit.draft) Audit.view = Audit.collect();
+      Audit.paintInto();
+    });
+
+    each('[data-au-keep]',   b => Audit.decide(b.getAttribute('data-au-keep'), 'keep'));
+    each('[data-au-cut]',    b => Audit.decide(b.getAttribute('data-au-cut'), 'cut'));
+    each('[data-au-change]', b => { Audit.editing = b.getAttribute('data-au-change'); Audit.paintInto();
+      const i = document.getElementById('au-target'); if (i) { i.focus(); i.select(); } });
+    each('[data-au-editcancel]', () => { Audit.editing = ''; Audit.paintInto(); });
+    each('[data-au-save]', b => {
+      const i = document.getElementById('au-target');
+      const v = Math.max(0, parseInt(i ? i.value : '0', 10) || 0);
+      Audit.editing = '';
+      Audit.decide(b.getAttribute('data-au-save'), 'change', { target: v });
+    });
+  }
+};
+
 const Score = {
   sec: null,
   loaded: false,
@@ -7633,6 +8231,10 @@ async function boot() {
   try { document.documentElement.classList.add('flow-ready'); } catch (e) {}
 
   /* These paint into place when they arrive; nothing waits on them. */
+  /* The audit is read at boot rather than when its tab is opened: its whole
+     job is to appear on Today when it comes due, and it cannot do that from
+     a tab nobody has visited since March. Two small reads. */
+  Audit.load().then(() => { try { AuditNudge.apply(); } catch (e) {} }).catch(() => {});
   Inbox.load().catch(() => {});
   Markets.mount().catch(() => {});
 
@@ -7668,7 +8270,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
-    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold, Friends,
+    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
