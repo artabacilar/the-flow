@@ -81,6 +81,18 @@ const D = (o) => 'data: ' + JSON.stringify(o) + '\n\n';
   out = await call('test-key', { messages: [{ role: 'assistant', content: 'hello' }] });
   ok('a history not ending in a question is refused', out.status === 400, out);
 
+  console.log('\n— the record is sent as a cacheable block —');
+  const big = I.systemBlocks('x'.repeat(9000));
+  ok('the prompt is split into instructions and record', big.length === 2, big.length);
+  ok('the instructions come first and are not marked', !big[0].cache_control);
+  ok('a large record is marked cacheable', big[1].cache_control && big[1].cache_control.type === 'ephemeral', big[1].cache_control);
+  const small = I.systemBlocks('tiny');
+  ok('a record too small to cache is not marked', !small[1].cache_control);
+  ok('an empty record still produces a valid prompt',
+     I.systemBlocks('')[1].text.indexOf('no data yet') > 0 && I.systemBlocks(null).length === 2);
+  ok('the record block carries the data, not the instructions',
+     big[1].text.indexOf('own data') >= 0 && big[1].text.indexOf('thinking partner') < 0);
+
   console.log('\n— it still only reads —');
   const src = require('fs').readFileSync(require.resolve('../flow-extras.js'), 'utf8');
   const block = src.slice(src.indexOf('async function handleChatStream'), src.indexOf('/* =====', src.indexOf('async function handleChatStream')));
