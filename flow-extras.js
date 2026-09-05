@@ -359,13 +359,299 @@ async function handleChat(p, req, res, ctx) {
   return true;
 }
 
-/* Chain the two handlers. */
+
+/* ==========================================================================
+ * Direction — the read on where this is actually going
+ * --------------------------------------------------------------------------
+ * The chat assistant answers questions. This answers the question nobody
+ * remembers to ask: given the last two months of what you actually did,
+ * where is this heading, and what would change it today?
+ *
+ * It is deliberately NOT a chat turn. It reads a wider, rolled-up window —
+ * metric trends, the weekly plans in the person's own words, goals, journal
+ * — and returns a fixed shape the app can lay out, so the answer looks the
+ * same every morning and the differences between days are real differences
+ * rather than the model choosing a new format.
+ *
+ * Three limits, for the same reasons as the assistant: it never writes, it
+ * reads only the caller's own namespace, and it is capped and cached per day
+ * so an app left open in a tab cannot spend the owner's credit.
+ * ========================================================================== */
+
+const DIR_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_DIRECTION_DAILY_CAP || '6', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+})();
+
+/* Sun sign from a birth date. Pure, so the boundaries can be tested rather
+   than trusted — every one of them is an off-by-one waiting to happen. */
+const ZODIAC = [
+  ['Capricorn',  1, 19], ['Aquarius',   2, 18], ['Pisces',    3, 20],
+  ['Aries',      4, 19], ['Taurus',     5, 20], ['Gemini',    6, 20],
+  ['Cancer',     7, 22], ['Leo',        8, 22], ['Virgo',     9, 22],
+  ['Libra',     10, 22], ['Scorpio',   11, 21], ['Sagittarius', 12, 21],
+  ['Capricorn', 12, 31]
+];
+function sunSign(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!m) return null;
+  const mo = +m[2], da = +m[3];
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return null;
+  for (const [name, em, ed] of ZODIAC) {
+    if (mo < em || (mo === em && da <= ed)) return name;
+  }
+  return 'Capricorn';
+}
+
+/* ---- metric roll-up: a ledger of days becomes a trend the model can read -- */
+
+function isoDay(d) {
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+function mondayOf(d) {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+  return x;
+}
+
+/** Weekly totals per metric, newest week last, plus target and trend. */
+function rollUpMetrics(metrics, log, weeks, now) {
+  if (!Array.isArray(metrics) || !metrics.length) return [];
+  const ledger = (log && typeof log === 'object') ? log : {};
+  const ref = now || new Date();
+  const thisMon = mondayOf(ref);
+  const n = weeks || 8;
+
+  return metrics.map((m) => {
+    const series = [];
+    for (let w = n - 1; w >= 0; w--) {
+      const start = new Date(thisMon.getTime());
+      start.setUTCDate(start.getUTCDate() - w * 7);
+      let total = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start.getTime());
+        d.setUTCDate(d.getUTCDate() + i);
+        const row = ledger[isoDay(d)];
+        if (row && row[m.id]) total += row[m.id];
+      }
+      series.push(total);
+    }
+    const cur = series[series.length - 1] || 0;
+    const done = series.slice(0, -1);                 /* completed weeks only */
+    const avg = done.length ? done.reduce((a, b) => a + b, 0) / done.length : 0;
+    return {
+      name: m.name,
+      unit: m.unit || '',
+      target: m.target || 0,
+      per: m.period === 'month' ? 'month' : 'week',
+      thisWeek: cur,
+      last8Weeks: series,
+      weeklyAverage: Math.round(avg * 10) / 10,
+      everLogged: series.some(v => v > 0)
+    };
+  });
+}
+
+/** The weekly plans the person wrote, newest first, most recent few. */
+function recentPlans(plans, limit) {
+  if (!plans || typeof plans !== 'object') return [];
+  return Object.keys(plans).sort().reverse().slice(0, limit || 4)
+    .map(w => ({ week: w, plan: String(plans[w] || '').slice(0, 900) }));
+}
+
+async function buildDirectionContext(mine) {
+  const pick = async (k) => { try { return await mine.get(k); } catch (e) { return null; } };
+  const out = {};
+
+  const [principle, tenets, goals, metrics, log, birth] = await Promise.all([
+    pick('flow:ns:principle'), pick('flow:ns:tenets'), pick('flow:ns:goals'),
+    pick('flow:ns:metrics'), pick('flow:ns:log'), pick('flow:ns:birth')
+  ]);
+
+  out.principle = typeof principle === 'string' ? principle : null;
+  out.tenets = Array.isArray(tenets) ? tenets.slice(0, 12) : null;
+  out.focusAreas = Array.isArray(goals)
+    ? goals.map(g => ({ name: g.name, selfRatedPct: g.pct })) : null;
+  out.metrics = rollUpMetrics(metrics, log, 8);
+
+  const compass = await pick('ld_compass');
+  if (compass && typeof compass === 'object') {
+    out.mission = compass.mission || null;
+    out.roles = compass.roles || null;
+    out.weeklyPlansInTheirOwnWords = recentPlans(compass.plans, 4);
+    const rocks = compass.rocks || {};
+    const weeks = Object.keys(rocks).sort().reverse().slice(0, 3);
+    out.recentBigRocks = weeks.map(w => ({
+      week: w,
+      rocks: (rocks[w] || []).map(r => ({ title: r.title, day: r.day, done: !!r.done, note: r.note || '' }))
+    }));
+  }
+
+  const quad = await pick('ld_quad');
+  if (quad && quad.items) {
+    out.priorities = quad.items.filter(i => !i.done).map(i => ({ quadrant: i.q, text: i.txt }));
+  }
+
+  const journal = await pick('ld_journal');
+  if (Array.isArray(journal)) out.activityLog = journal.slice(-70);
+  const written = await pick('flow:journal');
+  if (Array.isArray(written)) out.writtenEntries = written.slice(-8);
+
+  const training = await pick('ld_training');
+  if (training && training.weeks) out.trainingWeeks = training.weeks;
+  out.habits = await pick('ld_habits');
+  out.sleep = await pick('ld_sleep');
+  out.moodAndEnergy = await pick('ld_mood');
+
+  const sign = sunSign(birth);
+  return { sign, birth: birth || null, data: out };
+}
+
+const DIR_SYSTEM = [
+  'You write the daily "Direction" panel inside a personal life dashboard called The Flow.',
+  'You are given ONE person\'s own record: their mission and principles, the goals they set,',
+  'the metrics they tap every time they do the thing (DJ sets, demos sent, production sessions,',
+  'live streams, performances, workouts, and work on their two businesses), eight weeks of those',
+  'counts, the weekly plans they wrote in their own words, their priorities, and their activity log.',
+  '',
+  'Return ONLY a JSON object, no prose around it, with exactly these keys:',
+  '  lede        — one sentence, max 30 words. The honest headline of where this is heading.',
+  '  today       — 2-4 sentences. What today should be about, given the week so far and what is scheduled.',
+  '  trajectory  — 3-6 sentences. Where the last eight weeks are actually pointing, with the numbers that show it.',
+  '  actions     — 2-4 strings. Specific things to do, each doable this week. Name the metric or the person.',
+  '  watch       — 1-3 strings. What is quietly slipping, with the evidence.',
+  '',
+  'How to write it:',
+  '· Every claim must trace to something in the data. Quote the number. "Three weeks without a demo sent"',
+  '  beats "you could send more demos".',
+  '· A metric that has never been logged is not a failure, it is an unknown. Say so rather than scolding.',
+  '· Compare the weekly plans they wrote against what the log shows actually happened. That gap is the',
+  '  single most useful thing you can point at. Be direct about it without being harsh.',
+  '· Notice trade-offs rather than only shortfalls: a training week that doubled while production went to',
+  '  zero is a choice, and worth naming as one.',
+  '· Write to them as "you". Plain language, no management-speak, no motivational filler.',
+  '· This is read on a phone in the morning. Every sentence must earn its place.'
+].join('\n');
+
+const DIR_SIGN_NOTE = [
+  '',
+  'The person has given their star sign. Open the "today" section in the register of a good horoscope —',
+  'the tone of a daily reading, addressed to a %SIGN% — but every claim underneath must still come from',
+  'their actual data. Use the sign for voice and framing only. Never invent planetary positions, transits,',
+  'cosmic events or fortunes, and never predict outcomes the data cannot support. If the sign\'s',
+  'conventional traits happen to fit a real pattern in the record, you may say so; if not, ignore them.'
+].join('\n');
+
+const dirDayKey = () => 'dir:' + new Date().toISOString().slice(0, 10);
+const dirCountKey = () => 'dirn:' + new Date().toISOString().slice(0, 10);
+
+/** Pull the JSON object out of a reply, tolerating fences or stray prose. */
+function parseDirection(text) {
+  const t = String(text || '').trim();
+  const tryParse = (s) => { try { const o = JSON.parse(s); return (o && typeof o === 'object') ? o : null; } catch (e) { return null; } };
+  let o = tryParse(t);
+  if (!o) {
+    const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(t);
+    if (fence) o = tryParse(fence[1].trim());
+  }
+  if (!o) {
+    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a >= 0 && b > a) o = tryParse(t.slice(a, b + 1));
+  }
+  if (!o) return { lede: '', today: t.slice(0, 1200), trajectory: '', actions: [], watch: [] };
+  const str = (v) => (typeof v === 'string' ? v.trim() : '');
+  const list = (v) => (Array.isArray(v) ? v.map(str).filter(Boolean).slice(0, 6) : []);
+  return {
+    lede: str(o.lede), today: str(o.today), trajectory: str(o.trajectory),
+    actions: list(o.actions), watch: list(o.watch)
+  };
+}
+
+async function handleDirection(p, req, res, ctx) {
+  if (p !== '/api/flow/direction' || req.method !== 'POST') return false;
+
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) {
+    ctx.json(res, 503, { error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' });
+    return true;
+  }
+
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+
+  /* Today's reading is written once and then simply re-read. Opening the tab
+     ten times costs nothing; only an explicit refresh spends anything. */
+  const cached = await ctx.counter.get(dirDayKey());
+  if (cached && cached.lede != null && !body.refresh) {
+    ctx.json(res, 200, Object.assign({ ok: true, cached: true }, cached));
+    return true;
+  }
+
+  const spent = (await ctx.counter.get(dirCountKey())) || 0;
+  if (DIR_DAILY_CAP > 0 && spent >= DIR_DAILY_CAP) {
+    ctx.json(res, 429, {
+      error: 'You have refreshed today\'s direction ' + spent + ' times. It resets at midnight UTC.',
+      used: spent, cap: DIR_DAILY_CAP
+    });
+    return true;
+  }
+
+  const built = await buildDirectionContext(ctx.mine);
+  let snapshot = JSON.stringify(built.data, null, 1);
+  if (snapshot.length > CHAT_MAX_CONTEXT) snapshot = snapshot.slice(0, CHAT_MAX_CONTEXT) + '\n…(truncated)';
+
+  const system = DIR_SYSTEM +
+    (built.sign ? DIR_SIGN_NOTE.replace('%SIGN%', built.sign) : '') +
+    '\n\nToday is ' + new Date().toISOString().slice(0, 10) + '.' +
+    '\n\n# The person\'s own record\n\n' + snapshot;
+
+  const r = await postJSON('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, {
+    model: CHAT_MODEL,
+    max_tokens: 1400,
+    system,
+    messages: [{ role: 'user', content: 'Write today\'s direction.' }]
+  });
+
+  if (r.status === 401 || r.status === 403) {
+    ctx.json(res, 502, { error: 'The API key was rejected. Check ANTHROPIC_API_KEY in Render.' }); return true;
+  }
+  if (r.status === 429) {
+    ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again shortly.' }); return true;
+  }
+  if (r.status < 200 || r.status >= 300) {
+    ctx.json(res, 502, { error: 'The direction could not be written just now (upstream ' + r.status + ').' }); return true;
+  }
+
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const text = parts.filter(b => b && b.type === 'text').map(b => b.text).join('\n').trim();
+  const out = parseDirection(text);
+  out.sign = built.sign || null;
+  out.generatedAt = new Date().toISOString();
+
+  await ctx.counter.set(dirDayKey(), out);
+  await ctx.counter.set(dirCountKey(), spent + 1);
+
+  ctx.json(res, 200, Object.assign({ ok: true, cached: false, used: spent + 1, cap: DIR_DAILY_CAP }, out));
+  return true;
+}
+
+/* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
   if (await _prices(p, req, res, ctx)) return true;
   if (await handleChat(p, req, res, ctx)) return true;
+  if (await handleDirection(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.buildContext = buildContext;
 module.exports._internals.SYSTEM = SYSTEM;
 module.exports._internals.chatConfig = () => ({ model: CHAT_MODEL, cap: CHAT_DAILY_CAP, maxContext: CHAT_MAX_CONTEXT });
+module.exports._internals.sunSign = sunSign;
+module.exports._internals.rollUpMetrics = rollUpMetrics;
+module.exports._internals.recentPlans = recentPlans;
+module.exports._internals.parseDirection = parseDirection;
+module.exports._internals.buildDirectionContext = buildDirectionContext;
+module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
