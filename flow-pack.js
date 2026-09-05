@@ -6415,12 +6415,15 @@ const NorthStar = {
 
   async render(sec) {
     NorthStar.sec = sec;
-    if (!NorthStar.loaded || !Score.loaded) {
+    if (!NorthStar.loaded || !Score.loaded || !Friends.loaded) {
       sec.innerHTML = '<div class="flow-card"><p class="flow-sub">Loading your compass…</p></div>';
-      try { await Promise.all([NorthStar.load(), Score.load(), Direction.load()]); }
-      catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; Score.loaded = true; Direction.loaded = true; }
+      try { await Promise.all([NorthStar.load(), Score.load(), Direction.load(), Friends.load()]); }
+      catch (e) { console.warn('[Flow] north star load', e); NorthStar.loaded = true; Score.loaded = true; Direction.loaded = true; Friends.loaded = true; }
     }
     NorthStar.paint();
+    /* After the paint, never before it: this is a network call and the tab
+       should already be on screen when it lands. */
+    Friends.maybeRefresh();
   },
 
   /* Live read of the matrix — never a copy of it. */
@@ -6447,13 +6450,18 @@ const NorthStar = {
       Direction.card() +
       NorthStar.matrixCard() +
       Score.card() +
+      Friends.card() +
       NorthStar.goalsCard(avg) +
       NorthStar.tenetsCard();
 
     NorthStar.wire();
     Score.wire(sec);
     Direction.wire(sec);
+    Friends.wire(sec);
     Fold.wire(sec);
+    /* A tap on the scoreboard changes what a friend is looking at, so the
+       card follows the paint. It sends only when something actually moved. */
+    Friends.publish();
   },
 
   principleCard() {
@@ -6866,6 +6874,424 @@ const Fold = {
  * the ledger answers "when", which is what a trajectory is made of. It is
  * also what the Direction engine reads.
  * ==================================================================== */
+/* ======================================================================
+ * 20d-i · Friends — two accounts, paired by a code that works once
+ *
+ * The thing that makes a scoreboard work is somebody else being able to see
+ * it. This is that, and deliberately no more than that: a friend never gains
+ * access to your app. Each person PUBLISHES a card — the metrics and streaks,
+ * this week's plan and Big Rock count, today's one-line check-in — and the
+ * only thing a friend can read is the card. There is no code path, on the
+ * client or the server, that reads one account's storage for another.
+ *
+ * You choose what goes on the card, and you can drop any of the three at any
+ * time; what is switched off is not sent at all rather than sent and hidden.
+ * ==================================================================== */
+const Friends = {
+  loaded: false,
+  list: [],
+  codes: [],
+  busy: false,
+  error: '',
+  entering: false,     /* the "enter a friend's code" box is showing */
+  lastSent: '',        /* hash of the last card published, to avoid re-sending */
+
+  K_SHARE:   'flow:friends:share',
+  K_CHECKIN: 'flow:friends:checkin',
+
+  DEFAULT_SHARE: { score: true, plan: true, checkin: true },
+
+  share: null,
+  checkin: null,       /* { day, text } — kept in your own store as well */
+
+  isOpen() { return Fold.isOpen('friends'); },
+
+  async api(path, body) {
+    const r = await fetch('/api/friends/' + path, {
+      method: body ? 'POST' : 'GET',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'That did not work.');
+    return j;
+  },
+
+  async load() {
+    if (Friends.loaded) return;
+    const [sh, ci] = await Promise.all([
+      DB.get(Friends.K_SHARE, null),
+      DB.get(Friends.K_CHECKIN, null)
+    ]);
+    Friends.share = Object.assign({}, Friends.DEFAULT_SHARE, (sh && typeof sh === 'object') ? sh : {});
+    Friends.checkin = (ci && typeof ci === 'object') ? ci : null;
+    Friends.loaded = true;
+    Friends.refresh().catch(() => {});
+  },
+
+  saveShare()   { DB.set(Friends.K_SHARE, Friends.share); },
+  saveCheckin() { DB.set(Friends.K_CHECKIN, Friends.checkin); },
+
+  /* Today's check-in only. Yesterday's line is not something a friend should
+     still be reading as if it were now. */
+  todayCheckin() {
+    const c = Friends.checkin;
+    return (c && c.day === today() && String(c.text || '').trim()) ? c.text : '';
+  },
+
+  lastFetch: 0,
+
+  /* Opening the tab is the moment you want to know whether anything moved on
+     their side — and it is also the moment somebody who has just redeemed
+     your code should stop being invisible to you. Throttled, because the tab
+     is also re-entered by every tap on the segment row. */
+  maybeRefresh(minMs) {
+    if (!Friends.loaded) return;
+    /* With nobody paired you are, by definition, waiting for somebody to
+       redeem your code — so look almost every time. With friends already
+       there, this is just a poll for new numbers and can be lazy. */
+    const min = minMs || (Friends.list.length ? 20000 : 4000);
+    if (Date.now() - Friends.lastFetch < min) return;
+    Friends.refresh().catch(() => {});
+  },
+
+  async refresh() {
+    Friends.lastFetch = Date.now();
+    try {
+      const [l, c] = await Promise.all([Friends.api('list'), Friends.api('codes')]);
+      Friends.list = l.friends || [];
+      Friends.codes = c.codes || [];
+      Friends.error = '';
+    } catch (e) {
+      Friends.error = e.message || 'Could not reach the server.';
+    }
+    Friends.paintInto();
+    /* Publishing is pointless with nobody to read it, and doing it anyway
+       would put a card on the server for an account that never paired. */
+    if (Friends.list.length) Friends.publish();
+  },
+
+  /* ---------------------- the card you publish ---------------------- */
+
+  /* Built from the app's own live data, and only from the parts switched on.
+     Nothing here reaches past what the person agreed to share. */
+  build() {
+    const card = { metrics: [], plan: null, rocks: null, checkin: null };
+
+    if (Friends.share.score && Score.loaded) {
+      card.metrics = Score.metrics.map(m => ({
+        icon: m.icon, name: m.name, unit: m.unit, period: m.period,
+        target: m.target, count: Score.count(m), streak: Score.streak(m)
+      }));
+    }
+
+    const c = NorthStar.host('cData');
+    const wid = (() => { try { return NorthStar.host('cWeekId')(); } catch (e) { return ''; } })();
+
+    if (Friends.share.plan && c && wid) {
+      const text = String((c.plans && c.plans[wid]) || '').trim();
+      if (text) card.plan = { week: wid, text };
+      const rocks = (c.rocks && c.rocks[wid]) || [];
+      card.rocks = {
+        week: wid,
+        done: rocks.filter(r => r && r.done).length,
+        total: rocks.length,
+        items: rocks.map(r => ({ title: r.title, done: !!r.done }))
+      };
+    }
+
+    if (Friends.share.checkin) {
+      const t = Friends.todayCheckin();
+      if (t) card.checkin = { text: t, day: today() };
+    }
+
+    return card;
+  },
+
+  /* Sent only when something actually changed. North Star repaints on every
+     tap, and a card per tap would be a write per tap. */
+  async publish(force) {
+    let card;
+    try { card = Friends.build(); } catch (e) { return; }
+    const sig = JSON.stringify(card);
+    if (!force && sig === Friends.lastSent) return;
+    Friends.lastSent = sig;
+    try { await Friends.api('card', { card }); }
+    catch (e) { Friends.lastSent = ''; }    /* so the next chance tries again */
+  },
+
+  /* ---------------------------- the card ---------------------------- */
+
+  card() {
+    const n = Friends.list.length;
+    const chip = Friends.error ? 'offline' : (n ? n + (n === 1 ? ' friend' : ' friends') : 'nobody yet');
+
+    return Fold.card('friends',
+      Fold.head('friends', 'Friends', chip, !n) +
+      Fold.body(
+        (Friends.error ? '<p class="fr-err">' + esc(Friends.error) + '</p>' : '') +
+        Friends.peopleHtml() +
+        Friends.checkinHtml() +
+        Friends.pairHtml() +
+        Friends.shareHtml()
+      )
+    );
+  },
+
+  peopleHtml() {
+    if (!Friends.list.length) {
+      return '<p class="flow-sub fr-none">Nobody is paired with you yet. Make a code below and send it ' +
+             'to one person — it works once, then it is spent.</p>';
+    }
+    return '<div class="fr-people">' + Friends.list.map(f => Friends.personHtml(f)).join('') + '</div>';
+  },
+
+  personHtml(f) {
+    const c = f.card;
+    const when = (c && c.at)
+      ? new Date(c.at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+
+    let body;
+    if (!c) {
+      body = '<p class="fr-quiet">Nothing shared yet.</p>';
+    } else {
+      const onTarget = (c.metrics || []).filter(m => m.target > 0 && m.count >= m.target).length;
+      const withTarget = (c.metrics || []).filter(m => m.target > 0).length;
+
+      /* Sorted by how far along each one is, so the week's actual story is at
+         the top instead of buried under whichever metrics happen to be listed
+         first and sitting at zero. */
+      const strips = (c.metrics || [])
+        .filter(m => m.target > 0 || m.count > 0)
+        .map(m => Object.assign({ _p: m.target ? m.count / m.target : (m.count ? 1 : 0) }, m))
+        .sort((a, b) => (b._p - a._p) || (b.count - a.count))
+        .slice(0, 10).map(m => {
+        const pct = m.target ? clamp(Math.round((m.count / m.target) * 100), 0, 100) : (m.count ? 100 : 0);
+        return '<div class="fr-metric' + (m.target && m.count >= m.target ? ' hit' : '') + '">' +
+          '<span class="fr-ic">' + esc(m.icon || '⭐') + '</span>' +
+          '<span class="fr-nm">' + esc(m.name) + '</span>' +
+          '<span class="fr-ct">' + m.count + (m.target ? '/' + m.target : '') + '</span>' +
+          (m.streak > 1 ? '<span class="fr-st">🔥' + m.streak + '</span>' : '') +
+          '<span class="fr-bar"><i style="width:' + pct + '%"></i></span>' +
+        '</div>';
+      }).join('');
+
+      const rocks = c.rocks && c.rocks.total
+        ? '<div class="fr-block"><h5>Big Rocks · ' + c.rocks.done + ' of ' + c.rocks.total + '</h5>' +
+          '<ul class="fr-rocks">' + (c.rocks.items || []).slice(0, 8).map(r =>
+            '<li class="' + (r.done ? 'done' : '') + '">' + esc(r.title) + '</li>').join('') +
+          '</ul></div>'
+        : '';
+
+      const plan = c.plan && c.plan.text
+        ? '<div class="fr-block"><h5>This week</h5><p class="fr-plan">' + esc(c.plan.text) + '</p></div>' : '';
+
+      const ci = c.checkin && c.checkin.text
+        ? '<div class="fr-checkin"><span class="fr-ci-lbl">Today</span>' + esc(c.checkin.text) + '</div>' : '';
+
+      body =
+        ci +
+        (strips
+          ? '<div class="fr-block"><h5>Scoreboard' +
+            (withTarget ? ' · ' + onTarget + ' of ' + withTarget + ' on target' : '') +
+            '</h5>' + strips + '</div>'
+          : '') +
+        rocks + plan;
+    }
+
+    return '<div class="fr-person" data-fr-person="' + esc(f.id) + '">' +
+      '<div class="fr-head">' +
+        '<span class="fr-av">' + esc((f.name || '?').trim()[0].toUpperCase()) + '</span>' +
+        '<span class="fr-name">' + esc(f.name) + '</span>' +
+        (when ? '<span class="fr-when">' + esc(when) + '</span>' : '') +
+        '<button type="button" class="fr-x" data-fr-unpair="' + esc(f.id) + '" ' +
+          'aria-label="Unpair from ' + esc(f.name) + '">Unpair</button>' +
+      '</div>' + body +
+    '</div>';
+  },
+
+  checkinHtml() {
+    if (!Friends.list.length || !Friends.share.checkin) return '';
+    return '<div class="fr-cibox">' +
+      '<label for="fr-ci">Today, in one line</label>' +
+      '<input class="flow-in" id="fr-ci" type="text" maxlength="200" ' +
+        'placeholder="Two hours in the studio, gym done." value="' + esc(Friends.todayCheckin()) + '">' +
+      '<span class="fr-cisaved" id="fr-cisaved"></span>' +
+    '</div>';
+  },
+
+  pairHtml() {
+    const codes = Friends.codes.map(c =>
+      '<div class="fr-code">' +
+        '<code>' + esc(c.code) + '</code>' +
+        '<button type="button" class="flow-btn sm ghost" data-fr-copy="' + esc(c.code) + '">Copy</button>' +
+        '<button type="button" class="flow-btn sm ghost danger" data-fr-revoke="' + esc(c.code) + '">Cancel</button>' +
+      '</div>').join('');
+
+    const enter = Friends.entering
+      ? '<div class="fr-enter">' +
+          '<input class="flow-in" id="fr-code-in" type="text" placeholder="ABCD-2345" ' +
+            'autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="9">' +
+          '<button type="button" class="flow-btn primary sm" id="fr-redeem">Pair</button>' +
+          '<button type="button" class="flow-btn ghost sm" id="fr-enter-cancel">Cancel</button>' +
+        '</div>'
+      : '';
+
+    return '<div class="fr-pair">' +
+      '<h5>Pair with someone</h5>' +
+      (codes
+        ? '<p class="flow-sub">Send one of these to one person. Each works once and expires in two weeks.</p>' + codes
+        : '<p class="flow-sub">Make a code and send it to one person, or type in the code they sent you.</p>') +
+      '<div class="flow-row">' +
+        '<button type="button" class="flow-btn sm" id="fr-newcode"' + (Friends.busy ? ' disabled' : '') + '>Make a code</button>' +
+        (Friends.entering ? '' : '<button type="button" class="flow-btn sm ghost" id="fr-enter-open">I have a code</button>') +
+      '</div>' + enter +
+    '</div>';
+  },
+
+  shareHtml() {
+    if (!Friends.list.length) return '';
+    const sw = (k, label, note) =>
+      '<label class="fr-sw"><input type="checkbox" data-fr-share="' + k + '"' +
+      (Friends.share[k] ? ' checked' : '') + '>' +
+      '<span><b>' + esc(label) + '</b><em>' + esc(note) + '</em></span></label>';
+    return '<div class="fr-share">' +
+      '<h5>What they can see</h5>' +
+      sw('score',   'Scoreboard',   'Your counts and streaks — the numbers, not the ledger.') +
+      sw('plan',    'Week',         "This week's plan and how many Big Rocks are done.") +
+      sw('checkin', 'Check-in',     'The one line you write above, for today only.') +
+      '<p class="flow-sub fr-note">Switched off is not sent — it is not hidden on their screen, it never leaves here.</p>' +
+    '</div>';
+  },
+
+  /* ------------------------------ wiring ---------------------------- */
+
+  paintInto() {
+    const host = document.querySelector('[data-foldcard="friends"]');
+    if (!host) return;
+    const open = host.classList.contains('is-open');
+    host.outerHTML = Friends.card();
+    const fresh = document.querySelector('[data-foldcard="friends"]');
+    if (fresh && open) fresh.classList.add('is-open');
+    const sec = NorthStar.sec || document;
+    Friends.wire(sec);
+    Fold.wire(sec);
+  },
+
+  async act(fn) {
+    if (Friends.busy) return;
+    Friends.busy = true;
+    try { await fn(); }
+    catch (e) { toast(e.message || 'That did not work.', 'warn'); }
+    Friends.busy = false;
+  },
+
+  wire(sec) {
+    const root = sec || document;
+
+    const on = (sel, ev, fn) => {
+      const el = root.querySelector(sel);
+      if (el && !el.__frWired) { el.__frWired = 1; el.addEventListener(ev, fn); }
+    };
+
+    on('#fr-newcode', 'click', () => Friends.act(async () => {
+      const r = await Friends.api('code', {});
+      Friends.codes = (await Friends.api('codes')).codes || [];
+      Friends.paintInto();
+      Friends.copy(r.code);
+      toast('Code ' + r.code + ' copied — send it to one person.');
+    }));
+
+    on('#fr-enter-open', 'click', () => { Friends.entering = true; Friends.paintInto();
+      const i = document.getElementById('fr-code-in'); if (i) i.focus(); });
+    on('#fr-enter-cancel', 'click', () => { Friends.entering = false; Friends.paintInto(); });
+
+    const redeem = () => Friends.act(async () => {
+      const el = document.getElementById('fr-code-in');
+      const code = el ? el.value.trim() : '';
+      if (!code) { toast('Type the code first.', 'warn'); return; }
+      const r = await Friends.api('redeem', { code });
+      Friends.entering = false;
+      toast('Paired with ' + (r.friend && r.friend.name ? r.friend.name : 'your friend') + ' ✓');
+      /* Publish straight away, or their side sits empty until you next open
+         this tab — the first thing they do is look. */
+      await Friends.refresh();
+      await Friends.publish(true);
+    });
+    on('#fr-redeem', 'click', redeem);
+    on('#fr-code-in', 'keydown', (e) => { if (e.key === 'Enter') redeem(); });
+
+    root.querySelectorAll('[data-fr-copy]').forEach(b => {
+      if (b.__frWired) return; b.__frWired = 1;
+      b.addEventListener('click', () => { Friends.copy(b.getAttribute('data-fr-copy')); toast('Copied.'); });
+    });
+
+    root.querySelectorAll('[data-fr-revoke]').forEach(b => {
+      if (b.__frWired) return; b.__frWired = 1;
+      b.addEventListener('click', () => Friends.act(async () => {
+        const r = await Friends.api('code/revoke', { code: b.getAttribute('data-fr-revoke') });
+        Friends.codes = r.codes || [];
+        Friends.paintInto();
+        toast('Code cancelled.');
+      }));
+    });
+
+    root.querySelectorAll('[data-fr-unpair]').forEach(b => {
+      if (b.__frWired) return; b.__frWired = 1;
+      b.addEventListener('click', () => {
+        const id = b.getAttribute('data-fr-unpair');
+        const who = (Friends.list.find(f => f.id === id) || {}).name || 'them';
+        /* No dialog: this is reversible with a new code, and a confirm on a
+           phone is one more thing to dismiss. The toast says what happened. */
+        Friends.act(async () => {
+          await Friends.api('unpair', { id });
+          await Friends.refresh();
+          toast('No longer paired with ' + who + '.');
+        });
+      });
+    });
+
+    root.querySelectorAll('[data-fr-share]').forEach(cb => {
+      if (cb.__frWired) return; cb.__frWired = 1;
+      cb.addEventListener('change', () => {
+        Friends.share[cb.getAttribute('data-fr-share')] = cb.checked;
+        Friends.saveShare();
+        Friends.publish(true);
+        Friends.paintInto();
+      });
+    });
+
+    const ci = root.querySelector('#fr-ci');
+    if (ci && !ci.__frWired) {
+      ci.__frWired = 1;
+      let t = null;
+      const commit = () => {
+        const text = ci.value.trim();
+        Friends.checkin = text ? { day: today(), text } : null;
+        Friends.saveCheckin();
+        Friends.publish(true);
+        const s = document.getElementById('fr-cisaved');
+        if (s) { s.textContent = 'shared'; setTimeout(() => { if (s) s.textContent = ''; }, 1600); }
+      };
+      ci.addEventListener('input', () => { clearTimeout(t); t = setTimeout(commit, 800); });
+      ci.addEventListener('blur', () => { clearTimeout(t); commit(); });
+      ci.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(t); commit(); ci.blur(); } });
+    }
+  },
+
+  copy(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return; }
+    } catch (e) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    } catch (e) {}
+  }
+};
+
 const Score = {
   sec: null,
   loaded: false,
@@ -7242,7 +7668,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
-    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold,
+    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold, Friends,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
