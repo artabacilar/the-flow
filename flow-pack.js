@@ -840,6 +840,10 @@ const TimeChips = {
     try {
       boxes.forEach(cb => {
         if (cb.closest('.flow-x')) return;                 // our own UI
+        /* Some checkboxes are settings, not things you do. A "🕘 time" chip
+           beside "Big Rocks" in an export panel offers to schedule a filter,
+           which is nonsense dressed as a feature. Anything marked opts out. */
+        if (cb.closest('[data-flow-no-chip]')) return;
         const row = TimeChips.rowFor(cb);
         if (!row || row.getAttribute('data-flow-timed')) return;
         const tab = TimeChips.sectionOf(cb);
@@ -4995,32 +4999,57 @@ const CompassPlus = {
     });
   },
 
-  /* A "send my scheduled tasks to the calendar" row inside the host's own
-     Export-to-Calendar panel. Reuses the pack's Calendar exporter, which
-     serialises every Schedule entry (and flagged notes) to a real .ics. */
+  RANGE: { '1': 'week', '2': '2weeks', '4': '4weeks', '8': '12weeks', '12': '12weeks' },
+  range() { return CompassPlus.RANGE[(document.getElementById('icsRange') || {}).value] || '4weeks'; },
+
+  /* The pack used to bolt a whole second export row onto the host's panel —
+     its own label, its own two buttons, no way to tell from the outside how
+     they related to the button above them. Three buttons for one job. Now the
+     scheduled tasks are simply another line in the same list, they ride along
+     in the same file, and the one thing a file cannot do — push straight into
+     Google over the API — is the only separate control left. */
   injectExport() {
-    const host = document.getElementById('icsExport');
-    if (!host || document.getElementById('flow-cal-tasks')) return;
-    const rangeMap = { '1': 'week', '2': '2weeks', '4': '4weeks', '8': '12weeks', '12': '12weeks' };
-    const pick = () => rangeMap[(document.getElementById('icsRange') || {}).value] || '4weeks';
-    const row = document.createElement('div');
-    row.id = 'flow-cal-tasks';
-    row.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
-    row.innerHTML =
-      '<span style="font-size:12px;color:var(--muted)">📌 Your scheduled tasks (Planner &amp; time-blocked items):</span>' +
-      '<button class="btn btn-primary" data-flowcal="apple">⬇️ Apple .ics</button>' +
-      '<button class="btn" data-flowcal="google">📆 Google Calendar</button>';
-    const panel = host.closest('.panel') || host.parentElement;
-    panel.appendChild(row);
-    row.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-flowcal]');
-      if (!b) return;
-      const range = pick();
-      try {
-        if (b.getAttribute('data-flowcal') === 'apple') Calendar.exportApple(range);
-        else Calendar.exportGoogle(range, null);
-      } catch (err) { try { toast('Could not export just now.', 'err'); } catch (e2) {} }
-    });
+    const list = document.getElementById('icsPick');
+    if (!list || document.getElementById('icsTasks')) return;
+
+    const label = document.createElement('label');
+    label.className = 'ics-opt';
+    label.innerHTML = '<input type="checkbox" id="icsTasks" checked> 📌 Scheduled tasks';
+    label.title = 'Anything you gave a date and a time — Planner rows and items time-blocked from any tab';
+    list.appendChild(label);
+
+    const ticked = () => { const b = document.getElementById('icsTasks'); return !!(b && b.checked); };
+    const provider = (weeks) => {
+      if (!ticked()) return null;
+      const key = String(weeks);
+      const recs = Calendar.rangeRecords(CompassPlus.RANGE[key] || '4weeks');
+      if (!recs.length) return null;
+      const opts = { defaultDuration: Settings.get('defaultDurationMin') };
+      return {
+        text: recs.map(r => ICS.event(r, opts).join('\r\n')).join('\r\n'),
+        n: recs.length, label: 'scheduled tasks', one: 'scheduled task'
+      };
+    };
+    provider.ticked = ticked;
+    window.icsExtras = window.icsExtras || [];
+    window.icsExtras.push(provider);
+
+    /* Pushing over the Google API is a different thing from downloading a
+       file — it writes into the calendar directly — so it stays its own
+       control, secondary, and says what it does. */
+    const more = document.getElementById('icsMore');
+    if (more && !more.querySelector('[data-flowcal]')) {
+      const b = document.createElement('button');
+      b.className = 'btn btn-ghost';
+      b.setAttribute('data-flowcal', 'google');
+      b.textContent = '📆 Or write straight into Google Calendar';
+      b.title = 'Skips the file — signs you in and adds your scheduled tasks to Google directly';
+      more.appendChild(b);
+      b.addEventListener('click', () => {
+        try { Calendar.exportGoogle(CompassPlus.range(), document.getElementById('icsStatus')); }
+        catch (err) { try { toast('Could not reach Google just now.', 'err'); } catch (e2) {} }
+      });
+    }
   },
 
   install() {
