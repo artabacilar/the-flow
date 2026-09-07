@@ -3294,7 +3294,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           <textarea data-prof="dietGym" rows="3">${esc(Profile.rowsToLines(Profile.data && Profile.data.dietGym))}</textarea>
         </div>
         <div class="flow-field" style="margin-top:10px">
-          <label class="flow-label">Weekly commitments (Sharpen the Saw) — one per line</label>
+          <label class="flow-label">Weekly commitments (Sharpen the Blade) — one per line</label>
           <textarea data-prof="saw" rows="8">${esc(Profile.rowsToLines(Profile.data && Profile.data.saw))}</textarea>
         </div>
         <div class="flow-field" style="margin-top:10px">
@@ -4595,7 +4595,7 @@ const AuditNudge = {
 
 const TodayGroups = {
   LS: 'flowpack:todayOpen',
-  COLLAPSIBLE: [/^diet$/i, /^sharpen the saw$/i],
+  COLLAPSIBLE: [/^diet$/i, /^sharpen the (saw|blade)$/i],
 
   state() {
     try { return JSON.parse(localStorage.getItem(TodayGroups.LS) || '{}'); } catch (e) { return {}; }
@@ -5632,8 +5632,7 @@ const Profile = {
       dietHeader: sec ? pick('.section-header', sec) : '',
       dietSub: sec ? pick('.section-sub', sec) : '',
       trainNote,
-      mealcards: cards ? cards.innerHTML : '',
-      habits: $$('.habits7 .h7').map(n => n.innerHTML)
+      mealcards: cards ? cards.innerHTML : ''
     };
   },
 
@@ -5651,10 +5650,6 @@ const Profile = {
       });
       const cards = $('.mealcards', sec);
       if (cards && c.mealcards) cards.innerHTML = c.mealcards;
-    }
-    if (c.habits && c.habits.length) {
-      const hs = $$('.habits7 .h7');
-      c.habits.forEach((html, i) => { if (hs[i]) hs[i].innerHTML = html; });
     }
   },
 
@@ -5720,7 +5715,21 @@ const Profile = {
     };
     swap('DIET_COMMON', p.dietCommon);
     swap('DIET_GYM', p.dietGym);
-    swap('SAW_ITEMS', p.saw);
+    /* The blade is edited by hand now and saved as the person's own list, so a
+       template must never write over it — it only ever seeds an empty one. A
+       profile that clobbered this on every boot is exactly how a rename looks
+       like it saved and is gone by morning. */
+    (() => {
+      let own = false;
+      try {
+        const S_ = Profile.host('S');
+        const v = S_ && S_.get('sawItems', null);
+        own = Array.isArray(v) && v.length > 0;
+      } catch (e) {}
+      if (own) return;
+      swap('SAW_ITEMS', p.saw);
+      try { const save = Profile.host('sawSave'); if (typeof save === 'function') save(); } catch (e) {}
+    })();
     swap('QUAD_DEFAULTS', p.quad);
 
     /* PLAN entries carry exercises the user may have edited, so only the
