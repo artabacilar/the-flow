@@ -228,6 +228,8 @@ canvas{width:100%;height:120px;}
 .form-row label{font-size:13px;color:var(--muted);white-space:nowrap;}
 .form-row input,.form-row select,.form-row textarea{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;}
 .form-row textarea{resize:vertical;min-height:60px;flex:1;}
+.ed-rest{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;}
+.form-row .ed-rest input[type=checkbox]{width:16px;height:16px;flex:0 0 auto;padding:0;accent-color:var(--blue,#63c2f7);}
 .btn{border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:13px;}
 .btn-primary{background:var(--accent);color:#fff;}
 .btn-green{background:var(--green);color:#111;}
@@ -1859,11 +1861,11 @@ document.querySelectorAll('.tab').forEach(t=>{
    entry while tRender() read `d.name`, so each card rendered the literal
    string "undefined" above its title. */
 const PLAN = [
-  {key:'mon',name:'Mon',title:'Push — Chest, Shoulders, Triceps',tag:'Push',time:'18:00',type:'hyper'},
-  {key:'tue',name:'Tue',title:'Pull — Back and Biceps',tag:'Pull',time:'18:00',type:'hyper'},
+  {key:'mon',name:'Mon',title:'Push — Chest, Shoulders, Triceps',tag:'Push',time:'',type:'hyper'},
+  {key:'tue',name:'Tue',title:'Pull — Back and Biceps',tag:'Pull',time:'',type:'hyper'},
   {key:'wed',name:'Wed',title:'Rest / Active Recovery',tag:'Rest',time:'',type:'rest'},
-  {key:'thu',name:'Thu',title:'Legs',tag:'Legs',time:'18:00',type:'hyper'},
-  {key:'fri',name:'Fri',title:'Upper Body',tag:'Upper',time:'18:00',type:'hyper'},
+  {key:'thu',name:'Thu',title:'Legs',tag:'Legs',time:'',type:'hyper'},
+  {key:'fri',name:'Fri',title:'Upper Body',tag:'Upper',time:'',type:'hyper'},
   {key:'sat',name:'Sat',title:'Conditioning or a long walk',tag:'Cardio',time:'',type:'hyper'},
   {key:'sun',name:'Sun',title:'Rest',tag:'Rest',time:'',type:'rest'}
 ];
@@ -1889,6 +1891,37 @@ if(!tData.workouts) tData.workouts={}; // per-week+day workouts: {weekId:{mon:[{
 function ensureTWeek(wid){ if(!tData.weeks[wid]) tData.weeks[wid]={done:{},ex:{}}; return tData.weeks[wid]; }
 function ensureTDayWorkouts(wid,key){ if(!tData.workouts[wid]) tData.workouts[wid]={}; if(!tData.workouts[wid][key]) tData.workouts[wid][key]=[]; return tData.workouts[wid][key]; }
 ensureTWeek(WK);
+/* A training time belongs to one week, not to the plan. A field that arrives
+   already saying 18:00 is a guess wearing the clothes of a record — it reads
+   as something you decided when nobody decided anything. So every week starts
+   blank and you fill it in as you plan that week. */
+if(!tData.timesW){
+  tData.timesW={};
+  if(tData.times&&Object.keys(tData.times).length){
+    const seed={}; Object.keys(tData.times).forEach(k=>{ if(tData.times[k]) seed[k]=tData.times[k]; });
+    if(Object.keys(seed).length) tData.timesW[WK]=seed;
+  }
+}
+function tTimes(wid){ if(!tData.timesW) tData.timesW={}; if(!tData.timesW[wid]) tData.timesW[wid]={}; return tData.timesW[wid]; }
+function tTimeFor(wid,key){ const v=tTimes(wid)[key]; return v==null?'':v; }
+
+/* Type is your word for the day, not a menu of four. The four presets still
+   map onto the colours and the rest-day rule; anything else you type is kept
+   verbatim and treated as a training day unless you tick Rest day. */
+const TYPE_ALIASES={'strength':'strength','hypertrophy':'hyper','hyper':'hyper','conditioning':'cond','cond':'cond','cardio':'cond','rest':'rest','rest day':'rest','off':'rest'};
+function tTypeOf(label,isRest){
+  if(isRest) return 'rest';
+  return TYPE_ALIASES[String(label||'').trim().toLowerCase()]||'hyper';
+}
+function tTypeLabels(){
+  const seen=[]; const add=v=>{ v=String(v||'').trim(); if(v&&!seen.some(x=>x.toLowerCase()===v.toLowerCase())) seen.push(v); };
+  ['Strength','Hypertrophy','Conditioning','Rest day'].forEach(add);
+  PLAN.forEach(p=>add(p.tag));
+  Object.keys(tData.plans||{}).forEach(w=>Object.keys(tData.plans[w]||{}).forEach(k=>{
+    const ov=tData.plans[w][k]; if(ov) add(ov.tag);
+  }));
+  return seen;
+}
 function tSave(){ S.set('training',tData); }
 
 // Editable plan: your custom text for a week+day sits on top of the default template
@@ -1922,7 +1955,7 @@ function tRender(){
     const workouts=ensureTDayWorkouts(wid,key);
     const div=document.createElement('div');
     div.className='day'+(i===todayDow&&tWeekOff===0?' today':'')+(done?' done':'');
-    const time=tData.times[key]??d.time;
+    const time=tTimeFor(wid,key);
     const workoutStr=workouts.length>0?workouts.map(w=>`${w.start||'?'}–${w.end||'?'}`).join(' + '):'';
     div.innerHTML=`<div class="dname">${d.name}<span class="tag ${d.type}">${(d.tag||TAG_LABELS[d.type]||'')+(custom?' ✏️':'')}</span></div>
       <div class="wtitle">${d.title}</div><div class="focus">${d.focus||''}</div>
@@ -1936,7 +1969,7 @@ function tRender(){
     cal.appendChild(div);
   });
   cal.querySelectorAll('input[type=time]').forEach(inp=>{
-    inp.addEventListener('change',()=>{ tData.times[inp.dataset.key]=inp.value; tSave(); });
+    inp.addEventListener('change',()=>{ tTimes(wid)[inp.dataset.key]=inp.value; tSave(); });
   });
   cal.querySelectorAll('[data-done]').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -2030,13 +2063,11 @@ function tOpenEditor(key){
     <div class="form-row"><label style="min-width:60px;">Title</label><input type="text" id="edTitle" value="${(d.title||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div class="form-row"><label style="min-width:60px;">Focus</label><input type="text" id="edFocus" value="${(d.focus||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div class="form-row"><label style="min-width:60px;">Type</label>
-      <select id="edType">
-        <option value="strength" ${d.type==='strength'?'selected':''}>Strength</option>
-        <option value="hyper" ${d.type==='hyper'?'selected':''}>Hypertrophy</option>
-        <option value="cond" ${d.type==='cond'?'selected':''}>Conditioning</option>
-        <option value="rest" ${d.type==='rest'?'selected':''}>Rest day</option>
-      </select>
+      <input type="text" id="edType" list="edTypeList" value="${(d.tag||TAG_LABELS[d.type]||'').replace(/"/g,'&quot;')}" placeholder="Push, Pull, Legs, Mobility…" style="flex:1;min-width:180px;">
+      <datalist id="edTypeList">${tTypeLabels().map(l=>'<option value="'+l.replace(/"/g,'&quot;')+'"></option>').join('')}</datalist>
+      <label class="ed-rest"><input type="checkbox" id="edRest" ${d.type==='rest'?'checked':''}> Rest day</label>
     </div>
+    <div class="dsub" style="margin:-2px 0 10px;">Type whatever you call it. Tick Rest day and it drops out of the week's count.</div>
     <div class="form-row" style="align-items:flex-start;"><label style="min-width:60px;margin-top:8px;">Exercises<br><span style="font-size:11px;">one per line:<br>Name | sets × reps</span></label><textarea id="edEx" style="flex:1;min-height:160px;font-family:inherit;line-height:1.6;">${exTxt}</textarea></div>
     <div class="form-row"><label style="min-width:60px;">Note</label><input type="text" id="edNote" value="${(d.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
@@ -2045,11 +2076,13 @@ function tOpenEditor(key){
       <button class="btn btn-red" id="edReset">Restore default</button>
     </div>`;
   document.getElementById('edSave').addEventListener('click',()=>{
-    const type=document.getElementById('edType').value;
+    const label=document.getElementById('edType').value.trim();
+    const isRest=document.getElementById('edRest').checked;
+    const type=tTypeOf(label,isRest);
     const ov={
       title:document.getElementById('edTitle').value.trim()||d.title,
       focus:document.getElementById('edFocus').value.trim(),
-      type:type, tag:TAG_LABELS[type],
+      type:type, tag:label||(isRest?'Rest':TAG_LABELS[type]),
       note:document.getElementById('edNote').value.trim(),
       exercises:document.getElementById('edEx').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{ const parts=l.split('|'); return [parts[0].trim(),(parts[1]||'').trim()]; })
     };
@@ -3530,7 +3563,7 @@ function renderCompass(){
     // Training comes straight from the Training tab: its plan decides which days
     // are workouts (skip rest days) and its own per-day time — no hardcoded 08:00.
     const tp=getDayPlan(wid,DAY_KEYS[i]);
-    if(tp && tp.type!=='rest'){ const tt=(tData.times[DAY_KEYS[i]]??tp.time)||''; chips+='<div class="chip train">🏋️ '+(tt?tt+' ':'')+tp.title+'</div>'; }
+    if(tp && tp.type!=='rest'){ const tt=tTimeFor(wid,DAY_KEYS[i]); chips+='<div class="chip train">🏋️ '+(tt?tt+' ':'')+tp.title+'</div>'; }
     rocks.filter(r=>r.day===i).sort((a,b)=>(a.time||'').localeCompare(b.time||'')).forEach(r=>{
       const p=r.prio||'med';
       const ts=r.time?(r.time+(r.end?'–'+r.end:'')+' '):'';
@@ -3634,7 +3667,7 @@ function buildICS(weeks, incRocks, incTrain, incMeals){
             nTrain++;
           });
         } else {
-          const t=(tData.times[key]!=null&&tData.times[key]!=='')?tData.times[key]:plan.time;
+          const t=tTimeFor(wid,key)||plan.time||'';
           if(!t) return;
           const s=icsSetTime(dayDate,t);
           const e=new Date(s); e.setMinutes(e.getMinutes()+90);
