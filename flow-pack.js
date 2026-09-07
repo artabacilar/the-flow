@@ -49,6 +49,33 @@ function esc(s) {
 }
 const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
+/* Turns http(s) and www URLs in a person's own text into real anchors, and
+   nothing else — the pattern cannot match javascript:, and every piece around
+   the URL is escaped exactly as esc() would have escaped the whole string. It
+   reads the RAW text rather than scanning escaped HTML, which is how a query
+   string like "?a=1&b=2" survives with its & intact. */
+function linkifyText(raw) {
+  const RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  let out = '', last = 0, m;
+  const src = String(raw == null ? '' : raw);
+  while ((m = RE.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    let url = m[0], tail = '';
+    /* The full stop after a link belongs to the sentence, not the URL. */
+    const t = url.match(/[.,!?)\]}]+$/);
+    if (t) { tail = t[0]; url = url.slice(0, -tail.length); }
+    if (url) {
+      const href = /^www\./i.test(url) ? 'https://' + url : url;
+      out += '<a class="flow-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(url) + '</a>';
+    }
+    out += esc(tail);
+    last = m.index + m[0].length;
+  }
+  return out + esc(src.slice(last));
+}
+/* A row that is itself a control must not fire when the tap was for a link. */
+const hitLink = (e) => !!(e && e.target && e.target.closest && e.target.closest('a'));
+
 function debounce(fn, ms) {
   let t; return function () { const a = arguments, c = this; clearTimeout(t); t = setTimeout(() => fn.apply(c, a), ms); };
 }
@@ -4796,7 +4823,7 @@ const TodayPlus = {
     pblock.className = 'flow-td flow-td-sec flow-x';
     pblock.id = 'flow-td-priorities';
     const prow = (txt, meta, cls, attr) =>
-      `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${esc(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
+      `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${linkifyText(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
     const pbody = [
       ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
       ...(pri.flagged || []).slice(0, 5).map(r => prow(r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
@@ -4885,7 +4912,7 @@ const TodayPlus = {
       }
 
       const qr = e.target.closest('[data-q]');
-      if (qr) {
+      if (qr && !hitLink(e)) {
         const id = qr.getAttribute('data-q');
         const q = TodayPlus.host('qData');
         const qs = TodayPlus.host('qSave');
