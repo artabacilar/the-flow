@@ -449,9 +449,18 @@ canvas{width:100%;height:120px;}
 .td-rock.done .flow-link{color:#4a7f9c;}
 .sawgrid{display:grid;grid-template-columns:1fr;gap:8px;}
 .sawcard{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
-.habits7{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:24px;}
-.h7{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.5;}
-.h7 b{color:var(--text);display:block;font-size:13px;margin-bottom:3px;}
+/* the blade, when you are rewriting it rather than ticking it */
+.blade-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.blade-count{font-size:13px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;}
+.sawcard.editing{padding:7px 9px;}
+.blade-row{display:flex;align-items:center;gap:8px;}
+.blade-in{flex:1;min-width:0;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;padding:8px 10px;}
+.blade-in:focus{outline:none;border-color:var(--accent);}
+.blade-x{background:none;border:none;color:var(--muted);font-size:19px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px;flex:none;}
+.blade-x:hover{color:var(--red);background:rgba(255,90,90,.10);}
+.blade-add{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+.blade-add input{flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:13px;padding:10px 12px;}
+.blade-add input:focus{outline:none;border-color:var(--accent);}
 
 /* ── Quadrants ──
    A true 2×2 grid, exactly like the Week Compass cards: Q1│Q2 on the top row,
@@ -838,7 +847,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       </svg>
       <span><span style="font-weight:600;color:var(--muted);">The</span> Flow</span>
     </h1>
-    <div class="sub">7 Habits Compass · Priorities · Training · Diet · Sleep · Habits · Mood · Money · Time · Journal</div>
+    <div class="sub">Week · Priorities · Training · Diet · Sleep · Habits · Mood · Money · Time · Journal</div>
   </div>
   <div class="headmeta">
     <div class="datebadge" id="dateBadge"></div>
@@ -880,8 +889,8 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
 ══════════════════════════════════════════════════════════ -->
 <div class="section active" id="tab-compass">
   <div class="banner" id="storageBanner">⚠️ This browser is blocking local storage, so entries cannot be saved here. Open this file in Chrome, or export a backup regularly from the 📓 Journal tab.</div>
-  <div class="section-header">🧭 Week Compass — Put First Things First</div>
-  <div class="section-sub">Habit 2: begin with the end in mind (your mission). Habit 3: schedule the Big Rocks before the gravel fills the week. Use ← → to plan your upcoming weeks.</div>
+  <div class="section-header">🧭 Week Compass</div>
+  <div class="section-sub">Write down what the week is for, then put the Big Rocks in before the gravel fills it. Use ← → to plan your upcoming weeks.</div>
 
   <!-- Week-at-a-glance grid sits at the very top: opening the tab shows the actual
        week first, with its Prev/Next nav directly above it. Mission, stats and the
@@ -925,7 +934,6 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   <div class="stats">
     <div class="stat"><div class="num purple" id="cpRocksDone">0/0</div><div class="lbl">Big rocks done (this week)</div></div>
     <div class="stat"><div class="num green" id="cpQ2">0</div><div class="lbl">Open Q2 priorities</div></div>
-    <div class="stat"><div class="num orange" id="cpSaw">0/8</div><div class="lbl">Sharpen the Saw</div></div>
     <div class="stat"><div class="num blue" id="cpDiet">—</div><div class="lbl">Diet compliance (7d)</div></div>
   </div>
 
@@ -983,28 +991,11 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     </div>
   </div>
 
-  <div class="grid2">
-    <div class="panel">
-      <h3>🪚 Sharpen the Saw — Habit 7 (this week)</h3>
-      <div class="sawgrid" id="sawGrid"></div>
-    </div>
-    <div class="panel">
-      <h3>📝 Weekly review (Sunday)</h3>
-      <textarea class="mood-note" id="wkReview" placeholder="Wins, lessons, what moves to next week..."></textarea>
-      <button class="btn btn-primary" id="wkReviewSave">Save review</button>
-      <div id="wkReviewStatus" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
-    </div>
-  </div>
-
-  <h3 style="font-size:15px;margin:8px 0 10px;">The 7 Habits, wired into this dashboard</h3>
-  <div class="habits7">
-    <div class="h7"><b>1 · Be Proactive</b>Own your response. Log the day even when it went sideways — data beats excuses.</div>
-    <div class="h7"><b>2 · Begin with the End in Mind</b>Your mission statement above. Re-read it every Sunday before planning the week.</div>
-    <div class="h7"><b>3 · Put First Things First</b>Big Rocks + the Q2 quadrant. Schedule importance before urgency fills the calendar.</div>
-    <div class="h7"><b>4 · Think Win-Win</b>In your deals and partnerships — look for the arrangement where both sides genuinely gain.</div>
-    <div class="h7"><b>5 · Seek First to Understand</b>In this week's calls and meetings: listen and diagnose before you pitch.</div>
-    <div class="h7"><b>6 · Synergize</b>Combine your strengths — the skills you already have compound when you use them together.</div>
-    <div class="h7"><b>7 · Sharpen the Saw</b>Training, diet, sleep, languages, music. The weekly checklist keeps the engine strong.</div>
+  <div class="panel">
+    <h3>📝 Weekly review (Sunday)</h3>
+    <textarea class="mood-note" id="wkReview" placeholder="Wins, lessons, what moves to next week..."></textarea>
+    <button class="btn btn-primary" id="wkReviewSave">Save review</button>
+    <div id="wkReviewStatus" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
   </div>
 </div>
 
@@ -1323,6 +1314,25 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
 
   <div class="habits-list" id="habitsList"></div>
   <div id="hbEmpty" style="color:var(--muted);font-size:14px;padding:20px 0;display:none;">No habits yet — add your first one above.</div>
+
+  <!-- The weekly upkeep, beside the habits because that is what it is: the
+       maintenance that keeps everything else possible. Eight lines to start
+       with, and then entirely yours — reword them, drop the ones that were
+       never you, add the ones that are. -->
+  <div class="panel" style="margin-top:26px;">
+    <div class="blade-head">
+      <h3 style="margin:0;">🪒 Sharpen the Blade — this week</h3>
+      <span class="blade-count" id="bladeCount">0 / 0</span>
+      <span style="flex:1"></span>
+      <button class="btn" id="bladeEdit">✏️ Edit lines</button>
+    </div>
+    <div class="section-sub" style="margin:6px 0 14px;">The upkeep that keeps the rest of it possible. Ticks reset every Monday.</div>
+    <div class="sawgrid" id="sawGrid"></div>
+    <div class="blade-add" id="bladeAdd" hidden>
+      <input type="text" id="bladeNew" maxlength="80" placeholder="Add a line — e.g. 🎧 Craft — one finished idea">
+      <button class="btn btn-green" id="bladeAddBtn">+ Add line</button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -1832,6 +1842,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='mood') renderMoodChart();
     if(t.dataset.tab==='time') renderTime();
     if(t.dataset.tab==='compass') renderCompass();
+    if(t.dataset.tab==='habits') renderHabits();
     if(t.dataset.tab==='quad') renderQuad();
     if(t.dataset.tab==='diet') renderDiet();
     if(t.dataset.tab==='journal') renderJournal();
@@ -2332,6 +2343,31 @@ paintWhoop();
 // ════════════════════════════════════════════
 // HABITS
 // ════════════════════════════════════════════
+/* Declared up here, not down with the compass, because the Habits tab paints
+   the blade during boot — a list still in its temporal dead zone renders as
+   no list at all. */
+const SAW_SEED=[
+  ['phys1','💪 Physical — train 4× this week'],
+  ['phys2','🥗 Physical — eat to plan most days'],
+  ['ment1','📚 Mental — read or study ×3'],
+  ['ment2','🧠 Mental — learn one new thing'],
+  ['soc1','🤝 Social — reach out to someone who matters'],
+  ['soc2','❤️ Social — real time with people, phone away'],
+  ['spir1','🎧 Spiritual — something creative ×3'],
+  ['spir2','🪧 Spiritual — weekly review + mission check']
+];
+const SAW_ITEMS=[
+  ['phys1','💪 Physical — train 4× this week'],
+  ['phys2','🥗 Physical — eat to plan most days'],
+  ['ment1','📚 Mental — read or study ×3'],
+  ['ment2','🧠 Mental — learn one new thing'],
+  ['soc1','🤝 Social — reach out to someone who matters'],
+  ['soc2','❤️ Social — real time with people, phone away'],
+  ['spir1','🎧 Spiritual — something creative ×3'],
+  ['spir2','🪧 Spiritual — weekly review + mission check']
+];
+sawHydrate();
+
 let hbData = S.get('habits', {habits:[], completions:{}}); // completions: {habitId: {date: true}}
 const DOW_LABELS=['M','T','W','T','F','S','S'];
 
@@ -2402,7 +2438,101 @@ function renderHabits(){
   // total all time
   let allTotal=0; Object.values(hbData.completions).forEach(c=>{ allTotal+=Object.values(c).filter(Boolean).length; });
   document.getElementById('hbTotal').textContent=allTotal;
+  renderBlade();
 }
+
+/* ---- Sharpen the Blade ------------------------------------------------------
+   The weekly upkeep, rendered wherever the checklist lives. Ticks are stored
+   per ISO week against the line's key, so rewording a line keeps every week it
+   was ever ticked; only deleting it takes it off the screen, and even then the
+   history stays where it is. */
+let bladeEditing=false;
+
+function renderBlade(){
+  const sg=document.getElementById('sawGrid');
+  if(!sg) return;
+  /* The Habits tab paints during boot, before the compass data exists. Rather
+     than order the whole file around that, this simply waits: the tab repaints
+     whenever it is opened, and the ticks live in the compass store. */
+  let wid='', saw=null;
+  try{
+    wid=cWeekId();
+    if(!cData.saw) cData.saw={};
+    if(!cData.saw[wid]) cData.saw[wid]={};
+    saw=cData.saw[wid];
+  }catch(e){ return; }
+  const items=sawActive();
+
+  sg.innerHTML='';
+  items.forEach(([k,label])=>{
+    const li=document.createElement('div'); li.className='sawcard'+(bladeEditing?' editing':'');
+    if(bladeEditing){
+      li.innerHTML=`<div class="blade-row">
+        <input type="text" class="blade-in" maxlength="80" value="${(label||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}">
+        <button class="blade-x" title="Remove this line">×</button>
+      </div>`;
+      const inp=li.querySelector('.blade-in');
+      const commit=()=>{
+        const v=inp.value.trim();
+        const row=SAW_ITEMS.find(r=>r[0]===k);
+        if(!row) return;
+        if(!v){ inp.value=row[1]; return; }   /* an empty line is a slip, not an intent */
+        if(v!==row[1]){ row[1]=v; sawSave(); J('planning','🪒 Blade line renamed: '+v); bladePaintAll(); }
+      };
+      inp.addEventListener('blur',commit);
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); inp.blur(); } });
+      li.querySelector('.blade-x').addEventListener('click',()=>{
+        const row=SAW_ITEMS.find(r=>r[0]===k);
+        const i=SAW_ITEMS.indexOf(row);
+        if(i<0) return;
+        SAW_ITEMS.splice(i,1); sawSave();
+        J('planning','🪒 Blade line removed: '+(row?row[1]:k));
+        bladePaintAll();
+      });
+    } else {
+      li.innerHTML=`<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13px;"><input type="checkbox" style="accent-color:var(--green);margin-top:2px;" ${saw[k]?'checked':''}><span style="${saw[k]?'color:var(--muted);text-decoration:line-through;':''}">${label}</span></label>`;
+      li.querySelector('input').addEventListener('change',e=>{
+        if(e.target.checked){ saw[k]=true; J('planning','🪒 Sharpen the Blade: '+label+' ('+wid+')'); }
+        else delete saw[k];
+        cSave(); bladePaintAll();
+      });
+    }
+    sg.appendChild(li);
+  });
+
+  if(!items.length){
+    sg.innerHTML='<div style="color:var(--muted);font-size:13px;padding:6px 0;">No lines yet. Tap <b>Edit lines</b> and add the upkeep that actually keeps you sharp.</div>';
+  }
+
+  const cnt=document.getElementById('bladeCount');
+  if(cnt) cnt.textContent=items.filter(([k])=>saw[k]).length+' / '+items.length;
+  const add=document.getElementById('bladeAdd');
+  if(add) add.hidden=!bladeEditing;
+  const btn=document.getElementById('bladeEdit');
+  if(btn) btn.textContent=bladeEditing?'✓ Done':'✏️ Edit lines';
+}
+
+/* The same list is ticked on Today and edited here, so both repaint together. */
+function bladePaintAll(){
+  renderBlade();
+  try{ if(typeof renderToday==='function') renderToday(); }catch(e){}
+}
+
+(function wireBlade(){
+  const btn=document.getElementById('bladeEdit');
+  if(btn) btn.addEventListener('click',()=>{ bladeEditing=!bladeEditing; renderBlade(); });
+  const addBtn=document.getElementById('bladeAddBtn'), inp=document.getElementById('bladeNew');
+  const add=()=>{
+    const v=(inp.value||'').trim();
+    if(!v) return;
+    SAW_ITEMS.push(['sw'+Date.now().toString(36),v]);
+    sawSave(); inp.value='';
+    J('planning','🪒 Blade line added: '+v);
+    bladePaintAll(); inp.focus();
+  };
+  if(addBtn) addBtn.addEventListener('click',add);
+  if(inp) inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); add(); } });
+})();
 
 document.getElementById('hbAdd').addEventListener('click',()=>{
   const name=document.getElementById('hbInput').value.trim(); if(!name) return;
@@ -3114,16 +3244,24 @@ function sawActive(){
   try{ const v=S.get('sawOff',[]); if(Array.isArray(v)) off=v; }catch(e){}
   return SAW_ITEMS.filter(([k])=>off.indexOf(k)<0);
 }
-const SAW_ITEMS=[
-  ['phys1','💪 Physical — train 4× this week'],
-  ['phys2','🥗 Physical — eat to plan most days'],
-  ['ment1','📚 Mental — read or study ×3'],
-  ['ment2','🧠 Mental — learn one new thing'],
-  ['soc1','🤝 Social — reach out to someone who matters'],
-  ['soc2','❤️ Social — real time with people, phone away'],
-  ['spir1','🎧 Spiritual — something creative ×3'],
-  ['spir2','🪧 Spiritual — weekly review + mission check']
-];
+/* The list ships with eight lines and then belongs to you. Renaming one keeps
+   its key, so a line you have been ticking since March is still the same line
+   after you reword it — the weekly history is keyed by the key, never by the
+   words. */
+function sawHydrate(){
+  try{
+    const v=S.get('sawItems',null);
+    if(Array.isArray(v)&&v.length){
+      SAW_ITEMS.length=0;
+      v.forEach(r=>{ const k=String((r&&r[0])||'').trim(); const l=String((r&&r[1])||'').trim();
+        if(k&&l) SAW_ITEMS.push([k,l]); });
+    }
+  }catch(e){}
+  if(!SAW_ITEMS.length) SAW_SEED.forEach(r=>SAW_ITEMS.push(r.slice()));
+}
+function sawSave(){ S.set('sawItems', SAW_ITEMS.map(r=>r.slice())); }
+
+
 
 // ════════════════════════════════════════════
 // TODAY — native iOS-style daily feed
@@ -3235,7 +3373,7 @@ function renderToday(){
     </div>`;
   }).join('');
 
-  // ── Sharpen the Saw (this week) ──
+  // ── Sharpen the Blade (this week) ──
   if(!cData.saw) cData.saw={};
   if(!cData.saw[wid]) cData.saw[wid]={};
   const saw=cData.saw[wid];
@@ -3281,7 +3419,7 @@ function renderToday(){
     </div>
 
     <div class="td-group">
-      ${groupHead('Sharpen the Saw',sawDone,sawOn.length)}
+      ${groupHead('Sharpen the Blade',sawDone,sawOn.length)}
       ${sawHtml}
     </div>
   `;
@@ -3329,7 +3467,7 @@ function renderToday(){
     el.addEventListener('click',()=>{
       const k=el.dataset.saw;
       const label=(SAW_ITEMS.find(x=>x[0]===k)||['',''])[1];
-      if(saw[k]){ delete saw[k]; } else { saw[k]=true; J('planning','🪚 Sharpen the Saw: '+label); }
+      if(saw[k]){ delete saw[k]; } else { saw[k]=true; J('planning','🪒 Sharpen the Blade: '+label); }
       cSave();
       renderToday(); if(typeof renderCompass==='function') renderCompass();
     });
@@ -3407,18 +3545,6 @@ function renderCompass(){
     r.done=!r.done; cSave(); J('planning',(r.done?'✅ Big rock done: ':'↩️ Big rock reopened: ')+r.title+' ('+wid+')'); renderCompass();
   }); });
 
-  // Sharpen the Saw
-  if(!cData.saw[wid]) cData.saw[wid]={};
-  const saw=cData.saw[wid];
-  const sg=document.getElementById('sawGrid');
-  sg.innerHTML='';
-  sawActive().forEach(([k,label])=>{
-    const li=document.createElement('div'); li.className='sawcard';
-    li.innerHTML=`<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13px;"><input type="checkbox" style="accent-color:var(--green);margin-top:2px;" ${saw[k]?'checked':''}><span style="${saw[k]?'color:var(--muted);text-decoration:line-through;':''}">${label}</span></label>`;
-    li.querySelector('input').addEventListener('change',e=>{ if(e.target.checked){ saw[k]=true; J('planning','🪚 Sharpen the Saw: '+label+' ('+wid+')'); } else delete saw[k]; cSave(); renderCompass(); });
-    sg.appendChild(li);
-  });
-
   // Weekly review
   document.getElementById('wkReview').value=cData.reviews[wid]||'';
   document.getElementById('wkReviewStatus').textContent='';
@@ -3426,7 +3552,6 @@ function renderCompass(){
   // Stats
   document.getElementById('cpRocksDone').textContent=rocks.filter(r=>r.done).length+'/'+rocks.length;
   document.getElementById('cpQ2').textContent=(typeof qData!=='undefined'&&qData?qData.items.filter(i=>i.q===2&&!i.done).length:0);
-  document.getElementById('cpSaw').textContent=Object.keys(saw).length+'/'+sawActive().length;
   document.getElementById('cpDiet').textContent=dietAvg7();
 }
 document.getElementById('wkReviewSave').addEventListener('click',()=>{
