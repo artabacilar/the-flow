@@ -5569,13 +5569,13 @@ const NEUTRAL = {
     habits: []
   },
   plan: [
-    { key: 'mon', title: 'Push — Chest, Shoulders, Triceps', tag: 'Push', time: '18:00', type: 'hyper' },
-    { key: 'tue', title: 'Pull — Back and Biceps',            tag: 'Pull', time: '18:00', type: 'hyper' },
-    { key: 'wed', title: 'Rest / Active Recovery',            tag: 'Rest', time: '',      type: 'rest'  },
-    { key: 'thu', title: 'Legs',                              tag: 'Legs', time: '18:00', type: 'hyper' },
-    { key: 'fri', title: 'Upper Body',                        tag: 'Upper', time: '18:00', type: 'hyper' },
-    { key: 'sat', title: 'Conditioning or a long walk',       tag: 'Cardio', time: '',    type: 'hyper' },
-    { key: 'sun', title: 'Rest',                              tag: 'Rest', time: '',      type: 'rest'  }
+    { key: 'mon', title: 'Push — Chest, Shoulders, Triceps', tag: 'Push', type: 'hyper' },
+    { key: 'tue', title: 'Pull — Back and Biceps',            tag: 'Pull', type: 'hyper' },
+    { key: 'wed', title: 'Rest / Active Recovery',            tag: 'Rest', type: 'rest'  },
+    { key: 'thu', title: 'Legs',                              tag: 'Legs', type: 'hyper' },
+    { key: 'fri', title: 'Upper Body',                        tag: 'Upper', type: 'hyper' },
+    { key: 'sat', title: 'Conditioning or a long walk',       tag: 'Cardio', type: 'hyper' },
+    { key: 'sun', title: 'Rest',                              tag: 'Rest', type: 'rest'  }
   ]
 };
 
@@ -5587,7 +5587,7 @@ const Profile = {
 
   /** Read the constants as the code currently defines them. */
   capture() {
-    const plan = (Profile.host('PLAN') || []).map(d => ({ key: d.key, title: d.title, tag: d.tag, time: d.time, type: d.type }));
+    const plan = (Profile.host('PLAN') || []).map(d => ({ key: d.key, title: d.title, tag: d.tag, type: d.type }));
     return {
       mission: Profile.host('DEFAULT_MISSION') || '',
       roles: (Profile.host('DEFAULT_ROLES') || []).slice(),
@@ -5741,7 +5741,10 @@ const Profile = {
         if (!d) return;
         if (row.title) d.title = row.title;
         if (row.tag) d.tag = row.tag;
-        d.time = row.time || '';
+        /* Times are per-week now and live in the training data, so a profile
+           has no business handing one back. An old profile still carrying
+           18:00 would otherwise refill every week's field on every boot. */
+        d.time = '';
         if (row.type) { d.type = row.type; d.core = row.type !== 'rest'; }
       });
     }
