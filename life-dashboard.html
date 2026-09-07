@@ -229,6 +229,31 @@ canvas{width:100%;height:120px;}
 .form-row input,.form-row select,.form-row textarea{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;}
 .form-row textarea{resize:vertical;min-height:60px;flex:1;}
 .ed-rest{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;}
+/* Export to calendar: one list, one range, one button, and the instructions
+   folded away until somebody actually wants them. */
+.ics-panel h3{margin-bottom:4px;}
+.ics-lede{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px;max-width:60ch;}
+.ics-body{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px;}
+.ics-field{display:flex;flex-direction:column;gap:8px;}
+.ics-cap{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.ics-pick{display:flex;flex-direction:column;gap:8px;}
+.ics-opt{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text);cursor:pointer;line-height:1.3;}
+.ics-opt input[type=checkbox]{width:17px;height:17px;flex:0 0 auto;margin:0;accent-color:var(--green);cursor:pointer;}
+.ics-when select{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;}
+.ics-go{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+#icsStatus{font-size:13px;color:var(--muted);}
+#icsStatus.ok{color:var(--green);}
+#icsStatus.warn{color:var(--orange);}
+.ics-more{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;}
+.ics-more:empty{display:none;}
+.ics-help{margin-top:16px;border-top:1px solid var(--border);padding-top:12px;}
+.ics-help summary{font-size:13px;color:var(--muted);cursor:pointer;list-style:none;}
+.ics-help summary::-webkit-details-marker{display:none;}
+.ics-help summary::before{content:'▸ ';}
+.ics-help[open] summary::before{content:'▾ ';}
+.ics-help summary:hover{color:var(--text);}
+.ics-help p{font-size:13px;color:var(--muted);line-height:1.65;margin:10px 0 0;max-width:70ch;}
+.ics-help p b{color:var(--text);}
 .form-row .ed-rest input[type=checkbox]{width:16px;height:16px;flex:0 0 auto;padding:0;accent-color:var(--blue,#63c2f7);}
 .btn{border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-weight:600;font-size:13px;}
 .btn-primary{background:var(--accent);color:#fff;}
@@ -968,29 +993,43 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     <div class="rocklist" id="rockList"></div>
   </div>
 
-  <div class="panel" style="margin-bottom:16px;">
-    <h3>📅 Export to Calendar <span style="color:var(--muted);font-weight:400;font-size:12px;">(sync your plan to Apple Calendar & Google Calendar)</span></h3>
-    <div class="form-row" style="margin-bottom:10px;">
-      <label>Range</label>
-      <select id="icsRange">
-        <option value="1">This week only</option>
-        <option value="2">This week + next</option>
-        <option value="4" selected>Next 4 weeks</option>
-        <option value="8">Next 8 weeks</option>
-        <option value="12">Next 12 weeks</option>
-      </select>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="icsRocks" checked style="accent-color:var(--green);"> 🪨 Big Rocks</label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="icsTrain" checked style="accent-color:var(--green);"> 🏋️ Training sessions</label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="icsMeals" style="accent-color:var(--green);"> 🍽️ Meals & diet schedule</label>
+  <!-- One list, one range, one button. The old panel had three checkbox
+       groups, a range picker and two paragraphs of instructions all on one
+       line, plus a second export row the pack bolted on underneath — three
+       buttons, no way to tell what any of them would give you. -->
+  <div class="panel ics-panel" id="icsPanel" data-flow-no-chip="1" style="margin-bottom:16px;">
+    <h3>📅 Put this in your calendar</h3>
+    <div class="ics-lede">Tick what you want, download the file, open it. Everything lands in Apple Calendar or Google Calendar.</div>
+    <div class="ics-body">
+      <div class="ics-field">
+        <span class="ics-cap">Include</span>
+        <div class="ics-pick" id="icsPick">
+          <label class="ics-opt"><input type="checkbox" id="icsRocks" checked> 🪨 Big Rocks</label>
+          <label class="ics-opt"><input type="checkbox" id="icsTrain" checked> 🏋️ Training sessions</label>
+          <label class="ics-opt"><input type="checkbox" id="icsMeals"> 🍽️ Meals &amp; diet</label>
+        </div>
+      </div>
+      <div class="ics-field ics-when">
+        <span class="ics-cap">How far ahead</span>
+        <select id="icsRange">
+          <option value="1">This week</option>
+          <option value="2">2 weeks</option>
+          <option value="4" selected>4 weeks</option>
+          <option value="8">8 weeks</option>
+          <option value="12">12 weeks</option>
+        </select>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button class="btn btn-primary" id="icsExport">⬇️ Download .ics file</button>
-      <span id="icsStatus" style="font-size:12px;color:var(--muted);"></span>
+    <div class="ics-go">
+      <button class="btn btn-primary" id="icsExport">⬇️ Download calendar file</button>
+      <span id="icsStatus"></span>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6;">
-      <b style="color:var(--text);">Apple Calendar (Mac Studio / laptop):</b> double-click the downloaded <code>.ics</code> file → choose which calendar to add it to → it syncs to all your devices via iCloud.<br>
-      <b style="color:var(--text);">Google Calendar:</b> open <a href="https://calendar.google.com" target="_blank" style="color:var(--accent);">calendar.google.com</a> → ⚙️ Settings → Import &amp; Export → Import → select the <code>.ics</code> file → it syncs everywhere you use Google.
-    </div>
+    <div class="ics-more" id="icsMore"></div>
+    <details class="ics-help">
+      <summary>What do I do with the file?</summary>
+      <p><b>Apple Calendar</b> — double-click it, pick which calendar to put it in. It syncs to your other devices through iCloud.</p>
+      <p><b>Google Calendar</b> — open <a href="https://calendar.google.com" target="_blank" rel="noopener">calendar.google.com</a>, then Settings → Import &amp; export → Import, and pick the file.</p>
+    </details>
   </div>
 
   <div class="panel">
@@ -1144,7 +1183,9 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     </div>
   </div>
   <div class="calendar" id="calendar"></div>
-  <div class="detail" id="detail"></div>
+  <!-- The editor inside here holds settings checkboxes, not things you do,
+       so the pack must not offer to schedule them. -->
+  <div class="detail" id="detail" data-flow-no-chip="1"></div>
   <div class="grid2">
     <div class="panel">
       <h3>Weekly progress</h3>
@@ -1913,6 +1954,15 @@ function tTypeOf(label,isRest){
   if(isRest) return 'rest';
   return TYPE_ALIASES[String(label||'').trim().toLowerCase()]||'hyper';
 }
+/* These labels are your own text, so they get escaped properly on the way
+   into the markup — ampersand first, or "&" would become "&amp;quot;". */
+function tTypeEsc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function tTypeOptions(current){
+  const cur=String(current||'').trim();
+  const list=tTypeLabels();
+  if(cur&&!list.some(x=>x.toLowerCase()===cur.toLowerCase())) list.push(cur);
+  return list.map(l=>'<option value="'+tTypeEsc(l)+'"'+(l.toLowerCase()===cur.toLowerCase()?' selected':'')+'>'+tTypeEsc(l)+'</option>').join('');
+}
 function tTypeLabels(){
   const seen=[]; const add=v=>{ v=String(v||'').trim(); if(v&&!seen.some(x=>x.toLowerCase()===v.toLowerCase())) seen.push(v); };
   ['Strength','Hypertrophy','Conditioning','Rest day'].forEach(add);
@@ -2063,11 +2113,14 @@ function tOpenEditor(key){
     <div class="form-row"><label style="min-width:60px;">Title</label><input type="text" id="edTitle" value="${(d.title||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div class="form-row"><label style="min-width:60px;">Focus</label><input type="text" id="edFocus" value="${(d.focus||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div class="form-row"><label style="min-width:60px;">Type</label>
-      <input type="text" id="edType" list="edTypeList" value="${(d.tag||TAG_LABELS[d.type]||'').replace(/"/g,'&quot;')}" placeholder="Push, Pull, Legs, Mobility…" style="flex:1;min-width:180px;">
-      <datalist id="edTypeList">${tTypeLabels().map(l=>'<option value="'+l.replace(/"/g,'&quot;')+'"></option>').join('')}</datalist>
+      <select id="edType" style="flex:1;min-width:180px;">
+        ${tTypeOptions(d.tag||TAG_LABELS[d.type]||'')}
+        <option value="__own">✏️ Type your own…</option>
+      </select>
+      <input type="text" id="edTypeOwn" placeholder="Your own name for it" style="flex:1;min-width:180px;display:none;">
       <label class="ed-rest"><input type="checkbox" id="edRest" ${d.type==='rest'?'checked':''}> Rest day</label>
     </div>
-    <div class="dsub" style="margin:-2px 0 10px;">Type whatever you call it. Tick Rest day and it drops out of the week's count.</div>
+    <div class="dsub" style="margin:-2px 0 10px;">Pick one, or choose "Type your own" and call it whatever you call it. Tick Rest day and it drops out of the week's count.</div>
     <div class="form-row" style="align-items:flex-start;"><label style="min-width:60px;margin-top:8px;">Exercises<br><span style="font-size:11px;">one per line:<br>Name | sets × reps</span></label><textarea id="edEx" style="flex:1;min-height:160px;font-family:inherit;line-height:1.6;">${exTxt}</textarea></div>
     <div class="form-row"><label style="min-width:60px;">Note</label><input type="text" id="edNote" value="${(d.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
@@ -2075,8 +2128,17 @@ function tOpenEditor(key){
       <button class="btn btn-ghost" id="edCancel">Cancel</button>
       <button class="btn btn-red" id="edReset">Restore default</button>
     </div>`;
+  /* "Type your own" is an option in the list rather than a second control
+     sitting there empty: the box only appears once you have asked for it. */
+  const sel=document.getElementById('edType'), own=document.getElementById('edTypeOwn');
+  sel.addEventListener('change',()=>{
+    const isOwn=sel.value==='__own';
+    own.style.display=isOwn?'':'none';
+    if(isOwn){ own.focus(); own.select(); }
+  });
+  own.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('edSave').click(); } });
   document.getElementById('edSave').addEventListener('click',()=>{
-    const label=document.getElementById('edType').value.trim();
+    const label=(sel.value==='__own'?own.value:sel.value).trim();
     const isRest=document.getElementById('edRest').checked;
     const type=tTypeOf(label,isRest);
     const ov={
@@ -3703,23 +3765,44 @@ function buildICS(weeks, incRocks, incTrain, incMeals){
   return {text:lines.join('\r\n'), nRocks, nTrain, nMeals};
 }
 
+/* Anything else that wants to ride along in the one download registers here
+   rather than growing a second button with its own wording. A provider is
+   called with the number of weeks and returns {events:[VEVENT text], n, label}
+   — or nothing at all, if its own box is unticked. */
+window.icsExtras = window.icsExtras || [];
+
 document.getElementById('icsExport').addEventListener('click',()=>{
   const weeks=parseInt(document.getElementById('icsRange').value);
   const incRocks=document.getElementById('icsRocks').checked;
   const incTrain=document.getElementById('icsTrain').checked;
   const incMeals=document.getElementById('icsMeals').checked;
   const st=document.getElementById('icsStatus');
-  if(!incRocks&&!incTrain&&!incMeals){ st.textContent='⚠️ Pick at least one thing to export.'; return; }
-  const {text,nRocks,nTrain,nMeals}=buildICS(weeks,incRocks,incTrain,incMeals);
-  const total=nRocks+nTrain+nMeals;
-  if(!total){ st.textContent='Nothing to export in this range yet — add Big Rocks or training times first.'; return; }
+  const extras=[];
+  (window.icsExtras||[]).forEach(fn=>{
+    try{ const r=fn(weeks); if(r&&r.n>0&&r.text) extras.push(r); }catch(e){}
+  });
+  const anyTicked=incRocks||incTrain||incMeals||(window.icsExtras||[]).some(fn=>{
+    try{ return !!fn.ticked&&fn.ticked(); }catch(e){ return false; }
+  });
+  if(!anyTicked){ st.className='warn'; st.textContent='Tick at least one thing first.'; return; }
+  let {text,nRocks,nTrain,nMeals}=buildICS(weeks,incRocks,incTrain,incMeals);
+  let total=nRocks+nTrain+nMeals;
+  const parts=[];
+  if(nRocks)parts.push(nRocks+(nRocks===1?' big rock':' big rocks'));
+  if(nTrain)parts.push(nTrain+(nTrain===1?' training session':' training sessions'));
+  if(nMeals)parts.push(nMeals+(nMeals===1?' meal':' meals'));
+  if(extras.length){
+    text=text.replace(/END:VCALENDAR\s*$/, extras.map(x=>x.text).join('\r\n')+'\r\nEND:VCALENDAR');
+    extras.forEach(x=>{ total+=x.n; parts.push(x.n+' '+(x.n===1?(x.one||x.label):x.label)); });
+  }
+  if(!total){ st.className='warn'; st.textContent='Nothing in that range yet — add a Big Rock or a training time first.'; return; }
   const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='the-flow-'+todayStr+'.ics';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1500);
-  const parts=[]; if(nRocks)parts.push(nRocks+' rocks'); if(nTrain)parts.push(nTrain+' training'); if(nMeals)parts.push(nMeals+' meals');
-  st.textContent='✅ Downloaded '+total+' events ('+parts.join(', ')+') across '+weeks+' week'+(weeks>1?'s':'')+'. Open the file to import.';
+  st.className='ok';
+  st.textContent='Downloaded — '+parts.join(', ')+'. Open the file to add them.';
   J('planning','📅 Calendar exported: '+total+' events ('+parts.join(', ')+') · '+weeks+' weeks');
 });
 
