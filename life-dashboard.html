@@ -439,6 +439,14 @@ canvas{width:100%;height:120px;}
 .td-rock .dot.med{background:var(--orange);}
 .td-rock.done .dot{background:var(--green);}
 .td-rk-note{font-size:12px;font-weight:400;color:var(--muted);line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px;}
+
+/* Links found in your own text. Defined once, unscoped, because these turn up
+   in host rows and pack rows alike — and a long meeting URL has to be able to
+   break mid-string rather than push the card sideways. */
+.flow-link{color:#63c2f7;text-decoration:underline;text-decoration-color:rgba(99,194,247,.45);text-underline-offset:2px;overflow-wrap:anywhere;word-break:break-word;}
+.flow-link:hover{color:#8fd4fa;text-decoration-color:#8fd4fa;}
+.flow-link:focus-visible{outline:2px solid #63c2f7;outline-offset:2px;border-radius:2px;}
+.td-rock.done .flow-link{color:#4a7f9c;}
 .sawgrid{display:grid;grid-template-columns:1fr;gap:8px;}
 .sawcard{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
 .habits7{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:24px;}
@@ -3121,6 +3129,42 @@ const SAW_ITEMS=[
 // TODAY — native iOS-style daily feed
 // ════════════════════════════════════════════
 function tdEsc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ---- links inside your own text --------------------------------------------
+   A meeting link pasted into a big rock's note is only useful if you can tap
+   it at 17:00 without hunting for the tab it lives in. This turns http(s) and
+   www URLs into real anchors — and nothing else: the pattern cannot match
+   javascript:, and every piece around the URL is escaped exactly as before, so
+   text is never trusted as markup just because a link was found in it.
+
+   It works on the RAW string and escapes each piece itself, rather than
+   scanning already-escaped HTML, which is how "?a=1&b=2" survives without the
+   entity in the middle being mistaken for the end of the URL. */
+function linkify(raw, escFn){
+  const esc0 = escFn || tdEsc;
+  const attr = (v) => esc0(v).replace(/"/g,'&quot;');
+  const RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  let out='', last=0, m;
+  while((m = RE.exec(raw||''))){
+    out += esc0(raw.slice(last, m.index));
+    let url = m[0], tail='';
+    /* "join here: https://x.example/a." — the full stop is the sentence's,
+       not the URL's. Closing brackets go the same way. */
+    const t = url.match(/[.,!?)\]}]+$/);
+    if(t){ tail = t[0]; url = url.slice(0, -tail.length); }
+    if(url){
+      const href = /^www\./i.test(url) ? 'https://'+url : url;
+      out += '<a class="flow-link" href="'+attr(href)+'" target="_blank" rel="noopener noreferrer">'+esc0(url)+'</a>';
+    }
+    out += esc0(tail);
+    last = m.index + m[0].length;
+  }
+  out += esc0((raw||'').slice(last));
+  return out;
+}
+/* A row that is itself a control must not fire when the tap was meant for a
+   link inside it — otherwise opening the meeting also ticks it off. */
+function hitLink(e){ return !!(e && e.target && e.target.closest && e.target.closest('a')); }
 const TD_CHECK='<svg viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6"/></svg>';
 
 function renderToday(){
@@ -3135,7 +3179,7 @@ function renderToday(){
   const planHtml = weekPlan
     ? `<div class="td-plan" data-goplan="1">
          <div class="td-plan-head"><span class="lbl">This Week · Plan</span><span class="edit">edit ›</span></div>
-         <div class="td-plan-body">${tdEsc(weekPlan)}</div>
+         <div class="td-plan-body">${linkify(weekPlan)}</div>
        </div>`
     : '';
 
@@ -3151,7 +3195,7 @@ function renderToday(){
       const p=r.prio||'med';
       return `<div class="td-rock ${r.done?'done':''}" data-rockid="${r.id}">
         <div class="dot ${p}"></div>
-        <div class="rk-title">${tdEsc(r.title)}${r.note?`<div class="td-rk-note">📝 ${tdEsc(r.note)}</div>`:''}</div>
+        <div class="rk-title">${linkify(r.title)}${r.note?`<div class="td-rk-note">📝 ${linkify(r.note)}</div>`:''}</div>
         <div class="rk-meta${late?' late':''}">${late?'<span class="rk-late">overdue</span>':''}${when}</div>
       </div>`;
     }).join('');
@@ -3244,7 +3288,8 @@ function renderToday(){
 
   // ── Handlers ──
   mount.querySelectorAll('[data-rockid]').forEach(el=>{
-    el.addEventListener('click',()=>{
+    el.addEventListener('click',(e)=>{
+      if(hitLink(e)) return;
       const r=rocks.find(x=>x.id===el.dataset.rockid); if(!r) return;
       r.done=!r.done; cSave();
       if(r.done) J('planning','🪨 Big rock done: '+r.title);
@@ -3253,7 +3298,8 @@ function renderToday(){
   });
 
   const planCard=mount.querySelector('[data-goplan]');
-  if(planCard) planCard.addEventListener('click',()=>{
+  if(planCard) planCard.addEventListener('click',(e)=>{
+    if(hitLink(e)) return;
     const tab=document.querySelector('.tab[data-tab="compass"]');
     if(tab) tab.click();
     setTimeout(()=>{ const ta=document.getElementById('cPlan'); if(ta) ta.scrollIntoView({behavior:'smooth',block:'center'}); },120);
@@ -3321,14 +3367,14 @@ function renderCompass(){
   rocksSorted.forEach(r=>{
     const p=r.prio||'med';
     const row=document.createElement('div'); row.className='rockrow'+(r.done?' done':'')+(cEditRockId===r.id?' editing':'');
-    row.innerHTML=`<input type="checkbox" ${r.done?'checked':''}><span class="rk-t">${r.title}</span>
+    row.innerHTML=`<input type="checkbox" ${r.done?'checked':''}><span class="rk-t">${linkify(r.title, cEsc)}</span>
       <span class="rk-actions"><button class="rk-edit" title="Edit">✏️</button><button class="rk-del" title="Delete">×</button></span>
       <span class="rk-meta">
         <span class="rk-prio ${p}">${PRIO_LBL[p]||PRIO_LBL.med}</span>
         <span class="rk-role">${(r.role||'').split('—')[0].trim()}</span>
         <span class="rk-when">${rkWhen(r)}</span>
       </span>
-      ${r.note?`<div class="rk-note">📝 ${cEsc(r.note)}</div>`:''}`;
+      ${r.note?`<div class="rk-note">📝 ${linkify(r.note, cEsc)}</div>`:''}`;
     row.querySelector('input').addEventListener('change',e=>{ r.done=e.target.checked; cSave(); J('planning',(r.done?'✅ Big rock done: ':'↩️ Big rock reopened: ')+r.title+' ('+wid+')'); renderCompass(); });
     row.querySelector('.rk-del').addEventListener('click',()=>{ if(cEditRockId===r.id) rkFormReset(); cData.rocks[wid]=rocks.filter(x=>x.id!==r.id); cSave(); renderCompass(); });
     row.querySelector('.rk-edit').addEventListener('click',()=>rkBeginEdit(r));
