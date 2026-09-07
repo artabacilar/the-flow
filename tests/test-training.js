@@ -31,7 +31,7 @@ function mk(tData) {
   ];
   const body = grab('function tTimes(wid)', 'function tSave()');
   return new Function('tData', 'PLAN', body +
-    '; return { tTimes, tTimeFor, tTypeOf, tTypeLabels, TYPE_ALIASES };')(tData, PLAN);
+    '; return { tTimes, tTimeFor, tTypeOf, tTypeLabels, tTypeOptions, tTypeEsc, TYPE_ALIASES };')(tData, PLAN);
 }
 
 console.log('\n— nothing is filled in for you —');
@@ -83,12 +83,15 @@ console.log('\n— times you already typed are not thrown away —');
      d.timesW['2026-W37'].mon === '20:00', d.timesW);
 }
 
-console.log('\n— Type takes your own word for it —');
-ok('the menu of four is gone', !/<select id="edType">/.test(src));
-ok('it is a text field now', /id="edType" list="edTypeList"/.test(src));
-ok('with your past labels offered as suggestions', /<datalist id="edTypeList">/.test(src));
-ok('and rest is a tick box, not a word to guess at', /id="edRest"/.test(src));
-ok('what you typed is what the badge says', /tag:label\|\|\(isRest\?'Rest':TAG_LABELS\[type\]\)/.test(src));
+console.log('\n— Type is a list you can step outside of —');
+ok('it is a dropdown, the way it was', /<select id="edType"/.test(src));
+ok('with a way out of the list', /<option value="__own">/.test(src));
+ok('and a box that only appears once you ask for it', /id="edTypeOwn"[\s\S]{0,120}display:none/.test(src));
+ok('the old weak autocomplete is gone', !/edTypeList/.test(src));
+ok('rest is a tick box, not a word to guess at', /id="edRest"/.test(src));
+ok('what you chose or typed is what the badge says', /tag:label\|\|\(isRest\?'Rest':TAG_LABELS\[type\]\)/.test(src));
+ok('saving reads the box only when you picked Type your own',
+   /sel\.value==='__own'\?own\.value:sel\.value/.test(src));
 
 console.log('\n— what a typed label means —');
 {
@@ -108,7 +111,7 @@ console.log('\n— what a typed label means —');
   ok('so does Rest on its own', t.tTypeOf('rest', false) === 'rest');
 }
 
-console.log('\n— the suggestions you get —');
+console.log('\n— the options you are offered —');
 {
   const t = mk({ times: {}, timesW: {}, plans: { '2026-W36': { thu: { tag: 'Sauna & sled' } }, '2026-W37': { mon: { tag: 'Push' } } } });
   const l = t.tTypeLabels();
@@ -117,7 +120,37 @@ console.log('\n— the suggestions you get —');
   ok('so is one you invented in an earlier week', l.includes('Sauna & sled'), l);
   ok('nothing is listed twice', new Set(l.map(x => x.toLowerCase())).size === l.length, l);
   ok('a day with no override does not add a blank', l.every(Boolean), l);
+  const html = t.tTypeOptions('Push');
+  ok('the one you are on is the one selected', /value="Push" selected/.test(html), html.slice(0, 200));
+  ok('every label becomes an option', (html.match(/<option/g) || []).length === l.length, html);
+  const html2 = t.tTypeOptions('Kettlebells & rowing');
+  ok('a label only this day uses is still in the list and selected',
+     /value="Kettlebells &amp; rowing" selected/.test(html2), html2.slice(-160));
+  ok('a quote in a label cannot break out of the option',
+     /value="Ali&quot;s day"/.test(t.tTypeOptions('Ali"s day')), t.tTypeOptions('Ali"s day').slice(-90));
+  ok('an ampersand survives being escaped once, not twice',
+     t.tTypeEsc('Sauna & sled') === 'Sauna &amp; sled', t.tTypeEsc('Sauna & sled'));
+  ok('a tag cannot be smuggled in as a label',
+     t.tTypeEsc('<img src=x>') === '&lt;img src=x&gt;', t.tTypeEsc('<img src=x>'));
 }
+
+console.log('\n— a settings box is not a task —');
+ok('the export panel opts out of time chips', /id="icsPanel"[^>]*data-flow-no-chip/.test(src));
+ok('so does the training editor', /id="detail" data-flow-no-chip/.test(src));
+ok('and the pack honours it', /cb\.closest\('\[data-flow-no-chip\]'\)\) return;/.test(pack));
+
+console.log('\n— one calendar button, not three —');
+ok('the panel says what it is for in plain words', /Put this in your calendar/.test(src));
+ok('one primary button', /id="icsExport">⬇️ Download calendar file/.test(src));
+ok('the instructions are folded away until wanted', /<details class="ics-help">/.test(src));
+ok('the range picker lost its sentence-long options', !/This week \+ next/.test(src));
+ok('anything else riding along registers instead of growing a button', /window\.icsExtras/.test(src));
+ok("the pack's separate export row is gone", !/flow-cal-tasks/.test(pack));
+ok('scheduled tasks are a line in the same list', /id="icsTasks"/.test(pack));
+ok('and they go in the same file', /window\.icsExtras\.push\(provider\)/.test(pack));
+ok('the one thing a file cannot do keeps its own button',
+   /Or write straight into Google Calendar/.test(pack));
+ok('the count reads as words, not a tally', /nRocks===1\?' big rock':' big rocks'/.test(src));
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
