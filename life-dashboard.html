@@ -229,6 +229,11 @@ canvas{width:100%;height:120px;}
 .form-row input,.form-row select,.form-row textarea{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;}
 .form-row textarea{resize:vertical;min-height:60px;flex:1;}
 .ed-rest{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;}
+/* A second subject on the same page — its own heading, clearly a break, but
+   not a second errand to go and find. */
+.sub-block{margin-top:34px;padding-top:26px;border-top:1px solid var(--border);}
+.sub-head{font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px;}
+.sub-sub{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:18px;max-width:62ch;}
 /* Export to calendar: one list, one range, one button, and the instructions
    folded away until somebody actually wants them. */
 .ics-panel h3{margin-bottom:4px;}
@@ -494,9 +499,11 @@ canvas{width:100%;height:120px;}
    Q3│Q4 on the bottom row. Grid rows share a height, so Q1/Q2 line up and
    Q3/Q4 line up regardless of how many items each holds — the boxes stretch to
    the same height per row and align perfectly. */
-.qwrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:stretch;}
+/* Keyed to how much room the grid actually has, not to how wide the window
+   is — with a sidebar beside it the pane is narrower than the viewport, and a
+   media query would keep two columns in a space that fits one. */
+.qwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;align-items:stretch;}
 .qbox{min-width:0;}
-@media(max-width:760px){ .qwrap{grid-template-columns:1fr;} }
 
 .qbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;border-top:3px solid var(--border);}
 .qbox.q1{border-top-color:var(--red);}
@@ -874,7 +881,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       </svg>
       <span><span style="font-weight:600;color:var(--muted);">The</span> Flow</span>
     </h1>
-    <div class="sub">Week · Priorities · Training · Diet · Sleep · Habits · Mood · Money · Time · Journal</div>
+    <div class="sub">Week · Priorities · Training · Diet · Sleep &amp; Mood · Habits · Money · Time · Journal</div>
   </div>
   <div class="headmeta">
     <div class="datebadge" id="dateBadge"></div>
@@ -897,8 +904,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
   <div class="tab" data-tab="training">🏋️ Training</div>
   <div class="tab" data-tab="diet">🥗 Diet</div>
   <div class="tab" data-tab="habits">✅ Habits</div>
-  <div class="tab" data-tab="sleep">😴 Sleep</div>
-  <div class="tab" data-tab="mood">🧠 Mood & Energy</div>
+  <div class="tab" data-tab="sleep">😴 Sleep &amp; Mood</div>
   <div class="tab" data-tab="finance">💰 Finances</div>
   <div class="tab" data-tab="time">⏱️ Time</div>
   <div class="tab" data-tab="journal">📓 Journal</div>
@@ -1251,8 +1257,8 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
      SLEEP TAB
 ══════════════════════════════════════════════════════════ -->
 <div class="section" id="tab-sleep">
-  <div class="section-header">😴 Sleep &amp; Recovery</div>
-  <div class="section-sub">Log your sleep each morning — and sync WHOOP for live Recovery, Strain &amp; HRV.</div>
+  <div class="section-header">😴 Sleep, Recovery &amp; Mood</div>
+  <div class="section-sub">Log your sleep and how you feel each morning — and sync WHOOP for live Recovery, Strain &amp; HRV.</div>
 
   <div class="whoop-panel" id="whoopPanel">
     <div class="whoop-top">
@@ -1334,6 +1340,52 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
     <h3>Sleep hours — last 14 nights</h3>
     <canvas id="slChart" width="800" height="140"></canvas>
   </div>
+
+  <!-- Mood and energy used to be a tab of their own, which meant logging how
+       you slept and logging how you feel were two separate errands. They are
+       the same morning question, so they are one page now. -->
+  <div class="sub-block">
+    <div class="sub-head">🧠 Mood &amp; Energy</div>
+    <div class="sub-sub">How you feel, next to how you slept — the two usually explain each other.</div>
+  <div class="stats">
+    <div class="stat"><div class="num pink" id="mdAvgMood">—</div><div class="lbl">Avg mood (7d)</div></div>
+    <div class="stat"><div class="num orange" id="mdAvgEnergy">—</div><div class="lbl">Avg energy (7d)</div></div>
+    <div class="stat"><div class="num green" id="mdBestDay">—</div><div class="lbl">Best day this week</div></div>
+    <div class="stat"><div class="num blue" id="mdStreak">0</div><div class="lbl">Days logged in a row</div></div>
+  </div>
+
+  <div class="mood-today">
+    <h3>How are you feeling today?</h3>
+    <div class="mood-sliders">
+      <div class="slider-group">
+        <label>Mood</label>
+        <div class="emoji-row"><span>😞</span><span>😕</span><span>😐</span><span>🙂</span><span>😄</span></div>
+        <input type="range" min="1" max="5" value="3" id="moodSlider">
+        <div class="slider-val" id="moodVal" style="color:var(--pink);">3</div>
+      </div>
+      <div class="slider-group">
+        <label>Energy</label>
+        <div class="emoji-row"><span>🪫</span><span>😴</span><span>⚡</span><span>🔥</span><span>🚀</span></div>
+        <input type="range" min="1" max="5" value="3" id="energySlider">
+        <div class="slider-val" id="energyVal" style="color:var(--orange);">3</div>
+      </div>
+    </div>
+    <textarea class="mood-note" id="moodNote" placeholder="Optional note — what's shaping today? (sleep, stress, workout, food...)"></textarea>
+    <button class="btn btn-primary" id="moodLog">Log today</button>
+    <div id="moodStatus" style="margin-top:8px;font-size:13px;color:var(--muted);"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h3>Recent entries</h3>
+    <div class="mood-log" id="moodLog2"></div>
+    <div id="mdEmpty" style="color:var(--muted);font-size:14px;padding:10px 0;display:none;">No entries yet.</div>
+  </div>
+
+  <div class="mood-chart-wrap">
+    <h3>Mood &amp; Energy — last 14 days</h3>
+    <canvas id="mdChart" width="800" height="140"></canvas>
+  </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -1375,53 +1427,6 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       <input type="text" id="bladeNew" maxlength="80" placeholder="Add a line — e.g. 🎧 Craft — one finished idea">
       <button class="btn btn-green" id="bladeAddBtn">+ Add line</button>
     </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════
-     MOOD TAB
-══════════════════════════════════════════════════════════ -->
-<div class="section" id="tab-mood">
-  <div class="section-header">🧠 Mood &amp; Energy</div>
-  <div class="section-sub">Rate your mood and energy daily to spot patterns over time.</div>
-
-  <div class="stats">
-    <div class="stat"><div class="num pink" id="mdAvgMood">—</div><div class="lbl">Avg mood (7d)</div></div>
-    <div class="stat"><div class="num orange" id="mdAvgEnergy">—</div><div class="lbl">Avg energy (7d)</div></div>
-    <div class="stat"><div class="num green" id="mdBestDay">—</div><div class="lbl">Best day this week</div></div>
-    <div class="stat"><div class="num blue" id="mdStreak">0</div><div class="lbl">Days logged in a row</div></div>
-  </div>
-
-  <div class="mood-today">
-    <h3>How are you feeling today?</h3>
-    <div class="mood-sliders">
-      <div class="slider-group">
-        <label>Mood</label>
-        <div class="emoji-row"><span>😞</span><span>😕</span><span>😐</span><span>🙂</span><span>😄</span></div>
-        <input type="range" min="1" max="5" value="3" id="moodSlider">
-        <div class="slider-val" id="moodVal" style="color:var(--pink);">3</div>
-      </div>
-      <div class="slider-group">
-        <label>Energy</label>
-        <div class="emoji-row"><span>🪫</span><span>😴</span><span>⚡</span><span>🔥</span><span>🚀</span></div>
-        <input type="range" min="1" max="5" value="3" id="energySlider">
-        <div class="slider-val" id="energyVal" style="color:var(--orange);">3</div>
-      </div>
-    </div>
-    <textarea class="mood-note" id="moodNote" placeholder="Optional note — what's shaping today? (sleep, stress, workout, food...)"></textarea>
-    <button class="btn btn-primary" id="moodLog">Log today</button>
-    <div id="moodStatus" style="margin-top:8px;font-size:13px;color:var(--muted);"></div>
-  </div>
-
-  <div class="panel" style="margin-bottom:20px;">
-    <h3>Recent entries</h3>
-    <div class="mood-log" id="moodLog2"></div>
-    <div id="mdEmpty" style="color:var(--muted);font-size:14px;padding:10px 0;display:none;">No entries yet.</div>
-  </div>
-
-  <div class="mood-chart-wrap">
-    <h3>Mood &amp; Energy — last 14 days</h3>
-    <canvas id="mdChart" width="800" height="140"></canvas>
   </div>
 </div>
 
@@ -1881,8 +1886,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     t.classList.add('active');
     document.getElementById('tab-'+t.dataset.tab).classList.add('active');
     if(t.dataset.tab==='today') renderToday();
-    if(t.dataset.tab==='sleep'){ renderSleepChart(); syncWhoop(); }
-    if(t.dataset.tab==='mood') renderMoodChart();
+    if(t.dataset.tab==='sleep'){ renderSleepChart(); syncWhoop(); renderMood(); renderMoodChart(); }
     if(t.dataset.tab==='time') renderTime();
     if(t.dataset.tab==='compass') renderCompass();
     if(t.dataset.tab==='habits') renderHabits();
@@ -4499,8 +4503,8 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   const NAV_ALL=[
     ...(APP_MODE ? [['today','📅','Today']] : []),
     ['compass','🧭','Week Compass'],['quad','🎯','Priorities'],['abko','🏢','Work'],['dtc','🚀','Side Project'],
-    ['brainstorm','🧠','Brainstorm'],['training','🏋️','Training'],['diet','🥗','Diet'],['habits','✅','Habits'],['sleep','😴','Sleep & Recovery'],
-    ['mood','🧠','Mood & Energy'],['finance','💰','Finances'],['time','⏱️','Time'],['journal','📓','Journal']
+    ['brainstorm','🧠','Brainstorm'],['training','🏋️','Training'],['diet','🥗','Diet'],['habits','✅','Habits'],['sleep','😴','Sleep & Mood'],
+    ['finance','💰','Finances'],['time','⏱️','Time'],['journal','📓','Journal']
   ];
   const BOTTOM = APP_MODE ? ['today','compass','training','diet'] : ['compass','training','diet','sleep']; // items with their own bottom-bar slot
   const sheet=document.getElementById('moreSheet'), backdrop=document.getElementById('moreBackdrop');
