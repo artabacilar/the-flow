@@ -499,11 +499,9 @@ canvas{width:100%;height:120px;}
    Q3│Q4 on the bottom row. Grid rows share a height, so Q1/Q2 line up and
    Q3/Q4 line up regardless of how many items each holds — the boxes stretch to
    the same height per row and align perfectly. */
-/* Keyed to how much room the grid actually has, not to how wide the window
-   is — with a sidebar beside it the pane is narrower than the viewport, and a
-   media query would keep two columns in a space that fits one. */
-.qwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;align-items:stretch;}
+.qwrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:stretch;}
 .qbox{min-width:0;}
+@media(max-width:760px){ .qwrap{grid-template-columns:1fr;} }
 
 .qbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;border-top:3px solid var(--border);}
 .qbox.q1{border-top-color:var(--red);}
