@@ -46,8 +46,8 @@ const H = 'http://localhost:4222';
   ok('the "More" sheet is gone too', !(await p.isVisible('.moresheet')));
   ok('it has exactly five slots', await p.evaluate(() =>
     document.querySelectorAll('#flow-tabbar > button').length) === 5);
-  ok('labelled Today / Focus / Body / Ask', await p.evaluate(() =>
-    [...document.querySelectorAll('#flow-tabbar .fn-lb')].map(e => e.textContent).join(',')) === 'Today,Focus,Body,Ask');
+  ok('labelled Today / Focus / Body / Record', await p.evaluate(() =>
+    [...document.querySelectorAll('#flow-tabbar .fn-lb')].map(e => e.textContent).join(',')) === 'Today,Focus,Body,Record');
 
   console.log('\n— every control clears 44px —');
   const small = await p.evaluate(() => [...document.querySelectorAll('#flow-tabbar button')]
@@ -62,7 +62,10 @@ const H = 'http://localhost:4222';
     document.querySelector('[data-fn-group="focus"]').classList.contains('on')));
   ok('a segment row appears', await p.isVisible('#flow-seg'));
   const segs = await p.evaluate(() => [...document.querySelectorAll('#flow-seg button')].map(b => b.textContent));
-  ok('with all seven Focus sections', segs.length === 7, segs);
+  /* Five now, not seven: Brainstorm and Time moved to Record, where a thing
+     you write down and a thing you count belong. */
+  ok('with all five Focus sections', segs.length === 5, segs);
+  ok('and none of them is a record', !segs.some(t => /Brainstorm|Time/.test(t)), segs);
   ok('and Priorities is the selected one', await p.evaluate(() =>
     (document.querySelector('#flow-seg button.on') || {}).getAttribute('data-fn-seg')) === 'quad');
   /* Above the pane, not inside it. A section that repaints itself by
@@ -104,11 +107,11 @@ const H = 'http://localhost:4222';
   await p.click('#flow-tabbar [data-fn-group="focus"]'); await p.waitForTimeout(900);
   ok('going back to Focus returns to Week Compass', await activeTab(p) === 'compass', await activeTab(p));
 
-  console.log('\n— Body collapses training, diet, sleep, habits and mood —');
+  console.log('\n— Body collapses training, diet, sleep and habits —');
   await p.click('#flow-tabbar [data-fn-group="body"]'); await p.waitForTimeout(900);
   ok('it opens Training', await activeTab(p) === 'training', await activeTab(p));
-  ok('with five segments', await p.evaluate(() =>
-    document.querySelectorAll('#flow-seg button').length) === 5);
+  ok('with four segments — mood is part of Sleep now', await p.evaluate(() =>
+    document.querySelectorAll('#flow-seg button').length) === 4);
   await p.click('#flow-seg [data-fn-seg="sleep"]'); await p.waitForTimeout(1100);
   ok('Sleep opens through the host, so its chart callback runs', await activeTab(p) === 'sleep', await activeTab(p));
   ok('no errors from the host callbacks', errs.length === 0, errs.slice(0, 3));
@@ -147,9 +150,12 @@ const H = 'http://localhost:4222';
   await p.click('#fn-avatar'); await p.waitForTimeout(500);
   ok('a menu opens', await p.isVisible('#flow-menu .fn-sheet'));
   const menu = await p.evaluate(() => [...document.querySelectorAll('[data-fn-menu]')].map(b => b.getAttribute('data-fn-menu')));
-  ok('with Journal, Finances, the planner and Settings', menu.join(',') === 'journal,finance,artur,settings', menu);
-  await p.click('[data-fn-menu="journal"]'); await p.waitForTimeout(1000);
-  ok('and it navigates', await activeTab(p) === 'journal', await activeTab(p));
+  /* Journal and Finances left this menu when Record became a real slot: a
+     destination in two places is a destination you look for in the wrong
+     one. What is left is genuinely outside the daily loop. */
+  ok('with the planner and Settings', menu.join(',') === 'artur,settings', menu);
+  await p.click('[data-fn-menu="artur"]'); await p.waitForTimeout(1000);
+  ok('and it navigates', await activeTab(p) === 'artur', await activeTab(p));
 
   console.log('\n— search on a phone —');
   await p.click('#fn-search'); await p.waitForTimeout(450);
@@ -412,7 +418,7 @@ const H = 'http://localhost:4222';
   ok('the priorities grid is one column at 390px', qc === null || qc === 1, qc);
 
   await p.click('#flow-tabbar [data-fn-group="body"]'); await p.waitForTimeout(700);
-  await p.click('#flow-seg [data-fn-seg="mood"]'); await p.waitForTimeout(1000);
+  await p.click('#flow-seg [data-fn-seg="sleep"]'); await p.waitForTimeout(1000);
   const mcx = await cols(p, '.mood-sliders');
   ok('the mood sliders are one column at 390px', mcx === null || mcx === 1, mcx);
   ok('nothing overflows the phone after the grid change', await p.evaluate(() =>
@@ -427,7 +433,7 @@ const H = 'http://localhost:4222';
     mdData = days.map((dt, i) => ({ date: dt, mood: md[i], energy: en[i], note: '' }));
     S.set('mood', mdData);
   });
-  await d.click('[data-fn-side="mood"]'); await d.waitForTimeout(1500);
+  await d.click('[data-fn-side="sleep"]'); await d.waitForTimeout(1500);
   await d.evaluate(() => window.renderMoodChart && window.renderMoodChart());
   await d.waitForTimeout(500);
 
