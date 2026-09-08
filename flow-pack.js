@@ -5932,15 +5932,22 @@ const Nav = {
      in the order they appear in the segment row; the first is the default. */
   GROUPS: [
     { id: 'today', label: 'Today', icon: 'today', tabs: ['today'] },
+    /* Focus is what you are steering by. Brainstorm and Time are not that —
+       one is where thinking gets put down, the other is where hours get
+       counted. Both belong with the rest of what you keep a record of. */
     { id: 'focus', label: 'Focus', icon: 'target',
-      tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
+      tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
+    /* Mood lives inside Sleep now: how you slept and how you feel are the
+       same morning question, and asking it twice in two places got it
+       answered in neither. */
     { id: 'body',  label: 'Body',  icon: 'dumbbell',
-      tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
-    { id: 'ask',   label: 'Ask',   icon: 'chat', tabs: ['ask'] }
+      tabs: ['training', 'diet', 'sleep', 'habits'] },
+    { id: 'record', label: 'Record', icon: 'note',
+      tabs: ['ask', 'journal', 'finance', 'brainstorm', 'time'] }
   ],
 
   /* Reachable from the avatar and from the palette, but not worth a slot. */
-  MENU: ['journal', 'finance', 'artur', 'settings'],
+  MENU: ['artur', 'settings'],
 
   ICON: {
     today: 'today', northstar: 'star', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
@@ -5952,9 +5959,9 @@ const Nav = {
   /* Sidebar order and headings. */
   SIDE: [
     { head: '',       tabs: ['today'] },
-    { head: 'Focus',  tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc', 'brainstorm', 'time'] },
-    { head: 'Body',   tabs: ['training', 'diet', 'sleep', 'habits', 'mood'] },
-    { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
+    { head: 'Focus',  tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
+    { head: 'Body',   tabs: ['training', 'diet', 'sleep', 'habits'] },
+    { head: 'Record', tabs: ['journal', 'brainstorm', 'time', 'finance', 'ask'] }
   ],
   SIDE_FOOT: ['artur', 'settings'],
 
@@ -5964,9 +5971,9 @@ const Nav = {
     { id: 'finance', label: 'Expense', icon: 'money'    },
     { id: 'training',label: 'Set',     icon: 'dumbbell' },
     { id: 'habits',  label: 'Habit',   icon: 'check'    },
-    { id: 'mood',    label: 'Mood',    icon: 'heart'    },
     { id: 'diet',    label: 'Meal',    icon: 'food'     },
-    { id: 'sleep',   label: 'Sleep',   icon: 'moon'     },
+    /* One button, because it is now one page: mood is logged next to sleep. */
+    { id: 'sleep',   label: 'Sleep & mood', icon: 'moon' },
     { id: 'time',    label: 'Time',    icon: 'clock'    }
   ],
 
