@@ -93,9 +93,17 @@ ok('mood entries are still read from the same key', /S\.get\('mood', \[\]\)/.tes
 ok('and still written to it', /S\.set\('mood',mdData\)/.test(src));
 ok('the journal still records a mood line', /J\('mood','🧠 Mood '/.test(src));
 
-console.log('\n— a grid collapses on its own width, not the window\'s —');
-ok('the priorities grid is intrinsic', /\.qwrap\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(280px,1fr\)\)/.test(src));
-ok('its viewport media query is gone', !/max-width:760px\)\{ \.qwrap/.test(src));
+console.log('\n— the quadrant is left exactly as it was —');
+/* I made this an auto-fit grid to satisfy a test, and on a wide screen it
+   packed all four quadrants into one row of slivers. It is a 2x2 board; the
+   layout was right before I touched it. The nav suite's "no grid is keyed to
+   a viewport width" check stays red here on purpose — a red check is cheaper
+   than a broken page. */
+ok('two fixed columns, the way it was drawn',
+   /\.qwrap\{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;align-items:stretch;\}/.test(src));
+ok('and the phone rule that collapses it is back',
+   /@media\(max-width:760px\)\{ \.qwrap\{grid-template-columns:1fr;\} \}/.test(src));
+ok('no auto-fit is left on it', !/\.qwrap\{[^}]*auto-fit/.test(src));
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
