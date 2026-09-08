@@ -400,7 +400,11 @@ const H = 'http://localhost:4222';
     }
     return hits;
   });
-  ok('no grid is keyed to a viewport width any more', leftover.length === 0, leftover);
+  /* .qwrap is a deliberate exception: it is a 2x2 quadrant board, and making
+     it auto-fit to satisfy this check packed all four into one row of slivers
+     on a wide screen. It keeps its media query. */
+  const stray = leftover.filter(h => !/\.qwrap$/.test(h));
+  ok('no grid is keyed to a viewport width, bar the quadrant board', stray.length === 0, stray);
 
   console.log('\n— and they still collapse properly on a phone —');
   /* A section that is display:none reports the *declared* value
