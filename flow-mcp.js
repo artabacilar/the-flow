@@ -939,10 +939,61 @@ async function handle(req, res, store, opts) {
   return send(200, reply);
 }
 
+/* ---------- the home-screen widget ----------------------------------------
+ * A widget is not a small app. It gets a few hundred bytes, it is redrawn by
+ * the system on its own schedule, and nobody scrolls it. So this returns one
+ * short list in the order a day is actually read — what is next, then what has
+ * no time on it, then what has already gone and is still not done — and it
+ * counts rather than lists anything that would not fit.
+ *
+ * It reads. There is deliberately no way to tick a rock from here: a widget
+ * tap that silently writes to the week is how a day gets marked done by a coat
+ * pocket.
+ * ------------------------------------------------------------------------ */
+async function widgetToday(store, now) {
+  now = now || new Date();
+  const t = await IMPL.get_today({}, { store, now });
+  const LIMIT = 4;
+
+  const line = (r, overdue) => ({
+    title: r.title,
+    time: r.time || null,
+    done: !!r.done,
+    overdue: !!overdue
+  });
+
+  /* Order matters more than completeness here. Something at 18:00 that has not
+     happened yet belongs above something at 09:00 that was missed, because the
+     first is a decision still to be made and the second is only a fact. */
+  const all = []
+    .concat(t.next.map(r => line(r, false)))
+    .concat(t.unscheduled.map(r => line(r, false)))
+    .concat(t.earlier.filter(r => !r.done).map(r => line(r, true)));
+
+  const wid = weekId(now);
+  const c = await compass(store);
+  const weekRocks = c.rocks[wid] || [];
+
+  return {
+    date: t.date,
+    weekday: t.weekday,
+    now: t.now,
+    done: t.done,
+    total: t.total,
+    lines: all.slice(0, LIMIT),
+    /* Said plainly so the widget never has to do arithmetic to decide whether
+       to draw a "+2 more" row. */
+    more: Math.max(0, all.length - LIMIT),
+    week: { id: wid, done: weekRocks.filter(r => r.done).length, total: weekRocks.length },
+    updated: new Date(now).toISOString()
+  };
+}
+
 module.exports = {
   handle,
+  widgetToday,
   TOOLS,
   /* Exported for the tests, which check the parts that are easy to get subtly
      wrong and impossible to notice: week arithmetic and what people type. */
-  _internals: { weekId, parseDay, parseTime, datesOfWeek, dayIndex, localISO, dispatch, IMPL, bladeLines, UserError }
+  _internals: { weekId, parseDay, parseTime, datesOfWeek, dayIndex, localISO, dispatch, IMPL, bladeLines, UserError, widgetToday }
 };
