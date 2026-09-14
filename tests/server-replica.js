@@ -54,6 +54,13 @@ const server=http.createServer(async(req,res)=>{
     }
     if(p==='/api/status') return json(res,200,{ok:true,engine:store.engine,file:store.file,keys:await store.count()});
     if(p==='/api/all') return json(res,200,await store.all());
+    if(p==='/api/diag'){
+      const dbUrl=process.env.UPSTASH_REDIS_REST_URL||'';
+      const label=(dbUrl.match(/^https:\/\/([a-z]+[0-9]*)-/)||[])[1]||(dbUrl?'unlabelled':'none');
+      const t0=Date.now(); let reached=true;
+      try{ await store.get('__diag_ping'); }catch(e){ reached=false; }
+      return json(res,200,{engine:store.engine,dbRegion:label,dbRoundTripMs:Date.now()-t0,dbReached:reached,serverRegion:process.env.RENDER_REGION||'unset'});
+    }
     if(p==='/api/manifest'){
       const all=await store.all(); const out={};
       for(const k in all) out[k]=require('crypto').createHash('sha1').update(String(all[k])).digest('base64').slice(0,10);
