@@ -179,10 +179,47 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('a rejected token is told apart from an unreachable server',
      /case notConnected/.test(swift) && /case unauthorized/.test(swift));
 
-  const bridge = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'native', 'App', 'FlowBridge.swift'), 'utf8');
-  ok('signing out takes the widget\u2019s copy with it', /func clear/.test(bridge) && /FlowStore\.token = nil/.test(bridge));
+  /* The bridge used to be a Capacitor plugin. It is now a WKScriptMessageHandler
+     plus an injected shim, because CocoaPods cannot be installed without a Mac
+     shell and that was the only thing Capacitor was still buying us. The web
+     app's call site did not change \u2014 which is the point, and what the first
+     check below pins down. */
+  const vc = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'native', 'App', 'FlowViewController.swift'), 'utf8');
+  ok('the shim answers to the name the page already calls',
+     /window\.Capacitor\.Plugins\.FlowBridge = \{/.test(vc) &&
+     /setToken:/.test(vc) && /status:/.test(vc) && /clear:/.test(vc));
+  ok('and it resolves, so the page\u2019s await does not hang forever',
+     /return new Promise/.test(vc) && /__flowBridgeResolve/.test(vc) && /evaluateJavaScript/.test(vc));
+  ok('signing out takes the widget\u2019s copy with it',
+     /case "clear"/.test(vc) && /FlowStore\.token = nil/.test(vc));
   ok('and the widget is redrawn rather than left stale',
-     (bridge.match(/reloadAllTimelines/g) || []).length >= 2, bridge);
+     (vc.match(/reloadAllTimelines/g) || []).length >= 2, vc.length);
+  ok('the shell keeps the session cookie across launches',
+     /websiteDataStore = \.default\(\)/.test(vc));
+  ok('a killed web content process comes back instead of a white screen',
+     /webViewWebContentProcessDidTerminate/.test(vc));
+
+  /* The whole reason for the rewrite: a project that resolves nothing opens on
+     any Mac with Xcode and no other tool installed. If a Podfile or an `import
+     Capacitor` ever comes back, this is where it gets caught. */
+  const nativeDir = path.join(__dirname, '..', 'ios-app', 'native');
+  const swiftFiles = ['App/AppDelegate.swift', 'App/FlowViewController.swift',
+                      'Shared/FlowStore.swift', 'Widget/FlowWidget.swift']
+    .map((f) => fs.readFileSync(path.join(nativeDir, f), 'utf8'));
+  ok('no Swift source imports a framework that has to be fetched',
+     swiftFiles.every((s) => !/^import Capacitor$/m.test(s)));
+  ok('the shell builds its own window, so no storyboard has to be found',
+     /UIWindow\(frame: UIScreen\.main\.bounds\)/.test(swiftFiles[0]));
+
+  const native = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'scripts', 'make-native.js'), 'utf8');
+  ok('the conversion removes CocoaPods rather than trusting it to be absent',
+     /PBXShellScriptBuildPhase/.test(native) &&
+     /delete cfg\.baseConfigurationReference/.test(native) &&
+     /Podfile/.test(native));
+  ok('and it fails loudly if any of it survived',
+     /still referenced in the project file/.test(native) && /process\.exit\(1\)/.test(native));
+  ok('both targets are given the same deployment target',
+     /DEPLOYMENT_TARGET = '17\.0'/.test(native));
 
   console.log('\n— the app and the widget agree on who they are —');
   /* One mismatched character between the bundle id and the App Group and the
@@ -203,6 +240,12 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
      somewhere else, the app and the website quietly stop being the same app. */
   ok('and it loads the server rather than a copy of the page',
      /^https:\/\//.test((cap.server || {}).url || ''), (cap.server || {}).url);
+  /* The phone and the widget must reach the same server. They are set in two
+     different files, in two different languages, and nothing but this check
+     notices when one of them is left behind — which is exactly what a URL
+     change does. */
+  ok('the widget reaches the same server the app does',
+     swift.indexOf((cap.server || {}).url) > 0, [(cap.server || {}).url]);
 
   const srvSrc = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
   ok('the installed web app calls itself the same thing',
