@@ -1576,6 +1576,12 @@ window.__FLOW_SEEDING = true;
    server's older copy. The queue lives in storage, so it survives a reload,
    an app switch, or the phone going to sleep mid-edit. */
 const DIRTY_KEY = 'ld__dirty';
+/* What the server held, section by section, the last time we reconciled — one
+   short signature each, never any content. It is what lets an open cost one
+   small request instead of the whole account. Kept under an ld_ name so it is
+   cleared with everything else when a different person signs in on this
+   device; a stale map would be worse than none. */
+const SIG_KEY = 'ld__sigs';
 /* Writes made while the app is still drawing itself. They are held here rather
    than sent, because at that moment the page may still be showing a stale copy
    and the reconcile has not run — mirroring them up is how a newer record gets
@@ -1670,7 +1676,7 @@ function syncPaint(){
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
-      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY) painted[k]=localStorage.getItem(k);
+      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY&&k!==SIG_KEY) painted[k]=localStorage.getItem(k);
     }
   }catch(e){}
 
@@ -1733,16 +1739,52 @@ function syncPaint(){
       return;
     }
 
+    /* ── Ask what changed, then ask only for that ──────────────────────────
+       This used to pull the entire account on every open — a megabyte, most
+       of it a journal nobody was reading, just to discover that nothing had
+       moved. Now the first request is a list of signatures, and the second
+       one only happens when something genuinely differs. A normal open sends
+       a few hundred bytes and stops there.
+
+       What is built at the end is the same `all` the rest of this function
+       has always been given: every section the server holds, with its current
+       value. Sections whose signature matched are filled in from what this
+       device already painted — which is, by definition of the signature
+       matching, the same bytes. Nothing downstream can tell the difference. */
     let all=null;
     try{
-      const r=await fetch(DB_API+'/all',{credentials:'same-origin',cache:'no-store'});
+      const r=await fetch(DB_API+'/manifest',{credentials:'same-origin',cache:'no-store'});
       /* A refused session is not a broken network. Saying "offline, retrying"
          here would hide the real problem and spin forever. */
       if(r.status===401||r.status===403){
         window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
       }
       if(!r.ok){ fail(); return; }
-      all=await r.json();
+      const man=await r.json();
+
+      let sigs={}; try{ sigs=JSON.parse(lsGet(SIG_KEY)||'{}')||{}; }catch(e){ sigs={}; }
+      /* Fetch a section when its signature moved, and also when this device
+         simply does not hold it — a matching signature is worthless if there
+         is nothing here to match it against. */
+      const need=Object.keys(man).filter(k=> sigs[k]!==man[k] || painted[k]==null );
+
+      let got={};
+      if(need.length){
+        const r2=await fetch(DB_API+'/some',{method:'POST',headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',body:JSON.stringify({keys:need})});
+        if(r2.status===401||r2.status===403){
+          window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
+        }
+        if(!r2.ok){ fail(); return; }
+        got=await r2.json();
+      }
+
+      all={};
+      Object.keys(man).forEach(k=>{ all[k] = (k in got) ? got[k] : painted[k]; });
+      /* Recorded only once the whole exchange succeeded. A map written after a
+         half-finished sync would tell the next open it is up to date when it
+         is not, and that is the one failure this must never have. */
+      try{ localStorage.setItem(SIG_KEY, JSON.stringify(man)); }catch(e){}
     }catch(e){ fail(); return; }
     window.__FLOW_ALL=all;
 
