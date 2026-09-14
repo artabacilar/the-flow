@@ -1,1 +1,15 @@
-undefined
+{
+  "appId": "com.abko.theflow",
+  "appName": "The Flow — Life OS",
+  "webDir": "www",
+  "server": {
+    "url": "https://theflow.today",
+    "cleartext": false
+  },
+  "ios": {
+    "developmentTeam": "CFDZ32QZUR",
+    "contentInset": "always",
+    "backgroundColor": "#0a0b0d",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}
