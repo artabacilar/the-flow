@@ -154,6 +154,10 @@ function sendCompressed(res, code, body, headers, req) {
 }
 function json(res, code, obj) { sendCompressed(res, code, JSON.stringify(obj), { 'Content-Type': 'application/json' }); }
 
+/* Short enough that a whole account's worth of them is a few hundred bytes,
+   long enough that two different sections never collide by accident. */
+function sig(v) { return crypto.createHash('sha1').update(String(v)).digest('base64').slice(0, 10); }
+
 // Pack files: read + gzip once, keyed by name; refreshed if the file changes.
 const PACK_CACHE = {};
 function cachedPack(file) {
@@ -464,6 +468,38 @@ const server = http.createServer(async (req, res) => {
     // ── Data API ──
     if (p === '/api/status') return json(res, 200, { ok: true, engine: store.engine, file: store.file, keys: await store.count() });
     if (p === '/api/all') return json(res, 200, await store.all());
+
+    /* ── What the server holds, without the weight of holding it ──
+       /api/all ships every byte this account owns on every single open. For a
+       journal a year deep that is most of a megabyte, sent over and over to
+       say, almost always, that nothing changed. This says the same thing in a
+       few hundred bytes: one short signature per section. The client compares
+       it against what it already has and asks for only what actually moved,
+       which on a normal open is nothing.
+
+       Both of these read the store exactly once — the cost we are cutting is
+       the one paid on the person's own connection, not the one inside the
+       datacenter. */
+    if (p === '/api/manifest') {
+      const all = await store.all();
+      const out = {};
+      for (const k in all) out[k] = sig(all[k]);
+      return json(res, 200, out);
+    }
+
+    /* The other half: give me these and nothing else. Deliberately a POST —
+       a list of section names is not something to leave in a URL, in a log or
+       in somebody's history. */
+    if (p === '/api/some' && req.method === 'POST') {
+      let b = {};
+      try { b = JSON.parse(await readBody(req) || '{}'); } catch (e) { return json(res, 400, { error: 'bad json' }); }
+      const want = Array.isArray(b.keys) ? b.keys : [];
+      if (!want.length) return json(res, 200, {});
+      const all = await store.all();
+      const out = {};
+      want.forEach(k => { if (typeof k === 'string' && all[k] != null) out[k] = all[k]; });
+      return json(res, 200, out);
+    }
     if (p === '/api/get') return json(res, 200, { key: u.searchParams.get('key'), value: await store.get(u.searchParams.get('key')) });
     if (p === '/api/set' && req.method === 'POST') {
       const b = JSON.parse(await readBody(req));
