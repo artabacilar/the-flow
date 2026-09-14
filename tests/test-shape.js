@@ -105,5 +105,23 @@ ok('and the phone rule that collapses it is back',
    /@media\(max-width:760px\)\{ \.qwrap\{grid-template-columns:1fr;\} \}/.test(src));
 ok('no auto-fit is left on it', !/\.qwrap\{[^}]*auto-fit/.test(src));
 
+console.log('\n— the service worker keeps its hands off the handshake —');
+/* The offline shell is the right answer for the app and the wrong answer for
+   everything else. On a cold server the fetch fails, the worker reaches for
+   the cache, and the person clicking Connect gets a stale dashboard where the
+   consent screen should be — which reads as the button doing nothing at all.
+   These paths are the server's alone, so the worker must not answer for them. */
+const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+const bypass = sw.slice(sw.indexOf("addEventListener('fetch'"), sw.indexOf('const isHTML'));
+
+ok('the consent and token endpoints are let through', /startsWith\('\/oauth\/'\)/.test(bypass));
+ok('so is discovery', /startsWith\('\/\.well-known\/'\)/.test(bypass));
+ok('and so is the assistant endpoint', /'\/mcp'/.test(bypass) && /startsWith\('\/mcp\/'\)/.test(bypass));
+ok('each one returns before any respondWith can claim it',
+   !/respondWith/.test(bypass) && (bypass.match(/return;/g) || []).length >= 2);
+ok('the API stays exempt too, as it always was', /startsWith\('\/api'\)/.test(bypass));
+ok('the cache name moved on, so the old worker is replaced',
+   /const CACHE = 'life-os-v4';/.test(sw));
+
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
