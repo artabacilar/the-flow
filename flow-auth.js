@@ -48,6 +48,13 @@ const MAX_ACCOUNTS = (() => {
 let extras = null;
 try { extras = require('./flow-extras'); } catch (e) { extras = null; }
 
+/* OAuth for the MCP endpoint. Built lazily in protect(), because it needs the
+   raw store and that does not exist until then. Absent is valid here too: the
+   app then offers personal tokens only, which is what it did before. */
+let oauthMod = null;
+let oauth = null;
+try { oauthMod = require('./flow-oauth'); } catch (e) { oauthMod = null; }
+
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
 /* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
@@ -483,6 +490,14 @@ async function friendCodes(uid) {
 /* ---------- the protected store ------------------------------------------ */
 function protect(store) {
   raw = store;
+  /* The OAuth server needs the un-namespaced store and the same session
+     reader this file already owns, so it is built here rather than importing
+     any of that back out. One place decides who is asking; this is it. */
+  if (oauthMod && !oauth) {
+    try {
+      oauth = oauthMod.build({ raw, getJSON, setJSON, currentUser, json, readBody, USERS_KEY });
+    } catch (e) { oauth = null; }
+  }
   const uid = () => (als && als.getStore()) || null;
   /* The prefix MUST keep the key inside the host store's own key space. The
      Upstash backend implements all() as `KEYS ld_*`, so a namespace like
@@ -535,6 +550,15 @@ async function gate(req, res) {
   const u = new URL(req.url, 'http://localhost');
   const p = u.pathname;
 
+  /* ---- OAuth: discovery, registration, consent, tokens ----
+     Above every other check because none of it is behind a session: a client
+     discovering this server has no cookie yet, and that is the whole point of
+     discovery. /oauth/authorize does its own sign-in check. */
+  if (oauth && (p.indexOf('/.well-known/oauth') === 0 || p === '/.well-known/openid-configuration' || p.indexOf('/oauth/') === 0)) {
+    const done = await oauth.handle(req, res, p, u);
+    if (done) return true;
+  }
+
   /* ---- the MCP endpoint ----
      Authenticated by bearer token rather than by cookie, because the caller is
      an assistant with no browser and no session. Resolved here, next to every
@@ -547,13 +571,28 @@ async function gate(req, res) {
     if (req.method === 'OPTIONS') return false;      /* preflight carries no credential */
     const tok = bearerOf(req);
     if (!tok) {
-      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
-      json(res, 401, { error: 'Connect this with the access token from Settings → Connect to Claude.' });
+      const rm = oauth ? oauth.originOf(req) + '/.well-known/oauth-protected-resource' : '';
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"' + (rm ? ', resource_metadata="' + rm + '"' : ''));
+      json(res, 401, { error: 'Connect this from Settings → Connect to Claude, or sign in through the app when your assistant asks.' });
       return true;
     }
-    const who = await userForToken(tok);
+    /* Two kinds of credential reach here: a personal token somebody pasted,
+       and an OAuth access token a client earned. Both resolve to one account
+       and nothing downstream can tell them apart, which is how it should be. */
+    let who = await userForToken(tok);
+    if (!who && oauth) {
+      who = await oauth.userForAccessToken(tok);
+      /* A grant the person has since disconnected must stop working even while
+         its access token is still inside its hour. */
+      if (who && await oauth.grantIsDead(who.id, who.client_id)) who = null;
+    }
     if (!who) {
-      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow", error="invalid_token"');
+      /* Pointing at the resource metadata is what lets a client discover how to
+         ask properly instead of simply failing — it is the difference between
+         "unauthorized" and "here is where you get authorized". */
+      const rm = oauth ? oauth.originOf(req) + '/.well-known/oauth-protected-resource' : '';
+      res.setHeader('WWW-Authenticate',
+        'Bearer realm="The Flow", error="invalid_token"' + (rm ? ', resource_metadata="' + rm + '"' : ''));
       json(res, 401, { error: 'That access token is not valid, or it has been revoked.' });
       return true;
     }
@@ -1239,6 +1278,22 @@ async function gate(req, res) {
     if (rec) { rec.revoked = Date.now(); await setJSON(PAT(h), rec); }
     await setJSON(PAT_INDEX(me0.id), idx.filter(x => x !== h));
     json(res, 200, { ok: true, revoked: want });
+    return true;
+  }
+
+  /* ---- what is connected, and cutting it off ---- */
+  if (p === '/api/flow/connections' && (req.method === 'GET' || !req.method)) {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    json(res, 200, { connections: oauth ? await oauth.listGrants(me0.id) : [] });
+    return true;
+  }
+  if (p === '/api/flow/connections/revoke' && req.method === 'POST') {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    if (oauth) await oauth.revokeGrant(me0.id, String(b.client_id || ''));
+    json(res, 200, { ok: true });
     return true;
   }
 
