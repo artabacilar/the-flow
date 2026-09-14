@@ -54,6 +54,19 @@ const server=http.createServer(async(req,res)=>{
     }
     if(p==='/api/status') return json(res,200,{ok:true,engine:store.engine,file:store.file,keys:await store.count()});
     if(p==='/api/all') return json(res,200,await store.all());
+    if(p==='/api/manifest'){
+      const all=await store.all(); const out={};
+      for(const k in all) out[k]=require('crypto').createHash('sha1').update(String(all[k])).digest('base64').slice(0,10);
+      return json(res,200,out);
+    }
+    if(p==='/api/some'&&req.method==='POST'){
+      let b={}; try{ b=JSON.parse(await readBody(req)||'{}'); }catch(e){ return json(res,400,{error:'bad json'}); }
+      const want=Array.isArray(b.keys)?b.keys:[];
+      if(!want.length) return json(res,200,{});
+      const all=await store.all(); const out={};
+      want.forEach(k=>{ if(typeof k==='string'&&all[k]!=null) out[k]=all[k]; });
+      return json(res,200,out);
+    }
     if(p==='/api/get') return json(res,200,{key:u.searchParams.get('key'),value:await store.get(u.searchParams.get('key'))});
     if(p==='/api/set'&&req.method==='POST'){const b=JSON.parse(await readBody(req));
       if(!b.key) return json(res,400,{error:'key required'});
