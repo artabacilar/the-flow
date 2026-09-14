@@ -3515,6 +3515,23 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
   /* The token panel. The secret exists in this page for exactly as long as the
      person needs to copy it, and is never fetched again — the list endpoint
      cannot return it, because the server does not have it either. */
+  /* ---- the home-screen widget ----
+     Inside the iOS shell the widget is a separate process: it cannot see this
+     page, its cookies or its storage, so the only way it ever learns a token is
+     if we hand it one at the moment one is made. In a browser there is no
+     bridge and this does nothing at all, quietly — a Settings panel should not
+     grow a broken button just because the same page also runs in an app. */
+  nativeToken(token) {
+    try {
+      const cap = window.Capacitor;
+      const bridge = cap && cap.Plugins && cap.Plugins.FlowBridge;
+      if (!bridge || !token) return;
+      Promise.resolve(bridge.setToken({ token }))
+        .then(() => toast('Home-screen widget connected'))
+        .catch(() => {});
+    } catch (e) { /* a browser, which is the normal case */ }
+  },
+
   async mcpFetch(path, opts) {
     const r = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {}));
     let j = null;
@@ -3646,6 +3663,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           box.hidden = false;
           if (nameEl) nameEl.value = '';
           toast('Token created — copy it now');
+          SettingsUI.nativeToken(r.token);
           SettingsUI.mcpPaint(section);
         } catch (e) { toast(e.message, 'err', 4000); }
         btn.disabled = false;
