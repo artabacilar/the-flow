@@ -469,6 +469,29 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/status') return json(res, 200, { ok: true, engine: store.engine, file: store.file, keys: await store.count() });
     if (p === '/api/all') return json(res, 200, await store.all());
 
+    /* ── Where the data actually is, and what reaching it costs ──
+       "The app is slow" turned out to be one number nobody could see: every
+       round trip from this server to the database. Guessing at it from the
+       outside is how you end up moving the wrong thing to the wrong continent.
+
+       It reports the region label at the front of the database hostname and a
+       measured round trip. Never the rest of the hostname, never the token,
+       and never to anybody who is not signed in. */
+    if (p === '/api/diag') {
+      const dbUrl = process.env.UPSTASH_REDIS_REST_URL || '';
+      const label = (dbUrl.match(/^https:\/\/([a-z]+[0-9]*)-/) || [])[1] || (dbUrl ? 'unlabelled' : 'none');
+      const t0 = Date.now();
+      let reached = true;
+      try { await store.get('__diag_ping'); } catch (e) { reached = false; }
+      return json(res, 200, {
+        engine: store.engine,
+        dbRegion: label,
+        dbRoundTripMs: Date.now() - t0,
+        dbReached: reached,
+        serverRegion: process.env.RENDER_REGION || process.env.RENDER_SERVICE_REGION || 'unset'
+      });
+    }
+
     /* ── What the server holds, without the weight of holding it ──
        /api/all ships every byte this account owns on every single open. For a
        journal a year deep that is most of a megabyte, sent over and over to
