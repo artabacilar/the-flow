@@ -221,6 +221,7 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('both targets are given the same deployment target',
      /DEPLOYMENT_TARGET = '17\.0'/.test(native));
 
+
   console.log('\n— the app and the widget agree on who they are —');
   /* One mismatched character between the bundle id and the App Group and the
      widget shows "Not connected" forever while the app is plainly signed in —
@@ -280,6 +281,20 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('the widget asks for the iOS it actually needs', /IPHONEOS_DEPLOYMENT_TARGET = '17\.0'/.test(script));
   ok('the original project is kept, so the wizard is still a way back',
      /project\.pbxproj.*\.original|pbxPath \+ '\.original'/.test(script));
+
+  /* Signing is the step that gets done by hand on every machine, and the one
+     place it is done wrong is the extension: the app signs, the widget does
+     not, and the error names a bundle id nobody typed. Written down once, in
+     the file that already owns the app's identity, and applied by both
+     scripts — because the widget's configurations are created after the
+     conversion has already been through the project. */
+  const team = ((cap.ios || {}).developmentTeam) || '';
+  ok('a team is written down rather than chosen from a menu', /^[A-Z0-9]{10}$/.test(team), team);
+  ok('the conversion applies it', /developmentTeam/.test(native) && /DEVELOPMENT_TEAM = TEAM/.test(native));
+  ok('and so does the widget script, which builds its own configurations',
+     /developmentTeam/.test(script) && /DEVELOPMENT_TEAM = TEAM/.test(script));
+  ok('both sign automatically, so no profile has to be downloaded by hand',
+     /CODE_SIGN_STYLE = 'Automatic'/.test(native) && /CODE_SIGN_STYLE = 'Automatic'/.test(script));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
