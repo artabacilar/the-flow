@@ -4,13 +4,15 @@
   "private": true,
   "description": "The iOS shell and home-screen widget for The Flow. Kept out of the server's package.json on purpose — Render should not install a build toolchain it never runs.",
   "scripts": {
-    "setup": "npm install && npx cap add ios",
+    "setup": "npm install && npx cap add ios && node scripts/add-widget-target.js",
     "open": "npx cap sync ios && npx cap open ios",
-    "sync": "npx cap sync ios"
+    "sync": "npx cap sync ios",
+    "widget": "node scripts/add-widget-target.js"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0",
     "@capacitor/core": "^6.2.0",
-    "@capacitor/ios": "^6.2.0"
+    "@capacitor/ios": "^6.2.0",
+    "xcode": "^3.0.1"
   }
 }
