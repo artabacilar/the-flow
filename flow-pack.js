@@ -3181,6 +3181,30 @@ const SettingsUI = {
         <p class="flow-sub" style="margin-top:10px">Bars are easier to read once there are more than about four categories, because length beats angle for comparing magnitudes. The ring caps at five slices and folds the rest into “Other” — past five, no single-hue scale keeps its steps distinguishable.</p>
       </div>
 
+      <div class="flow-card" id="mcp-card">
+        <h3>🤖 Connect to Claude</h3>
+        <p class="flow-sub">Give Claude an access token and it can read your week, add Big Rocks, tick habits and reword your own lists — working on this account and no other. It can add and change things; removing anything stays something you do here.</p>
+        <div class="flow-field"><label class="flow-label">Server URL</label>
+          <div class="mcp-url"><code id="mcpUrl">${esc(location.origin)}/mcp</code><button type="button" class="flow-btn sm" data-mcp="copyurl">Copy</button></div>
+        </div>
+        <div class="mcp-new" id="mcpNew" hidden>
+          <div class="flow-label">Your new token — copy it now, it is not shown again</div>
+          <div class="mcp-url"><code id="mcpSecret"></code><button type="button" class="flow-btn sm primary" data-mcp="copytok">Copy</button></div>
+        </div>
+        <div id="mcpList" class="mcp-list"><div class="flow-sub">Loading…</div></div>
+        <div class="mcp-acts">
+          <input class="flow-in" id="mcpName" placeholder="What is this for? e.g. Claude on my laptop" maxlength="60">
+          <button type="button" class="flow-btn primary" data-mcp="new">Create access token</button>
+        </div>
+        <ol class="flow-ol">
+          <li>Create a token above and copy it.</li>
+          <li>In Claude, add a custom connector with the server URL above.</li>
+          <li>When it asks for authentication, give it the token as a <b>Bearer</b> token.</li>
+          <li>Ask it "what's on my week?" to check it worked.</li>
+        </ol>
+        <p class="flow-sub">A token is as good as your password for reading and adding — treat it like one. If you no longer recognise a token in the list, revoke it; anything using it stops working immediately and nothing you have saved is touched.</p>
+      </div>
+
       <div class="flow-card">
         <h3>📆 Google Calendar</h3>
         <p class="flow-sub">Exports write directly into your Google calendar and are idempotent: the same task always maps to the same event, so re-exporting updates it instead of creating a duplicate.</p>
@@ -3356,6 +3380,9 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       el.addEventListener('change', commit);
     });
 
+    /* ---- Connect to Claude ---- */
+    SettingsUI.mcpWire(section);
+
     /* Colour-theme swatches — apply instantly, persist, and re-mark the row. */
     section.querySelectorAll('[data-theme]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -3482,7 +3509,114 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       };
       fr.readAsText(f);
     });
-  }
+  },
+
+  /* The token panel. The secret exists in this page for exactly as long as the
+     person needs to copy it, and is never fetched again — the list endpoint
+     cannot return it, because the server does not have it either. */
+  async mcpFetch(path, opts) {
+    const r = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {}));
+    let j = null;
+    try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((j && j.error) || ('Request failed (' + r.status + ')'));
+    return j || {};
+  },
+
+  mcpRow(t) {
+    const when = (ms) => {
+      if (!ms) return 'never used';
+      const d = new Date(ms), days = Math.floor((Date.now() - ms) / 864e5);
+      if (days === 0) return 'used today';
+      if (days === 1) return 'used yesterday';
+      if (days < 30) return 'used ' + days + ' days ago';
+      return 'last used ' + d.toLocaleDateString();
+    };
+    return '<div class="mcp-row" data-tokid="' + esc(t.id) + '">' +
+      '<div class="mcp-meta"><b>' + esc(t.name) + '</b>' +
+      '<span>' + esc(t.hint || '') + ' · ' + esc(when(t.lastUsed)) + '</span></div>' +
+      '<button type="button" class="flow-btn sm danger" data-mcp="revoke" data-id="' + esc(t.id) + '">Revoke</button></div>';
+  },
+
+  async mcpPaint(section) {
+    const box = section.querySelector('#mcpList');
+    if (!box) return;
+    try {
+      const r = await SettingsUI.mcpFetch('/api/flow/tokens');
+      const list = r.tokens || [];
+      box.innerHTML = list.length
+        ? list.map(SettingsUI.mcpRow).join('')
+        : '<div class="flow-sub">No access tokens yet. Nothing can reach this account through Claude until you make one.</div>';
+      box.querySelectorAll('[data-mcp="revoke"]').forEach(b => {
+        b.addEventListener('click', async () => {
+          const row = b.closest('.mcp-row');
+          const name = row ? (row.querySelector('b') || {}).textContent : 'that token';
+          /* Revoking is instant and cannot be undone, so it is worth one
+             sentence of friction — but it destroys no data, which is why one
+             sentence is all it is worth. */
+          if (!confirm('Revoke "' + name + '"? Anything using it stops working straight away. Nothing you have saved is affected.')) return;
+          b.disabled = true;
+          try {
+            await SettingsUI.mcpFetch('/api/flow/tokens/revoke', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: b.getAttribute('data-id') })
+            });
+            toast('Revoked ✓');
+            SettingsUI.mcpPaint(section);
+          } catch (e) { b.disabled = false; toast(e.message, 'err'); }
+        });
+      });
+    } catch (e) {
+      box.innerHTML = '<div class="flow-sub">Could not read your access tokens just now.</div>';
+    }
+  },
+
+  mcpWire(section) {
+    const card = section.querySelector('#mcp-card');
+    if (!card) return;
+    SettingsUI.mcpPaint(section);
+
+    const copy = async (text, btn) => {
+      try { await navigator.clipboard.writeText(text); }
+      catch (e) {
+        /* Clipboard access is refused often enough — an insecure origin, a
+           locked-down browser — that failing silently would look like a broken
+           button. Select it instead so a keyboard can finish the job. */
+        const el = document.createElement('textarea');
+        el.value = text; document.body.appendChild(el); el.select();
+        try { document.execCommand('copy'); } catch (e2) {}
+        el.remove();
+      }
+      const was = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = was; }, 1400);
+    };
+
+    card.querySelectorAll('[data-mcp]').forEach(btn => {
+      const a = btn.getAttribute('data-mcp');
+      if (a === 'copyurl') btn.addEventListener('click', () => copy(location.origin + '/mcp', btn));
+      if (a === 'copytok') btn.addEventListener('click', () => {
+        const el = card.querySelector('#mcpSecret');
+        copy((el && el.textContent) || '', btn);
+      });
+      if (a === 'new') btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const nameEl = card.querySelector('#mcpName');
+          const r = await SettingsUI.mcpFetch('/api/flow/tokens', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: (nameEl && nameEl.value.trim()) || 'Claude' })
+          });
+          const box = card.querySelector('#mcpNew');
+          card.querySelector('#mcpSecret').textContent = r.token;
+          box.hidden = false;
+          if (nameEl) nameEl.value = '';
+          toast('Token created — copy it now');
+          SettingsUI.mcpPaint(section);
+        } catch (e) { toast(e.message, 'err', 4000); }
+        btn.disabled = false;
+      });
+    });
+  },
 };
 
 /* =========================================================================
