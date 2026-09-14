@@ -1,0 +1,189 @@
+/* The home-screen widget's feed.
+ *
+ * A widget is the one surface nobody chooses to open — it is just there, on the
+ * lock screen, being read at a glance while walking. So two things matter more
+ * here than anywhere else in this codebase. It must be someone's own day and
+ * never anyone else's, because a widget is read in public. And it must not be
+ * able to change anything, because the only gesture it has is a tap, and a tap
+ * in a coat pocket must not tick a rock off.
+ *
+ * Everything below is one of those two. */
+const http = require('http');
+const path = require('path');
+const M = require(path.join(__dirname, '..', 'flow-mcp.js'));
+
+const H = 'http://localhost:4222';
+let pass = 0, fail = 0;
+const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n))
+  : (fail++, console.log('  ✗ ' + n + (d !== undefined ? '  → ' + JSON.stringify(d).slice(0, 220) : ''))); };
+
+const rq = (p, opts = {}) => new Promise((resolve) => {
+  const u = new URL(H + p);
+  const body = opts.body || null;
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (body) headers['Content-Length'] = Buffer.byteLength(body);
+  const r = http.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search,
+    method: opts.method || 'GET', headers }, (res) => {
+    let b = '';
+    res.on('data', c => b += c);
+    res.on('end', () => {
+      let j = null; try { j = JSON.parse(b); } catch (e) {}
+      resolve({ status: res.statusCode, json: j, text: b, headers: res.headers });
+    });
+  });
+  r.on('error', () => resolve({ status: 0, json: null, text: '' }));
+  if (body) r.write(body);
+  r.end();
+});
+
+const jar = {};
+async function as(who, p, opts = {}) {
+  const o = Object.assign({}, opts);
+  o.headers = Object.assign({}, opts.headers || {});
+  if (jar[who]) o.headers.Cookie = jar[who];
+  const r = await rq(p, o);
+  const sc = r.headers && r.headers['set-cookie'];
+  if (sc) jar[who] = sc.map(c => c.split(';')[0]).join('; ');
+  return r;
+}
+const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
+  method: 'POST',
+  body: JSON.stringify({ email, name: who, password: 'a properly long password', invite })
+});
+
+const bearer = (tok, opts = {}) => rq('/api/widget',
+  Object.assign({}, opts, { headers: Object.assign({ Authorization: 'Bearer ' + tok }, opts.headers || {}) }));
+
+(async () => {
+  console.log('\n— it is a credential, the same as everything else —');
+  await signUp('artur', 'artur.abacilar@abko.com.tr', 'letmein');
+  await signUp('sam', 'sam@example.com', 'letmein');
+
+  let r = await as('artur', '/api/flow/tokens', { method: 'POST', body: JSON.stringify({ name: 'The widget' }) });
+  const TOK = r.json.token;
+  r = await as('sam', '/api/flow/tokens', { method: 'POST', body: JSON.stringify({ name: 'Sam widget' }) });
+  const SAMTOK = r.json.token;
+
+  ok('no token is refused', (await rq('/api/widget')).status === 401);
+  ok('and it says where to get one', /Settings/.test(((await rq('/api/widget')).json || {}).error || ''));
+  ok('with the header a client needs to notice',
+     /Bearer/.test((await rq('/api/widget')).headers['www-authenticate'] || ''));
+  ok('a made-up token is refused', (await bearer('flow_nonsense')).status === 401);
+  /* A cookie is the app's credential, not the widget's — the widget process has
+     no browser to hold one, so accepting it here would only mean accepting
+     something that arrived by accident. */
+  ok('a session cookie alone is not enough', (await as('artur', '/api/widget')).status === 401);
+  ok('a real token is let in', (await bearer(TOK)).status === 200);
+
+  console.log('\n— it is your day, and nobody else’s —');
+  /* Put a rock in Artur's week through the MCP surface, then check whose widget
+     can see it. This is the check that matters most: a widget sits face-up on a
+     table. */
+  const rpc = (tok, name, args) => rq('/mcp', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + tok },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
+  });
+  await rpc(TOK, 'add_rock', { title: 'A thing only Artur knows about', day: 'today', time: '23:30' });
+
+  const mine = (await bearer(TOK)).json;
+  const theirs = (await bearer(SAMTOK)).json;
+  ok('the rock shows on the owner’s widget',
+     JSON.stringify(mine.lines).indexOf('only Artur knows') >= 0, mine.lines);
+  ok('and on nobody else’s', JSON.stringify(theirs).indexOf('only Artur knows') < 0, theirs.lines);
+  ok('the other person still gets their own empty day', theirs.total === 0, theirs);
+
+  console.log('\n— it fits on a lock screen —');
+  ok('it names the day', typeof mine.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(mine.date), mine.date);
+  ok('and says which weekday that is', typeof mine.weekday === 'string' && mine.weekday.length > 2, mine.weekday);
+  ok('it counts what is done out of what there is',
+     typeof mine.done === 'number' && typeof mine.total === 'number' && mine.done <= mine.total, [mine.done, mine.total]);
+  ok('it never returns more lines than a tile can hold', mine.lines.length <= 4, mine.lines.length);
+  ok('and says how many it left out rather than making the widget count',
+     typeof mine.more === 'number' && mine.more >= 0, mine.more);
+  ok('every line carries the three things a glance needs',
+     mine.lines.every(l => 'title' in l && 'time' in l && 'done' in l), mine.lines[0]);
+  ok('it carries the week’s standing too', mine.week && typeof mine.week.total === 'number', mine.week);
+  ok('and stamps when it was true', !isNaN(Date.parse(mine.updated)), mine.updated);
+  /* The system redraws a widget far more often than a day changes, so the
+     answer is allowed to be a minute old — but only privately, because it is
+     one person's day. */
+  const cc = (await bearer(TOK)).headers['cache-control'] || '';
+  ok('it may be cached briefly', /max-age=\d+/.test(cc), cc);
+  ok('but never by anything shared', /private/.test(cc) && !/public/.test(cc), cc);
+
+  console.log('\n— and it cannot change a thing —');
+  /* The feed is a GET. Everything else must come back as "no" rather than as a
+     quiet success that wrote nothing — a silent 200 is how a bug hides. */
+  for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const rr = await bearer(TOK, { method: m, body: '{}' });
+    ok(m + ' is not a way in', rr.status !== 200, rr.status);
+  }
+  const before = (await bearer(TOK)).json;
+  await bearer(TOK, { method: 'POST', body: JSON.stringify({ done: true }) });
+  const after = (await bearer(TOK)).json;
+  ok('nothing it was sent changed the day',
+     JSON.stringify(before.lines) === JSON.stringify(after.lines), [before.lines, after.lines]);
+
+  console.log('\n— the shape of a day, without a server —');
+  /* Ordering is the whole design and it is pure, so pin it directly rather than
+     through a week of fixtures. What is still ahead comes first, because it is
+     the only part still a decision. */
+  const store = (() => {
+    const mem = {};
+    return {
+      async get(k) { return mem[k]; },
+      async set(k, v) { mem[k] = v; },
+      async all() { return Object.assign({}, mem); }
+    };
+  })();
+  const NOW = new Date('2026-09-14T12:00:00');
+  await store.set('ld_compass', JSON.stringify({
+    rocks: { '2026-W38': [
+      { id: 'a', title: 'Missed this morning', day: 0, time: '09:00', done: false },
+      { id: 'b', title: 'Later today', day: 0, time: '18:00', done: false },
+      { id: 'c', title: 'No time on it', day: 0, time: '', done: false },
+      { id: 'd', title: 'Already done', day: 0, time: '08:00', done: true },
+      { id: 'e', title: 'Tomorrow', day: 1, time: '10:00', done: false }
+    ] }, saw: {}, roles: [], mission: ''
+  }));
+  const w = await M.widgetToday(store, NOW);
+  const titles = w.lines.map(l => l.title);
+  ok('only today is on it', titles.indexOf('Tomorrow') < 0, titles);
+  ok('what is still ahead comes first', titles[0] === 'Later today', titles);
+  ok('then what has no time on it', titles[1] === 'No time on it', titles);
+  ok('then what was missed', titles[2] === 'Missed this morning', titles);
+  ok('and what was missed says so', w.lines[2].overdue === true, w.lines[2]);
+  ok('what is already done is not nagged about', titles.indexOf('Already done') < 0, titles);
+  ok('but it still counts towards the day', w.done === 1 && w.total === 4, [w.done, w.total]);
+
+  console.log('\n— the shell hands the widget its token, and only then —');
+  /* The widget is a separate process with no view of the page, so a token only
+     ever reaches it if the app passes it across at the moment one is made. In a
+     browser there is no bridge at all, and the same code must do nothing rather
+     than throw — Settings should not grow a broken button because the page also
+     runs inside an app. */
+  const fs = require('fs');
+  const pack = fs.readFileSync(path.join(__dirname, '..', 'flow-pack.js'), 'utf8');
+  ok('making a token pushes it to the shell', /SettingsUI\.nativeToken\(r\.token\)/.test(pack));
+  const fn = pack.slice(pack.indexOf('nativeToken(token)'), pack.indexOf('async mcpFetch'));
+  ok('it goes through the native bridge', /Plugins\.FlowBridge/.test(fn) && /setToken\(\{ token \}\)/.test(fn), fn.length);
+  ok('a browser with no bridge is left alone', /if \(!bridge \|\| !token\) return;/.test(fn));
+  ok('and nothing it does can throw into the page', /try \{/.test(fn) && /catch/.test(fn));
+
+  const swift = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'native', 'Shared', 'FlowStore.swift'), 'utf8');
+  ok('the two processes meet in one App Group and nowhere else',
+     (swift.match(/UserDefaults\(suiteName: appGroup\)/g) || []).length === 1, swift.indexOf('suiteName'));
+  ok('the widget asks the endpoint built for it', /api\/widget/.test(swift));
+  ok('and presents the token as a bearer', /Bearer \\\(token\)/.test(swift));
+  ok('a rejected token is told apart from an unreachable server',
+     /case notConnected/.test(swift) && /case unauthorized/.test(swift));
+
+  const bridge = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'native', 'App', 'FlowBridge.swift'), 'utf8');
+  ok('signing out takes the widget\u2019s copy with it', /func clear/.test(bridge) && /FlowStore\.token = nil/.test(bridge));
+  ok('and the widget is redrawn rather than left stale',
+     (bridge.match(/reloadAllTimelines/g) || []).length >= 2, bridge);
+
+  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
+  process.exit(fail ? 1 : 0);
+})();
