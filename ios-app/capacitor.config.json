@@ -1,6 +1,6 @@
 {
-  "appId": "com.example.theflow",
-  "appName": "The Flow",
+  "appId": "com.abko.theflow",
+  "appName": "The Flow — Life OS",
   "webDir": "www",
   "server": {
     "url": "https://the-flow-noq1.onrender.com",
