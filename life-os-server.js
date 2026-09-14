@@ -416,6 +416,22 @@ const server = http.createServer(async (req, res) => {
       return mcp.handle(req, res, store);
     }
 
+    /* ── The home-screen widget ──
+       Same reasoning as above, one endpoint narrower: gate() has already
+       resolved the bearer, so `store` is this person's, and all this can do is
+       read today. The short cache is for the system, which redraws a widget
+       far more often than a day changes. */
+    if (p === '/api/widget') {
+      if (!mcp || !mcp.widgetToday) return json(res, 503, { error: 'This build has no widget feed.' });
+      if (req.method !== 'GET') {
+        res.setHeader('Allow', 'GET');
+        return json(res, 405, { error: 'The widget reads. It has no way to change anything, and this is where that is enforced rather than assumed.' });
+      }
+      const payload = await mcp.widgetToday(store, new Date());
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=60' });
+      return res.end(JSON.stringify(payload));
+    }
+
     // ── PWA assets (must be reachable pre-login so the icon/manifest work) ──
     if (p === '/manifest.webmanifest') { res.writeHead(200, { 'Content-Type': 'application/manifest+json' }); return res.end(MANIFEST); }
     if (p === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(SW); }
