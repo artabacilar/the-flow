@@ -1,7 +1,7 @@
 # The Flow
 
 A personal life dashboard. One Node server, one HTML application, Redis behind
-it. It runs at https://the-flow-noq1.onrender.com and it is not a product —
+it. It runs at https://the-flow-eu.onrender.com and it is not a product —
 it is one person's system, kept small enough to understand in an afternoon.
 
 ## What is here
