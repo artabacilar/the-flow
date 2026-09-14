@@ -1656,6 +1656,20 @@ function syncPaint(){
   }
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 
+  /* ── Something for the pack to wait on ──────────────────────────────────
+     The pack seeds its own cache from what this reconcile downloads, so that
+     its reads are cache hits rather than a round trip each. But it boots on
+     its own clock and used to lose the race: __FLOW_ALL was still undefined,
+     the seed was skipped in silence, and it went and fetched eight sections
+     one at a time — eight more trips to Oregon for data already in flight.
+
+     So the answer is published as a promise instead of a variable. It always
+     settles, and it settles with null when the server could not be reached,
+     because a pack waiting forever on an offline server is a blank screen. */
+  let allReady;
+  window.__FLOW_ALL_READY = new Promise(r=>{ allReady=r; });
+  const publishAll=(v)=>{ window.__FLOW_ALL=v; try{ allReady(v); }catch(e){} };
+
   let reloaded=false;
   function reloadOnce(){
     if(reloaded) return;
@@ -1704,6 +1718,9 @@ function syncPaint(){
     timer=setTimeout(()=>{ timer=null; run(); }, w);
   }
   function fail(){
+    /* Settle it, so a pack that is waiting stops waiting. Retries still run;
+       they simply no longer have anyone held up behind them. */
+    publishAll(window.__FLOW_ALL || null);
     window.__DB_ON=false;
     window.__FLOW_SYNC.state='offline';
     syncPaint();
@@ -1739,6 +1756,7 @@ function syncPaint(){
     }
 
     if(accountsExist && !signedIn){
+      publishAll(null);
       window.__DB_ON=false;
       window.__FLOW_SYNC.state='signedout';
       syncPaint();
@@ -1764,7 +1782,7 @@ function syncPaint(){
       /* A refused session is not a broken network. Saying "offline, retrying"
          here would hide the real problem and spin forever. */
       if(r.status===401||r.status===403){
-        window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
+        publishAll(null); window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
       }
       if(!r.ok){ fail(); return; }
       const man=await r.json();
@@ -1784,7 +1802,7 @@ function syncPaint(){
         const r2=await fetch(DB_API+'/some',{method:'POST',headers:{'Content-Type':'application/json'},
           credentials:'same-origin',body:JSON.stringify({keys:need})});
         if(r2.status===401||r2.status===403){
-          window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
+          publishAll(null); window.__DB_ON=false; window.__FLOW_SYNC.state='signedout'; syncPaint(); return;
         }
         if(!r2.ok){ fail(); return; }
         got=await r2.json();
@@ -1809,7 +1827,7 @@ function syncPaint(){
         try{ localStorage.removeItem(CACHE_KEY); localStorage.removeItem(SIG_KEY); }catch(_){}
       }
     }catch(e){ fail(); return; }
-    window.__FLOW_ALL=all;
+    publishAll(all);
 
     const serverKeys=Object.keys(all).filter(k=>k.indexOf('ld_')===0);
 
