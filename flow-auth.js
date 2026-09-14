@@ -600,6 +600,29 @@ async function gate(req, res) {
     return false;
   }
 
+  /* ---- the home-screen widget ----
+     A widget is its own process. It has no cookie, no web view and no way to
+     sign anybody in; it wakes up every few minutes, reads one short list and
+     goes back to sleep. So it carries the same kind of bearer an assistant
+     would, resolves to the same account through the same two paths, and gets
+     the same answer when the token is wrong. Nothing here writes. */
+  if (p === '/api/widget') {
+    if (req.method === 'OPTIONS') return false;
+    const wtok = bearerOf(req);
+    let wwho = wtok ? await userForToken(wtok) : null;
+    if (!wwho && wtok && oauth) {
+      wwho = await oauth.userForAccessToken(wtok);
+      if (wwho && await oauth.grantIsDead(wwho.id, wwho.client_id)) wwho = null;
+    }
+    if (!wwho) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
+      json(res, 401, { error: 'The widget needs its own token. Open Settings \u2192 Connect to Claude in the app and add one.' });
+      return true;
+    }
+    req.__flowUid = wwho.id;
+    return false;
+  }
+
   /* Anything that is not an API call (the HTML, the manifest, icons) is served
      as before — the app has to load in order to show a sign-in screen. */
   if (p.indexOf('/api/') !== 0) return false;
