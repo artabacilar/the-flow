@@ -55,6 +55,13 @@ const SESS = (t) => '__auth:sess:' + t;
 const LEGACY_CLAIMED = '__auth:legacy_claimed_v2';
 const NAMESPACED = /^ld_u[0-9a-f]+:/;
 const SEED = (uid) => '__auth:seed:' + uid;
+/* Personal access tokens, for connecting an assistant to one account.
+   Looked up by the hash of the token, never by the token: what is stored is
+   not enough to sign in with, so a leaked dump of this store is not a leaked
+   set of keys. The index is what lets somebody list and revoke their own. */
+const PAT = (hash) => '__auth:pat:' + hash;
+const PAT_INDEX = (uid) => '__auth:pats:' + uid;
+const PAT_MAX = 10;
 const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
 /* One task, handed from one account to another. This is the ONLY channel
    between accounts in the whole system, so it is deliberately narrow: a
@@ -151,6 +158,50 @@ function verifyPassword(password, salt, expected) {
   const want = Buffer.from(String(expected || ''), 'hex');
   if (got.length !== want.length) return false;
   return crypto.timingSafeEqual(got, want);
+}
+
+/* ---------- personal access tokens ---------------------------------------
+ * A token is shown once, at the moment it is made, and never again. What the
+ * store keeps is a SHA-256 of it — enough to recognise a token somebody hands
+ * back, not enough to produce one. The `flow_` prefix is there so that a token
+ * pasted somewhere public is recognisable as a credential by the scanners that
+ * look for exactly that.
+ * ------------------------------------------------------------------------ */
+const patHash = (tok) => crypto.createHash('sha256').update(String(tok)).digest('hex');
+
+function newPatSecret() {
+  return 'flow_' + crypto.randomBytes(32).toString('base64url');
+}
+
+/* Resolve a bearer credential to an account. Returns null for anything that is
+   not a live token belonging to a live user — an unknown token, a revoked one,
+   one whose account has since gone. Every one of those is the same answer to
+   the caller, because telling them apart is telling a stranger which of their
+   guesses was closer. */
+async function userForToken(tok) {
+  const t = String(tok || '').trim();
+  if (!t || t.length > 200) return null;
+  const rec = await getJSON(PAT(patHash(t)), null);
+  if (!rec || !rec.uid || rec.revoked) return null;
+  const users = await getJSON(USERS_KEY, {});
+  const u = Object.values(users).find(x => x.id === rec.uid);
+  if (!u) return null;
+  /* Last-used is worth knowing — it is how somebody decides whether a token
+     they no longer recognise is safe to revoke. Written on a best effort: a
+     failure to record it must never fail the request it describes. */
+  try {
+    if (!rec.lastUsed || Date.now() - rec.lastUsed > 6e4) {
+      rec.lastUsed = Date.now();
+      await setJSON(PAT(patHash(t)), rec);
+    }
+  } catch (e) {}
+  return { id: u.id, email: u.email, name: u.name, tokenName: rec.name || '' };
+}
+
+function bearerOf(req) {
+  const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
+  const m = String(h).match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : '';
 }
 
 /* ---------- sessions ----------------------------------------------------- */
@@ -483,6 +534,32 @@ function protect(store) {
 async function gate(req, res) {
   const u = new URL(req.url, 'http://localhost');
   const p = u.pathname;
+
+  /* ---- the MCP endpoint ----
+     Authenticated by bearer token rather than by cookie, because the caller is
+     an assistant with no browser and no session. Resolved here, next to every
+     other way of establishing who is asking, so there is exactly one place
+     that decides whose data a request may touch. Returning false hands it on
+     to the normal routes — by which point attach() has put this account's id
+     into the async context, so the protected store is already scoped and the
+     MCP module needs no isolation logic of its own. */
+  if (p === '/mcp' || p === '/mcp/') {
+    if (req.method === 'OPTIONS') return false;      /* preflight carries no credential */
+    const tok = bearerOf(req);
+    if (!tok) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
+      json(res, 401, { error: 'Connect this with the access token from Settings → Connect to Claude.' });
+      return true;
+    }
+    const who = await userForToken(tok);
+    if (!who) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow", error="invalid_token"');
+      json(res, 401, { error: 'That access token is not valid, or it has been revoked.' });
+      return true;
+    }
+    req.__flowUid = who.id;
+    return false;
+  }
 
   /* Anything that is not an API call (the HTML, the manifest, icons) is served
      as before — the app has to load in order to show a sign-in screen. */
@@ -1094,6 +1171,74 @@ async function gate(req, res) {
     rec.hash = hashPassword(b.next, rec.salt);
     await setJSON(USERS_KEY, users);
     json(res, 200, { ok: true });
+    return true;
+  }
+
+  /* ---- access tokens for connecting an assistant ----
+     Session-authed on purpose: a token can never be used to mint another
+     token, so an assistant that has one cannot quietly widen its own reach. */
+  if (p === '/api/flow/tokens' && (req.method === 'GET' || !req.method)) {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const idx = await getJSON(PAT_INDEX(me0.id), []);
+    const out = [];
+    for (const h of idx) {
+      const rec = await getJSON(PAT(h), null);
+      if (!rec || rec.revoked) continue;
+      /* The secret itself is not here to be listed — only the shape of it, so
+         somebody can tell two tokens apart in a list without either being
+         readable from this response. */
+      out.push({ id: h.slice(0, 12), name: rec.name || 'Untitled', created: rec.created || null,
+                 lastUsed: rec.lastUsed || null, hint: rec.hint || '' });
+    }
+    out.sort((a, b) => (b.created || 0) - (a.created || 0));
+    json(res, 200, { tokens: out });
+    return true;
+  }
+
+  if (p === '/api/flow/tokens' && req.method === 'POST') {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const name = String(b.name || '').trim().slice(0, 60) || 'Claude';
+    const idx = await getJSON(PAT_INDEX(me0.id), []);
+    /* Live ones only: a revoked token still occupying a slot would eventually
+       lock somebody out of making new ones for no reason they could see. */
+    const live = [];
+    for (const h of idx) { const r = await getJSON(PAT(h), null); if (r && !r.revoked) live.push(h); }
+    if (live.length >= PAT_MAX) {
+      json(res, 400, { error: 'There are already ' + PAT_MAX + ' access tokens on this account. Revoke one you no longer recognise first.' });
+      return true;
+    }
+    const secret = newPatSecret();
+    const h = patHash(secret);
+    await setJSON(PAT(h), {
+      uid: me0.id, name, created: Date.now(), lastUsed: null,
+      /* Enough to recognise, not enough to reconstruct. */
+      hint: secret.slice(0, 9) + '…' + secret.slice(-4)
+    });
+    live.push(h);
+    await setJSON(PAT_INDEX(me0.id), live);
+    /* The only time this value ever leaves the server. */
+    json(res, 200, { ok: true, token: secret, id: h.slice(0, 12), name,
+                     note: 'Copy this now — it is not shown again.' });
+    return true;
+  }
+
+  if (p === '/api/flow/tokens/revoke' && req.method === 'POST') {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const want = String(b.id || '').trim();
+    const idx = await getJSON(PAT_INDEX(me0.id), []);
+    const h = idx.find(x => x.slice(0, 12) === want);
+    /* Only tokens on this account's own index can be found here at all, so a
+       guessed id from somewhere else matches nothing. */
+    if (!h) { json(res, 404, { error: 'No such access token on this account.' }); return true; }
+    const rec = await getJSON(PAT(h), null);
+    if (rec) { rec.revoked = Date.now(); await setJSON(PAT(h), rec); }
+    await setJSON(PAT_INDEX(me0.id), idx.filter(x => x !== h));
+    json(res, 200, { ok: true, revoked: want });
     return true;
   }
 
