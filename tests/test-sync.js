@@ -200,6 +200,25 @@ const some = (who, keys) => as(who, '/api/some', {
   ok('the badge still shows what it always showed',
      /'\u{1F7E2} Database \u00b7 '\+s\.engine\+' \u00b7 '\+s\.keys\+' sets'/u.test(html));
 
+  console.log('\n— and the one number nobody could see —');
+  /* Every round trip from the server to the database was the largest single
+     cost in an open, and there was no way to look at it — which is how you end
+     up moving the wrong thing to the wrong continent on a hunch. It says where
+     the data is and what reaching it costs, and it says nothing else: the
+     region label at the front of the hostname, never the rest of it, and never
+     the token. */
+  const d = await as('artur', '/api/diag');
+  ok('it answers a signed-in person', d.status === 200, d.status);
+  ok('it names the engine', typeof d.json.engine === 'string' && d.json.engine.length > 0, d.json.engine);
+  ok('it reports where the data lives', typeof d.json.dbRegion === 'string' && d.json.dbRegion.length > 0, d.json.dbRegion);
+  ok('and what one round trip to it costs', typeof d.json.dbRoundTripMs === 'number' && d.json.dbRoundTripMs >= 0, d.json.dbRoundTripMs);
+  ok('and whether it was reached at all', typeof d.json.dbReached === 'boolean', d.json.dbReached);
+  /* The whole reason this is safe to ship. */
+  ok('the token appears nowhere in it', !/token/i.test(d.text), d.text.slice(0, 120));
+  ok('nor does any credential-shaped value',
+     !/[A-Za-z0-9_-]{40,}/.test(d.text), d.text.slice(0, 120));
+  ok('and it is shut to anyone not signed in', (await rq('/api/diag')).status === 401);
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
