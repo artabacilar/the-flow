@@ -32,13 +32,9 @@ fs.mkdirSync(wdir, { recursive: true });
 
 fs.copyFileSync(path.join(__dirname, '..', 'native', 'Widget', 'FlowWidget.swift'),
                 path.join(wdir, 'FlowWidget.swift'));
-/* FlowStore is the seam; both targets compile it. One copy, two memberships. */
-fs.copyFileSync(path.join(__dirname, '..', 'native', 'Shared', 'FlowStore.swift'),
-                path.join(projDir, 'App', 'FlowStore.swift'));
-fs.copyFileSync(path.join(__dirname, '..', 'native', 'App', 'FlowBridge.swift'),
-                path.join(projDir, 'App', 'FlowBridge.swift'));
-fs.copyFileSync(path.join(__dirname, '..', 'native', 'App', 'FlowBridge.m'),
-                path.join(projDir, 'App', 'FlowBridge.m'));
+/* FlowStore is the seam; both targets compile it. One source, two copies, two
+   memberships. The App target's copy and its membership are make-native.js's
+   job — this script only ever touches the widget side of the seam. */
 
 const entitlements = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,24 +93,14 @@ proj.addToPbxGroup(wgroup, mainGroupId);
 
 proj.addSourceFile(WIDGET + '/FlowWidget.swift', { target: target.uuid }, wgroup);
 proj.addSourceFile(WIDGET + '/FlowStore.swift',  { target: target.uuid }, wgroup);
-fs.copyFileSync(path.join(projDir, 'App', 'FlowStore.swift'), path.join(wdir, 'FlowStore.swift'));
+fs.copyFileSync(path.join(__dirname, '..', 'native', 'Shared', 'FlowStore.swift'),
+                path.join(wdir, 'FlowStore.swift'));
 
 const appTarget = (() => {
   const t = proj.pbxNativeTargetSection();
   for (const k in t) if (typeof t[k] === 'object' && t[k].name === 'App') return k;
   throw new Error('no App target');
 })();
-const appGroup = (() => {
-  const g = proj.pbxGroupByName('App');
-  if (!g) throw new Error('no App group');
-  const all = proj.hash.project.objects.PBXGroup;
-  for (const k in all) if (all[k] === g) return k;
-  throw new Error('no App group key');
-})();
-
-proj.addSourceFile('App/FlowBridge.swift', { target: appTarget }, appGroup);
-proj.addSourceFile('App/FlowBridge.m',     { target: appTarget }, appGroup);
-proj.addSourceFile('App/FlowStore.swift',  { target: appTarget }, appGroup);
 
 /* ---- 3. build settings --------------------------------------------------- */
 const configs = proj.pbxXCBuildConfigurationSection();
