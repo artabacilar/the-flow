@@ -45,6 +45,13 @@ const server=http.createServer(async(req,res)=>{
        has resolved the bearer token. A replica that skipped this would let the
        suite pass against a server the real one does not resemble. */
     if(p==='/mcp'||p==='/mcp/'){ if(!mcp) return json(res,503,{error:'no mcp module'}); return mcp.handle(req,res,store); }
+    if(p==='/api/widget'){
+      if(!mcp||!mcp.widgetToday) return json(res,503,{error:'no widget feed'});
+      if(req.method!=='GET'){ res.setHeader('Allow','GET'); return json(res,405,{error:'GET only'}); }
+      const payload=await mcp.widgetToday(store,new Date());
+      res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'private, max-age=60'});
+      return res.end(JSON.stringify(payload));
+    }
     if(p==='/api/status') return json(res,200,{ok:true,engine:store.engine,file:store.file,keys:await store.count()});
     if(p==='/api/all') return json(res,200,await store.all());
     if(p==='/api/get') return json(res,200,{key:u.searchParams.get('key'),value:await store.get(u.searchParams.get('key'))});
