@@ -347,6 +347,10 @@ button{width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-w
 // --- The Flow: accounts + per-user data isolation -------------------------
 const flowAuth = require('./flow-auth');
 store = flowAuth.protect(store);
+/* The MCP endpoint. Optional in the same way flow-extras is: a build without
+   the file simply does not offer the route, rather than failing to boot. */
+let mcp = null;
+try { mcp = require('./flow-mcp'); } catch (e) { mcp = null; }
 // -------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
@@ -388,6 +392,17 @@ const server = http.createServer(async (req, res) => {
 
     // ── Health check (for cloud hosts) — always open ──
     if (p === '/healthz') return json(res, 200, { ok: true });
+
+    /* ── MCP ──
+       Placed above the login check on purpose: this endpoint is authenticated
+       by the bearer token that flow-auth's gate() already resolved, not by a
+       browser session, and a redirect to /login is a useless answer to give an
+       assistant. Nothing reaches this line without gate() having established
+       whose account it is, so `store` below is already scoped to that person. */
+    if (p === '/mcp' || p === '/mcp/') {
+      if (!mcp) return json(res, 503, { error: 'This build has no MCP module.' });
+      return mcp.handle(req, res, store);
+    }
 
     // ── PWA assets (must be reachable pre-login so the icon/manifest work) ──
     if (p === '/manifest.webmanifest') { res.writeHead(200, { 'Content-Type': 'application/manifest+json' }); return res.end(MANIFEST); }
