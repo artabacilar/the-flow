@@ -226,7 +226,7 @@ const MANIFEST = JSON.stringify({
   ],
 });
 const SW = `
-const CACHE='life-os-v5';
+const CACHE='life-os-v6';
 const SHELL=['./','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
@@ -243,12 +243,24 @@ self.addEventListener('fetch',e=>{
   const u=new URL(req.url);
   if(req.method!=='GET') return;
   if(u.pathname.startsWith('/api')) return; // data is always live — never cached
+  // Pages the server composes fresh for each request: the sign-in gate, the
+  // connect handshake, the discovery documents, the assistant endpoint. Not one
+  // of them is the app shell and not one is safe to keep on the device. A
+  // cached consent screen is worse than a slow one — it shows the person a
+  // page that already agreed, or a dashboard where a decision should be.
+  if(u.pathname==='/login'||u.pathname==='/logout'||
+     u.pathname.startsWith('/oauth/')||u.pathname.startsWith('/.well-known/')||
+     u.pathname==='/mcp'||u.pathname.startsWith('/mcp/')) return;
   // The pack carries a content hash and is served immutable, so the browser's
   // own HTTP cache already answers it from disk with no network trip. That is
   // what makes the code bundle instant on a phone; we stay out of its way here.
   if(u.pathname.startsWith('/flow-pack.')) return;
 
-  const isHTML = req.mode==='navigate' || u.pathname==='/' || u.pathname==='/index.html';
+  // Only the shell is the shell. Any navigation at all used to land in this
+  // branch and be answered with the cached copy of './' whatever the address
+  // bar said — which is why Connect opened yesterday's dashboard instead of the
+  // consent screen, and why the sign-in page could come back already signed in.
+  const isHTML = u.pathname==='/' || u.pathname==='/index.html';
   if(isHTML){
     // App shell: stale-while-revalidate. This is THE thing that makes an
     // installed iOS home-screen app open like a native app — the shell paints
