@@ -1512,3 +1512,28 @@ html[data-flow-theme="whoop"]     .flow-x{
 }
 .fa-creed span:first-child{ color:var(--f-ink,#e7ebf0); font-weight:600; }
 .fa-creed .last{ color:rgba(23,187,146,.9); }
+
+/* ── Connect to Claude ───────────────────────────────────────────────────
+   A secret shown once wants to look like a secret: monospaced, boxed, and
+   sitting next to the one button that matters. */
+.mcp-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.mcp-url code{flex:1;min-width:220px;background:var(--f-card2,rgba(255,255,255,.04));border:1px solid var(--f-border,rgba(255,255,255,.12));
+  border-radius:9px;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+  color:var(--f-text,#e9eef5);word-break:break-all;line-height:1.45;}
+.mcp-new{margin-top:14px;padding:12px;border-radius:11px;border:1px solid var(--f-accent,#63c2f7);
+  background:color-mix(in srgb,var(--f-accent,#63c2f7) 8%,transparent);}
+.mcp-new .flow-label{margin-bottom:7px;}
+.mcp-list{margin-top:14px;display:flex;flex-direction:column;gap:8px;}
+/* The empty state is a quiet note, not a headline — it says nothing is wrong. */
+.mcp-list .flow-sub{margin:0;font-size:13px;line-height:1.55;}
+.mcp-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;
+  background:var(--f-card2,rgba(255,255,255,.04));border:1px solid var(--f-border,rgba(255,255,255,.10));}
+.mcp-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.mcp-meta b{font-size:14px;color:var(--f-text,#e9eef5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mcp-meta span{font-size:12px;color:var(--f-muted,#93a2b4);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+.mcp-acts{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+.mcp-acts .flow-in{flex:1;min-width:200px;}
+@media(max-width:520px){
+  .mcp-row{flex-wrap:wrap;}
+  .mcp-acts .flow-in{min-width:100%;}
+}
