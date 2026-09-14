@@ -8449,9 +8449,22 @@ async function boot() {
 
   /* Seed DB from the payload hydrateFromDB already downloaded, using the
      same parse rules as DB.get, so the gets below are cache hits instead
-     of one round-trip each. */
+     of one round-trip each.
+
+     Waiting is the point. This used to read a variable that the host had not
+     set yet — the seed was skipped without a word, and the loads below went
+     and fetched eight sections one at a time, each its own trip to the server.
+     The host publishes a promise now. The wait is capped, and an unreachable
+     server settles it with null, so the worst case is the old behaviour rather
+     than a screen that never arrives. */
   try {
-    const seed = window.__FLOW_ALL;
+    let seed = window.__FLOW_ALL;
+    if (!seed && window.__FLOW_ALL_READY) {
+      seed = await Promise.race([
+        window.__FLOW_ALL_READY,
+        new Promise(r => setTimeout(() => r(null), 3000))
+      ]);
+    }
     if (seed) Object.keys(seed).forEach((k) => {
       if (DB._mem.has(k)) return;
       let v = seed[k];
