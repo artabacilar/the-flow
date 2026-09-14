@@ -10,8 +10,10 @@ import Foundation
 /// missing from one of the two targets and nothing else is wrong.
 enum FlowStore {
 
-    /// Replace with `group.<your bundle id>`. Both targets must declare it.
-    static let appGroup = "group.com.example.theflow"
+    /// Must match the App Group enabled on BOTH targets in Signing &
+    /// Capabilities. If the widget says "Not connected" while the app is
+    /// plainly signed in, it is because one of the two is missing this.
+    static let appGroup = "group.com.abko.theflow"
 
     static let origin = URL(string: "https://the-flow-noq1.onrender.com")!
 
