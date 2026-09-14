@@ -55,11 +55,16 @@ const server=http.createServer(async(req,res)=>{
     if(p==='/api/status') return json(res,200,{ok:true,engine:store.engine,file:store.file,keys:await store.count()});
     if(p==='/api/all') return json(res,200,await store.all());
     if(p==='/api/diag'){
-      const dbUrl=process.env.UPSTASH_REDIS_REST_URL||'';
-      const label=(dbUrl.match(/^https:\/\/([a-z]+[0-9]*)-/)||[])[1]||(dbUrl?'unlabelled':'none');
-      const t0=Date.now(); let reached=true;
-      try{ await store.get('__diag_ping'); }catch(e){ reached=false; }
-      return json(res,200,{engine:store.engine,dbRegion:label,dbRoundTripMs:Date.now()-t0,dbReached:reached,serverRegion:process.env.RENDER_REGION||'unset'});
+      const runs=[]; let reached=true;
+      for(let i=0;i<5;i++){ const t0=Date.now(); try{ await store.get('__diag_ping'); }catch(e){ reached=false; } runs.push(Date.now()-t0); }
+      const sorted=runs.slice().sort((a,b)=>a-b);
+      const best=sorted[0], median=sorted[Math.floor(sorted.length/2)];
+      const verdict = !reached ? 'the database could not be reached'
+        : best<10 ? 'beside the server — same datacentre'
+        : best<40 ? 'near the server — same region'
+        : best<90 ? 'a long way off — different region, same continent'
+        : 'another continent — this is the main cost of every request';
+      return json(res,200,{engine:store.engine,dbReached:reached,dbBestMs:best,dbMedianMs:median,dbRunsMs:runs,verdict});
     }
     if(p==='/api/manifest'){
       const all=await store.all(); const out={};
