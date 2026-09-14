@@ -135,10 +135,22 @@ const some = (who, keys) => as(who, '/api/some', {
   ok('and no longer pulls the whole account', !/DB_API\+'\/all'/.test(rec));
   ok('it asks only for what differs', /sigs\[k\]!==man\[k\]/.test(rec));
   /* A matching signature is worthless if this device holds nothing to match. */
-  ok('and for anything it does not hold at all', /painted\[k\]==null/.test(rec));
+  ok('and for anything it does not hold at all', /held\(k\)==null/.test(rec));
+  /* The sections the pack keeps under its own names are not in local storage
+     under those names. Without a copy of them here, a matching signature buys
+     nothing and they come down again on every open — and they are most of the
+     weight. This is the check that the whole saving does not quietly vanish. */
+  ok('it keeps a copy of the sections it does not otherwise hold',
+     /const CACHE_KEY = 'ld__cache'/.test(html) &&
+     /cache=JSON\.parse\(lsGet\(CACHE_KEY\)/.test(rec));
+  ok("and does not duplicate the app's own sections into it",
+     /k\.indexOf\('ld_'\)!==0 && all\[k\]!=null/.test(rec));
+  ok('a device with no room falls back rather than lying about it',
+     /removeItem\(CACHE_KEY\); localStorage\.removeItem\(SIG_KEY\)/.test(rec));
+  ok('the copy is cleared when a different account signs in here', /k!==CACHE_KEY/.test(html));
   ok('when nothing differs it sends no second request', /if\(need\.length\)\{/.test(rec));
   ok('it rebuilds the same shape the rest of the code expects',
-     /all\[k\] = \(k in got\) \? got\[k\] : painted\[k\]/.test(rec));
+     /all\[k\] = \(k in got\) \? got\[k\] : held\(k\)/.test(rec));
   /* The one failure this must never have: recording "up to date" before it is. */
   const setIdx = rec.indexOf('setItem(SIG_KEY');
   const gotIdx = rec.indexOf('got=await r2.json()');
