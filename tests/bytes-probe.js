@@ -1,6 +1,7 @@
 /* What does a *repeat* open actually pull over the wire? That is the number the
    split is meant to move: the pack is content-addressed and immutable, so on
    every open after the first it should come from cache and not the network. */
+const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 
@@ -17,7 +18,7 @@ const H = 'http://localhost:4222';
   await p.fill('#fa-name', 'Artur');
   await p.fill('#fa-pw', 'a properly long password');
   await p.fill('#fa-inv', 'letmein').catch(() => {});
-  await Promise.all([p.waitForNavigation({ timeout: 20000 }).catch(() => {}), p.click('#fa-go')]);
+  await submitAuth(p);
   await p.waitForTimeout(4000);
 
   /* First open primes the cache; the one after it is the one people live in. */

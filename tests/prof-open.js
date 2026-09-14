@@ -6,6 +6,7 @@
  * measures exactly that, against a replica seeded with a payload the size of
  * the real account. Run it once for the file on main and once for the build.
  */
+const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 
@@ -33,7 +34,7 @@ const H = 'http://localhost:4222';
   await p.fill('#fa-name', 'Artur');
   await p.fill('#fa-pw', 'a properly long password');
   await p.fill('#fa-inv', 'letmein').catch(() => {});
-  await Promise.all([p.waitForNavigation({ timeout: 20000 }).catch(() => {}), p.click('#fa-go')]);
+  await submitAuth(p);
   await p.waitForTimeout(5000);
 
   /* Now the interesting part: a cold-ish open with the account already there. */

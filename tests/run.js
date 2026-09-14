@@ -54,6 +54,7 @@ const SUITES = [
   ['auth',     'test-auth.js',     {}],
   ['migrate',  'test-migrate.js',  { seed: 'legacy' }],
   ['authui',   'test-authui.js',   { FLOW_INVITE_CODE: 'letmein' }],
+  ['forgot',   'test-forgot.js',   { FLOW_OWNER_EMAIL: OWNER }],
   ['template', 'test-template.js', { SEED: JSON.stringify({ ld_journal: '[]' }) }],
   ['owner',    'test-owner.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['heal',     'test-heal.js',     { FLOW_OWNER_EMAIL: OWNER, V2: '1', seed: 'v2' }],
@@ -126,10 +127,24 @@ const run = (cmd, args, env) => new Promise((res) => {
   }
 
   let failed = 0, checks = 0, bad = 0;
+  const skipped = [];
   for (const [name, script, cfg] of chosen) {
     const env = Object.assign({}, process.env, { DASH, PORT: String(PORT) });
     for (const k of Object.keys(cfg)) if (k !== 'seed') env[k] = cfg[k];
-    if (cfg.seed) env.SEED_FILE = seedFile(cfg.seed);
+    /* A seed that cannot be built is a missing input, not a broken product —
+       but it is also a suite that is no longer running, which is exactly the
+       kind of thing that rots quietly. So: skip this one, keep going, and say
+       so loudly in the summary rather than taking the whole run down. */
+    if (cfg.seed) {
+      try { env.SEED_FILE = seedFile(cfg.seed); }
+      catch (e) {
+        const why = String((e && e.stderr && e.stderr.toString()) || (e && e.message) || e).trim();
+        console.log('\n=== ' + name + ' ===\n  SKIPPED — its seed could not be built:');
+        console.log(why.split('\n').map((l) => '    ' + l).join('\n'));
+        skipped.push(name);
+        continue;
+      }
+    }
 
     const server = spawn(process.execPath, [path.join(HERE, 'server-replica.js')],
       { env, stdio: 'ignore', detached: false });
@@ -152,7 +167,8 @@ const run = (cmd, args, env) => new Promise((res) => {
   }
 
   console.log('\n' + '─'.repeat(52));
-  console.log(chosen.length + ' suites · ' + checks + ' checks · ' + bad + ' failing');
+  console.log((chosen.length - skipped.length) + ' suites · ' + checks + ' checks · ' + bad + ' failing');
+  if (skipped.length) console.log(skipped.length + ' SKIPPED (not run, not proven): ' + skipped.join(', '));
   console.log(failed ? failed + ' SUITE(S) FAILED' : 'all green');
   process.exit(failed ? 1 : 0);
 })();

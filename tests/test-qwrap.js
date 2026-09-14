@@ -2,6 +2,7 @@
    quadrant selector and × are all on one non-wrapping flex line, so the
    selector and the delete button run off the right edge and the whole card
    pushes the page wider than the viewport. Measured, not eyeballed. */
+const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 
@@ -23,7 +24,7 @@ const H = 'http://localhost:4222';
   await p.fill('#fa-email', 'phone@example.com');
   await p.fill('#fa-name', 'Phone');
   await p.fill('#fa-pw', 'a properly long password');
-  await Promise.all([p.waitForNavigation({ timeout: 15000 }).catch(() => {}), p.click('#fa-go')]);
+  await submitAuth(p);
   await p.waitForTimeout(3800);
 
   /* Give the rows realistic, long text — the short ones happen to fit. */

@@ -1,3 +1,4 @@
+const keepCookies = require('./cookie-jar.js');
 const H='http://localhost:4222';
 let pass=0,fail=0;
 const ok=(n,c,d)=>{c?(pass++,console.log('  ✓ '+n)):(fail++,console.log('  ✗ '+n+(d!==undefined?'  → '+JSON.stringify(d).slice(0,160):'')));};
@@ -5,7 +6,7 @@ const jar={};
 const call=async(p,o={},who='a')=>{const h=Object.assign({'Content-Type':'application/json'},o.headers||{});
   if(jar[who])h.Cookie=jar[who];
   const r=await fetch(H+p,Object.assign({},o,{headers:h}));
-  const sc=r.headers.get('set-cookie'); if(sc) jar[who]=sc.split(';')[0];
+  keepCookies(jar, who, r);
   let b=null;try{b=await r.json();}catch(e){}; return {status:r.status,body:b};};
 (async()=>{
   console.log('\n— existing data, then the owner signs up —');

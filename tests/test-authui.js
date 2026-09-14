@@ -1,3 +1,4 @@
+const submitAuth = require('./submit-auth.js');
 const {chromium}=require('playwright');const H='http://localhost:4222';
 (async()=>{
   const b=await chromium.launch();let pass=0,fail=0;
@@ -16,7 +17,7 @@ const {chromium}=require('playwright');const H='http://localhost:4222';
   ok('server-side validation surfaces inline', await p.isVisible('#fa-err'), await p.textContent('#fa-err').catch(()=>''));
 
   await p.fill('#fa-pw','a properly long password');
-  await Promise.all([p.waitForNavigation({timeout:15000}).catch(()=>{}), p.click('#fa-go')]);
+  await submitAuth(p);
   await p.waitForTimeout(3000);
   ok('signed in and the screen is gone', !(await p.isVisible('#flow-auth').catch(()=>false)));
   const me=await p.evaluate(()=>window.Flow&&Flow.Auth?{inst:Flow.Auth.installed,email:Flow.Auth.user&&Flow.Auth.user.email,owner:Flow.Auth.user&&Flow.Auth.user.owner}:null);

@@ -3,6 +3,7 @@
    per-section render callbacks keep firing and nothing that worked stops
    working. The rest is reach — five slots, two levels, and a capture that
    writes without taking you anywhere. */
+const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 
@@ -23,7 +24,7 @@ const H = 'http://localhost:4222';
     await page.fill('#fa-name', name);
     await page.fill('#fa-pw', 'a properly long password');
     if (invite) await page.fill('#fa-inv', invite).catch(() => {});
-    await Promise.all([page.waitForNavigation({ timeout: 15000 }).catch(() => {}), page.click('#fa-go')]);
+    await submitAuth(page);
     await page.waitForTimeout(4200);
   };
   const activeTab = (p) => p.evaluate(() => {

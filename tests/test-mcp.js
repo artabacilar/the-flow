@@ -5,6 +5,7 @@
  * behaves like one. That one person's Claude can never reach another person's
  * Flow. And that nothing in this surface can delete: the whole point of a
  * record is that it survives being misread. */
+const keepCookies = require('./cookie-jar.js');
 const http = require('http');
 const path = require('path');
 const M = require(path.join(__dirname, '..', 'flow-mcp.js'));
@@ -93,8 +94,7 @@ async function as(who, path, opts = {}) {
   o.headers = Object.assign({}, opts.headers || {});
   if (jar[who]) o.headers.Cookie = jar[who];
   const r = await rq(path, o);
-  const sc = r.headers && r.headers['set-cookie'];
-  if (sc) jar[who] = sc.map(c => c.split(';')[0]).join('; ');
+  keepCookies(jar, who, r);
   return r;
 }
 const signUp = (who, email, invite) => as(who, '/api/auth/signup', {

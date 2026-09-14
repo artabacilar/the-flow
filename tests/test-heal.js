@@ -2,6 +2,7 @@
    his namespace is empty and a claim stamp already exists. He still holds a
    valid session, so he never posts to /api/auth/login — which was the only
    thing that could re-run adoption. Loading the app must fix it by itself. */
+const keepCookies = require('./cookie-jar.js');
 const H = 'http://localhost:4222';
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n))
@@ -11,7 +12,7 @@ const call = async (p, o = {}, who = 'a') => {
   const h = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
   if (jar[who]) h.Cookie = jar[who];
   const r = await fetch(H + p, Object.assign({}, o, { headers: h }));
-  const sc = r.headers.get('set-cookie'); if (sc) jar[who] = sc.split(';')[0];
+  keepCookies(jar, who, r);
   let b = null; try { b = await r.json(); } catch (e) {}
   return { status: r.status, body: b };
 };

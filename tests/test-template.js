@@ -1,3 +1,4 @@
+const submitAuth = require('./submit-auth.js');
 const {chromium}=require('playwright');const H='http://localhost:4222';
 const PERSONAL=/CRM lead generation|Meet with Burak|Mali Neşe|Kanye West|Seamless\.ai|Goldwell|DualSense|Sabah spor|Hidrolize kolajen|3 litre su|promoters \/ distributors|ABKO|DTC Business/i;
 (async()=>{
@@ -8,7 +9,7 @@ const PERSONAL=/CRM lead generation|Meet with Burak|Mali Neşe|Kanye West|Seamle
   const c1=await b.newContext();const p1=await c1.newPage();const e1=[];p1.on('pageerror',e=>e1.push(e.message));
   await p1.goto(H+'/',{waitUntil:'load'});await p1.waitForTimeout(2500);
   await p1.fill('#fa-email','artur@abko.com.tr');await p1.fill('#fa-name','Artur');await p1.fill('#fa-pw','a properly long password');
-  await Promise.all([p1.waitForNavigation({timeout:15000}).catch(()=>{}),p1.click('#fa-go')]);
+  await submitAuth(p1);
   await p1.waitForTimeout(3200);
   const owner=await p1.evaluate(()=>({
     isNew: Flow.Profile.isNew,
@@ -36,7 +37,7 @@ const PERSONAL=/CRM lead generation|Meet with Burak|Mali Neşe|Kanye West|Seamle
   await p2.goto(H+'/',{waitUntil:'load'});await p2.waitForTimeout(2500);
   await p2.click('#fa-alt');await p2.waitForTimeout(300);
   await p2.fill('#fa-email','brother@example.com');await p2.fill('#fa-name','Brother');await p2.fill('#fa-pw','another long password');
-  await Promise.all([p2.waitForNavigation({timeout:15000}).catch(()=>{}),p2.click('#fa-go')]);
+  await submitAuth(p2);
   await p2.waitForTimeout(3500);
 
   const fam=await p2.evaluate(()=>({

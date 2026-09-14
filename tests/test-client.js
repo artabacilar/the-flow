@@ -1,5 +1,6 @@
 /* The visible half: the price strip, the guest button, the shared-task inbox
    and the Ask tab. Driven in a real browser against the replica server. */
+const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 
@@ -18,7 +19,7 @@ const H = 'http://localhost:4222';
     await page.fill('#fa-name', name);
     await page.fill('#fa-pw', 'a properly long password');
     if (invite) await page.fill('#fa-inv', invite).catch(() => {});
-    await Promise.all([page.waitForNavigation({ timeout: 15000 }).catch(() => {}), page.click('#fa-go')]);
+    await submitAuth(page);
     await page.waitForTimeout(3800);
   };
 
@@ -149,6 +150,24 @@ const H = 'http://localhost:4222';
 
   /* ---------- the Ask tab ---------- */
   console.log('\n— the assistant —');
+  /* The Ask tab streams now — it asks /api/flow/chat/stream first and only
+     falls back to the buffered route on a browser with no streaming body. A
+     mock on the old path alone let the real request through to a server with
+     no API key, and the suite then reported the product broken when it was
+     the mock that was out of date. Both paths are answered here.
+
+     What the assistant is *allowed* to do is not asserted from the tab's
+     wording any more: test-stream checks the handler itself never writes to
+     anybody's store, which is the claim that actually matters. */
+  const sse = (frames) => frames.map((f) => 'data: ' + JSON.stringify(f) + '\n\n').join('');
+  await p1.route('**/api/flow/chat/stream', (route) => route.fulfill({
+    status: 200, contentType: 'text/event-stream',
+    body: sse([{ t: 'open' },
+               { t: 'd', v: 'Your Q1 list has ' },
+               { t: 'd', v: 'two items open.' },
+               { t: 'meta', used: 3, cap: 40 },
+               { t: 'end' }])
+  }));
   await p1.route('**/api/flow/chat', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ ok: true, reply: 'Your Q1 list has two items open.', used: 3, cap: 40 })
@@ -156,21 +175,21 @@ const H = 'http://localhost:4222';
   await goto(p1, 'ask');
   await p1.waitForTimeout(900);
   ok('the Ask tab exists', await p1.isVisible('#ask-in'));
-  ok('it says up front that it cannot change anything', await p1.evaluate(() =>
-    /cannot add or edit|NEVER CHANGES/i.test(document.getElementById('tab-ask').innerText)));
   await p1.fill('#ask-in', 'What should I focus on?');
   await p1.click('#ask-go');
-  await p1.waitForTimeout(1200);
+  await p1.waitForTimeout(1600);
   const log = await p1.evaluate(() => document.getElementById('ask-log').innerText);
   ok('the question is shown', /What should I focus on/.test(log), log);
-  ok('and the answer', /two items open/.test(log), log);
+  ok('the answer streams in and is assembled whole', /two items open/.test(log), log);
   ok('the daily count is visible', await p1.evaluate(() => /3 of 40/.test(document.getElementById('ask-meta').innerText)));
 
   console.log('\n— when the assistant is switched off —');
-  await p2.route('**/api/flow/chat', (route) => route.fulfill({
+  const off = (route) => route.fulfill({
     status: 503, contentType: 'application/json',
     body: JSON.stringify({ error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' })
-  }));
+  });
+  await p2.route('**/api/flow/chat/stream', off);
+  await p2.route('**/api/flow/chat', off);
   await goto(p2, 'ask'); await p2.waitForTimeout(700);
   await p2.fill('#ask-in', 'hello'); await p2.click('#ask-go'); await p2.waitForTimeout(1200);
   const offLog = await p2.evaluate(() => document.getElementById('ask-log').innerText);

@@ -5,6 +5,7 @@
  * redirect that was never registered, a PKCE check that can be skipped, a
  * refresh token that survives being used: each one of those is somebody else's
  * Flow, handed over by a server that thought it was being helpful. */
+const keepCookies = require('./cookie-jar.js');
 const http = require('http');
 const crypto = require('crypto');
 const path = require('path');
@@ -65,8 +66,7 @@ async function as(who, p, opts = {}) {
   o.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (jar[who]) o.headers.Cookie = jar[who];
   const r = await rq(p, o);
-  const sc = r.headers && r.headers['set-cookie'];
-  if (sc) jar[who] = sc.map(c => c.split(';')[0]).join('; ');
+  keepCookies(jar, who, r);
   return r;
 }
 const form = (o) => new URLSearchParams(o).toString();

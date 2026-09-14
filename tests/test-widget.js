@@ -8,6 +8,7 @@
  * in a coat pocket must not tick a rock off.
  *
  * Everything below is one of those two. */
+const keepCookies = require('./cookie-jar.js');
 const http = require('http');
 const path = require('path');
 const M = require(path.join(__dirname, '..', 'flow-mcp.js'));
@@ -42,8 +43,7 @@ async function as(who, p, opts = {}) {
   o.headers = Object.assign({}, opts.headers || {});
   if (jar[who]) o.headers.Cookie = jar[who];
   const r = await rq(p, o);
-  const sc = r.headers && r.headers['set-cookie'];
-  if (sc) jar[who] = sc.map(c => c.split(';')[0]).join('; ');
+  keepCookies(jar, who, r);
   return r;
 }
 const signUp = (who, email, invite) => as(who, '/api/auth/signup', {

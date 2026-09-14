@@ -12,6 +12,7 @@
  * client that asks for everything anyway. Or it can be wrong — which is worse,
  * because a sync that quietly decides it is up to date when it is not loses
  * work rather than time. */
+const keepCookies = require('./cookie-jar.js');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -46,8 +47,7 @@ async function as(who, p, opts = {}) {
   o.headers = Object.assign({}, opts.headers || {});
   if (jar[who]) o.headers.Cookie = jar[who];
   const r = await rq(p, o);
-  const sc = r.headers && r.headers['set-cookie'];
-  if (sc) jar[who] = sc.map(c => c.split(';')[0]).join('; ');
+  keepCookies(jar, who, r);
   return r;
 }
 const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
