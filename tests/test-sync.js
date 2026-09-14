@@ -163,6 +163,28 @@ const some = (who, keys) => as(who, '/api/some', {
   ok('the map is cleared when a different account signs in here',
      /const SIG_KEY = 'ld__sigs'/.test(html) && /k!==SIG_KEY/.test(html));
 
+  console.log('\n— and the pack stops losing the race for it —');
+  /* The pack seeds its own cache from what the reconcile downloads. It used to
+     read a variable the host had not set yet: the seed was skipped in silence
+     and it fetched eight sections one at a time instead — eight more trips to
+     a server on another continent, for data already in flight. A promise ends
+     the race. A capped wait, and a null on failure, keep it from becoming a
+     screen that never arrives. */
+  const pack = fs.readFileSync(path.join(__dirname, '..', 'flow-pack.js'), 'utf8');
+  ok('the host publishes the payload as something waitable',
+     /window\.__FLOW_ALL_READY = new Promise/.test(html));
+  ok('and the pack waits on it', /await Promise\.race\(\[\s*window\.__FLOW_ALL_READY/.test(pack));
+  ok('the wait is capped', /setTimeout\(\(\) => r\(null\), 3000\)/.test(pack));
+  ok('a payload already there is used without waiting at all',
+     /let seed = window\.__FLOW_ALL;\s*\n\s*if \(!seed && window\.__FLOW_ALL_READY\)/.test(pack));
+  /* Every way out of the reconcile has to settle it. One that does not is a
+     pack sitting through its whole timeout for an answer that never comes. */
+  const rec2 = html.slice(html.indexOf('(function hydrateFromDB'), html.indexOf('function dbSet'));
+  ok('failing settles it', /function fail\(\)\{[\s\S]{0,240}publishAll\(/.test(rec2));
+  ok('being signed out settles it', (rec2.match(/publishAll\(null\)/g) || []).length >= 2);
+  ok('success settles it with the payload', /publishAll\(all\)/.test(rec2));
+  ok('nothing still assigns it the old way', !/window\.__FLOW_ALL=all/.test(rec2));
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
