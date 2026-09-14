@@ -1,6 +1,7 @@
 const http=require('http'), fs=require('fs'), path=require('path');
 const PORT=process.env.PORT||4222;
 const flowAuth = require('../flow-auth');                    // EDIT 1
+let mcp=null; try{ mcp=require('../flow-mcp'); }catch(e){ mcp=null; }
 /* SEED for small fixtures; SEED_FILE for realistic ones — a megabyte of
    JSON does not fit in an environment variable. */
 const DATA = process.env.SEED_FILE
@@ -39,6 +40,11 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
   try{
     const p=u.pathname;
+    /* The MCP endpoint, mounted exactly as production mounts it: above the
+       login check, handed the protected store, and reached only after gate()
+       has resolved the bearer token. A replica that skipped this would let the
+       suite pass against a server the real one does not resemble. */
+    if(p==='/mcp'||p==='/mcp/'){ if(!mcp) return json(res,503,{error:'no mcp module'}); return mcp.handle(req,res,store); }
     if(p==='/api/status') return json(res,200,{ok:true,engine:store.engine,file:store.file,keys:await store.count()});
     if(p==='/api/all') return json(res,200,await store.all());
     if(p==='/api/get') return json(res,200,{key:u.searchParams.get('key'),value:await store.get(u.searchParams.get('key'))});
