@@ -1582,6 +1582,13 @@ const DIRTY_KEY = 'ld__dirty';
    cleared with everything else when a different person signs in on this
    device; a stale map would be worse than none. */
 const SIG_KEY = 'ld__sigs';
+/* The sections the server holds that this device does not otherwise keep —
+   everything the pack stores under its own names. They are not in local
+   storage under those names, so without a copy here a matching signature
+   would be useless and they would be re-downloaded on every open, which is
+   most of the weight. The app's own ld_ sections are not duplicated in here;
+   they are already on the device under their real names. */
+const CACHE_KEY = 'ld__cache';
 /* Writes made while the app is still drawing itself. They are held here rather
    than sent, because at that moment the page may still be showing a stale copy
    and the reconcile has not run — mirroring them up is how a newer record gets
@@ -1676,7 +1683,7 @@ function syncPaint(){
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
-      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY&&k!==SIG_KEY) painted[k]=localStorage.getItem(k);
+      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY&&k!==SIG_KEY&&k!==CACHE_KEY) painted[k]=localStorage.getItem(k);
     }
   }catch(e){}
 
@@ -1763,10 +1770,14 @@ function syncPaint(){
       const man=await r.json();
 
       let sigs={}; try{ sigs=JSON.parse(lsGet(SIG_KEY)||'{}')||{}; }catch(e){ sigs={}; }
+      let cache={}; try{ cache=JSON.parse(lsGet(CACHE_KEY)||'{}')||{}; }catch(e){ cache={}; }
+      /* Where a section already lives on this device: the app's own sections
+         under their real names, everything else in the cache above. */
+      const held=(k)=> k.indexOf('ld_')===0 ? painted[k] : cache[k];
       /* Fetch a section when its signature moved, and also when this device
          simply does not hold it — a matching signature is worthless if there
          is nothing here to match it against. */
-      const need=Object.keys(man).filter(k=> sigs[k]!==man[k] || painted[k]==null );
+      const need=Object.keys(man).filter(k=> sigs[k]!==man[k] || held(k)==null );
 
       let got={};
       if(need.length){
@@ -1780,11 +1791,23 @@ function syncPaint(){
       }
 
       all={};
-      Object.keys(man).forEach(k=>{ all[k] = (k in got) ? got[k] : painted[k]; });
+      Object.keys(man).forEach(k=>{ all[k] = (k in got) ? got[k] : held(k); });
+
       /* Recorded only once the whole exchange succeeded. A map written after a
          half-finished sync would tell the next open it is up to date when it
          is not, and that is the one failure this must never have. */
-      try{ localStorage.setItem(SIG_KEY, JSON.stringify(man)); }catch(e){}
+      try{
+        const keep={};
+        Object.keys(all).forEach(k=>{ if(k.indexOf('ld_')!==0 && all[k]!=null) keep[k]=all[k]; });
+        localStorage.setItem(CACHE_KEY, JSON.stringify(keep));
+        localStorage.setItem(SIG_KEY, JSON.stringify(man));
+      }catch(e){
+        /* No room on this device. Both go, together — signatures without the
+           copy they describe would claim this open was cheap when the next one
+           has nothing to build from. Falling all the way back to fetching
+           everything is slower, and correct. */
+        try{ localStorage.removeItem(CACHE_KEY); localStorage.removeItem(SIG_KEY); }catch(_){}
+      }
     }catch(e){ fail(); return; }
     window.__FLOW_ALL=all;
 
