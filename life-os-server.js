@@ -217,7 +217,7 @@ function shell() {
 
 // ── PWA assets (generated inline so there are fewer files to ship) ──
 const MANIFEST = JSON.stringify({
-  name: "The Flow", short_name: 'The Flow', start_url: '.', scope: '.',
+  name: "The Flow — Life OS", short_name: 'The Flow', start_url: '.', scope: '.',
   display: 'standalone', background_color: '#0a0b0d', theme_color: '#0a0b0d',
   description: 'Personal life dashboard — training, diet, habits, WHOOP & more',
   icons: [
