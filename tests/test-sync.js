@@ -210,8 +210,16 @@ const some = (who, keys) => as(who, '/api/some', {
   const d = await as('artur', '/api/diag');
   ok('it answers a signed-in person', d.status === 200, d.status);
   ok('it names the engine', typeof d.json.engine === 'string' && d.json.engine.length > 0, d.json.engine);
-  ok('it reports where the data lives', typeof d.json.dbRegion === 'string' && d.json.dbRegion.length > 0, d.json.dbRegion);
-  ok('and what one round trip to it costs', typeof d.json.dbRoundTripMs === 'number' && d.json.dbRoundTripMs >= 0, d.json.dbRoundTripMs);
+  /* It used to read a region out of the hostname, which was wrong: newer
+     Upstash addresses are a random pair of words, and it confidently reported
+     "liked" as a datacentre. Distance is not a string to be parsed. */
+  ok('it does not claim to know a region it cannot know', !('dbRegion' in d.json), Object.keys(d.json));
+  ok('it measures the round trip more than once',
+     Array.isArray(d.json.dbRunsMs) && d.json.dbRunsMs.length >= 3, d.json.dbRunsMs);
+  ok('and reports the fastest, not a busy moment',
+     d.json.dbBestMs === Math.min.apply(null, d.json.dbRunsMs), [d.json.dbBestMs, d.json.dbRunsMs]);
+  ok('it says in words what that distance means',
+     typeof d.json.verdict === 'string' && d.json.verdict.length > 10, d.json.verdict);
   ok('and whether it was reached at all', typeof d.json.dbReached === 'boolean', d.json.dbReached);
   /* The whole reason this is safe to ship. */
   ok('the token appears nowhere in it', !/token/i.test(d.text), d.text.slice(0, 120));
