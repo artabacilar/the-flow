@@ -184,6 +184,30 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('and the widget is redrawn rather than left stale',
      (bridge.match(/reloadAllTimelines/g) || []).length >= 2, bridge);
 
+  console.log('\n— the app and the widget agree on who they are —');
+  /* One mismatched character between the bundle id and the App Group and the
+     widget shows "Not connected" forever while the app is plainly signed in —
+     with no error anywhere, because nothing failed: it simply read an empty
+     store. It is the single most common way this goes wrong, so it is pinned
+     here rather than left to whoever next edits one of the two files. */
+  const cap = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'capacitor.config.json'), 'utf8'));
+  const group = (swift.match(/appGroup = "([^"]+)"/) || [])[1];
+  ok('the bundle id is reverse-DNS off a domain, not a first name',
+     /^[a-z][a-z0-9-]*\.[a-z0-9.-]+$/.test(cap.appId) && cap.appId.split('.').length >= 3, cap.appId);
+  ok('the App Group is that bundle id and nothing else',
+     group === 'group.' + cap.appId, [group, cap.appId]);
+  ok('no placeholder survived into either of them',
+     !/example/.test(cap.appId + ' ' + group), [cap.appId, group]);
+  ok('the app has a name', typeof cap.appName === 'string' && cap.appName.length > 2, cap.appName);
+  /* The phone loads the same server the browser does. If this ever points
+     somewhere else, the app and the website quietly stop being the same app. */
+  ok('and it loads the server rather than a copy of the page',
+     /^https:\/\//.test((cap.server || {}).url || ''), (cap.server || {}).url);
+
+  const srvSrc = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
+  ok('the installed web app calls itself the same thing',
+     srvSrc.indexOf('name: "' + cap.appName + '"') > 0, cap.appName);
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
