@@ -282,6 +282,17 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('the original project is kept, so the wizard is still a way back',
      /project\.pbxproj.*\.original|pbxPath \+ '\.original'/.test(script));
 
+
+  /* A path that resolves to nothing writes cleanly, passes every check that
+     only reads source, and then fails as a red filename the first time a
+     person opens Xcode — on a machine that is not the one that generated it.
+     So the script re-reads what it wrote and walks it against the disk. */
+  ok('the script checks its own output against the disk',
+     /fs\.existsSync\(path\.join\(projDir/.test(script) && /missing\.length/.test(script));
+  ok('and refuses to report success when a file is not there',
+     /process\.exit\(1\)/.test(script) && /names files that are not there/.test(script));
+  ok('the group is a label, not a second copy of the folder name',
+     /delete proj\.hash\.project\.objects\.PBXGroup\[wgroup\]\.path/.test(script));
   /* Signing is the step that gets done by hand on every machine, and the one
      place it is done wrong is the extension: the app signs, the widget does
      not, and the error names a bundle id nobody typed. Written down once, in
