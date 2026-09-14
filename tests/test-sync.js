@@ -185,6 +185,21 @@ const some = (who, keys) => as(who, '/api/some', {
   ok('success settles it with the payload', /publishAll\(all\)/.test(rec2));
   ok('nothing still assigns it the old way', !/window\.__FLOW_ALL=all/.test(rec2));
 
+  console.log('\n— and the badge stops asking the same question three times —');
+  /* The sync badge's detail line went to the database on every repaint. The
+     engine name cannot change while the page is open and the count beside it
+     is a decoration, so three round trips to another continent bought one
+     number nobody was waiting on. */
+  ok('the status endpoint is reached from exactly one place',
+     (html.match(/DB_API\+'\/status'/g) || []).length === 1);
+  ok('and that place is behind a cache', /function withDbStatus\(paint\)\{/.test(html));
+  ok('a cached answer is used without asking again', /if\(dbStat\) return paint\(dbStat\);/.test(html));
+  ok('two repaints cannot both start a request',
+     /dbStatAsked = Date\.now\(\);/.test(html) && /Date\.now\(\) - dbStatAsked < 60000/.test(html));
+  ok('a failure is retried, not given up on forever', /60000/.test(html));
+  ok('the badge still shows what it always showed',
+     /'\u{1F7E2} Database \u00b7 '\+s\.engine\+' \u00b7 '\+s\.keys\+' sets'/u.test(html));
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
