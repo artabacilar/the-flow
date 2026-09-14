@@ -1,4 +1,4 @@
-const CACHE = 'life-os-v3';
+const CACHE = 'life-os-v4';
 const SHELL = ['./manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -18,6 +18,16 @@ self.addEventListener('fetch', e => {
 
   // Never cache data/API — always live
   if (u.pathname.startsWith('/api')) return;
+
+  // Never touch anything the server owns outright. The sign-in handshake, the
+  // discovery documents and the assistant endpoint are all answered live, and
+  // the offline shell is a wrong answer for every one of them: serving a
+  // cached dashboard in place of a consent screen looks to the person like the
+  // Connect button quietly did nothing. Let these through untouched so a slow
+  // server shows its own slowness rather than a stale page.
+  if (u.pathname.startsWith('/oauth/') ||
+      u.pathname.startsWith('/.well-known/') ||
+      u.pathname === '/mcp' || u.pathname.startsWith('/mcp/')) return;
 
   const isHTML = e.request.mode === 'navigate' ||
                  u.pathname.endsWith('.html') ||
