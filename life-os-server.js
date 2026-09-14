@@ -469,40 +469,49 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/status') return json(res, 200, { ok: true, engine: store.engine, file: store.file, keys: await store.count() });
     if (p === '/api/all') return json(res, 200, await store.all());
 
-    /* ── Where the data actually is, and what reaching it costs ──
-       "The app is slow" turned out to be one number nobody could see: every
+    /* ── What reaching the data costs ──
+       "The app is slow" turned out to be one number nobody could see: the
        round trip from this server to the database. Guessing at it from the
        outside is how you end up moving the wrong thing to the wrong continent.
 
-       It reports the region label at the front of the database hostname and a
-       measured round trip. Never the rest of the hostname, never the token,
-       and never to anybody who is not signed in. */
+       It does not try to read a region out of the hostname any more. That was
+       wrong — newer Upstash addresses are a random pair of words with no region
+       in them, so it confidently reported "liked" as a datacentre. Distance is
+       not a string to be parsed; it is a duration to be measured. So it takes
+       several round trips and reports the fastest, which is the one least
+       polluted by a busy moment, and says plainly what that distance means.
+
+       Nothing identifying leaves here: no hostname, no token, no key names. */
     if (p === '/api/diag') {
-      const dbUrl = process.env.UPSTASH_REDIS_REST_URL || '';
-      const label = (dbUrl.match(/^https:\/\/([a-z]+[0-9]*)-/) || [])[1] || (dbUrl ? 'unlabelled' : 'none');
-      const t0 = Date.now();
+      const runs = [];
       let reached = true;
-      try { await store.get('__diag_ping'); } catch (e) { reached = false; }
+      for (let i = 0; i < 5; i++) {
+        const t0 = Date.now();
+        try { await store.get('__diag_ping'); } catch (e) { reached = false; }
+        runs.push(Date.now() - t0);
+      }
+      const sorted = runs.slice().sort((a, b) => a - b);
+      const best = sorted[0];
+      const median = sorted[Math.floor(sorted.length / 2)];
+      /* Light is 300 km per millisecond and fibre is slower and never straight,
+         so a round trip puts a floor under how far away something can be. Under
+         ten milliseconds there is no room for distance at all. */
+      const verdict =
+        !reached            ? 'the database could not be reached' :
+        best < 10           ? 'beside the server — same datacentre' :
+        best < 40           ? 'near the server — same region' :
+        best < 90           ? 'a long way off — different region, same continent' :
+                              'another continent — this is the main cost of every request';
       return json(res, 200, {
         engine: store.engine,
-        dbRegion: label,
-        dbRoundTripMs: Date.now() - t0,
         dbReached: reached,
-        serverRegion: process.env.RENDER_REGION || process.env.RENDER_SERVICE_REGION || 'unset'
+        dbBestMs: best,
+        dbMedianMs: median,
+        dbRunsMs: runs,
+        verdict
       });
     }
 
-    /* ── What the server holds, without the weight of holding it ──
-       /api/all ships every byte this account owns on every single open. For a
-       journal a year deep that is most of a megabyte, sent over and over to
-       say, almost always, that nothing changed. This says the same thing in a
-       few hundred bytes: one short signature per section. The client compares
-       it against what it already has and asks for only what actually moved,
-       which on a normal open is nothing.
-
-       Both of these read the store exactly once — the cost we are cutting is
-       the one paid on the person's own connection, not the one inside the
-       datacenter. */
     if (p === '/api/manifest') {
       const all = await store.all();
       const out = {};
