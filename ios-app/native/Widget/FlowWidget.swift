@@ -104,9 +104,14 @@ struct FlowWidgetView: View {
             if let t = entry.today {
                 Text("\(t.done)/\(t.total)")
                     .font(.system(size: 11, weight: .semibold))
+                    /// Both arms have to be the same type, and they are not:
+                    /// a Color and a hierarchical style. Erasing them keeps the
+                    /// green when the day is done and the system's own dimming
+                    /// when it is not, instead of picking a grey by hand that
+                    /// would be wrong in one of the two appearances.
                     .foregroundStyle(t.total > 0 && t.done == t.total
-                                     ? Color(red: 0.09, green: 0.73, blue: 0.57)
-                                     : .tertiary)
+                                     ? AnyShapeStyle(Color(red: 0.09, green: 0.73, blue: 0.57))
+                                     : AnyShapeStyle(.tertiary))
             }
         }
     }
