@@ -459,32 +459,44 @@
   .flow-td-pulse { gap: 5px; }
 }
 
-/* ---------- sign-in ------------------------------------------------------ */
-#flow-auth {
+/* ---------- sign-in ------------------------------------------------------ *
+   The recovery-code screen is the same card on the same black ground. It is
+   shown in the same moments the sign-in screen is — before the app exists for
+   this person — so it gets the same treatment rather than a dialog floating
+   over a dashboard they cannot use yet. */
+#flow-auth, #flow-codes {
   position: fixed; inset: 0; z-index: 2147483000;
   background: #0a0d0e;
   display: flex; align-items: center; justify-content: center;
   padding: 22px; overflow-y: auto;
 }
-#flow-auth .fa-card {
+#flow-auth .fa-card, #flow-codes .fa-card {
   width: 100%; max-width: 380px;
   background: var(--f-surface); border: 1px solid var(--f-line);
   border-radius: 18px; padding: 30px 26px 26px;
   box-shadow: 0 30px 80px rgba(0,0,0,.6);
 }
-#flow-auth .fa-brand { font-size: 21px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 22px; color: var(--f-ink-2); }
-#flow-auth .fa-brand b { font-weight: 800; color: var(--f-ink); }
-#flow-auth .fa-h { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
-#flow-auth .fa-sub { margin: 0 0 20px; font-size: 12.5px; line-height: 1.55; color: var(--f-muted); }
-#flow-auth .flow-label { display: block; margin: 14px 0 6px; }
+#flow-auth .fa-brand, #flow-codes .fa-brand { font-size: 21px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 22px; color: var(--f-ink-2); }
+#flow-auth .fa-brand b, #flow-codes .fa-brand b { font-weight: 800; color: var(--f-ink); }
+#flow-auth .fa-h, #flow-codes .fa-h { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+#flow-auth .fa-sub, #flow-codes .fa-sub { margin: 0 0 20px; font-size: 12.5px; line-height: 1.55; color: var(--f-muted); }
+#flow-auth .flow-label, #flow-codes .flow-label { display: block; margin: 14px 0 6px; }
 #flow-auth .flow-in { width: 100%; padding: 11px 12px; font-size: 15px; border-radius: 10px; }
-#flow-auth .fa-go { width: 100%; margin-top: 22px; padding: 12px; font-size: 14px; border-radius: 10px; }
+#flow-auth .fa-go, #flow-codes .fa-go { width: 100%; margin-top: 22px; padding: 12px; font-size: 14px; border-radius: 10px; }
 #flow-auth .fa-alt { width: 100%; margin-top: 9px; padding: 9px; font-size: 12.5px; border-radius: 10px; color: var(--f-muted); }
-#flow-auth .fa-err {
+#flow-auth .fa-err, #flow-codes .fa-err {
   background: rgba(208,59,59,.14); border: 1px solid rgba(208,59,59,.4);
   color: #ffc2c2; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
   margin-bottom: 4px;
 }
+/* The codes are going to be copied by hand off this screen onto paper, so
+   they are set larger and looser than any other text in the app. */
+#flow-codes #fc-list {
+  font-size: 14.5px; line-height: 1.9; letter-spacing: .06em;
+  text-align: center; margin: 0; padding: 14px 10px;
+  user-select: all; -webkit-user-select: all;
+}
+#flow-codes .fa-go[disabled] { opacity: .45; cursor: not-allowed; }
 
 /* ---------- markets strip ------------------------------------------------ */
 .flow-mkt { margin: 10px 0 4px; }

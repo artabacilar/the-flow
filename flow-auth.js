@@ -43,17 +43,52 @@ const MAX_ACCOUNTS = (() => {
   return Number.isFinite(n) && n >= 0 ? n : 10;
 })();
 
+/* A missing sibling module is a valid state. A sibling module that is present
+   but useless is a bug, and the two used to look identical from here: both
+   ended as null or as something falsy-enough to skip, silently, and the only
+   symptom was routes that had simply stopped existing.
+
+   This is not hypothetical. flow-oauth.js was once overwritten with the nine
+   bytes `undefined` — which is perfectly valid JavaScript, so require() did
+   not throw, it returned an empty module. Every OAuth route vanished. The app
+   kept serving, /healthz kept saying ok, and /.well-known answered 404 with no
+   explanation anywhere. A try/catch would not have caught it; only checking
+   that the module exports what we are about to call does.
+
+   So: absent stays quiet, present-but-wrong says so, loudly, at boot. */
+function loadModule(name, need) {
+  let mod = null;
+  try {
+    mod = require('./' + name);
+  } catch (err) {
+    const absent = err && err.code === 'MODULE_NOT_FOUND' &&
+                   String(err.message || '').indexOf(name) >= 0;
+    if (!absent) {
+      console.error('[' + name + '] is present but threw while loading — its routes are OFF');
+      console.error('  ' + (err && err.message ? err.message : err));
+    }
+    return null;
+  }
+  const missing = (need || []).filter((k) => typeof (mod || {})[k] !== 'function');
+  if (missing.length) {
+    console.error('[' + name + '] loaded but does not export: ' + missing.join(', '));
+    console.error('  its routes are OFF. This is what a truncated or half-written file looks like.');
+    return null;
+  }
+  return mod;
+}
+
 /* Optional sibling module: live prices and, later, the assistant. Absent is a
    perfectly valid state — the app simply does not offer those routes. */
 let extras = null;
-try { extras = require('./flow-extras'); } catch (e) { extras = null; }
+extras = loadModule('flow-extras', ['handle']);
 
 /* OAuth for the MCP endpoint. Built lazily in protect(), because it needs the
    raw store and that does not exist until then. Absent is valid here too: the
    app then offers personal tokens only, which is what it did before. */
 let oauthMod = null;
 let oauth = null;
-try { oauthMod = require('./flow-oauth'); } catch (e) { oauthMod = null; }
+oauthMod = loadModule('flow-oauth', ['build']);
 
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
@@ -209,6 +244,143 @@ function bearerOf(req) {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
   const m = String(h).match(/^Bearer\s+(.+)$/i);
   return m ? m[1].trim() : '';
+}
+
+
+/* ---------- outbound mail ------------------------------------------------ *
+ * Only used for password resets, so it is deliberately the smallest thing
+ * that can work: one provider, one call, no dependency. Absent configuration
+ * is a supported state — the reset route then says so out loud instead of
+ * pretending to have sent something.
+ *
+ * Set RESEND_API_KEY and MAIL_FROM (an address on a domain you have verified
+ * with the provider) to turn it on.
+ * ------------------------------------------------------------------------- */
+const MAIL = (() => {
+  const key = (process.env.RESEND_API_KEY || '').trim();
+  const from = (process.env.MAIL_FROM || '').trim();
+  return {
+    ready: () => !!(key && from),
+    async send(to, subject, text) {
+      if (!key || !from) return false;
+      try {
+        const r = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from, to, subject, text })
+        });
+        if (!r.ok) {
+          console.error('[mail] provider refused (' + r.status + ') — reset email not sent');
+          return false;
+        }
+        return true;
+      } catch (e) {
+        console.error('[mail] could not reach the provider — reset email not sent:', e && e.message);
+        return false;
+      }
+    }
+  };
+})();
+
+/* The address this Flow calls itself, for links in mail. Same precedence as
+   the OAuth issuer: what the operator declared, then what Render guessed. */
+const ORIGIN = () =>
+  (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '') ||
+  'http://localhost:' + (process.env.PORT || 3000);
+
+/* ---------- account recovery --------------------------------------------- *
+ * Losing a password used to mean losing the account, and with it every Big
+ * Rock and every journal entry behind it. There was no way back in: the only
+ * password route required you to already be signed in.
+ *
+ * Two ways back, because they fail in different circumstances. Recovery codes
+ * work with no mail provider, no network to a third party, and no waiting —
+ * but only if you kept them. A reset link needs none of that foresight, but it
+ * needs mail configured and an inbox you can still reach.
+ *
+ * Codes are stored the way passwords are: salted and hashed, never in the
+ * clear, so a dump of the user record does not hand anybody an account. They
+ * are shown exactly once.
+ * ------------------------------------------------------------------------- */
+
+const RECOVERY_COUNT = 10;
+const RC_TRY = (email, day) => '__auth:rctry:' + email + ':' + day;
+const RC_TRY_MAX = 10;          /* reset attempts per email per day           */
+const RESET_TOK = (t) => '__auth:reset:' + t;
+const RESET_TTL_MIN = 30;
+
+/* Crockford-ish: no I, L, O, U — the characters people mis-copy from paper. */
+const RC_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+function newRecoveryCode() {
+  const pick = (n) => {
+    let s = '';
+    for (let i = 0; i < n; i++) s += RC_ALPHABET[crypto.randomBytes(1)[0] % RC_ALPHABET.length];
+    return s;
+  };
+  return pick(4) + '-' + pick(4) + '-' + pick(4);
+}
+
+/* Accept what a human actually types: any case, any separators, O read as 0
+   and I or L read as 1. Normalising on the way in means a code copied by hand
+   from a piece of paper still works. */
+function normRecoveryCode(s) {
+  return String(s || '')
+    .toUpperCase()
+    .replace(/[OU]/g, '0')
+    .replace(/[IL]/g, '1')
+    .replace(/[^0-9A-Z]/g, '')
+    .slice(0, 12);
+}
+
+/* Returns the plaintext codes — the only moment they exist in the clear. */
+function mintRecoveryCodes(rec) {
+  const plain = [];
+  const stored = [];
+  for (let i = 0; i < RECOVERY_COUNT; i++) {
+    const code = newRecoveryCode();
+    const salt = crypto.randomBytes(16).toString('hex');
+    plain.push(code);
+    stored.push({ salt, hash: hashPassword(normRecoveryCode(code), salt), used: 0 });
+  }
+  rec.recovery = stored;
+  rec.recoveryMinted = new Date().toISOString();
+  return plain;
+}
+
+/* Consumes the code if it matches an unused one. Every candidate is checked
+   even after a hit, so the time taken does not say which code matched — or
+   whether any did. */
+function consumeRecoveryCode(rec, typed) {
+  const code = normRecoveryCode(typed);
+  if (!code || !Array.isArray(rec.recovery)) return false;
+  let hit = -1;
+  for (let i = 0; i < rec.recovery.length; i++) {
+    const c = rec.recovery[i];
+    if (!c || c.used) { hashPassword(code, 'decoy'); continue; }
+    if (verifyPassword(code, c.salt, c.hash) && hit < 0) hit = i;
+  }
+  if (hit < 0) return false;
+  rec.recovery[hit].used = Date.now();
+  return true;
+}
+
+function recoveryLeft(rec) {
+  return Array.isArray(rec.recovery) ? rec.recovery.filter(c => c && !c.used).length : 0;
+}
+
+/* Signing back in with a recovery code or a reset link has to end every other
+   session. If somebody else knew the old password, the point of the reset is
+   that they no longer have the account — and a live cookie would undo that. */
+async function dropAllSessions(uid) {
+  const keys = (await raw.keys ? await raw.keys('__auth:sess:*') : null);
+  if (!keys || !keys.length) return 0;
+  let n = 0;
+  for (const k of keys) {
+    const s = await getJSON(k, null);
+    if (s && s.uid === uid) { await raw.set(k, ''); n++; }
+  }
+  return n;
 }
 
 /* ---------- sessions ----------------------------------------------------- */
@@ -1175,6 +1347,9 @@ async function gate(req, res) {
     const id = crypto.randomBytes(9).toString('hex');
     const owner = owner0;
     users[email] = { id, email, name, salt, hash: hashPassword(pw, salt), owner: !!owner, created: new Date().toISOString() };
+    /* Issued at signup rather than offered later, because the moment somebody
+       needs them is the moment they can no longer sign in to ask for them. */
+    const recoveryCodes = mintRecoveryCodes(users[email]);
     await setJSON(USERS_KEY, users);
 
     let adopted = 0;
@@ -1189,7 +1364,7 @@ async function gate(req, res) {
 
     const { token, expires } = await newSession(id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(id, SESSION_DAYS * 86400)]);
-    json(res, 200, { ok: true, user: { email, name, owner: !!owner }, adopted, seed: adopted > 0 ? 'legacy' : 'template', expires });
+    json(res, 200, { ok: true, user: { email, name, owner: !!owner }, adopted, seed: adopted > 0 ? 'legacy' : 'template', expires, recoveryCodes });
     return true;
   }
 
@@ -1233,6 +1408,130 @@ async function gate(req, res) {
     rec.hash = hashPassword(b.next, rec.salt);
     await setJSON(USERS_KEY, users);
     json(res, 200, { ok: true });
+    return true;
+  }
+
+  /* ---- account recovery ------------------------------------------------- *
+     Three routes: mint codes (while signed in), use a code to set a new
+     password (while locked out), and ask for a reset link by email.          */
+
+  if (p === '/api/auth/recovery' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) return json(res, 401, { error: 'Sign in first.' }), true;
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[me.email];
+    if (!rec) return json(res, 404, { error: 'No such account.' }), true;
+    const codes = mintRecoveryCodes(rec);
+    await setJSON(USERS_KEY, users);
+    /* Shown once. Minting again replaces the lot, so an old printout stops
+       working the moment a new one is made — which is the point. */
+    json(res, 200, { ok: true, codes, count: codes.length });
+    return true;
+  }
+
+  if (p === '/api/auth/recovery/status') {
+    const me = await currentUser(req);
+    if (!me) return json(res, 401, { error: 'Sign in first.' }), true;
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[me.email] || {};
+    json(res, 200, { ok: true, left: recoveryLeft(rec), minted: rec.recoveryMinted || null });
+    return true;
+  }
+
+  if (p === '/api/auth/recover' && req.method === 'POST') {
+    const b = safeParse(await readBody(req));
+    const email = String(b.email || '').trim().toLowerCase();
+    const next = String(b.password || '');
+    const day = new Date().toISOString().slice(0, 10);
+
+    /* Rate limited per email per day. Ten codes exist and each is 60 bits of
+       alphabet; the limit is here so that a stolen email address cannot be
+       ground against forever, not because the codes are weak. */
+    const tries = (await getJSON(RC_TRY(email, day), 0)) || 0;
+    if (tries >= RC_TRY_MAX) {
+      return json(res, 429, { error: 'Too many attempts today. Try again tomorrow.' }), true;
+    }
+    await setJSON(RC_TRY(email, day), tries + 1);
+
+    if (next.length < 10) return json(res, 400, { error: 'Use at least 10 characters for the new password.' }), true;
+
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[email];
+    /* Same answer whether or not the account exists, and the same work done
+       either way, so this cannot be used to find out who has an account. */
+    const ok = rec ? consumeRecoveryCode(rec, b.code)
+                   : (hashPassword(normRecoveryCode(b.code), 'decoy'), false);
+    if (!ok) return json(res, 401, { error: 'That email and recovery code do not match.' }), true;
+
+    rec.salt = crypto.randomBytes(16).toString('hex');
+    rec.hash = hashPassword(next, rec.salt);
+    await setJSON(USERS_KEY, users);
+    await dropAllSessions(rec.id);
+
+    const { token, expires } = await newSession(rec.id);
+    res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
+    json(res, 200, {
+      ok: true,
+      user: { email: rec.email, name: rec.name, owner: !!rec.owner },
+      left: recoveryLeft(rec),
+      expires
+    });
+    return true;
+  }
+
+  if (p === '/api/auth/reset' && req.method === 'POST') {
+    const b = safeParse(await readBody(req));
+    const email = String(b.email || '').trim().toLowerCase();
+
+    if (!MAIL.ready()) {
+      /* Said plainly rather than pretending to send. A silent no-op here is
+         how somebody sits waiting for an email that was never going to come. */
+      return json(res, 501, {
+        error: 'Email reset is not set up on this Flow yet. Use a recovery code instead.',
+        recoveryAvailable: true
+      }), true;
+    }
+
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[email];
+    if (rec) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await setJSON(RESET_TOK(token), { email, expires: Date.now() + RESET_TTL_MIN * 60000 });
+      const link = ORIGIN() + '/?reset=' + token;
+      await MAIL.send(email, 'Reset your Flow password',
+        'Someone asked to reset the password on your Flow.\n\n' + link +
+        '\n\nThe link works once and expires in ' + RESET_TTL_MIN + ' minutes. ' +
+        'If this was not you, ignore this — nothing has changed.');
+    }
+    /* Always the same answer, whether or not that address has an account. */
+    json(res, 200, { ok: true, sent: true });
+    return true;
+  }
+
+  if (p === '/api/auth/reset/confirm' && req.method === 'POST') {
+    const b = safeParse(await readBody(req));
+    const next = String(b.password || '');
+    if (next.length < 10) return json(res, 400, { error: 'Use at least 10 characters.' }), true;
+
+    const t = String(b.token || '');
+    const slot = t ? await getJSON(RESET_TOK(t), null) : null;
+    if (!slot || !slot.expires || Date.now() > slot.expires) {
+      return json(res, 401, { error: 'That reset link has expired. Ask for a new one.' }), true;
+    }
+    await raw.set(RESET_TOK(t), '');           /* one use, whatever happens next */
+
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[slot.email];
+    if (!rec) return json(res, 404, { error: 'No such account.' }), true;
+
+    rec.salt = crypto.randomBytes(16).toString('hex');
+    rec.hash = hashPassword(next, rec.salt);
+    await setJSON(USERS_KEY, users);
+    await dropAllSessions(rec.id);
+
+    const { token, expires } = await newSession(rec.id);
+    res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
+    json(res, 200, { ok: true, user: { email: rec.email, name: rec.name, owner: !!rec.owner }, expires });
     return true;
   }
 

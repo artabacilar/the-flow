@@ -587,7 +587,12 @@ server.listen(PORT, '0.0.0.0', () => {
    restart is still a cold start — only a paid, always-on plan removes that
    too. */
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || '';
-if (SELF_URL) {
+/* Opt-in now. This exists only to defeat the free plan's 15-minute spin-down;
+   on a paid always-on instance it is a request every ten minutes that buys
+   nothing and still counts against the month's bandwidth. Set KEEP_WARM=1 to
+   bring it back if the service ever goes back to free. */
+const KEEP_WARM = process.env.KEEP_WARM === '1';
+if (SELF_URL && KEEP_WARM) {
   const https = require('https');
   const http_ = require('http');
   const ping = () => {

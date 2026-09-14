@@ -3293,9 +3293,14 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         <p class="flow-sub">Signed in as <b>${esc(Auth.user ? (Auth.user.name || Auth.user.email) : '')}</b>${Auth.user && Auth.user.email ? ' · ' + esc(Auth.user.email) : ''}${Auth.user && Auth.user.owner ? ' · owner of this server' : ''}. Your data is private to this account — nobody else signed in here can see it.</p>
         <div class="flow-row">
           <button class="flow-btn" data-act2="changepw">Change password</button>
+          <button class="flow-btn" data-act2="reccodes">Recovery codes</button>
           <span class="flow-spacer"></span>
           <button class="flow-btn danger" data-act2="signout">Sign out</button>
         </div>
+        <!-- Filled in after render. The moment somebody needs these codes is
+             the moment they can no longer sign in to come and make them, so
+             this line has to be visible before anything goes wrong. -->
+        <p class="flow-sub" id="set-rcstat" style="margin-top:8px">Checking your recovery codes…</p>
       </div>` : ''}
 
       <div class="flow-card">
@@ -3384,6 +3389,9 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     /* ---- Connect to Claude ---- */
     SettingsUI.mcpWire(section);
 
+    /* ---- recovery codes ---- */
+    SettingsUI.recoveryStatus(section);
+
     /* Colour-theme swatches — apply instantly, persist, and re-mark the row. */
     section.querySelectorAll('[data-theme]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -3439,6 +3447,14 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       if (a === 'signout') {
         if (!confirm('Sign out of The Flow on this device?')) return;
         await Auth.signOut();
+        return;
+      }
+      if (a === 'reccodes') {
+        if (!confirm('Make ten new recovery codes?\n\nAny codes you were given before stop working straight away. The new ones are shown once.')) return;
+        try {
+          const j = await Auth.post('/api/auth/recovery', {});
+          Auth.showCodes(j.codes, { firstTime: false });
+        } catch (e) { toast(e.message, 'err', 5000); }
         return;
       }
       if (a === 'changepw') {
@@ -3619,6 +3635,26 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     } catch (e) {
       box.innerHTML = '<div class="flow-sub">Could not read your access tokens just now.</div>';
     }
+  },
+
+  /* Says how many codes are left, and admits it when there are none — an
+     account made before recovery existed has none, and that is exactly the
+     account that will be locked out one day. */
+  async recoveryStatus(section) {
+    const line = (section || document).querySelector('#set-rcstat');
+    if (!line) return;
+    try {
+      const r = await fetch('/api/auth/recovery/status', { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.ok) { line.textContent = ''; return; }
+      if (!j.left) {
+        line.innerHTML = '<b>You have no recovery codes.</b> Without them, a forgotten password means a lost account. Make a set now and keep them somewhere off this machine.';
+      } else {
+        const when = j.minted ? new Date(j.minted).toLocaleDateString() : null;
+        line.textContent = j.left + ' recovery code' + (j.left === 1 ? '' : 's') + ' left'
+          + (when ? ', made ' + when : '') + '. Making new ones cancels the old.';
+      }
+    } catch (e) { line.textContent = ''; }
   },
 
   mcpWire(section) {
@@ -5558,8 +5594,15 @@ const Auth = {
           <label class="flow-label" for="fa-inv">Invite code</label>
           <input class="flow-in" id="fa-inv" type="text" placeholder="The code you were given">
         </div>
+        <div id="fa-rcwrap" hidden>
+          <label class="flow-label" for="fa-rc">Recovery code</label>
+          <input class="flow-in" id="fa-rc" type="text" autocomplete="one-time-code" placeholder="XXXX-XXXX-XXXX">
+          <p class="fa-fine" style="margin:6px 0 0">One of the codes you were given when you signed up. Case and dashes do not matter.</p>
+        </div>
         <button class="flow-btn primary fa-go" id="fa-go">${firstRun ? 'Create account' : 'Sign in'}</button>
         <button class="flow-btn ghost fa-alt" id="fa-alt">${firstRun ? '' : 'Create an account instead'}</button>
+        <button class="flow-btn ghost" id="fa-forgot" ${firstRun ? 'hidden' : ''} style="margin-top:4px">Forgot your password?</button>
+        <button class="flow-btn ghost" id="fa-mail" hidden style="margin-top:4px">Email me a link instead</button>
         <div class="fa-or"><span>or</span></div>
         <button class="flow-btn ghost" id="fa-guest">Have a look around first</button>
         <p class="fa-fine">No account, nothing saved to the server. You can keep your work if you sign up afterwards.</p>
@@ -5580,9 +5623,52 @@ const Auth = {
       $('#fa-invwrap', el).hidden = m !== 'signup' || firstRun;
       $('#fa-pw', el).setAttribute('autocomplete', m === 'signup' ? 'new-password' : 'current-password');
       err.hidden = true;
+
+      /* Locked out: same form, one more field. Keeping it here rather than on
+         a separate screen means the email they already typed is still there. */
+      if (m === 'recover') {
+        $('#fa-h', el).textContent = 'Set a new password';
+        $('#fa-sub', el).textContent = 'Use one of your recovery codes. Each one works once.';
+        $('#fa-go', el).textContent = 'Set new password';
+        $('#fa-pw', el).setAttribute('autocomplete', 'new-password');
+        $('#fa-pw', el).placeholder = 'Your new password — at least 10 characters';
+      } else {
+        $('#fa-pw', el).placeholder = 'At least 10 characters';
+      }
+      $('#fa-rcwrap', el).hidden = m !== 'recover';
+      const mailb = $('#fa-mail', el);
+      if (mailb) { mailb.hidden = m !== 'recover'; mailb.disabled = false;
+                   mailb.textContent = 'Email me a link instead'; }
+      $('#fa-alt', el).hidden = m === 'recover';
+      const forgot = $('#fa-forgot', el);
+      if (forgot) {
+        forgot.hidden = firstRun || m === 'signup';
+        forgot.textContent = m === 'recover' ? 'Back to signing in' : 'Forgot your password?';
+      }
     };
     if (!firstRun) $('#fa-alt', el).addEventListener('click', () => setMode(mode === 'signup' ? 'login' : 'signup'));
     else $('#fa-alt', el).style.display = 'none';
+    const forgotBtn = $('#fa-forgot', el);
+    if (forgotBtn) forgotBtn.addEventListener('click', () => setMode(mode === 'recover' ? 'login' : 'recover'));
+
+    /* The second road back in. If this Flow has no mail provider set up the
+       server says so plainly and this button repeats it, because a green tick
+       for an email that will never arrive is worse than no button at all. */
+    const mailBtn = $('#fa-mail', el);
+    if (mailBtn) mailBtn.addEventListener('click', async () => {
+      const email = $('#fa-email', el).value.trim();
+      if (!email) { err.textContent = 'Type your email address first.'; err.hidden = false; return; }
+      mailBtn.disabled = true;
+      const was = mailBtn.textContent; mailBtn.textContent = 'Sending…';
+      try {
+        await Auth.post('/api/auth/reset', { email });
+        err.hidden = true;
+        mailBtn.textContent = 'Sent — the link works once, for 30 minutes.';
+      } catch (e) {
+        err.textContent = e.message; err.hidden = false;
+        mailBtn.disabled = false; mailBtn.textContent = was;
+      }
+    });
 
     const go = async () => {
       const btn = $('#fa-go', el);
@@ -5597,12 +5683,23 @@ const Auth = {
           payload.name = $('#fa-name', el).value.trim();
           payload.invite = $('#fa-inv', el).value.trim();
         }
-        const j = await Auth.post(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', payload);
+        if (mode === 'recover') payload.code = $('#fa-rc', el).value;
+        const j = await Auth.post(
+          mode === 'signup'  ? '/api/auth/signup'  :
+          mode === 'recover' ? '/api/auth/recover' : '/api/auth/login', payload);
         btn.textContent = j.adopted ? 'Restoring your data…' : 'Loading…';
         /* If they were looking around as a guest first, carry that work into
            the account they just made, before the reload picks it all up. */
         if (mode === 'signup') {
           try { const n = await Auth.adoptCarried(); if (n) btn.textContent = 'Keeping your work…'; } catch (e) {}
+        }
+        /* This is the one moment the codes exist in plain text. Nothing stores
+           them where the browser can read them again, so closing this screen
+           without writing them down loses them — hence a screen rather than a
+           toast, and a reload that only happens on a deliberate click. */
+        if (mode === 'signup' && Array.isArray(j.recoveryCodes) && j.recoveryCodes.length) {
+          Auth.showCodes(j.recoveryCodes, { firstTime: true });
+          return;
         }
         /* A full reload is deliberate: the app hydrates its whole store in one
            synchronous pass at boot, so the cleanest way to pick up the account's
@@ -5618,6 +5715,127 @@ const Auth = {
     $('#fa-go', el).addEventListener('click', go);
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     setTimeout(() => { try { $('#fa-email', el).focus(); } catch (e) {} }, 60);
+  },
+
+  /* ---- recovery codes ------------------------------------------------
+   * Shown exactly once, whether that once is straight after signup or from
+   * Settings. The checkbox is not ceremony: the only failure that matters
+   * here is somebody clicking past the screen, and everything else on it is
+   * built to be clicked past.
+   * ------------------------------------------------------------------ */
+  showCodes(codes, opts) {
+    const o = opts || {};
+    const gone = $('#flow-codes'); if (gone) gone.remove();
+    /* The sign-in screen has to go, not just fall behind: it is the same
+       full-screen layer at the same depth, so leaving it up means the codes
+       are drawn under a card that swallows every click aimed at them. */
+    const signin = $('#flow-auth'); if (signin) signin.remove();
+    const el = document.createElement('div');
+    el.id = 'flow-codes';
+    el.className = 'flow-x';
+    el.innerHTML = `
+      <div class="fa-card">
+        <div class="fa-brand">The <b>Flow</b></div>
+        <h2 class="fa-h">Your recovery codes</h2>
+        <p class="fa-sub">These are the way back in if you ever forget your password. Each one works once. Put them somewhere that is not this browser — printed, or in a password manager alongside the password itself.</p>
+        <pre class="flow-code" id="fc-list">${codes.map(c => esc(c)).join('\n')}</pre>
+        <div class="flow-row" style="gap:8px;margin-top:10px">
+          <button class="flow-btn" id="fc-copy">Copy</button>
+          <button class="flow-btn" id="fc-save">Download</button>
+        </div>
+        <div class="fa-err" id="fc-warn" hidden></div>
+        <label class="flow-label" style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer">
+          <input type="checkbox" id="fc-ack"> I have written these down somewhere safe
+        </label>
+        <button class="flow-btn primary fa-go" id="fc-done" disabled style="margin-top:8px">${o.firstTime ? 'Take me to The Flow' : 'Done'}</button>
+      </div>`;
+    document.body.appendChild(el);
+
+    const text = codes.join('\n') + '\n';
+    $('#fc-ack', el).addEventListener('change', (e) => { $('#fc-done', el).disabled = !e.target.checked; });
+
+    $('#fc-copy', el).addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(text); $('#fc-copy', el).textContent = 'Copied ✓'; }
+      catch (e) {
+        /* The clipboard is blocked in plenty of ordinary contexts. Select the
+           codes so the keyboard still works, rather than leaving a button
+           that silently does nothing. */
+        try {
+          const r = document.createRange(); r.selectNodeContents($('#fc-list', el));
+          const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        } catch (e2) {}
+        const w = $('#fc-warn', el);
+        w.textContent = 'This browser would not let me use the clipboard — the codes are selected, so copy them by hand.';
+        w.hidden = false;
+      }
+    });
+
+    $('#fc-save', el).addEventListener('click', () => {
+      try {
+        const url = URL.createObjectURL(new Blob([
+          'The Flow — recovery codes\nMade ' + new Date().toISOString().slice(0, 10) +
+          '\n\nEach code works once. Making new codes cancels these.\n\n' + text
+        ], { type: 'text/plain' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = 'flow-recovery-codes.txt';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+      } catch (e) {
+        const w = $('#fc-warn', el);
+        w.textContent = 'Could not start the download — copy them instead.';
+        w.hidden = false;
+      }
+    });
+
+    $('#fc-done', el).addEventListener('click', () => {
+      if (o.firstTime) { location.reload(); return; }
+      el.remove();
+      try { SettingsUI.recoveryStatus(document); } catch (e) {}
+    });
+  },
+
+  /* Arrived from the emailed link. Same card, one field, and it never asks
+     for the old password — not having it is the whole reason they are here. */
+  resetScreen(token) {
+    if ($('#flow-auth')) return;
+    Auth.installed = true;
+    const el = document.createElement('div');
+    el.id = 'flow-auth';
+    el.className = 'flow-x';
+    el.innerHTML = `
+      <div class="fa-card">
+        <div class="fa-brand">The <b>Flow</b></div>
+        <h2 class="fa-h">Set a new password</h2>
+        <p class="fa-sub">This link works once and stops working 30 minutes after it was sent. Setting a password here also signs you out everywhere else.</p>
+        <div class="fa-err" id="fa-err" hidden></div>
+        <label class="flow-label" for="fa-pw">New password</label>
+        <input class="flow-in" id="fa-pw" type="password" autocomplete="new-password" placeholder="At least 10 characters">
+        <button class="flow-btn primary fa-go" id="fa-go">Set new password</button>
+        <button class="flow-btn ghost" id="fa-back">Back to signing in</button>
+      </div>`;
+    document.body.appendChild(el);
+
+    const err = $('#fa-err', el);
+    /* Take the token out of the address bar either way, so it is not left in
+       history for whoever next uses this machine. */
+    const clean = () => { try { history.replaceState(null, '', location.pathname); } catch (e) {} };
+    $('#fa-back', el).addEventListener('click', () => { clean(); location.reload(); });
+    const go = async () => {
+      const btn = $('#fa-go', el);
+      err.hidden = true; btn.disabled = true;
+      const was = btn.textContent; btn.textContent = 'One moment…';
+      try {
+        await Auth.post('/api/auth/reset/confirm', { token, password: $('#fa-pw', el).value });
+        clean();
+        location.reload();
+      } catch (e) {
+        err.textContent = e.message; err.hidden = false;
+        btn.disabled = false; btn.textContent = was;
+      }
+    };
+    $('#fa-go', el).addEventListener('click', go);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    setTimeout(() => { try { $('#fa-pw', el).focus(); } catch (e) {} }, 60);
   },
 
   /* ---- guest mode ----------------------------------------------------
@@ -8434,6 +8652,14 @@ async function boot() {
   /* Before anything else: if the server has accounts installed and nobody is
      signed in, put the sign-in screen up. Everything below still runs, so the
      app is ready the moment the session exists. */
+  /* An emailed reset link lands here before anything else. Nothing else in
+     boot should run: they are not signed in, and the only thing on offer is
+     the one field that gets them back. */
+  try {
+    const rt = new URLSearchParams(location.search).get('reset');
+    if (rt) { Auth.resetScreen(rt); return; }
+  } catch (e) {}
+
   try { await Auth.check(); } catch (e) {}
 
   /* Load the profile before anything renders, so the template swap happens
