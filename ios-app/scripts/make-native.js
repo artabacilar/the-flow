@@ -35,6 +35,15 @@ const pbxPath = path.join(appDir, 'App.xcodeproj', 'project.pbxproj');
 /** Kept in one place because the widget target has to agree with it. */
 const DEPLOYMENT_TARGET = '17.0';
 
+/** Optional. Present, both targets sign automatically against it; absent,
+ *  Xcode asks — which is the old behaviour, not a failure. */
+const TEAM = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(root, 'capacitor.config.json'), 'utf8'));
+    return (cfg.ios || {}).developmentTeam || '';
+  } catch (e) { return ''; }
+})();
+
 if (!fs.existsSync(pbxPath)) {
   console.error('No project at ' + pbxPath + ' — run `npx cap add ios` first.');
   process.exit(1);
@@ -190,6 +199,18 @@ real(section('XCBuildConfiguration')).forEach((u) => {
    * sit at 17 so the widget can use `containerBackground` without a maze of
    * availability guards, and so there is only ever one number to change. */
   if (s.IPHONEOS_DEPLOYMENT_TARGET) s.IPHONEOS_DEPLOYMENT_TARGET = DEPLOYMENT_TARGET;
+
+  /* Signing, written down rather than chosen from a menu. Picking a team by
+   * hand is the step that has to be repeated on every machine, in every clone,
+   * and forgotten once on the extension — which fails as "no profile for
+   * com.abko.theflow.FlowWidget" long after the app itself is signing fine.
+   * The id comes from capacitor.config.json so that identity lives in one
+   * file; leave it out there and this does nothing, and the menu is still
+   * waiting. */
+  if (TEAM) {
+    s.DEVELOPMENT_TEAM = TEAM;
+    s.CODE_SIGN_STYLE = 'Automatic';
+  }
 });
 
 /* ---- 4 · add what the shell now needs ----------------------------------- */

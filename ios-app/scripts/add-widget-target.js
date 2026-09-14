@@ -17,6 +17,15 @@ const GROUP  = 'group.' + BUNDLE;
 const WIDGET = 'FlowWidget';
 const WIDGET_BUNDLE = BUNDLE + '.' + WIDGET;
 
+/** Same source as make-native.js: identity lives in capacitor.config.json. */
+const TEAM = (() => {
+  try {
+    const cfg = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'capacitor.config.json'), 'utf8'));
+    return (cfg.ios || {}).developmentTeam || '';
+  } catch (e) { return ''; }
+})();
+
 const projDir  = path.join(__dirname, '..', 'ios', 'App');
 const pbxPath  = path.join(projDir, 'App.xcodeproj', 'project.pbxproj');
 
@@ -118,8 +127,15 @@ settingsFor(target.uuid).forEach(s => {
   s.INFOPLIST_FILE = WIDGET + '/Info.plist';
   s.CODE_SIGN_ENTITLEMENTS = WIDGET + '/' + WIDGET + '.entitlements';
   s.CODE_SIGN_STYLE = 'Automatic';
-  /* containerBackground(for:) is iOS 17. The app itself still targets 13 so
-     that Capacitor is happy; an extension may ask for more than its host. */
+  /* The widget's configurations are created here, after make-native.js has
+     already been through the project — so the team it wrote at project level
+     would only reach this target by inheritance. Inheritance is enough for the
+     build, but Xcode's signing editor reads the target, and a blank team there
+     is what makes somebody pick one by hand and pick the wrong one. */
+  if (TEAM) s.DEVELOPMENT_TEAM = TEAM;
+  /* containerBackground(for:) is iOS 17, and make-native.js puts the app on 17
+     as well — an extension may ask for more than its host, but there is no
+     reason for these two to disagree. */
   s.IPHONEOS_DEPLOYMENT_TARGET = '17.0';
   s.SWIFT_VERSION = '5.0';
   s.TARGETED_DEVICE_FAMILY = '"1,2"';
