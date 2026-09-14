@@ -3191,17 +3191,18 @@ const SettingsUI = {
           <div class="flow-label">Your new token — copy it now, it is not shown again</div>
           <div class="mcp-url"><code id="mcpSecret"></code><button type="button" class="flow-btn sm primary" data-mcp="copytok">Copy</button></div>
         </div>
+        <div id="mcpConns" class="mcp-list"></div>
         <div id="mcpList" class="mcp-list"><div class="flow-sub">Loading…</div></div>
         <div class="mcp-acts">
           <input class="flow-in" id="mcpName" placeholder="What is this for? e.g. Claude on my laptop" maxlength="60">
           <button type="button" class="flow-btn primary" data-mcp="new">Create access token</button>
         </div>
         <ol class="flow-ol">
-          <li>Create a token above and copy it.</li>
-          <li>In Claude, add a custom connector with the server URL above.</li>
-          <li>When it asks for authentication, give it the token as a <b>Bearer</b> token.</li>
+          <li>In Claude or ChatGPT, add a custom connector and give it the server URL above.</li>
+          <li>It will send you here to sign in and say yes. That is all — no token to copy.</li>
           <li>Ask it "what's on my week?" to check it worked.</li>
         </ol>
+        <p class="flow-sub">An access token below is the manual way in, for a client that cannot do the above, or for your own scripts.</p>
         <p class="flow-sub">A token is as good as your password for reading and adding — treat it like one. If you no longer recognise a token in the list, revoke it; anything using it stops working immediately and nothing you have saved is touched.</p>
       </div>
 
@@ -3537,6 +3538,39 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       '<button type="button" class="flow-btn sm danger" data-mcp="revoke" data-id="' + esc(t.id) + '">Revoke</button></div>';
   },
 
+  /* Two ways in, shown as two lists, because they are revoked differently and
+     a person should be able to see at a glance which is which: an app that
+     asked and was granted, or a token somebody copied. */
+  async mcpConns(section) {
+    const box = section.querySelector('#mcpConns');
+    if (!box) return;
+    try {
+      const r = await SettingsUI.mcpFetch('/api/flow/connections');
+      const list = r.connections || [];
+      box.innerHTML = list.length
+        ? '<div class="flow-label" style="margin-bottom:2px">Connected apps</div>' + list.map(c =>
+            '<div class="mcp-row"><div class="mcp-meta"><b>' + esc(c.name) + '</b>' +
+            '<span>connected through sign-in</span></div>' +
+            '<button type="button" class="flow-btn sm danger" data-mcp="disconnect" data-cid="' + esc(c.client_id) + '">Disconnect</button></div>').join('')
+        : '';
+      box.querySelectorAll('[data-mcp="disconnect"]').forEach(b => {
+        b.addEventListener('click', async () => {
+          const nm = (b.closest('.mcp-row').querySelector('b') || {}).textContent || 'that app';
+          if (!confirm('Disconnect ' + nm + '? It stops reaching your Flow straight away. Nothing you have saved is affected.')) return;
+          b.disabled = true;
+          try {
+            await SettingsUI.mcpFetch('/api/flow/connections/revoke', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ client_id: b.getAttribute('data-cid') })
+            });
+            toast('Disconnected ✓');
+            SettingsUI.mcpConns(section);
+          } catch (e) { b.disabled = false; toast(e.message, 'err'); }
+        });
+      });
+    } catch (e) { box.innerHTML = ''; }
+  },
+
   async mcpPaint(section) {
     const box = section.querySelector('#mcpList');
     if (!box) return;
@@ -3544,8 +3578,8 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       const r = await SettingsUI.mcpFetch('/api/flow/tokens');
       const list = r.tokens || [];
       box.innerHTML = list.length
-        ? list.map(SettingsUI.mcpRow).join('')
-        : '<div class="flow-sub">No access tokens yet. Nothing can reach this account through Claude until you make one.</div>';
+        ? '<div class="flow-label" style="margin-bottom:2px">Access tokens</div>' + list.map(SettingsUI.mcpRow).join('')
+        : '<div class="flow-sub">No access tokens. Nothing needs one unless a client cannot sign in for itself.</div>';
       box.querySelectorAll('[data-mcp="revoke"]').forEach(b => {
         b.addEventListener('click', async () => {
           const row = b.closest('.mcp-row');
@@ -3574,6 +3608,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     const card = section.querySelector('#mcp-card');
     if (!card) return;
     SettingsUI.mcpPaint(section);
+    SettingsUI.mcpConns(section);
 
     const copy = async (text, btn) => {
       try { await navigator.clipboard.writeText(text); }
