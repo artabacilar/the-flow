@@ -208,6 +208,36 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('the installed web app calls itself the same thing',
      srvSrc.indexOf('name: "' + cap.appName + '"') > 0, cap.appName);
 
+  console.log('\n— the widget target is built by something that cannot mistype —');
+  /* Creating the widget target used to be a dialog somebody clicked through,
+     and the App Group was a string somebody typed twice. Typed wrong, nothing
+     errors: the widget reads an empty store and says "Open the app and connect"
+     forever. So it is a script now, and these check the script agrees with the
+     config it is supposed to follow. */
+  const script = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'scripts', 'add-widget-target.js'), 'utf8');
+  const sBundle = (script.match(/const BUNDLE = '([^']+)'/) || [])[1];
+  const sGroup  = (script.match(/const GROUP  = '([^']+)' \+ BUNDLE/) || [])[1];
+
+  ok('the script signs the same bundle the config declares', sBundle === cap.appId, [sBundle, cap.appId]);
+  ok('and derives the group rather than repeating it', sGroup === 'group.', sGroup);
+  ok('the widget is its own bundle under the app\u2019s', /WIDGET_BUNDLE = BUNDLE \+ '\.' \+ WIDGET/.test(script));
+  /* A target with no Sources phase builds green and ships an empty widget,
+     which is the worst kind of pass. */
+  ok('the target gets a Sources phase', /'PBXSourcesBuildPhase'/.test(script));
+  ok('and both files it needs are compiled into it',
+     /addSourceFile\(WIDGET \+ '\/FlowWidget\.swift'/.test(script) &&
+     /addSourceFile\(WIDGET \+ '\/FlowStore\.swift'/.test(script));
+  /* Without the copy phase the widget builds and is never shipped; without the
+     dependency the copy phase copies something that was not built yet. */
+  ok('the extension is embedded in the app', /'Embed Foundation Extensions'/.test(script) && /'app_extension'\s*\n?\s*\)/.test(script.replace(/\r/g,'')));
+  ok('and built before it is copied', /PBXTargetDependency/.test(script) && /PBXContainerItemProxy/.test(script));
+  ok('both targets carry the entitlement file', /CODE_SIGN_ENTITLEMENTS/.test(script));
+  /* containerBackground(for:) is iOS 17. Leaving the extension on the app's
+     own floor is a build error nobody reads until the third time. */
+  ok('the widget asks for the iOS it actually needs', /IPHONEOS_DEPLOYMENT_TARGET = '17\.0'/.test(script));
+  ok('the original project is kept, so the wizard is still a way back',
+     /project\.pbxproj.*\.original|pbxPath \+ '\.original'/.test(script));
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
