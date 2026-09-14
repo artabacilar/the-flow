@@ -4159,6 +4159,24 @@ document.getElementById('jnImportFile').addEventListener('change',function(){
 });
 
 // ── Local database status indicator ──
+/* The badge's detail line: which engine is behind it, and how many sections
+   are stored. The engine cannot change while the page is open and the count is
+   a decoration — but asking for it went to the database every single time any
+   badge repainted, which on a normal open is three round trips to another
+   continent for a number nobody is waiting on. Asked once, then left alone;
+   retried at most once a minute if it failed. */
+let dbStat = null, dbStatAsked = 0;
+function withDbStatus(paint){
+  if(dbStat) return paint(dbStat);
+  if(Date.now() - dbStatAsked < 60000) return;   /* one is already in flight, or one just failed */
+  dbStatAsked = Date.now();
+  try{
+    fetch(DB_API+'/status').then(r=>r.json()).then(s=>{
+      dbStat=s; window.__DB_ENGINE=s.engine; paint(s);
+    }).catch(()=>{});
+  }catch(e){}
+}
+
 function updateDbIndicator(){
   /* Two indicators now: the header one, and the one beside the backup buttons
      in the Journal tab (the only one a phone shows). Write to whichever of
@@ -4173,7 +4191,7 @@ function updateDbIndicator(){
     set('dbind on',
         '🟢 Database'+(window.__DB_ENGINE?' · '+window.__DB_ENGINE:''),
         'Saving to the cloud database. Every device signed into this account sees the same data.');
-    try{ fetch(DB_API+'/status').then(r=>r.json()).then(s=>{ window.__DB_ENGINE=s.engine; els.forEach(el=>{ el.textContent='🟢 Database · '+s.engine+' · '+s.keys+' sets'; }); }).catch(()=>{}); }catch(e){}
+    withDbStatus(s=>{ els.forEach(el=>{ el.textContent='🟢 Database · '+s.engine+' · '+s.keys+' sets'; }); });
   } else if(sync.state==='signedout'){
     set('dbind off', '🔒 Not signed in',
         'This browser is not signed in, so nothing is being saved to your account. Sign in to sync.');
