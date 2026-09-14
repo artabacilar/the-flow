@@ -15,7 +15,7 @@ enum FlowStore {
     /// plainly signed in, it is because one of the two is missing this.
     static let appGroup = "group.com.abko.theflow"
 
-    static let origin = URL(string: "https://the-flow-noq1.onrender.com")!
+    static let origin = URL(string: "https://the-flow-eu.onrender.com")!
 
     private static let tokenKey = "flow.token"
 
