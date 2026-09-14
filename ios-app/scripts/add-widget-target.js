@@ -65,12 +65,18 @@ fs.writeFileSync(path.join(wdir, 'Info.plist'), `<?xml version="1.0" encoding="U
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+\t<key>CFBundleDevelopmentRegion</key>
+\t<string>$(DEVELOPMENT_LANGUAGE)</string>
 \t<key>CFBundleDisplayName</key>
 \t<string>The Flow</string>
 \t<key>CFBundleName</key>
 \t<string>$(PRODUCT_NAME)</string>
 \t<key>CFBundleIdentifier</key>
 \t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+\t<key>CFBundleInfoDictionaryVersion</key>
+\t<string>6.0</string>
+\t<key>CFBundleExecutable</key>
+\t<string>$(EXECUTABLE_NAME)</string>
 \t<key>CFBundlePackageType</key>
 \t<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 \t<key>CFBundleShortVersionString</key>
@@ -99,6 +105,15 @@ proj.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid);
 const wgroup = proj.pbxCreateGroup(WIDGET, WIDGET);
 const mainGroupId = proj.getFirstProject().firstProject.mainGroup;
 proj.addToPbxGroup(wgroup, mainGroupId);
+
+/* The group is a name in the navigator, not a folder on disk. Left with
+   path = FlowWidget it would be both, and every file inside it — which already
+   carries FlowWidget/ in its own path — would resolve to
+   FlowWidget/FlowWidget/…, which Xcode draws in red.
+   The paths have to stay full, because node-xcode treats a bare "FlowStore.swift"
+   as the one the App target already has and silently adds nothing. So: full
+   paths, and a group that is only a label. */
+delete proj.hash.project.objects.PBXGroup[wgroup].path;
 
 proj.addSourceFile(WIDGET + '/FlowWidget.swift', { target: target.uuid }, wgroup);
 proj.addSourceFile(WIDGET + '/FlowStore.swift',  { target: target.uuid }, wgroup);
@@ -151,7 +166,29 @@ settingsFor(appTarget).forEach(s => {
   s.CODE_SIGN_ENTITLEMENTS = 'App/App.entitlements';
 });
 
-/* ---- 4. embed it, so the app actually ships the widget ------------------- */
+/* ---- 4. embed it, so the app actually ships the widget -------------------
+   addTarget has already put an embed phase of its own into the app target,
+   named "Copy Files" and without the attributes Xcode writes. Two phases both
+   copying FlowWidget.appex into PlugIns is not a warning: the build stops with
+   "Unexpected duplicate tasks", naming neither phase. So the one we do not
+   want goes first, and ours — correctly named, with RemoveHeadersOnCopy — is
+   the only one left. */
+const appPhasesOf = (uuid) => (proj.pbxNativeTargetSection()[uuid].buildPhases || []);
+const copyPhases = proj.hash.project.objects.PBXCopyFilesBuildPhase || {};
+
+appPhasesOf(appTarget).slice().forEach((entry) => {
+  const phase = copyPhases[entry.value];
+  if (!phase || String(phase.dstSubfolderSpec) !== '13') return;
+  (phase.files || []).forEach((f) => {
+    delete proj.hash.project.objects.PBXBuildFile[f.value];
+    delete proj.hash.project.objects.PBXBuildFile[f.value + '_comment'];
+  });
+  delete copyPhases[entry.value];
+  delete copyPhases[entry.value + '_comment'];
+  const list = proj.pbxNativeTargetSection()[appTarget];
+  list.buildPhases = list.buildPhases.filter((e) => e.value !== entry.value);
+});
+
 const embedPhase = proj.addBuildPhase(
   [], 'PBXCopyFilesBuildPhase', 'Embed Foundation Extensions', appTarget, 'app_extension'
 );
@@ -214,4 +251,78 @@ rootObj.attributes.TargetAttributes = rootObj.attributes.TargetAttributes || {};
 rootObj.attributes.TargetAttributes[target.uuid] = { CreatedOnToolsVersion: '15.0' };
 
 fs.writeFileSync(pbxPath, proj.writeSync());
+
+/* ---- 6. does every file the project names actually exist? ----------------
+   A path that resolves to nothing does not fail here, or during generation, or
+   in any test that reads these scripts. It fails the first time a person opens
+   Xcode, as a filename drawn in red — and by then the machine that generated it
+   is somewhere else. A group carries a path, a file reference carries a path,
+   and the two are joined: get that wrong and everything still writes cleanly.
+   So the script checks its own output before it claims to have worked. */
+const check = xcode.project(pbxPath).parseSync();
+const objs = check.hash.project.objects;
+const GROUPS = Object.assign({}, objs.PBXGroup || {}, objs.PBXVariantGroup || {});
+const REFS = objs.PBXFileReference || {};
+const clean = (v) => String(v || '').replace(/"/g, '');
+
+const missing = [];
+let counted = 0;
+
+(function walk(uuid, prefix) {
+  const group = GROUPS[uuid];
+  if (!group) return;
+  const here = group.path ? path.join(prefix, clean(group.path)) : prefix;
+  (group.children || []).forEach((child) => {
+    const u = child.value;
+    if (GROUPS[u]) return walk(u, here);
+    const ref = REFS[u];
+    if (!ref || !ref.path) return;
+    const p = clean(ref.path);
+    if (!/\.(swift|m|h|plist|entitlements|xcassets|storyboard)$/.test(p)) return;
+    counted++;
+    if (!fs.existsSync(path.join(projDir, here, p))) missing.push(path.join(here, p));
+  });
+})(check.getFirstProject().firstProject.mainGroup, '');
+
+if (missing.length) {
+  console.error('the project names files that are not there:\n  ' + missing.join('\n  '));
+  console.error('(this is what Xcode shows as red filenames — usually a group path applied twice)');
+  process.exit(1);
+}
+
+/* And nothing may be copied to the same place twice. Xcode reports this as
+   "Unexpected duplicate tasks" and names neither phase, so it is worth a few
+   lines here rather than twenty minutes in the issue navigator. */
+const phases = objs.PBXCopyFilesBuildPhase || {};
+const embedded = {};
+Object.keys(phases)
+  .filter((k) => !k.endsWith('_comment') && String(phases[k].dstSubfolderSpec) === '13')
+  .forEach((k) => {
+    (phases[k].files || []).forEach((f) => {
+      const bf = (objs.PBXBuildFile || {})[f.value] || {};
+      const name = clean(bf.fileRef_comment || f.comment || f.value);
+      embedded[name] = (embedded[name] || 0) + 1;
+    });
+  });
+
+const twice = Object.keys(embedded).filter((k) => embedded[k] > 1);
+if (twice.length) {
+  console.error('embedded more than once: ' + twice.join(', '));
+  console.error('(Xcode calls this "Unexpected duplicate tasks" and names neither phase)');
+  process.exit(1);
+}
+
+/* An extension's Info.plist has to name its own binary. Leave CFBundleExecutable
+   out and everything compiles and links — the failure is at install time, on the
+   device, as "missing or invalid CFBundleExecutable", after a full build. These
+   four keys are the ones iOS refuses a bundle for. */
+const plist = fs.readFileSync(path.join(wdir, 'Info.plist'), 'utf8');
+const needed = ['CFBundleExecutable', 'CFBundleIdentifier', 'CFBundleName',
+                'NSExtensionPointIdentifier'].filter((k) => plist.indexOf('<key>' + k + '</key>') < 0);
+if (needed.length) {
+  console.error('the widget’s Info.plist is missing: ' + needed.join(', '));
+  process.exit(1);
+}
+
 console.log('ok: ' + WIDGET + ' -> ' + WIDGET_BUNDLE + ', group ' + GROUP);
+console.log('ok: all ' + counted + ' referenced files resolve');
