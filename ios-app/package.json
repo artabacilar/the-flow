@@ -1,0 +1,16 @@
+{
+  "name": "the-flow-ios",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The iOS shell and home-screen widget for The Flow. Kept out of the server's package.json on purpose — Render should not install a build toolchain it never runs.",
+  "scripts": {
+    "setup": "npm install && npx cap add ios",
+    "open": "npx cap sync ios && npx cap open ios",
+    "sync": "npx cap sync ios"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0"
+  }
+}

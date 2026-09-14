@@ -1,0 +1,14 @@
+{
+  "appId": "com.example.theflow",
+  "appName": "The Flow",
+  "webDir": "www",
+  "server": {
+    "url": "https://the-flow-noq1.onrender.com",
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0a0b0d",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}
