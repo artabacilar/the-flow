@@ -106,22 +106,33 @@ ok('and the phone rule that collapses it is back',
 ok('no auto-fit is left on it', !/\.qwrap\{[^}]*auto-fit/.test(src));
 
 console.log('\n— the service worker keeps its hands off the handshake —');
-/* The offline shell is the right answer for the app and the wrong answer for
-   everything else. On a cold server the fetch fails, the worker reaches for
-   the cache, and the person clicking Connect gets a stale dashboard where the
-   consent screen should be — which reads as the button doing nothing at all.
-   These paths are the server's alone, so the worker must not answer for them. */
-const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-const bypass = sw.slice(sw.indexOf("addEventListener('fetch'"), sw.indexOf('const isHTML'));
+/* There is one service worker and the server writes it inline; the loose sw.js
+   that used to sit in the repo was served by nothing and only made it look like
+   the fix had landed. Read the real one.
 
-ok('the consent and token endpoints are let through', /startsWith\('\/oauth\/'\)/.test(bypass));
+   Its old rule treated every navigation as the app shell, so a click on Connect
+   was answered with the cached dashboard whatever the address bar said — the
+   button appeared to do nothing at all. Only the shell is the shell now, and the
+   pages the server composes per request are never kept on the device. */
+const srv = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
+const sw  = srv.slice(srv.indexOf('const SW = `'), srv.indexOf('// ── Login page'));
+const fetchHandler = sw.slice(sw.indexOf("addEventListener('fetch'"));
+const bypass = fetchHandler.slice(0, fetchHandler.indexOf('const isHTML'));
+
+ok('there is no second service worker left to mislead anyone',
+   !fs.existsSync(path.join(__dirname, '..', 'sw.js')));
+ok('only the shell path is treated as the shell',
+   /const isHTML = u\.pathname==='\/' \|\| u\.pathname==='\/index\.html';/.test(sw));
+ok('a bare navigation no longer qualifies on its own', !/isHTML = req\.mode==='navigate'/.test(sw));
+ok('the consent and token endpoints are handed to the network', /startsWith\('\/oauth\/'\)/.test(bypass));
 ok('so is discovery', /startsWith\('\/\.well-known\/'\)/.test(bypass));
-ok('and so is the assistant endpoint', /'\/mcp'/.test(bypass) && /startsWith\('\/mcp\/'\)/.test(bypass));
-ok('each one returns before any respondWith can claim it',
-   !/respondWith/.test(bypass) && (bypass.match(/return;/g) || []).length >= 2);
+ok('and so is the assistant endpoint', /u\.pathname==='\/mcp'/.test(bypass));
+ok('the sign-in gate is never served from the device', /u\.pathname==='\/login'/.test(bypass));
+ok('each one returns before anything can answer for it',
+   !/respondWith/.test(bypass) && (bypass.match(/return;/g) || []).length >= 3);
 ok('the API stays exempt too, as it always was', /startsWith\('\/api'\)/.test(bypass));
 ok('the cache name moved on, so the old worker is replaced',
-   /const CACHE = 'life-os-v4';/.test(sw));
+   /const CACHE='life-os-v6';/.test(sw));
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
