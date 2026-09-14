@@ -2,11 +2,10 @@
   "name": "the-flow-ios",
   "version": "1.0.0",
   "private": true,
-  "description": "The iOS shell and home-screen widget for The Flow. Kept out of the server's package.json on purpose — Render should not install a build toolchain it never runs.",
+  "description": "The iOS shell and home-screen widget for The Flow. Kept out of the server's package.json on purpose — Render should not install a build toolchain it never runs. Capacitor is used once, to generate the project, and then removed: what ships is a plain Xcode project with no CocoaPods and nothing to resolve.",
   "scripts": {
-    "setup": "npm install && npx cap add ios && node scripts/add-widget-target.js",
-    "open": "npx cap sync ios && npx cap open ios",
-    "sync": "npx cap sync ios",
+    "setup": "npm install && npx cap add ios && node scripts/make-native.js && node scripts/add-widget-target.js",
+    "native": "node scripts/make-native.js",
     "widget": "node scripts/add-widget-target.js"
   },
   "devDependencies": {
