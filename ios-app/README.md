@@ -25,18 +25,20 @@ you copy in once during setup. Deliberately kept out of the repo root so that
 Render, which only ever runs the server, never installs a build toolchain it
 has no use for.
 
-## Two values only you can supply
+## Its name and its identity
 
-Everything below has a placeholder in it. Replace both before the first build:
+    APP NAME        The Flow — Life OS
+    BUNDLE ID       com.abko.theflow
+    App Group       group.com.abko.theflow
 
-    APP NAME        The name under the icon and on the store listing.
-                    Placeholder: The Flow
-    BUNDLE ID       Reverse-DNS, unique to you, and permanent — Apple will not
-                    let you change it after the first upload.
-                    Placeholder: com.example.theflow
-
-    App Group       Derived from the bundle id: group.<bundle id>
-                    Placeholder: group.com.example.theflow
+The bundle id is reverse-DNS off abko.com.tr, which is a domain you actually
+own — that is the whole point of the convention, and it is why this is not
+`artur.theflow`. A bare first name is not a namespace anybody controls, so it
+can collide with a stranger's app, and Apple will not let you change it after
+the first upload. If you want it different, change it in
+`capacitor.config.json` and in `native/Shared/FlowStore.swift` (the App Group
+is always `group.` plus the bundle id) — but do it before you submit, because
+after that it is permanent.
 
 The App Group is what lets the app hand the widget its token. Both targets must
 have the same one enabled in Signing & Capabilities or the widget will show
