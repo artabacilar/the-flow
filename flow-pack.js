@@ -3234,6 +3234,17 @@ const SettingsUI = {
         </div>
       </div>
 
+      <div class="flow-card" id="voice-card">
+        <h3>🎤 Voice</h3>
+        <p class="flow-sub">A microphone appears in the corner of whatever you are writing in. Tap it, talk, tap it again — the words land where your cursor was. It listens in the language the app is set to, so switching to Turkish switches the dictation too.</p>
+        <div class="vc-state" id="vc-state"><span class="vc-dot"></span><span class="vc-txt">Checking…</span></div>
+        <p class="flow-sub" id="vc-note" style="margin-top:8px"></p>
+        <div class="flow-row" style="margin-top:10px">
+          <button type="button" class="flow-btn sm" data-voice-act="ask" hidden>Allow the microphone</button>
+        </div>
+        <p class="flow-sub" style="margin-top:12px">Your phone's own keyboard mic and tools like Wispr Flow type straight into these fields and work here too — nothing needs turning on for those.</p>
+      </div>
+
       <div class="flow-grid c2">
         <div class="flow-card">
           <h3>👤 You</h3>
@@ -3507,6 +3518,13 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         catch (e) { toast('That language could not be loaded — staying in English.', 'err'); }
       });
     });
+
+    /* Voice — what the card can honestly say depends on where it is running.
+       In the iOS shell the system knows whether the microphone and speech
+       recognition have been granted and we can ask for them. In a browser
+       there is nothing to report until the person presses the mic, because
+       that is the moment the browser itself asks. */
+    SettingsUI.voiceWire(section);
 
     /* Colour-theme swatches — apply instantly, persist, and re-mark the row. */
     section.querySelectorAll('[data-theme]').forEach(btn => {
@@ -3800,6 +3818,60 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           + (when ? ', made ' + when : '') + '. Making new ones cancels the old.';
       }
     } catch (e) { line.textContent = ''; }
+  },
+
+  async voiceWire(section) {
+    const card = section.querySelector('#voice-card');
+    if (!card) return;
+    const row = card.querySelector('#vc-state');
+    const dot = row.querySelector('.vc-dot');
+    const txt = row.querySelector('.vc-txt');
+    const note = card.querySelector('#vc-note');
+    const ask = card.querySelector('[data-voice-act="ask"]');
+    const V = window.FlowVoice;
+
+    const paint = (cls, label, detail, offer) => {
+      dot.className = 'vc-dot' + (cls ? ' ' + cls : '');
+      txt.textContent = label;
+      note.textContent = detail || '';
+      ask.hidden = !offer;
+    };
+
+    if (!V || !V.available) {
+      paint('no', 'Not available in this browser',
+        'Chrome, Edge and Safari can do this; Firefox cannot yet. On your phone the app itself can, so it works there.');
+      return;
+    }
+
+    const show = async () => {
+      let st = null;
+      try { st = await V.permission(); } catch (e) {}
+      /* A browser: it asks on first press and there is no state to read. */
+      if (!st || st.asks === 'on-use') {
+        paint('ok', 'Ready',
+          'Your browser will ask for the microphone the first time you press it.');
+        return;
+      }
+      const mic = st.mic, speech = st.speech;
+      if (mic === 'granted' && speech === 'granted') {
+        paint('ok', 'Allowed', 'The microphone and speech recognition are both on.');
+      } else if (mic === 'denied' || speech === 'denied') {
+        paint('no', 'Blocked',
+          'Turn the microphone and speech recognition back on for The Flow in your iPhone Settings \u2014 the app cannot ask again once they have been refused.');
+      } else {
+        paint('', 'Not asked yet',
+          'The Flow needs the microphone to hear you, and speech recognition to turn it into words.', true);
+      }
+    };
+
+    ask.addEventListener('click', async () => {
+      ask.disabled = true;
+      try { await V.request(); } catch (e) {}
+      ask.disabled = false;
+      await show();
+    });
+
+    await show();
   },
 
   mcpWire(section) {

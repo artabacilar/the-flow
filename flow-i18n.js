@@ -543,7 +543,12 @@
        to the Settings screen. */
     languages: function () {
       return Object.keys(LANGS).map(function (c) {
-        return { code: c, name: LANGS[c].name, native: LANGS[c].native };
+        /* The locale belongs to the language, and more than the date
+           formatters want it — the speech recogniser needs a BCP-47 tag and
+           has no other honest way to derive one from 'tr'. Keeping it here
+           means there is one table, not two that can disagree. */
+        return { code: c, name: LANGS[c].name, native: LANGS[c].native,
+                 locale: LANGS[c].locale || c };
       });
     },
 

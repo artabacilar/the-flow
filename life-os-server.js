@@ -215,7 +215,7 @@ function sendFile(res, file, type, headers, req) {
 // whole point: change flow-pack.js on its own and the URL in the page changes
 // with it. There is no way to ship a new pack that an old cache can satisfy,
 // and no second file to remember to edit.
-const PACK_FILES = ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js'];
+const PACK_FILES = ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js', 'flow-voice.js'];
 let PACK_V = 'dev';
 let SHELL_HTML = null;
 
