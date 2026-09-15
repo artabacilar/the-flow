@@ -1693,11 +1693,37 @@ function syncPaint(){
   window.__FLOW_ALL_READY = new Promise(r=>{ allReady=r; });
   const publishAll=(v)=>{ window.__FLOW_ALL=v; try{ allReady(v); }catch(e){} };
 
-  let reloaded=false;
+  let reloaded=false, waiting=false;
   function reloadOnce(){
-    if(reloaded) return;
-    /* Hard stop against a reload loop, whatever goes wrong upstream. */
-    try{ if(Date.now()-(+(sessionStorage.getItem('__flowReloadedAt')||0)) < 4000) return; }catch(e){}
+    if(reloaded) return;          /* at most one per page life — no loop is possible */
+
+    /* Never pull the page out from under somebody mid-sentence. Since this can
+       now fire whenever a tab is brought back — not only during start-up — it
+       can land while a person is writing, and reloading would take the words
+       with it. Wait for them to leave the field, then do it. */
+    try{
+      const a=document.activeElement;
+      if(a && (a.tagName==='TEXTAREA' || (a.tagName==='INPUT' && !a.readOnly) || a.isContentEditable)){
+        if(!waiting){ waiting=true; a.addEventListener('blur', ()=>{ waiting=false; reloadOnce(); }, {once:true}); }
+        return;
+      }
+    }catch(e){}
+
+    /* Too soon after the last one. This used to drop the reload on the floor,
+       which was harmless while the only caller was start-up — there was always
+       another open coming. Now that a deferred reload can arrive here seconds
+       after the one that preceded it, dropping it leaves the page sitting on
+       stale data with nothing left to trigger it again. So: wait out the
+       window and try once more. The `reloaded` flag above is what actually
+       prevents a loop; this only decides when. */
+    try{
+      const since=Date.now()-(+(sessionStorage.getItem('__flowReloadedAt')||0));
+      if(since < 4000){
+        if(!waiting){ waiting=true; setTimeout(()=>{ waiting=false; reloadOnce(); }, 4000-since+60); }
+        return;
+      }
+    }catch(e){}
+
     reloaded=true;
     try{ sessionStorage.setItem('__flowReloadedAt', String(Date.now())); }catch(e){}
     location.reload();
@@ -1757,9 +1783,40 @@ function syncPaint(){
     if(timer){ clearTimeout(timer); timer=null; }
     run();
   };
+  /* ── Coming back to a tab that has been open a while ──────────────────────
+     A page loads its data once and then has no way of hearing that anything
+     changed: a Big Rock added from Claude, a WHOOP sync, an edit made on the
+     phone, a second tab. It keeps showing the version it opened with, and the
+     only cure was knowing to press reload.
+
+     The guard here used to be `!window.__DB_ON` — re-check only while the
+     connection is DOWN, which is precisely the case where there is nothing new
+     to fetch. Inverted, it does what it was always meant to.
+
+     Safe to run because reconcile() already decides this carefully rather than
+     overwriting: anything written locally and not yet sent up is marked dirty
+     and wins, and whatever it does replace is kept under bak2_ for a
+     generation. And it is cheap — a list of signatures, a few hundred bytes,
+     and a second request only for the sections that actually moved. */
+  let lastSyncAt=Date.now();
+  window.__flowMarkSynced=()=>{ lastSyncAt=Date.now(); };
+  /* Flicking between two tabs should not mean a request per flick. Read at
+     call time rather than captured, so the suite can shorten it instead of
+     making a test sit through twenty seconds of nothing. */
+  const SYNC_GAP=20000;
+  function syncOnReturn(){
+    if(document.hidden) return;
+    if(!window.__DB_ON){ window.__flowSyncNow(); return; }   /* offline: always retry */
+    if(Date.now()-lastSyncAt < (window.__FLOW_SYNC_GAP_MS||SYNC_GAP)) return;
+    window.__flowSyncNow();
+  }
   try{
     addEventListener('online', ()=>window.__flowSyncNow());
-    addEventListener('visibilitychange', ()=>{ if(!document.hidden && !window.__DB_ON) window.__flowSyncNow(); });
+    addEventListener('visibilitychange', syncOnReturn);
+    /* visibilitychange does not fire when the window merely regains focus from
+       another application on a desktop, and that is the same "I have been away"
+       moment from the person's point of view. */
+    addEventListener('focus', syncOnReturn);
   }catch(e){}
 
   /* ── Reconcile phase: runs after the first paint and never blocks it ── */
@@ -1891,6 +1948,10 @@ function syncPaint(){
            overwrites is ever unrecoverable. */
         try{ if(painted[k]!=null) localStorage.setItem('bak2_'+k, painted[k]); }catch(e){}
         try{ localStorage.setItem(k,v); changed=true; }catch(e){}
+        /* `painted` was captured once, at load. Now that this can run again
+           later, it has to keep up — otherwise every subsequent reconcile
+           re-discovers the same difference and asks for the same reload. */
+        painted[k]=v;
       }
     });
 
@@ -1911,6 +1972,7 @@ function syncPaint(){
     window.__FLOW_SYNC.state='on';
     window.__FLOW_SYNC.tries=0;
     syncPaint();
+    try{ window.__flowMarkSynced(); }catch(e){}
     try{ window.__flowFlushSeed(); }catch(e){}
 
     /* Only when what we drew was genuinely out of date. */
