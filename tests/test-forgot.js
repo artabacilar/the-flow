@@ -51,6 +51,18 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
     await p.waitForTimeout(2600);
 
     ok('the sign-in screen is up', await p.isVisible('#flow-auth'));
+
+    /* Typing a long password blind on a phone is how people end up choosing
+       short ones. It has to default to hidden, and it must not stay revealed
+       across a mode change. */
+    ok('the password is hidden to start with',
+       await p.getAttribute('#fa-pw', 'type') === 'password');
+    await p.click('#fa-eye');
+    ok('the toggle reveals it', await p.getAttribute('#fa-pw', 'type') === 'text');
+    ok('and says how to put it back', (await p.textContent('#fa-eye')).trim() === 'Hide');
+    await p.click('#fa-eye');
+    ok('and hides it again', await p.getAttribute('#fa-pw', 'type') === 'password');
+    ok('the toggle never submits the form', await p.isVisible('#flow-auth'));
     await p.fill('#fa-email', OWNER);
     await p.fill('#fa-name', 'Artur');
     await p.fill('#fa-pw', PW1);
@@ -91,8 +103,12 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
     ok('the way back is on the screen, not buried', await q.isVisible('#fa-forgot'));
     ok('and the recovery field is hidden until asked for', !(await q.isVisible('#fa-rcwrap')));
 
+    await q.click('#fa-eye');
+    ok('revealed on the sign-in form', await q.getAttribute('#fa-pw', 'type') === 'text');
     await q.click('#fa-forgot');
     await q.waitForTimeout(250);
+    ok('and hidden again once the form asks for something else',
+       await q.getAttribute('#fa-pw', 'type') === 'password');
     ok('asking for it shows the code field', await q.isVisible('#fa-rcwrap'));
     ok('the heading says what will happen', (await q.textContent('#fa-h')).indexOf('new password') >= 0,
        await q.textContent('#fa-h'));
