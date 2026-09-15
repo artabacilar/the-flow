@@ -1,173 +1,210 @@
 #!/usr/bin/env node
-/* The app icon, drawn rather than resized.
+/* The app icon, drawn rather than resized — and drawn with nothing but Node.
  *
- * icon-512.png is the web icon, and it is 512 across with the rounded corners
- * already painted into it. Neither is any good for the App Store: the
- * marketing icon has to be 1024 and must carry no alpha channel at all, and an
- * icon with its own corners gets masked a second time by iOS, which shows as a
- * dark rim around the artwork.
+ * icon-512.png is the web icon: 512 across, with the rounded corners painted
+ * into it and an alpha channel. Both are wrong for the App Store. The
+ * marketing icon must be 1024 and App Store Connect refuses alpha outright,
+ * and iOS masks the corners itself, so baked-in ones show as a dark rim.
  *
- * So this redraws it. The artwork is three sine waves and a gradient — pure
- * geometry, nothing photographic — so drawing it at any size is both exact and
- * cheaper than arguing with a resampler. The numbers below were measured off
- * the 512 original: all three waves turned out to be the same sine at period
- * 240/512 of the width, the top and middle in phase, the bottom mirrored about
- * the centre line, which is what makes the braid read as a crossing.
+ * Resizing 512 to 1024 would soften every curve, so this draws it instead.
+ * The artwork is three sine waves and two gradients — pure geometry, nothing
+ * photographic — so it is exact at any size.
+ *
+ * It uses no image library on purpose. `make-native.js` already requires
+ * Node, and a build step that also wants Python and Pillow is a build step
+ * that works on one machine. PNG is a container around zlib, which Node has,
+ * so the encoder below is forty lines and the whole thing runs anywhere.
  *
  *   node ios-app/scripts/make-icons.js
  *
- * Writes ios-app/native/Assets/AppIcon/*.png. make-native.js copies them into
- * the generated Xcode project.
+ * Writes ios-app/native/Assets/AppIcon/. make-native.js copies them into the
+ * generated Xcode project and checks the bytes before the build can pass.
  */
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const zlib = require('zlib');
 
 const OUT = path.join(__dirname, '..', 'native', 'Assets', 'AppIcon');
-fs.mkdirSync(OUT, { recursive: true });
 
-/* Everything is expressed as a fraction of the canvas, so one set of numbers
-   draws every size we will ever be asked for. */
-const ART = {
-  waveSpanFrom: 79 / 512,       /* where the strokes start and end */
-  waveSpanTo: 465 / 512,
+/* Every measurement is a fraction of the canvas, so one set of numbers draws
+   any size. These were taken off the 512 original: all three waves turned out
+   to be the same sine at period 240/512 of the width, the top and middle in
+   phase, the bottom mirrored about the centre line — which is what makes the
+   braid read as a crossing rather than three parallel ropes. */
+const A = {
+  spanFrom: 79 / 512,
+  spanTo: 465 / 512,
   period: 240 / 512,
-  firstMinAt: 160 / 512,        /* x of the first crest (smallest y) */
+  firstMinAt: 160 / 512,
   midCentre: 256 / 512,
   midAmp: 34.5 / 512,
-  dimOffset: 66.5 / 512,        /* top wave sits this far above the middle */
+  dimOffset: 66.5 / 512,
   dimAmp: 32.5 / 512,
   stroke: 32 / 512,
   dimAlpha: 0.30,
-  /* The background runs light top-left to near-black bottom-right. */
   bgFrom: [24, 29, 37],
   bgTo: [11, 12, 15],
-  /* The stroke gradient is vertical: emerald at the crests, teal in the troughs. */
   inkTop: [0, 230, 140],
   inkBottom: [0, 200, 185]
 };
 
-const python = (script) => execFileSync('python3', ['-c', script], { maxBuffer: 64 * 1024 * 1024 });
+const waveY = (xf, centre, amp) =>
+  centre + amp * Math.sin(2 * Math.PI * (xf - A.firstMinAt) / A.period - Math.PI / 2);
 
-/* The drawing itself lives in Python because Pillow is what is actually
-   installed here and it antialiases curves properly. It is generated rather
-   than kept as a separate file so the measurements above stay the one place
-   the artwork is described. */
-function draw(size, variant, outfile) {
-  const a = ART;
-  const script = `
-from PIL import Image, ImageDraw
-import math
-
-S = ${size}
-V = ${JSON.stringify(variant)}
-A = ${JSON.stringify(a)}
-SS = 3                      # supersample, then average down: clean curve edges
-
-W = S * SS
-
-# ---- background ---------------------------------------------------------
-# A bilinear resize of a 2x2 image IS the diagonal ramp, exactly, and it is
-# instant. Walking 17 million pixels in Python to get the same answer was a
-# minute per icon and bought nothing.
-def ramp(c0, c1):
-    mid = tuple((c0[i] + c1[i]) // 2 for i in range(3))
-    seed = Image.new('RGB', (2, 2))
-    seed.putpixel((0, 0), tuple(c0)); seed.putpixel((1, 0), mid)
-    seed.putpixel((0, 1), mid);       seed.putpixel((1, 1), tuple(c1))
-    return seed.resize((W, W), Image.BILINEAR)
-
-if V == 'dark':
-    # A dark-appearance icon sits on the system's own dark ground. A second
-    # gradient under it reads as a smudge, so this one is flat.
-    img = Image.new('RGB', (W, W), (10, 11, 14))
-else:
-    img = ramp(A['bgFrom'], A['bgTo'])
-
-# ---- the three waves ----------------------------------------------------
-def wave_y(xf, centre, amp):
-    phase = 2 * math.pi * (xf - A['firstMinAt']) / A['period'] - math.pi / 2
-    return centre + amp * math.sin(phase)
-
-def wave_dy(xf, amp):
-    phase = 2 * math.pi * (xf - A['firstMinAt']) / A['period'] - math.pi / 2
-    return amp * math.cos(phase) * 2 * math.pi / A['period']
-
-def stroke_mask(centre, amp, mirror=False):
-    """One filled polygon, not a run of wide line segments.
-
-    Pillow draws a wide polyline as one rectangle per segment, and on a curve
-    those rectangles fan apart and leave pinholes all down the stroke — which
-    is exactly what the first version of this did. Offsetting the curve by
-    half the stroke width either side gives a single closed shape with no
-    seams in it at all."""
-    m = Image.new('L', (W, W), 0)
-    d = ImageDraw.Draw(m)
-    h = A['stroke'] / 2
-    steps = 600
-    upper, lower = [], []
-    for i in range(steps + 1):
-        xf = A['waveSpanFrom'] + (A['waveSpanTo'] - A['waveSpanFrom']) * i / steps
-        yf = wave_y(xf, centre, amp)
-        dy = wave_dy(xf, amp)
-        if mirror:
-            yf = 2 * A['midCentre'] - yf
-            dy = -dy
-        n = math.sqrt(1 + dy * dy)
-        nx, ny = -dy / n, 1 / n
-        upper.append(((xf + h * nx) * W, (yf + h * ny) * W))
-        lower.append(((xf - h * nx) * W, (yf - h * ny) * W))
-    d.polygon(upper + lower[::-1], fill=255)
-    r = h * W
-    for (cx, cy) in ((upper[0][0] + lower[0][0]) / 2, (upper[0][1] + lower[0][1]) / 2), \
-                    ((upper[-1][0] + lower[-1][0]) / 2, (upper[-1][1] + lower[-1][1]) / 2):
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
-    return m
-
-i0, i1 = A['inkTop'], A['inkBottom']
-if V == 'tinted':
-    # A tinted icon is greyscale; iOS supplies the colour. Keep the same
-    # top-to-bottom fall so the braid still reads as three strands.
-    i0, i1 = [235, 235, 235], [170, 170, 170]
-ink = ramp(i0, i1) if False else None
-seed = Image.new('RGB', (1, 2))
-seed.putpixel((0, 0), tuple(i0)); seed.putpixel((0, 1), tuple(i1))
-ink = seed.resize((W, W), Image.BILINEAR)
-
-top = stroke_mask(A['midCentre'] - A['dimOffset'], A['dimAmp'])
-bottom = stroke_mask(A['midCentre'] - A['dimOffset'], A['dimAmp'], mirror=True)
-mid = stroke_mask(A['midCentre'], A['midAmp'])
-
-dim_a = A['dimAlpha']
-if V == 'tinted':
-    dim_a = 0.45          # greyscale needs more separation to stay legible
-for m in (top, bottom):
-    img = Image.composite(ink, img, m.point(lambda v: int(v * dim_a)))
-img = Image.composite(ink, img, mid)
-
-img = img.resize((S, S), Image.LANCZOS)
-img.save(${JSON.stringify(outfile)}, 'PNG', optimize=True)
-print('%s %dx%d' % (${JSON.stringify(path.basename(outfile))}, S, S))
-`;
-  process.stdout.write(python(script).toString());
+/* ---- a minimal PNG encoder ---------------------------------------------- *
+   Truecolour, 8 bits, no alpha — which is not a limitation here but the
+   requirement: the marketing icon is rejected if it has an alpha channel. */
+function png(width, height, rgb) {
+  const crcTable = (() => {
+    const t = new Int32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c;
+    }
+    return t;
+  })();
+  const crc = (buf) => {
+    let c = -1;
+    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ -1) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;      /* bit depth */
+  ihdr[9] = 2;      /* colour type 2 = truecolour, no alpha */
+  /* Each scanline is prefixed with a filter byte; 0 means none. The gradients
+     here compress well enough that paying for filter selection buys little. */
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++) {
+    const o = y * (1 + width * 3);
+    raw[o] = 0;
+    rgb.copy(raw, o + 1, y * width * 3, (y + 1) * width * 3);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
 }
 
-const jobs = [
-  [1024, 'any', 'AppIcon-1024.png'],
-  [1024, 'dark', 'AppIcon-1024-dark.png'],
-  [1024, 'tinted', 'AppIcon-1024-tinted.png']
-];
-for (const [size, variant, name] of jobs) draw(size, variant, path.join(OUT, name));
+/* ---- the drawing -------------------------------------------------------- */
+function draw(S, variant) {
+  const SS = 3;                       /* subsamples per axis, for smooth edges */
+  const px = Buffer.alloc(S * S * 3);
+
+  const flat = variant === 'dark';    /* iOS supplies its own dark ground */
+  let ink0 = A.inkTop, ink1 = A.inkBottom;
+  if (variant === 'tinted') { ink0 = [235, 235, 235]; ink1 = [170, 170, 170]; }
+  const dimA = variant === 'tinted' ? 0.45 : A.dimAlpha;
+
+  /* The three centrelines, as functions of the horizontal fraction. */
+  const curves = [
+    { centre: A.midCentre - A.dimOffset, amp: A.dimAmp, mirror: false, alpha: dimA },
+    { centre: A.midCentre - A.dimOffset, amp: A.dimAmp, mirror: true,  alpha: dimA },
+    { centre: A.midCentre, amp: A.midAmp, mirror: false, alpha: 1 }
+  ];
+  const half = A.stroke / 2;
+
+  /* Distance from a point to one curve, minimised over a local window. f is
+     smooth and slowly varying, so a window a little wider than the stroke is
+     enough — checking the whole curve for every pixel would be 400 million
+     comparisons and would buy nothing. */
+  const near = (c, xf, yf) => {
+    const w = half * 3;
+    const steps = 24;
+    let best = Infinity;
+    for (let i = 0; i <= steps; i++) {
+      const sx = xf - w + (2 * w) * i / steps;
+      if (sx < A.spanFrom - half || sx > A.spanTo + half) continue;
+      const cx = Math.min(Math.max(sx, A.spanFrom), A.spanTo);
+      let cy = waveY(cx, c.centre, c.amp);
+      if (c.mirror) cy = 2 * A.midCentre - cy;
+      const dx = xf - cx, dy = yf - cy;
+      const d = dx * dx + dy * dy;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  };
+
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const xf0 = (x + 0.5) / S, yf0 = (y + 0.5) / S;
+
+      /* Background: a diagonal ramp, or flat for the dark appearance. */
+      let r, g, b;
+      if (flat) { r = 10; g = 11; b = 14; }
+      else {
+        const t = (xf0 + yf0) / 2;
+        r = A.bgFrom[0] + (A.bgTo[0] - A.bgFrom[0]) * t;
+        g = A.bgFrom[1] + (A.bgTo[1] - A.bgFrom[1]) * t;
+        b = A.bgFrom[2] + (A.bgTo[2] - A.bgFrom[2]) * t;
+      }
+
+      /* Ink is a vertical gradient: emerald at the crests, teal in the
+         troughs. Sampled once per pixel — it varies far too slowly for the
+         subsamples to disagree. */
+      const it = yf0;
+      const ir = ink0[0] + (ink1[0] - ink0[0]) * it;
+      const ig = ink0[1] + (ink1[1] - ink0[1]) * it;
+      const ib = ink0[2] + (ink1[2] - ink0[2]) * it;
+
+      for (const c of curves) {
+        /* Cheap rejection first: this pixel cannot be in this stroke if it is
+           further from the curve's own band than the stroke is wide. */
+        let cy = waveY(Math.min(Math.max(xf0, A.spanFrom), A.spanTo), c.centre, c.amp);
+        if (c.mirror) cy = 2 * A.midCentre - cy;
+        if (Math.abs(yf0 - cy) > half * 4) continue;
+
+        let hits = 0;
+        for (let sy = 0; sy < SS; sy++) {
+          for (let sx = 0; sx < SS; sx++) {
+            const xf = (x + (sx + 0.5) / SS) / S;
+            const yf = (y + (sy + 0.5) / SS) / S;
+            if (near(c, xf, yf) <= half) hits++;
+          }
+        }
+        if (!hits) continue;
+        const a = (hits / (SS * SS)) * c.alpha;
+        r += (ir - r) * a; g += (ig - g) * a; b += (ib - b) * a;
+      }
+
+      const o = (y * S + x) * 3;
+      px[o] = Math.max(0, Math.min(255, Math.round(r)));
+      px[o + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      px[o + 2] = Math.max(0, Math.min(255, Math.round(b)));
+    }
+  }
+  return png(S, S, px);
+}
+
+fs.mkdirSync(OUT, { recursive: true });
+for (const [name, variant] of [
+  ['AppIcon-1024.png', 'any'],
+  ['AppIcon-1024-dark.png', 'dark'],
+  ['AppIcon-1024-tinted.png', 'tinted']
+]) {
+  const buf = draw(1024, variant);
+  fs.writeFileSync(path.join(OUT, name), buf);
+  console.log('  ' + name + '  1024×1024  ' + buf.length + ' bytes');
+}
 
 /* iOS 17 is the deployment target, so one 1024 per appearance is the whole
    set — the days of twenty-odd sizes in the catalogue are over. */
-const contents = {
+fs.writeFileSync(path.join(OUT, 'Contents.json'), JSON.stringify({
   images: [
     { filename: 'AppIcon-1024.png', idiom: 'universal', platform: 'ios', size: '1024x1024' },
     { appearances: [{ appearance: 'luminosity', value: 'dark' }], filename: 'AppIcon-1024-dark.png', idiom: 'universal', platform: 'ios', size: '1024x1024' },
     { appearances: [{ appearance: 'luminosity', value: 'tinted' }], filename: 'AppIcon-1024-tinted.png', idiom: 'universal', platform: 'ios', size: '1024x1024' }
   ],
   info: { author: 'xcode', version: 1 }
-};
-fs.writeFileSync(path.join(OUT, 'Contents.json'), JSON.stringify(contents, null, 2) + '\n');
-console.log('Contents.json written · ' + OUT);
+}, null, 2) + '\n');
+console.log('  Contents.json');
+console.log('ok: ' + OUT);

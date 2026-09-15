@@ -268,10 +268,13 @@ fs.writeFileSync(pbxPath, proj.writeSync());
 const iconSrc = path.join(root, 'native', 'Assets', 'AppIcon');
 const iconDst = path.join(srcDir, 'Assets.xcassets', 'AppIcon.appiconset');
 
+/* Generated, not committed — the generator needs nothing but Node, so the
+   icons are cheaper to rebuild than to carry, and they can never drift from
+   the script that describes them. */
 if (!fs.existsSync(iconSrc)) {
-  console.error('no icons at ' + iconSrc);
-  console.error('  run: node ios-app/scripts/make-icons.js');
-  process.exit(1);
+  console.log('drawing the app icons...');
+  require('child_process').execFileSync(
+    process.execPath, [path.join(__dirname, 'make-icons.js')], { stdio: 'inherit' });
 }
 
 fs.mkdirSync(iconDst, { recursive: true });
