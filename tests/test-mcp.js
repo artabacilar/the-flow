@@ -320,6 +320,63 @@ const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
   ok('preflight is answered without a credential',
      (await rq('/mcp', { method: 'OPTIONS' })).status === 204);
 
+  /* Every tool says what kind of thing it is before anybody calls it.
+     A client that cannot tell set_mission from get_today is one bad guess away
+     from replacing somebody's year with a sentence — and the Connectors
+     Directory rejects a server whose tools do not say. */
+  console.log('\n— the tools declare themselves —');
+  {
+    const T = require('../flow-mcp.js').TOOLS;
+    const READ = ['get_week', 'get_today', 'get_scoreboard'];
+    const REPLACES = ['set_blade_lines', 'set_mission', 'set_training_day'];
+
+    ok('every tool has a title', T.every(t => typeof t.title === 'string' && !!t.title),
+       T.filter(t => !t.title).map(t => t.name));
+    ok('and annotations', T.every(t => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'),
+       T.filter(t => !t.annotations).map(t => t.name));
+    ok('the three that only look are marked read-only',
+       T.filter(t => t.annotations.readOnlyHint).map(t => t.name).sort().join(',') === READ.slice().sort().join(','),
+       T.filter(t => t.annotations.readOnlyHint).map(t => t.name));
+    ok('every writing tool says whether it destroys what was there',
+       T.filter(t => !t.annotations.readOnlyHint).every(t => typeof t.annotations.destructiveHint === 'boolean'),
+       T.filter(t => !t.annotations.readOnlyHint && typeof t.annotations.destructiveHint !== 'boolean').map(t => t.name));
+    ok('the ones that replace a whole list admit it',
+       REPLACES.every(n => T.find(t => t.name === n).annotations.destructiveHint === true),
+       REPLACES.map(n => n + ':' + T.find(t => t.name === n).annotations.destructiveHint));
+    ok('adding something is not destructive',
+       ['add_rock', 'add_habit'].every(n => T.find(t => t.name === n).annotations.destructiveHint === false));
+    /* Adding twice adds twice. Saying otherwise invites a retry that duplicates. */
+    ok('and adding is not idempotent, because calling it twice adds two',
+       ['add_rock', 'add_habit'].every(n => T.find(t => t.name === n).annotations.idempotentHint === false));
+    ok('nothing here reaches outside this one account',
+       T.every(t => t.annotations.openWorldHint === false));
+
+    /* The icon a client would draw, if it drew one. Advertised whether or not
+       today's clients honour it — most show a generic letter for anything
+       that is not a built-in integration, and that is their end, not ours.
+
+       Driven through dispatch rather than over HTTP because by this point in
+       the suite every token has been deliberately revoked, and what is being
+       checked is what initialize answers, not who may ask it. */
+    const D = require('../flow-mcp.js')._internals.dispatch;
+    const init = await D({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+                         { store: null, now: new Date(), origin: 'https://theflow.today' });
+    const info = ((init || {}).result || {}).serverInfo || {};
+    ok('the server offers an icon', Array.isArray(info.icons) && info.icons.length > 0, init);
+    ok('by absolute URL, because whatever fetches it is not this browser',
+       info.icons.every(i => /^https:\/\/theflow\.today\//.test(i.src || '')), info.icons);
+    ok('and says what it is', info.icons.every(i => i.mimeType === 'image/png'), info.icons);
+    ok('it points at the site too', info.websiteUrl === 'https://theflow.today', info.websiteUrl);
+
+    /* A server that does not know its own address must not advertise a
+       relative one — whatever fetches the icon is not this browser and has
+       nothing to resolve it against. */
+    const bare = await D({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+                         { store: null, now: new Date(), origin: '' });
+    ok('and offers none at all when it cannot know its own address',
+       bare.result.serverInfo.icons === undefined, bare.result.serverInfo);
+  }
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('\n✗ the suite itself fell over:', e); process.exit(1); });

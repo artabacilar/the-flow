@@ -74,7 +74,12 @@ ok('so did the recent entries and the chart', (() => {
 })());
 ok('it reads as a second subject, not a pile', /<div class="sub-head">🧠 Mood &amp; Energy<\/div>/.test(src));
 ok('opening Sleep paints the mood chart, which used to be its own hook',
-   /if\(t\.dataset\.tab==='sleep'\)\{ renderSleepChart\(\); syncWhoop\(\); renderMood\(\); renderMoodChart\(\); \}/.test(src));
+   /if\(t\.dataset\.tab==='sleep'\)\{[^}]*renderMood\(\);[^}]*renderMoodChart\(\);[^}]*\}/.test(src));
+/* The same hook is where the two health sources are pulled in, because the
+   moment somebody opens this tab is the moment those numbers should be
+   current — not on a timer that runs while nobody is looking. */
+ok('and asks both health sources for fresh numbers while it is there',
+   /if\(t\.dataset\.tab==='sleep'\)\{[^}]*syncWhoop\(\);[^}]*syncHealth\([^)]*\);[^}]*\}/.test(src));
 ok('no orphan hook is left looking for a mood tab', !/dataset\.tab==='mood'/.test(src));
 ok('mood is out of the Body slot', !groupOf('mood'), groupOf('mood'));
 ok('and out of the sidebar', !sideOf('mood'), sideOf('mood'));
