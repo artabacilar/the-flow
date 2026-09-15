@@ -5625,7 +5625,13 @@ const Auth = {
           <input class="flow-in" id="fa-name" type="text" autocomplete="name" placeholder="What should it call you?">
         </div>
         <label class="flow-label" for="fa-pw">Password</label>
-        <input class="flow-in" id="fa-pw" type="password" autocomplete="current-password" placeholder="At least 10 characters">
+        <!-- A long password typed on a phone, blind, is how people end up
+             choosing short ones. The toggle costs nothing and defaults to
+             hidden. -->
+        <div class="fa-pwwrap">
+          <input class="flow-in" id="fa-pw" type="password" autocomplete="current-password" placeholder="At least 10 characters">
+          <button class="fa-eye" id="fa-eye" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+        </div>
         <div id="fa-invwrap" hidden>
           <label class="flow-label" for="fa-inv">Invite code</label>
           <input class="flow-in" id="fa-inv" type="text" placeholder="The code you were given">
@@ -5658,6 +5664,7 @@ const Auth = {
       $('#fa-namewrap', el).hidden = m !== 'signup';
       $('#fa-invwrap', el).hidden = m !== 'signup' || firstRun;
       $('#fa-pw', el).setAttribute('autocomplete', m === 'signup' ? 'new-password' : 'current-password');
+      if (typeof hidePw === 'function') hidePw();
       err.hidden = true;
 
       /* Locked out: same form, one more field. Keeping it here rather than on
@@ -5684,6 +5691,26 @@ const Auth = {
     };
     if (!firstRun) $('#fa-alt', el).addEventListener('click', () => setMode(mode === 'signup' ? 'login' : 'signup'));
     else $('#fa-alt', el).style.display = 'none';
+    /* Revealing is per-tap and never sticky: it resets whenever the form
+       changes what it is asking for, so a password revealed to check a typo
+       cannot still be on screen after switching to another mode. */
+    const wireEye = (root) => {
+      const eye = $('.fa-eye', root), pw = $('#fa-pw', root);
+      if (!eye || !pw) return () => {};
+      const set = (show) => {
+        pw.type = show ? 'text' : 'password';
+        eye.textContent = show ? 'Hide' : 'Show';
+        eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+      };
+      eye.addEventListener('click', () => {
+        set(pw.type === 'password');
+        try { pw.focus(); } catch (e) {}
+      });
+      return () => set(false);
+    };
+    const hidePw = wireEye(el);
+
     const forgotBtn = $('#fa-forgot', el);
     if (forgotBtn) forgotBtn.addEventListener('click', () => setMode(mode === 'recover' ? 'login' : 'recover'));
 
@@ -5845,13 +5872,28 @@ const Auth = {
         <p class="fa-sub">This link works once and stops working 30 minutes after it was sent. Setting a password here also signs you out everywhere else.</p>
         <div class="fa-err" id="fa-err" hidden></div>
         <label class="flow-label" for="fa-pw">New password</label>
-        <input class="flow-in" id="fa-pw" type="password" autocomplete="new-password" placeholder="At least 10 characters">
+        <div class="fa-pwwrap">
+          <input class="flow-in" id="fa-pw" type="password" autocomplete="new-password" placeholder="At least 10 characters">
+          <button class="fa-eye" id="fa-eye" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+        </div>
         <button class="flow-btn primary fa-go" id="fa-go">Set new password</button>
         <button class="flow-btn ghost" id="fa-back">Back to signing in</button>
       </div>`;
     document.body.appendChild(el);
 
     const err = $('#fa-err', el);
+    (() => {
+      const eye = $('.fa-eye', el), pw = $('#fa-pw', el);
+      if (!eye || !pw) return;
+      eye.addEventListener('click', () => {
+        const show = pw.type === 'password';
+        pw.type = show ? 'text' : 'password';
+        eye.textContent = show ? 'Hide' : 'Show';
+        eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+        try { pw.focus(); } catch (e) {}
+      });
+    })();
     /* Take the token out of the address bar either way, so it is not left in
        history for whoever next uses this machine. */
     const clean = () => { try { history.replaceState(null, '', location.pathname); } catch (e) {} };

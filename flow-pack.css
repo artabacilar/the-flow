@@ -484,6 +484,21 @@
 #flow-auth .flow-in { width: 100%; padding: 11px 12px; font-size: 15px; border-radius: 10px; }
 #flow-auth .fa-go, #flow-codes .fa-go { width: 100%; margin-top: 22px; padding: 12px; font-size: 14px; border-radius: 10px; }
 #flow-auth .fa-alt { width: 100%; margin-top: 9px; padding: 9px; font-size: 12.5px; border-radius: 10px; color: var(--f-muted); }
+/* The reveal toggle sits inside the field rather than beside it, so the
+   field keeps its full width and the button cannot be mistaken for an action
+   on the form. */
+#flow-auth .fa-pwwrap { position: relative; }
+#flow-auth .fa-pwwrap .flow-in { padding-right: 66px; }
+#flow-auth .fa-eye {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; padding: 7px 9px; border-radius: 7px;
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  color: var(--f-muted); cursor: pointer; line-height: 1;
+}
+#flow-auth .fa-eye:hover { color: var(--f-ink); background: rgba(255,255,255,.07); }
+#flow-auth .fa-eye:active { background: rgba(255,255,255,.12); }
+#flow-auth .fa-eye:focus-visible { outline: 2px solid var(--f-accent, #17ba91); outline-offset: 1px; }
+
 #flow-auth .fa-err, #flow-codes .fa-err {
   background: rgba(208,59,59,.14); border: 1px solid rgba(208,59,59,.4);
   color: #ffc2c2; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
