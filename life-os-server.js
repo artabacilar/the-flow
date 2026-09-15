@@ -96,6 +96,7 @@ if (UP_URL && UP_TOK) {
     async set(k, v) { await cmd(['SET', k, v]); },
     async bulk(obj) { const cmds = Object.keys(obj).map((k) => ['SET', k, obj[k]]); if (cmds.length) await pipeline(cmds); },
     async count() { const keys = (await cmd(['KEYS', 'ld_*'])) || []; return keys.length; },
+    async keys(pattern) { return (await cmd(['KEYS', pattern])) || []; },
   };
 } else {
   try {
@@ -111,6 +112,10 @@ if (UP_URL && UP_TOK) {
       set(k, v) { up.run(k, v, Date.now()); },
       bulk(obj) { db.transaction((o) => { for (const k in o) up.run(k, o[k], Date.now()); })(obj); },
       count() { return db.prepare('SELECT COUNT(*) c FROM store').get().c; },
+      keys(pattern) {
+        return db.prepare('SELECT key FROM store').all()
+          .map((r) => r.key).filter(globMatch(pattern));
+      },
     };
   } catch (e) {
     const FILE = path.join(DATA_DIR, 'life-os-data.json');
@@ -123,8 +128,22 @@ if (UP_URL && UP_TOK) {
       set(k, v) { mem[k] = v; persist(); },
       bulk(obj) { Object.assign(mem, obj); persist(); },
       count() { return Object.keys(mem).length; },
+      keys(pattern) { return Object.keys(mem).filter(globMatch(pattern)); },
     };
   }
+}
+
+/* Redis-style glob, for the stores that are not Redis.
+ *
+ * Only `*` is ever used by the callers, but a key can contain regex
+ * metacharacters — an email address has a dot in it, and `.` matching any
+ * character is how a purge for one person quietly matches another. So
+ * everything but the star is escaped. */
+function globMatch(pattern) {
+  const rx = new RegExp('^' + String(pattern)
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\\*/g, '.*') + '$');
+  return (k) => rx.test(k);
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -368,6 +387,165 @@ store = flowAuth.protect(store);
 let mcp = null;
 try { mcp = require('./flow-mcp'); } catch (e) { mcp = null; }
 // -------------------------------------------------------------------------
+/* ---------- the two pages the App Store asks for --------------------------
+ *
+ * Apple will not take a listing without a privacy policy URL and a support
+ * URL, and both have to be reachable by anyone — not behind the login, which
+ * is where everything else on this server lives. So they sit up here with
+ * /healthz, before the gate.
+ *
+ * The policy says what the code actually does. That is the only kind worth
+ * writing: every claim below can be checked against a file in this repo, and
+ * if one stops being true the policy is wrong and has to change with it.
+ * ------------------------------------------------------------------------ */
+
+const LEGAL_CSS = `
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0a0d0e; color: #e8eaed;
+         font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 22px 80px; }
+  .brand { font-size: 20px; color: #9aa4ad; margin-bottom: 30px; }
+  .brand b { color: #e8eaed; font-weight: 800; }
+  h1 { font-size: 27px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .sub { color: #8c959d; font-size: 13px; margin: 0 0 34px; }
+  h2 { font-size: 16px; margin: 32px 0 8px; letter-spacing: -.01em; }
+  p, li { color: #c8ced4; }
+  li { margin-bottom: 6px; }
+  a { color: #17ba91; }
+  code { background: #151a1c; padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .foot { margin-top: 44px; padding-top: 18px; border-top: 1px solid #1d2225;
+          color: #78818a; font-size: 13px; }
+`;
+
+const legalPage = (title, sub, body) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} — The Flow</title><style>${LEGAL_CSS}</style></head>
+<body><div class="wrap">
+  <div class="brand">The <b>Flow</b></div>
+  <h1>${title}</h1>
+  <p class="sub">${sub}</p>
+  ${body}
+  <div class="foot">The Flow · <a href="/">theflow.today</a> · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></div>
+</div></body></html>`;
+
+const PRIVACY_UPDATED = 'September 2026';
+
+const PRIVACY_HTML = legalPage('Privacy Policy',
+  'Last updated ' + PRIVACY_UPDATED + '. This describes what the software does, not what we would like you to believe it does.',
+  `
+  <h2>The short version</h2>
+  <p>The Flow is a private notebook that happens to live on a server. It holds what you put in it,
+     shows it back to you, and sends it nowhere else. There is no advertising, no analytics, no
+     tracking, and no third party that receives your entries.</p>
+
+  <h2>What is stored</h2>
+  <ul>
+    <li><b>Your email address and name</b>, so the account can exist and so you can be sent a
+        password reset if you ask for one.</li>
+    <li><b>A hash of your password</b> — PBKDF2-SHA512, 210,000 iterations, with a per-account
+        salt. The password itself is never stored and cannot be recovered from the hash.</li>
+    <li><b>Everything you write in the app</b>: journal entries, tasks and priorities, notes,
+        training and diet logs, sleep and mood entries, expenses and budgets, and anything else
+        you type into a field. This is the point of the app.</li>
+    <li><b>Recovery codes</b>, hashed the same way as the password.</li>
+    <li><b>Session and access tokens</b>, so you stay signed in and so an assistant you have
+        connected can read your day.</li>
+  </ul>
+
+  <h2>Where it is stored</h2>
+  <p>On a server in the European Union, in a Redis database run by Upstash, reachable only by
+     this application. Each account's data is held under its own key prefix and the server
+     refuses any request for a prefix that is not yours. Nothing is shared between accounts
+     except a task you deliberately send to somebody, which carries only what you typed.</p>
+
+  <h2>Who else sees it</h2>
+  <ul>
+    <li><b>Nobody, by default.</b> Not the operator of this server in the ordinary course of
+        things, not other account holders, not any advertiser or data broker — there are none.</li>
+    <li><b>An assistant you connect yourself.</b> If you connect Claude, ChatGPT or another
+        assistant, you are granting that service permission to read the parts of your Flow you
+        agreed to. It reads; it cannot change anything. You can revoke it at any moment in
+        Settings, and revoking it takes effect immediately.</li>
+    <li><b>The assistant inside the app</b>, if the operator has switched it on. Questions you
+        ask it, and the parts of your record needed to answer, are sent to Anthropic's API for
+        that answer and are not used to train anything.</li>
+    <li><b>Hosting providers</b> — Render and Upstash — who necessarily hold the data at rest
+        and in transit in the course of running the server, under their own terms.</li>
+  </ul>
+
+  <h2>What is not collected</h2>
+  <p>No advertising identifiers. No analytics or telemetry SDKs of any kind — the app contains
+     none, which you can check: the source is a handful of plain files. No location. No contacts.
+     No microphone or camera. Nothing is collected in the background, and nothing about you is
+     sold or shared for anybody else's purposes, ever.</p>
+
+  <h2>Deleting everything</h2>
+  <p>Settings → Account → <b>Delete my account and everything in it</b>. It asks for your
+     password and then for your email address, and then it removes your entries, your sessions,
+     your access tokens and your assistant connections, and finally the record that you had an
+     account. It is immediate and there is no backup copy to restore from. If you would rather
+     it were done for you, write to the address below and it will be done.</p>
+
+  <h2>How long things are kept</h2>
+  <p>Until you delete them. Sign-in sessions expire on their own after 60 days, password reset
+     links after 30 minutes, and an assistant's access token after its own short life.</p>
+
+  <h2>Children</h2>
+  <p>The Flow is not directed at children under 13 and accounts are not knowingly created for
+     them.</p>
+
+  <h2>Your rights</h2>
+  <p>Under the GDPR and comparable laws you may see, correct, export or erase what is held about
+     you. In practice the app already gives you all four directly: everything is on your own
+     screen, editable, exportable from Settings, and erasable from the same place. If you would
+     rather ask a person, use the address below.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the date at the top changes with it, and a change that affects what
+     is done with your data will be said plainly in the app rather than quietly published here.</p>
+
+  <h2>Getting in touch</h2>
+  <p>Questions, requests, or anything that reads wrong here:
+     <a href="mailto:artur.abacilar@abko.com.tr">artur.abacilar@abko.com.tr</a>.</p>
+  `);
+
+const SUPPORT_HTML = legalPage('Support',
+  'A short page, because The Flow is a small piece of software with one person behind it.',
+  `
+  <h2>Getting in touch</h2>
+  <p>Write to <a href="mailto:artur.abacilar@abko.com.tr">artur.abacilar@abko.com.tr</a>.
+     One person reads it. Say what you were doing and what happened instead, and it will be
+     looked at properly.</p>
+
+  <h2>I cannot sign in</h2>
+  <p>On the sign-in screen, press <b>Forgot your password?</b> and use one of the recovery codes
+     you were given when you made the account. Each code works once; case and dashes do not
+     matter. If you no longer have them, write to the address above.</p>
+
+  <h2>Where are my recovery codes?</h2>
+  <p>You were shown ten of them once, when you signed up. If you did not keep them, open
+     Settings → Account → <b>Recovery codes</b> and make a new set — the old ones stop working
+     the moment you do. Do this <i>before</i> you need them: the moment you need them is the
+     moment you can no longer sign in to come and make them.</p>
+
+  <h2>The widget is not showing my day</h2>
+  <p>Open the app once and make sure you are signed in — the widget reads through the app's
+     connection, so it has nothing to show until the app has run at least once. It refreshes
+     roughly every fifteen minutes; iOS decides exactly when.</p>
+
+  <h2>Connecting an assistant</h2>
+  <p>Settings → Connect to Claude. The assistant can read your Flow and cannot change anything,
+     and you can disconnect it at any time from the same place.</p>
+
+  <h2>Deleting your account</h2>
+  <p>Settings → Account → <b>Delete my account and everything in it</b>. It is immediate and
+     permanent, and there is no copy kept.</p>
+
+  <h2>Privacy</h2>
+  <p>What is stored and who can see it: <a href="/privacy">the privacy policy</a>.</p>
+  `);
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
   CURRENT_REQ = req;
@@ -408,6 +586,18 @@ const server = http.createServer(async (req, res) => {
 
     // ── Health check (for cloud hosts) — always open ──
     if (p === '/healthz') return json(res, 200, { ok: true });
+
+    /* ── The two public pages the App Store requires ──
+       Open on purpose: a privacy policy behind a login is not a privacy
+       policy, and a reviewer who cannot reach it rejects the build. */
+    if (p === '/privacy') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(PRIVACY_HTML);
+    }
+    if (p === '/support' || p === '/help') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(SUPPORT_HTML);
+    }
 
     /* ── MCP ──
        Placed above the login check on purpose: this endpoint is authenticated

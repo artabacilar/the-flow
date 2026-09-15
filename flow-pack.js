@@ -3301,6 +3301,13 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
              the moment they can no longer sign in to come and make them, so
              this line has to be visible before anything goes wrong. -->
         <p class="flow-sub" id="set-rcstat" style="margin-top:8px">Checking your recovery codes…</p>
+        <!-- An account you can open but not close is a hostage. This removes
+             everything rather than hiding it, which is why it asks twice. -->
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--f-line)">
+          <div class="flow-label">Delete this account</div>
+          <p class="flow-sub" style="margin:6px 0 10px">Everything goes: your journal, tasks, money, training, the lot — along with every session, access token and assistant connection. It cannot be undone and there is no copy.</p>
+          <button class="flow-btn danger" data-act2="delacct">Delete my account and everything in it</button>
+        </div>
       </div>` : ''}
 
       <div class="flow-card">
@@ -3447,6 +3454,35 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       if (a === 'signout') {
         if (!confirm('Sign out of The Flow on this device?')) return;
         await Auth.signOut();
+        return;
+      }
+      if (a === 'delacct') {
+        /* Two questions, and the second one cannot be answered by tapping.
+           The server asks for both again — this is the reminder, not the
+           gate. */
+        const pw = prompt('This deletes your account and everything in it, permanently.\n\nType your password to continue:');
+        if (pw == null || !pw) return;
+        const who = (Auth.user && Auth.user.email) || '';
+        const conf = prompt('Last check. There is no undo and no backup.\n\nType your email address (' + who + ') to delete the account:');
+        if (conf == null) return;
+        try {
+          const r = await fetch('/api/auth/account', {
+            method: 'DELETE', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw, confirm: conf })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) { toast(j.error || 'That did not work.', 'err', 5000); return; }
+          /* The server has already cleared the cookies; clear the device
+             cache too, or the next person to open this browser sees a
+             dashboard belonging to an account that no longer exists. */
+          try {
+            Object.keys(localStorage)
+              .filter(k => k.indexOf('ld_') === 0 || k.indexOf('flowpack:') === 0 || k.indexOf('flowguest:') === 0)
+              .forEach(k => localStorage.removeItem(k));
+          } catch (e) {}
+          location.replace('/');
+        } catch (e) { toast('Could not reach the server.', 'err', 5000); }
         return;
       }
       if (a === 'reccodes') {

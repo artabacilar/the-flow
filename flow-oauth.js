@@ -403,7 +403,28 @@ button{flex:1;font:600 15px/1 inherit;padding:13px;border-radius:11px;cursor:poi
     return true;
   }
 
-  return { handle, userForAccessToken, listGrants, revokeGrant, grantIsDead, originOf, redirectOk, _rand: rand };
+  /* Everything this module holds for one person, gone.
+   *
+   * Called when an account is deleted. A grant that outlives its account is a
+   * key to a door that no longer exists, and the tokens are stored under the
+   * hash of the token rather than the person, so nothing short of a scan can
+   * find them again. */
+  async function purgeUser(uid) {
+    let n = 0;
+    for (const pattern of ['__oauth:tok:*', '__oauth:ref:*']) {
+      const keys = raw.keys ? await raw.keys(pattern) : null;
+      for (const k of (keys || [])) {
+        const rec = await getJSON(k, null);
+        if (rec && rec.uid === uid) { await raw.set(k, ''); n++; }
+      }
+    }
+    const dead = raw.keys ? await raw.keys('__oauth:dead:' + uid + ':*') : null;
+    for (const k of (dead || [])) { await raw.set(k, ''); n++; }
+    await raw.set(K_GRANTS(uid), '');
+    return n;
+  }
+
+  return { handle, userForAccessToken, listGrants, revokeGrant, grantIsDead, purgeUser, originOf, redirectOk, _rand: rand };
 
   function oerr(res, code, err, desc) {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

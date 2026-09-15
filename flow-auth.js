@@ -373,7 +373,16 @@ function recoveryLeft(rec) {
    session. If somebody else knew the old password, the point of the reset is
    that they no longer have the account — and a live cookie would undo that. */
 async function dropAllSessions(uid) {
-  const keys = (await raw.keys ? await raw.keys('__auth:sess:*') : null);
+  /* This is the whole promise of a password reset: whoever else was signed in
+     is not any more. A store that cannot list its keys cannot keep that
+     promise, and quietly returning 0 would let the reset screen say it did
+     something it did not. */
+  if (typeof raw.keys !== 'function') {
+    console.error('[auth] this store has no keys() — other sessions could NOT be ended.');
+    console.error('       A password reset is not closing anyone else out. Fix the store.');
+    return 0;
+  }
+  const keys = await raw.keys('__auth:sess:*');
   if (!keys || !keys.length) return 0;
   let n = 0;
   for (const k of keys) {
@@ -1532,6 +1541,96 @@ async function gate(req, res) {
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
     json(res, 200, { ok: true, user: { email: rec.email, name: rec.name, owner: !!rec.owner }, expires });
+    return true;
+  }
+
+  /* ---- deleting the account ---------------------------------------------- *
+   *
+   * Apple requires an app that can make an account to be able to unmake it
+   * from inside the app, and they are right: an account you can open but not
+   * close is a hostage. So this removes, rather than flags: the journal, the
+   * tasks, the money, the sessions, the assistant tokens, the OAuth grants,
+   * and finally the row that says the person existed.
+   *
+   * It asks for the password again. Everything else in here can be done by
+   * whoever is holding an unlocked phone; this one thing cannot be undone, so
+   * it costs one more deliberate act.                                        */
+
+  if (p === '/api/auth/account' && req.method === 'DELETE') {
+    const me = await currentUser(req);
+    if (!me) return json(res, 401, { error: 'Sign in first.' }), true;
+
+    const b = safeParse(await readBody(req));
+    const users = await getJSON(USERS_KEY, {});
+    const rec = users[me.email];
+    if (!rec) return json(res, 404, { error: 'No such account.' }), true;
+
+    if (hashPassword(String(b.password || ''), rec.salt) !== rec.hash) {
+      return json(res, 401, { error: 'That password is not right.' }), true;
+    }
+    /* Typing the address out is the difference between meaning it and
+       having tapped something. It is not security; it is a speed bump in
+       front of a one-way door. */
+    if (String(b.confirm || '').trim().toLowerCase() !== rec.email) {
+      return json(res, 400, { error: 'Type your email address to confirm.' }), true;
+    }
+
+    const uid = rec.id;
+
+    /* Removing the row while leaving the entries behind is the worst possible
+       outcome here: it looks deleted and is not. If this store cannot
+       enumerate its own keys, say so and change nothing. */
+    if (typeof raw.keys !== 'function') {
+      console.error('[delete] this store has no keys() — refusing to half-delete an account');
+      return json(res, 500, {
+        error: 'Deleting an account is not possible on this server yet. ' +
+               'Please write to support and it will be done by hand.'
+      }), true;
+    }
+
+    const gone = { data: 0, sessions: 0, tokens: 0, oauth: 0, other: 0 };
+
+    /* 1 · everything they wrote */
+    const mine = 'ld_u' + uid + ':';
+    const dataKeys = await raw.keys(mine + '*');
+    for (const k of (dataKeys || [])) { await raw.set(k, ''); gone.data++; }
+
+    /* 2 · every way back in */
+    gone.sessions = await dropAllSessions(uid);
+
+    /* 3 · the assistant tokens, and the index that lists them */
+    /* The index holds the hashes themselves, not records wrapping them. */
+    const pats = await getJSON(PAT_INDEX(uid), []);
+    for (const h of (pats || [])) {
+      if (typeof h === 'string' && h) { await raw.set(PAT(h), ''); gone.tokens++; }
+    }
+    await raw.set(PAT_INDEX(uid), '');
+
+    /* 4 · anything an assistant was granted through OAuth */
+    if (oauth && typeof oauth.purgeUser === 'function') {
+      try { gone.oauth = await oauth.purgeUser(uid); }
+      catch (e) { console.error('[delete] oauth purge failed: ' + (e && e.message)); }
+    }
+
+    /* 5 · the odds and ends that are keyed by the person rather than the data */
+    for (const k of [SEED(uid), PACK_CLAIMED(uid), INBOX(uid)]) {
+      await raw.set(k, ''); gone.other++;
+    }
+    /* The rate-limit counters are keyed by email address, so leaving them
+       behind leaves the address behind. */
+    const tries = await raw.keys('__auth:rctry:' + rec.email + ':*');
+    for (const k of (tries || [])) { await raw.set(k, ''); gone.other++; }
+
+    /* 6 · and the person */
+    delete users[rec.email];
+    await setJSON(USERS_KEY, users);
+
+    console.log('[delete] account removed — ' + gone.data + ' data keys, ' +
+                gone.sessions + ' sessions, ' + gone.tokens + ' tokens, ' +
+                gone.oauth + ' oauth records');
+
+    res.setHeader('Set-Cookie', [sessionCookie('', 0), acctCookie('', 0)]);
+    json(res, 200, { ok: true, deleted: gone });
     return true;
   }
 
