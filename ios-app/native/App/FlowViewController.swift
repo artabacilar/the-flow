@@ -18,6 +18,9 @@ final class FlowViewController: UIViewController {
     /// One per screen, held here so a recognition that is running survives the
     /// bridge call that started it.
     private let speech = FlowSpeech()
+    /// Likewise: HealthKit queries outlive the call that started them, and an
+    /// HKHealthStore that goes out of scope takes its queries with it.
+    private let health = FlowHealth()
     private lazy var offline = OfflineView(retry: { [weak self] in self?.load() })
 
     // MARK: - Lifecycle
@@ -305,7 +308,10 @@ enum FlowBridge {
         voiceStop:       function ()  { return call('voiceStop'); },
         voiceCancel:     function ()  { return call('voiceCancel'); },
         voicePermission: function ()  { return call('voicePermission'); },
-        voiceRequest:    function ()  { return call('voiceRequest'); }
+        voiceRequest:    function ()  { return call('voiceRequest'); },
+        healthStatus:    function ()  { return call('healthStatus'); },
+        healthRequest:   function ()  { return call('healthRequest'); },
+        healthRead:      function (a) { return call('healthRead', a); }
       };
       window.__FLOW_NATIVE = 'ios';
     })();
@@ -361,6 +367,19 @@ extension FlowViewController: WKScriptMessageHandler {
             FlowSpeech.request { [weak self] state in
                 self?.answer(id, with: state)
             }
+            return
+
+        case "healthStatus":
+            health.status { [weak self] state in self?.answer(id, with: state) }
+            return
+
+        case "healthRequest":
+            health.request { [weak self] state in self?.answer(id, with: state) }
+            return
+
+        case "healthRead":
+            let days = (args["days"] as? Int) ?? 14
+            health.read(days: days) { [weak self] payload in self?.answer(id, with: payload) }
             return
 
         case "clear":
