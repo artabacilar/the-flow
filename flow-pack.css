@@ -1741,17 +1741,24 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
   100%{ transform:scale(1.25); opacity:0; }
 }
 
-/* Provisional words live here and nowhere else — never in the field. */
+/* Provisional words live here and nowhere else — never in the field.
+ *
+ * Docked to the edge of the viewport rather than hung off the field. Anchored
+ * to the field it always covered something: the lines above it, or the ones
+ * below, or — once a turn outlived the field it started in — whatever the
+ * person had navigated to since. Width and position come from flow-voice.js,
+ * which centres it and decides top or bottom; nothing here should fight that,
+ * which is why there is no max-width.
+ */
 .fv-bubble{
   position:fixed; z-index:64; left:-999px; top:-999px;
-  max-width:min(420px, calc(100vw - 16px));
-  padding:7px 11px; border-radius:10px;
-  font-size:13px; line-height:1.45;
+  padding:9px 14px; border-radius:12px;
+  font-size:13.5px; line-height:1.45; text-align:center;
   color:var(--f-ink-2, rgba(255,255,255,.72));
   background:var(--f-surface-2, rgba(20,22,28,.96));
   border:1px solid var(--f-line, rgba(255,255,255,.14));
-  box-shadow:0 4px 16px rgba(0,0,0,.3);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  box-shadow:0 6px 24px rgba(0,0,0,.38);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
   pointer-events:none;
   overflow:hidden; text-overflow:ellipsis;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3;

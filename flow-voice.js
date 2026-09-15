@@ -30,10 +30,18 @@
  * fills with noise, and a recogniser that dies mid-sentence leaves fragments
  * in somebody's journal that they never said.
  *
- * So interim results live in a bubble above the field, where they are
- * obviously provisional. Only a segment the recogniser has marked final is
- * committed, and committing is a real edit at the caret — setRangeText plus
- * an `input` event — so it undoes in one press like any other typing.
+ * So interim results live in a bubble docked to the edge of the screen, where
+ * they are obviously provisional and cannot cover what is being written. Only
+ * a segment the recogniser has marked final is committed, and committing is a
+ * real edit at the caret — setRangeText plus an `input` event — so it undoes
+ * in one press like any other typing.
+ *
+ * A turn belongs to one field
+ * --------------------------
+ * Leaving the field ends it. There is nowhere to put the words once the caret
+ * has gone, and a recogniser still running with nothing to write into is how
+ * a bubble ends up parked over somebody's journal saying "Listening…" long
+ * after they moved on.
  *
  * Dictation that is not ours
  * --------------------------
@@ -322,14 +330,22 @@
   /* Fixed positioning against the field's own rectangle, re-measured on a
      frame rather than on every scroll event — the page has a lot of scrolling
      containers and this way none of them need to know the mic exists. */
+  /* Runs every frame, and is the only thing that decides what is on screen.
+     That matters more than it sounds: the first version of this let four
+     different places — say(), the end handler, cancel() and detach() — each
+     turn the bubble off, and one path that forgot left it sitting over
+     somebody's journal saying "Listening…" indefinitely. State in, pixels
+     out, every frame: there is no path that can forget. */
   function place() {
-    if (!ui.field || !ui.mic) return;
-    var r;
-    try { r = ui.field.getBoundingClientRect(); } catch (e) { return; }
+    if (!ui.mic || !ui.bubble) return;
 
-    /* Scrolled out of view, or collapsed: take the mic away rather than
-       leaving it floating over something unrelated. */
-    if (!r.width || !r.height || r.bottom < 8 || r.top > (window.innerHeight - 8)) {
+    var r = null;
+    if (ui.field) { try { r = ui.field.getBoundingClientRect(); } catch (e) { r = null; } }
+    /* Scrolled out of view, collapsed, or removed from the page entirely —
+       a field with no box is not somewhere a microphone belongs. */
+    var live = !!(r && r.width && r.height && r.bottom > 8 && r.top < (window.innerHeight - 8));
+
+    if (!live) {
       ui.mic.classList.remove('on');
       ui.bubble.hidden = true;
       return;
@@ -346,14 +362,24 @@
     ui.mic.style.left = Math.max(pad, left) + 'px';
     ui.mic.style.top = Math.max(pad, top) + 'px';
 
-    if (!ui.bubble.hidden) {
-      ui.bubble.style.left = Math.max(pad, r.left) + 'px';
-      ui.bubble.style.width = Math.max(160, Math.min(r.width, window.innerWidth - pad * 2)) + 'px';
-      var bh = ui.bubble.offsetHeight || 32;
-      /* Above the field normally, below it when there is no room above —
-         the keyboard on a phone owns the bottom of the screen. */
-      ui.bubble.style.top = (r.top - bh - 6 > pad ? r.top - bh - 6 : r.bottom + 6) + 'px';
-    }
+    /* The bubble is shown only when it has something to say, and it is never
+       hung off the field. Anchoring it there was the whole problem: wherever
+       it went it covered something — the words above the field, or the ones
+       below it — and a person reading an old entry got a panel across it.
+       Docked to the viewport it cannot cover the thing being written into. */
+    if (ui.bubble.hidden) return;
+
+    var bw = Math.min(520, window.innerWidth - pad * 2);
+    ui.bubble.style.width = bw + 'px';
+    ui.bubble.style.left = Math.round((window.innerWidth - bw) / 2) + 'px';
+
+    var bh = ui.bubble.offsetHeight || 32;
+    /* Bottom of the screen, unless that is where the field is — on a phone
+       with the keyboard up, the field sits low and the bubble would land on
+       top of it. */
+    var low = r.bottom > window.innerHeight - (bh + 80);
+    ui.bubble.style.top = low ? (pad + 'px')
+                              : ((window.innerHeight - bh - 24) + 'px');
   }
 
   function follow() {
@@ -368,16 +394,34 @@
     place();
   }
 
+  /* Leaving the field ends the turn.
+
+     This used to return early while listening, on the theory that a turn in
+     progress should be left alone. That was wrong twice over. The words have
+     nowhere to go once the caret has gone — there is no field to commit them
+     to — and nothing else ever stopped the recogniser, so it kept listening
+     and the bubble kept being repositioned over whatever the person had
+     navigated to. Closing the entry did not help, because closing an entry
+     was never connected to it. That is the bug in the screenshot.
+
+     stop() rather than cancel(), so a sentence already half-spoken still
+     lands in the field it was meant for. */
   function detach() {
-    if (Voice.listening) return;           /* never while it is listening */
+    if (Voice.listening) { Voice.stop(); }
     ui.field = null;
     if (ui.mic) ui.mic.classList.remove('on');
     if (ui.bubble) ui.bubble.hidden = true;
     if (ui.frame) { window.cancelAnimationFrame(ui.frame); ui.frame = 0; }
   }
 
+  /* A pending "clear the error in a moment" timer. Held here so a new turn
+     can cancel the last one — otherwise a timer from a previous attempt fires
+     three seconds into this one and blanks a bubble that is now in use. */
+  var clearTimer = 0;
+
   function say(text, kind) {
     if (!ui.bubble) return;
+    if (clearTimer) { clearTimeout(clearTimer); clearTimer = 0; }
     if (!text) { ui.bubble.hidden = true; place(); return; }
     ui.bubble.textContent = text;
     ui.bubble.className = 'fv-bubble' + (kind ? ' ' + kind : '');
@@ -435,17 +479,23 @@
       Voice.field = field;
       Voice.listening = true;
       if (ui.mic) ui.mic.classList.add('live');
-      say(t('Listening…'));
+      /* Deliberately nothing on screen yet. The ring pulsing round the
+         microphone already says it is listening, and a panel that says so in
+         words as well is a panel sitting on top of something worth reading
+         for no information at all. It appears when there are words. */
+      say('');
       Voice.emit('listening');
 
       b.start(locale(), {
         partial: function (text) {
-          say(text || t('Listening…'));
+          say(text);
         },
         final: function (text) {
-          /* Straight into the field, at the caret, as a real edit. */
+          /* Straight into the field, at the caret, as a real edit — and the
+             bubble empties, because what it was holding is now in the field
+             where the person can see it properly. */
           commit(Voice.field, text);
-          say(t('Listening…'));
+          say('');
         },
         error: function (code) {
           say(explain(code), 'bad');
@@ -455,10 +505,11 @@
           Voice.listening = false;
           Voice.backend = null;
           if (ui.mic) ui.mic.classList.remove('live');
-          /* Leave an error on screen long enough to read; clear a plain
-             "Listening…" immediately, because it is no longer true. */
-          var bad = ui.bubble && /\bbad\b/.test(ui.bubble.className);
-          if (bad) { setTimeout(function () { if (!Voice.listening) say(''); }, 3200); }
+          /* An error stays long enough to read. Anything else goes now — a
+             half-heard guess is not worth leaving on screen once there is no
+             longer a turn it belongs to. */
+          var bad = ui.bubble && !ui.bubble.hidden && /\bbad\b/.test(ui.bubble.className);
+          if (bad) { clearTimer = setTimeout(function () { clearTimer = 0; if (!Voice.listening) say(''); }, 3200); }
           else say('');
 
           /* The field's own commit-on-change handlers run now, once, rather
