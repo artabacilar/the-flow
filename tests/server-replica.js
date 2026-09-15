@@ -27,7 +27,13 @@ let store = {
   get:async(k)=>{ if(global.__BROKEN) throw new Error('store unavailable (cold start)'); return (k in DATA?DATA[k]:null); },
   set:async(k,v)=>{ DATA[k]= typeof v==='string'?v:JSON.stringify(v); },
   all:async()=>{ const o={}; for(const k in DATA) if(k.indexOf('ld_')===0) o[k]=DATA[k]; return o; },  // mimics Upstash `KEYS ld_*`
-  count:async()=>Object.keys(DATA).length
+  count:async()=>Object.keys(DATA).length,
+  /* The real stores enumerate by glob; so must this one, or the suites pass
+     for code that cannot work in production. Same escaping as the server. */
+  keys:async(pattern)=>{
+    const rx=new RegExp('^'+String(pattern).replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\\\*/g,'.*')+'$');
+    return Object.keys(DATA).filter(k=>rx.test(k));
+  }
 };
 store = flowAuth.protect(store);                            // EDIT 2
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}

@@ -55,6 +55,7 @@ const SUITES = [
   ['migrate',  'test-migrate.js',  { seed: 'legacy' }],
   ['authui',   'test-authui.js',   { FLOW_INVITE_CODE: 'letmein' }],
   ['forgot',   'test-forgot.js',   { FLOW_OWNER_EMAIL: OWNER }],
+  ['delete',   'test-delete.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['template', 'test-template.js', { SEED: JSON.stringify({ ld_journal: '[]' }) }],
   ['owner',    'test-owner.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['heal',     'test-heal.js',     { FLOW_OWNER_EMAIL: OWNER, V2: '1', seed: 'v2' }],

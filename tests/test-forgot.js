@@ -152,9 +152,14 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
 
   r = await post('/api/auth/recover', { email: OWNER, code: codes[5], password: 'short' });
   ok('a too-short new password is refused before the code is spent', r.status === 400, r.body);
-  r = await post('/api/auth/recover', { email: OWNER, code: codes[5], password: 'a long enough one now' });
+  const PW3 = 'a long enough one now';
+  r = await post('/api/auth/recover', { email: OWNER, code: codes[5], password: PW3 });
   ok('and that code still works afterwards', r.status === 200, { s: r.status, b: r.body });
-  await post('/api/auth/login', { email: OWNER, password: PW2 }, 'artur');
+  /* That reset moved the password. Signing back in with the old one here was
+     silently failing, which is how the next test came to be written against a
+     password that no longer existed. */
+  r = await post('/api/auth/login', { email: OWNER, password: PW3 }, 'artur');
+  ok('the owner is signed in again on the new password', r.status === 200, r.status);
 
   console.log('\n— grinding it is not an option —');
   const grind = 'grinder@example.com';
@@ -163,6 +168,27 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
     { email: grind, code: 'AAAA-BBBB-CCCC', password: 'a long enough password' });
   ok('guessing gets cut off for the day', last.status === 429, { s: last.status, b: last.body });
   ok('and it says when to come back', /tomorrow/i.test((last.body || {}).error || ''), last.body);
+
+  console.log('\n— a reset really does close everyone else out —');
+  /* This is the whole promise of a reset: if somebody else knew the old
+     password, they are out. It was quietly broken until the store learned to
+     enumerate its own keys — dropAllSessions had nothing to scan, so it
+     returned 0 and the screen said it had done something it had not. */
+  r = await post('/api/auth/login', { email: OWNER, password: PW3 }, 'intruder');
+  ok('a second device signs in with the current password', r.status === 200, r.status);
+  r = await call('/api/auth/me', {}, 'intruder');
+  ok('and that session works', r.status === 200 && !!r.body.user, r.body);
+
+  r = await post('/api/auth/recover',
+    { email: OWNER, code: codes[8], password: 'the password after the reset' });
+  ok('the owner resets with a recovery code', r.status === 200, { s: r.status, b: r.body });
+
+  r = await call('/api/auth/me', {}, 'intruder');
+  ok('the other device is signed out by the reset', r.status === 200 && !r.body.user, r.body);
+  r = await call('/api/all', {}, 'intruder');
+  ok('and can no longer read anything', r.status === 401, r.status);
+  r = await post('/api/auth/login', { email: OWNER, password: 'the password after the reset' }, 'artur');
+  ok('and the owner signs in on the password the reset set', r.status === 200, r.status);
 
   console.log('\n— minting a fresh set —');
   r = await post('/api/auth/recovery', {}, 'artur');

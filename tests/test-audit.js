@@ -128,5 +128,29 @@ ok('and a twelve-month one', M.due('2026-06-05T00:00:00.000Z', 12, D('2026-09-05
 console.log('\n— the window is capped, whatever it is asked for —');
 ok('a decade does not build a million strings', M.daysIn('1990-01-01', '2026-09-05').length <= 4000);
 
+/* ---- the two pages the App Store will not take a listing without --------
+ * Both have to answer before the login gate. A privacy policy you have to
+ * sign in to read is not a privacy policy, and a reviewer who hits a 302 to
+ * /login rejects the build. */
+(() => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
+  const at = (needle) => src.indexOf(needle);
+
+  const gate = at("if (!isAuthed(req)) {");
+  ok('there is still a login gate', gate > 0);
+  ok('the privacy policy is served', at("p === '/privacy'") > 0);
+  ok('and support is served', at("p === '/support'") > 0);
+  ok('the privacy policy answers before the gate', at("p === '/privacy'") < gate,
+     { privacy: at("p === '/privacy'"), gate });
+  ok('support answers before the gate', at("p === '/support'") < gate);
+  ok('the policy names where the data actually lives', /Upstash/.test(src) && /European Union/.test(src));
+  ok('and says deletion is in the app', /Delete my account and everything in it/.test(src));
+  ok('every store can enumerate its own keys',
+     (src.match(/keys\(pattern\)|async keys\(pattern\)/g) || []).length >= 3,
+     (src.match(/keys\(pattern\)/g) || []).length);
+})();
+
 console.log('\n' + (fail ? '✗ ' + fail + ' failed' : '✓ all ' + pass + ' passed') + ' (' + (pass + fail) + ' checks)');
 process.exit(fail ? 1 : 0);
