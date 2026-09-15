@@ -75,6 +75,7 @@ const COPY = [
   ['native/App/AppDelegate.swift', 'AppDelegate.swift'],
   ['native/App/FlowViewController.swift', 'FlowViewController.swift'],
   ['native/Shared/FlowStore.swift', 'FlowStore.swift'],
+  ['native/App/FlowSpeech.swift', 'FlowSpeech.swift'],
 ];
 
 for (const [from, to] of COPY) {
@@ -255,7 +256,7 @@ function addSource(fileName) {
   return true;
 }
 
-['FlowViewController.swift', 'FlowStore.swift'].forEach(addSource);
+['FlowViewController.swift', 'FlowStore.swift', 'FlowSpeech.swift'].forEach(addSource);
 
 fs.writeFileSync(pbxPath, proj.writeSync());
 
@@ -299,7 +300,38 @@ plist = plist.replace(/\s*<key>UIMainStoryboardFile<\/key>\s*<string>Main<\/stri
  * since 2017 and which Xcode now warns about. */
 plist = plist.replace('<string>armv7</string>', '<string>arm64</string>');
 
+/* Dictation. Both keys are required and neither is optional in the way it
+ * sounds: without NSMicrophoneUsageDescription the app is killed — not
+ * refused, killed — the instant it touches the microphone, and without
+ * NSSpeechRecognitionUsageDescription SFSpeechRecognizer does the same. The
+ * strings are what the person reads in the system prompt, so they say what
+ * the app does with it rather than asking for a capability by name. */
+const USAGE = {
+  NSMicrophoneUsageDescription:
+    'The Flow uses the microphone so you can dictate journal entries and notes instead of typing them.',
+  NSSpeechRecognitionUsageDescription:
+    'Speech recognition turns what you dictate into text. On iPhones that support it this happens on the device.',
+};
+
+for (const [key, text] of Object.entries(USAGE)) {
+  /* Replace rather than append if it is already there, so re-running the
+   * generator over an existing project updates the wording instead of
+   * producing a plist with the key twice — which parses, and then uses
+   * whichever one it reached first. */
+  const existing = new RegExp('\\s*<key>' + key + '</key>\\s*<string>[\\s\\S]*?</string>');
+  plist = plist.replace(existing, '');
+  plist = plist.replace('</dict>\n</plist>',
+    '\t<key>' + key + '</key>\n\t<string>' + text + '</string>\n</dict>\n</plist>');
+}
+
 fs.writeFileSync(plistPath, plist);
+
+for (const key of Object.keys(USAGE)) {
+  if (plist.indexOf('<key>' + key + '</key>') < 0) {
+    console.error('the Info.plist has no ' + key + ' — dictation would crash the app on first use');
+    process.exit(1);
+  }
+}
 
 /* ---- 6 · say what happened ---------------------------------------------- */
 
