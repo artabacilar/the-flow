@@ -31,9 +31,14 @@ const H = 'http://localhost:4222';
      { js: js && js[1], css: css && css[1] });
 
   /* The version has to be a function of the bytes, not a number someone
-     remembers to bump. Recompute it here the way the server does. */
+     remembers to bump. Recompute it here the way the server does — over every
+     file the pack ships, the translation included. A dictionary fix that did
+     not move this hash would sit behind an immutable cache header and never
+     reach anybody. */
   const want = require('crypto').createHash('sha256');
-  for (const f of ['flow-pack.js', 'flow-pack.css']) want.update(fs.readFileSync(path.join(root, f)));
+  for (const f of ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js']) {
+    try { want.update(fs.readFileSync(path.join(root, f))); } catch (e) { /* a language may not ship */ }
+  }
   ok('and it is the hash of the files themselves',
      js && js[1] === want.digest('hex').slice(0, 12), js && js[1]);
 

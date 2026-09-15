@@ -8,7 +8,7 @@ const DATA = process.env.SEED_FILE
   ? JSON.parse(require('fs').readFileSync(process.env.SEED_FILE, 'utf8'))
   : (process.env.SEED ? JSON.parse(process.env.SEED) : {});
 const DASH_PATH = process.env.DASH || path.join(__dirname,'..','life-dashboard.html');
-const PACK_FILES = ['flow-pack.js','flow-pack.css'];
+const PACK_FILES = ['flow-pack.js','flow-pack.css','flow-i18n.js','flow-lang-tr.js'];
 let SHELL = null;
 function packVersion(){
   try{ const h=require('crypto').createHash('sha256');
@@ -98,7 +98,7 @@ const server=http.createServer(async(req,res)=>{
     /* The pack is served alongside the shell, exactly as production does — and
        with the same content-hash version, so a test that passes here is not
        passing against a page assembled differently from the real one. */
-    if(p==='/flow-pack.js'||p==='/flow-pack.css'){
+    if(PACK_FILES.indexOf(p.slice(1))>=0){
       const f=path.join(path.dirname(DASH_PATH),p.slice(1));
       if(!fs.existsSync(f)){res.writeHead(404);return res.end('no pack');}
       /* Same cache policy as production — without it a measurement of what a

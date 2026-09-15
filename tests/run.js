@@ -82,6 +82,7 @@ const SUITES = [
   ['oauth',    'test-oauth.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['widget',   'test-widget.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['sync',     'test-sync.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['i18n',     'test-i18n.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   /* test-client signs up three ordinary people, so the owner rule would
      reject the first of them. It deliberately runs without one. */
   ['client',   'test-client.js',   { FLOW_INVITE_CODE: 'letmein' }]
