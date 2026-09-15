@@ -85,6 +85,7 @@ const SUITES = [
   ['i18n',     'test-i18n.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['voice',    'test-voice.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['whoop',    'test-whoop.js',    {}],
+  ['refresh',  'test-refresh.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   /* test-client signs up three ordinary people, so the owner rule would
      reject the first of them. It deliberately runs without one. */
   ['client',   'test-client.js',   { FLOW_INVITE_CODE: 'letmein' }]
