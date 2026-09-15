@@ -1281,8 +1281,16 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
         <div class="whoop-metric"><div class="wm-num pink" id="whoopRhr">—</div><div class="wm-lbl">Resting HR</div></div>
       </div>
     </div>
+    <div class="whoop-connect" id="whoopConnect" style="display:none;margin-top:10px;">
+      <button class="btn btn-primary" id="wConnect">Connect WHOOP</button>
+      <span style="font-size:12px;color:var(--muted);margin-left:10px;" id="wConnectNote">Sign in to WHOOP once and your Recovery, Strain, Sleep, HRV and resting heart rate arrive on their own — on every device you use this on.</span>
+    </div>
+    <div class="whoop-connected" id="whoopConnected" style="display:none;margin-top:10px;">
+      <button class="btn" id="wSync">Sync now</button>
+      <button class="btn" id="wDisconnect" style="margin-left:6px;">Disconnect</button>
+    </div>
     <div class="whoop-manual" id="whoopManual" style="display:none;">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Helper not running — enter today's WHOOP numbers manually (or start <code>whoop-sync.js</code> for auto-sync):</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;" id="whoopManualNote">Enter today's WHOOP numbers by hand:</div>
       <div class="form-row" style="margin-bottom:0;">
         <label>Recovery %</label><input type="number" id="wmRec" min="0" max="100" style="width:80px;">
         <label>Strain</label><input type="number" id="wmStrain" min="0" max="21" step="0.1" style="width:70px;">
@@ -1293,6 +1301,21 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
       </div>
     </div>
     <div class="whoop-foot" id="whoopFoot"></div>
+  </div>
+
+  <div class="whoop-panel" id="healthPanel" style="display:none;">
+    <div class="whoop-top">
+      <div class="whoop-title">❤️ Apple Health</div>
+      <div class="whoop-status" id="healthStatus">—</div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+      Your Apple Watch writes sleep, heart rate variability and resting heart rate into Health — and so do Oura, Garmin and WHOOP's own app. Reading it here means whatever you wear shows up, without connecting each one separately. The Flow only reads; it never writes anything back.
+    </div>
+    <div style="margin-top:10px;">
+      <button class="btn btn-primary" id="hAllow">Allow Health access</button>
+      <button class="btn" id="hSync" style="display:none;">Read now</button>
+    </div>
+    <div class="whoop-foot" id="healthFoot"></div>
   </div>
 
   <div class="stats">
@@ -1967,7 +1990,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     t.classList.add('active');
     document.getElementById('tab-'+t.dataset.tab).classList.add('active');
     if(t.dataset.tab==='today') renderToday();
-    if(t.dataset.tab==='sleep'){ renderSleepChart(); syncWhoop(); renderMood(); renderMoodChart(); }
+    if(t.dataset.tab==='sleep'){ renderSleepChart(); syncWhoop(); syncHealth(true); renderMood(); renderMoodChart(); }
     if(t.dataset.tab==='time') renderTime();
     if(t.dataset.tab==='compass') renderCompass();
     if(t.dataset.tab==='habits') renderHabits();
@@ -2455,7 +2478,12 @@ renderSleep();
 // WHOOP — live sync (via local helper) + manual fallback
 // ════════════════════════════════════════════
 let whoopData = S.get('whoop', {recovery:null,strain:null,sleep:null,hrv:null,rhr:null,source:null,updated:null});
-const WHOOP_HELPER = 'http://localhost:3000/whoop-data.json';
+/* Was http://localhost:3000 — which means "this computer", so it could only
+   ever answer on the one laptop running a helper script, and never on a
+   phone. The server holds the WHOOP connection now; see flow-whoop.js. */
+const WHOOP_FEED = '/api/whoop/data.json';
+let whoopLive = false;        /* is there an actual connection behind this */
+let whoopConfigured = null;   /* null = not asked yet */
 const RING_CIRC = 2*Math.PI*52; // 326.7
 
 function whoopRingColor(rec){ if(rec==null) return 'var(--muted)'; if(rec>=67) return 'var(--green)'; if(rec>=34) return 'var(--yellow)'; return 'var(--red)'; }
@@ -2473,43 +2501,103 @@ function paintWhoop(){
   document.getElementById('whoopRhr').textContent=whoopData.rhr!=null?whoopData.rhr:'—';
 }
 function setWhoopStatus(mode){
-  const st=document.getElementById('whoopStatus'); const manual=document.getElementById('whoopManual'); const foot=document.getElementById('whoopFoot');
+  const st=document.getElementById('whoopStatus');
+  const manual=document.getElementById('whoopManual');
+  const foot=document.getElementById('whoopFoot');
+  const connect=document.getElementById('whoopConnect');
+  const connected=document.getElementById('whoopConnected');
   st.className='whoop-status'+(mode==='live'?' live':mode==='manual'?' manual':'');
+
   if(mode==='live'){
     st.textContent='🟢 Synced from WHOOP';
     manual.style.display='none';
-    foot.innerHTML=whoopData.updated?('Last update: '+new Date(whoopData.updated).toLocaleString('en-GB')):'';
-  } else {
-    st.textContent='✎ Manual';
-    manual.style.display='block';
-    // prefill manual fields from stored values
-    if(whoopData.recovery!=null) document.getElementById('wmRec').value=whoopData.recovery;
-    if(whoopData.strain!=null) document.getElementById('wmStrain').value=whoopData.strain;
-    if(whoopData.sleep!=null) document.getElementById('wmSleep').value=whoopData.sleep;
-    if(whoopData.hrv!=null) document.getElementById('wmHrv').value=whoopData.hrv;
-    if(whoopData.rhr!=null) document.getElementById('wmRhr').value=whoopData.rhr;
-    foot.innerHTML='Auto-sync: run <code>node whoop-sync.js</code> and connect your WHOOP account. Setup guide included.';
+    connect.style.display='none';
+    connected.style.display='block';
+    let note = whoopData.updated?('Last update: '+new Date(whoopData.updated).toLocaleString('en-GB')):'';
+    /* A band that has not synced to WHOOP since yesterday is not a broken
+       connection, and saying so stops the panel looking wrong when it is not. */
+    if(whoopData.date && whoopData.date!==todayStr) note += ' · latest reading is from '+whoopData.date;
+    if(whoopData.calibrating) note += ' · WHOOP is still calibrating, so recovery may be missing';
+    if(whoopData.stale) note += ' · could not reach WHOOP just now, showing the last reading';
+    foot.innerHTML=note;
+    return;
   }
+
+  st.textContent='✎ Manual';
+  manual.style.display='block';
+  connected.style.display='none';
+  // prefill manual fields from stored values
+  if(whoopData.recovery!=null) document.getElementById('wmRec').value=whoopData.recovery;
+  if(whoopData.strain!=null) document.getElementById('wmStrain').value=whoopData.strain;
+  if(whoopData.sleep!=null) document.getElementById('wmSleep').value=whoopData.sleep;
+  if(whoopData.hrv!=null) document.getElementById('wmHrv').value=whoopData.hrv;
+  if(whoopData.rhr!=null) document.getElementById('wmRhr').value=whoopData.rhr;
+
+  /* Only offer a button that can actually do something. Where the server has
+     no WHOOP credentials, connecting is not a thing this install can do, and
+     a button that always fails is worse than no button. */
+  connect.style.display = whoopConfigured ? 'block' : 'none';
+  foot.innerHTML = whoopConfigured
+    ? ''
+    : 'Live sync is not switched on for this server, so these numbers are whatever you type here.';
 }
 async function syncWhoop(){
   paintWhoop();
   document.getElementById('whoopStatus').textContent='Checking sync…';
+
+  /* Ask once whether this server can do WHOOP at all, so the manual view knows
+     whether to offer a Connect button or explain that it cannot. */
+  if(whoopConfigured===null){
+    try{
+      const st=await (await fetch('/api/whoop/status')).json();
+      whoopConfigured=!!st.configured;
+    }catch(e){ whoopConfigured=false; }
+  }
+  if(!whoopConfigured){ whoopLive=false; setWhoopStatus('manual'); return; }
+
   try{
-    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),2500);
-    const res=await fetch(WHOOP_HELPER,{signal:ctrl.signal});
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),12000);
+    const res=await fetch(WHOOP_FEED,{signal:ctrl.signal});
     clearTimeout(to);
     const d=await res.json();
     if(d && d.connected){
       const prev=whoopData.recovery;
-      whoopData={recovery:d.recovery,strain:d.strain,sleep:d.sleep,hrv:d.hrv,rhr:d.rhr,source:'whoop',updated:d.updated||new Date().toISOString(),history:d.history||[]};
+      whoopLive=true;
+      whoopData={recovery:d.recovery,strain:d.strain,sleep:d.sleep,hrv:d.hrv,rhr:d.rhr,
+                 hours:d.hours!=null?d.hours:null, date:d.date||null,
+                 calibrating:!!d.calibrating, stale:!!d.stale,
+                 source:'whoop',updated:d.updated||new Date().toISOString(),history:d.history||[]};
       S.set('whoop',whoopData); paintWhoop(); setWhoopStatus('live');
       if(d.recovery!=null && d.recovery!==prev) J('sleep','⚡ WHOOP synced — Recovery '+d.recovery+'%'+(d.strain!=null?' · Strain '+d.strain:'')+(d.sleep!=null?' · Sleep '+d.sleep+'%':''));
+      whoopFillSleepLog(d.history);
       return;
     }
-    setWhoopStatus('manual'); // helper up but not connected
+    whoopLive=false;
+    setWhoopStatus('manual');   // configured, but this account has not connected
   }catch(e){
-    setWhoopStatus('manual'); // helper not running
+    whoopLive=false;
+    setWhoopStatus('manual');   // the server could not be reached
   }
+}
+
+/* WHOOP already knows how long the person slept, and the sleep log is the
+   thing every chart on this tab is drawn from. Fill in the nights it has and
+   the log does not — never overwriting a night somebody logged themselves,
+   because a number they typed is a statement and this is only a measurement. */
+function whoopFillSleepLog(history){
+  if(!Array.isArray(history) || !history.length) return;
+  const have=new Set(slData.map(e=>e.date));
+  let added=0;
+  for(const h of history){
+    if(!h || !h.date || h.hours==null || have.has(h.date)) continue;
+    slData.push({date:h.date, bed:'', wake:'', hrs:h.hours, quality:null, note:'from WHOOP'});
+    added++;
+  }
+  if(!added) return;
+  slData.sort((a,b)=>a.date.localeCompare(b.date));
+  S.set('sleep',slData);
+  if(typeof renderSleep==='function') renderSleep();
+  if(typeof renderSleepChart==='function') renderSleepChart();
 }
 document.getElementById('wmSave').addEventListener('click',()=>{
   const g=id=>{ const v=document.getElementById(id).value; return v===''?null:parseFloat(v); };
@@ -2518,7 +2606,180 @@ document.getElementById('wmSave').addEventListener('click',()=>{
   J('sleep','⚡ WHOOP (manual) — Recovery '+(whoopData.recovery!=null?whoopData.recovery+'%':'—')+(whoopData.strain!=null?' · Strain '+whoopData.strain:'')+(whoopData.sleep!=null?' · Sleep '+whoopData.sleep+'%':''));
   const st=document.getElementById('whoopStatus'); st.textContent='✓ Saved'; setTimeout(()=>setWhoopStatus('manual'),1000);
 });
+
+document.getElementById('wConnect').addEventListener('click',()=>{
+  /* A full navigation, not a fetch: WHOOP's consent screen is a page the
+     person has to see and sign in on. */
+  location.href='/api/whoop/connect';
+});
+document.getElementById('wSync').addEventListener('click',async (e)=>{
+  const b=e.currentTarget; const was=b.textContent;
+  b.disabled=true; b.textContent='Syncing…';
+  try{ await fetch('/api/whoop/sync',{method:'POST'}); }catch(err){}
+  await syncWhoop();
+  b.disabled=false; b.textContent=was;
+});
+document.getElementById('wDisconnect').addEventListener('click',async ()=>{
+  if(!confirm('Disconnect WHOOP? Your readings stay — only the live connection stops.')) return;
+  try{ await fetch('/api/whoop/disconnect',{method:'POST'}); }catch(e){}
+  whoopLive=false;
+  whoopData=Object.assign({},whoopData,{source:'manual'});
+  S.set('whoop',whoopData);
+  setWhoopStatus('manual');
+});
+
+/* Coming back from WHOOP's consent screen. The server put the outcome in the
+   query string because it is answering a navigation, not a fetch; clear it
+   afterwards so a reload does not replay the message. */
+(function(){
+  const q=new URLSearchParams(location.search);
+  const r=q.get('whoop');
+  if(!r) return;
+  const said={
+    connected:'⚡ WHOOP connected.',
+    denied:'WHOOP access was not granted.',
+    expired:'That took a little too long — try connecting again.',
+    mismatch:'That link was started from a different account.',
+    incomplete:'WHOOP sent an incomplete answer — try again.',
+    failed:'WHOOP refused the connection.'
+  }[r] || null;
+  if(said && typeof J==='function') J('sleep',said);
+  q.delete('whoop');
+  history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);
+  if(r==='connected') setTimeout(syncWhoop,300);
+})();
+
 paintWhoop();
+
+// ════════════════════════════════════════════
+// APPLE HEALTH — whatever the person actually wears
+// ════════════════════════════════════════════
+/* WHOOP answers Recovery and Strain because those are WHOOP's own scores.
+   Health answers everything else, and it is where an Apple Watch, an Oura
+   ring, a Garmin and WHOOP's own app all deposit their numbers — so one
+   integration here covers whatever somebody happens to be wearing.
+
+   It only exists inside the iOS app. In a browser there is no HealthKit at
+   all, so the panel stays hidden rather than offering something that cannot
+   work. */
+let healthData = S.get('health', {days:[], updated:null, asked:false});
+
+function healthPlugin(){
+  try{
+    const p = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge;
+    return (p && typeof p.healthRead === 'function') ? p : null;
+  }catch(e){ return null; }
+}
+
+function paintHealth(state){
+  const panel=document.getElementById('healthPanel');
+  if(!healthPlugin() || !state || state.available===false){ panel.style.display='none'; return; }
+  panel.style.display='';
+  const st=document.getElementById('healthStatus');
+  const allow=document.getElementById('hAllow');
+  const sync=document.getElementById('hSync');
+  const foot=document.getElementById('healthFoot');
+
+  if(state.asked){
+    st.className='whoop-status live'; st.textContent='🟢 Connected';
+    allow.style.display='none'; sync.style.display='';
+  } else {
+    st.className='whoop-status manual'; st.textContent='Not connected';
+    allow.style.display=''; sync.style.display='none';
+  }
+
+  const n=(healthData.days||[]).length;
+  if(healthData.updated){
+    /* Health cannot say whether permission was refused — Apple withholds that
+       on purpose, because being able to tell "denied" from "no data" would
+       leak what data somebody has. So an empty read is genuinely ambiguous
+       and the honest thing is to name both possibilities. */
+    foot.textContent = n
+      ? (n+' day'+(n===1?'':'s')+' read · last checked '+new Date(healthData.updated).toLocaleString('en-GB'))
+      : 'Nothing came back — either there is no data for these days, or Health is not sharing it. You can change what it shares in Health → Sharing → Apps.';
+  } else foot.textContent='';
+}
+
+async function syncHealth(quiet){
+  const p=healthPlugin();
+  if(!p){ const el=document.getElementById('healthPanel'); if(el) el.style.display='none'; return; }
+  let state=null;
+  try{ state=await p.healthStatus(); }catch(e){ state=null; }
+  paintHealth(state);
+  if(!state || !state.asked) return;
+
+  let res=null;
+  try{ res=await p.healthRead({days:14}); }catch(e){ res=null; }
+  if(!res || !Array.isArray(res.days)) return;
+
+  healthData={days:res.days, updated:new Date().toISOString(), asked:true};
+  S.set('health', healthData);
+  healthFillSleepLog(res.days);
+  healthFillPanel(res.days, quiet);
+  paintHealth(state);
+}
+
+/* Same rule as the WHOOP fill: add nights the log does not have, never touch
+   one somebody wrote themselves. */
+function healthFillSleepLog(days){
+  if(!Array.isArray(days) || !days.length) return;
+  const have=new Set(slData.map(e=>e.date));
+  let added=0;
+  for(const d of days){
+    if(!d || !d.date || d.hours==null || have.has(d.date)) continue;
+    slData.push({date:d.date, bed:'', wake:'', hrs:d.hours, quality:null, note:'from Apple Health'});
+    added++;
+  }
+  if(!added) return;
+  slData.sort((a,b)=>a.date.localeCompare(b.date));
+  S.set('sleep',slData);
+  if(typeof renderSleep==='function') renderSleep();
+  if(typeof renderSleepChart==='function') renderSleepChart();
+}
+
+/* HRV and resting heart rate onto the panel — but only where WHOOP has not
+   already answered. Two sources disagreeing by a few milliseconds is normal
+   and not worth showing; silently replacing the band's own reading with the
+   watch's is worse than showing one of them consistently. */
+function healthFillPanel(days, quiet){
+  if(whoopLive) return;
+  const latest=[...days].reverse().find(d=>d && (d.hrv!=null || d.rhr!=null || d.hours!=null));
+  if(!latest) return;
+  const before=whoopData.hrv;
+  whoopData=Object.assign({}, whoopData, {
+    hrv: latest.hrv!=null?latest.hrv:whoopData.hrv,
+    rhr: latest.rhr!=null?latest.rhr:whoopData.rhr,
+    hours: latest.hours!=null?latest.hours:whoopData.hours,
+    date: latest.date,
+    source: 'health',
+    updated: new Date().toISOString()
+  });
+  S.set('whoop', whoopData);
+  paintWhoop();
+  if(!quiet && latest.hrv!=null && latest.hrv!==before){
+    J('sleep','❤️ Apple Health — HRV '+latest.hrv+' ms'+(latest.rhr!=null?' · resting HR '+latest.rhr:''));
+  }
+}
+
+(function(){
+  const allow=document.getElementById('hAllow'), sync=document.getElementById('hSync');
+  if(!allow || !sync) return;
+  allow.addEventListener('click',async (e)=>{
+    const p=healthPlugin(); if(!p) return;
+    const b=e.currentTarget; b.disabled=true;
+    try{ await p.healthRequest(); }catch(err){}
+    b.disabled=false;
+    await syncHealth(true);
+  });
+  sync.addEventListener('click',async (e)=>{
+    const b=e.currentTarget; const was=b.textContent;
+    b.disabled=true; b.textContent='Reading…';
+    await syncHealth();
+    b.disabled=false; b.textContent=was;
+  });
+  if(healthPlugin()) syncHealth(true);
+})();
+
 
 // ════════════════════════════════════════════
 // HABITS

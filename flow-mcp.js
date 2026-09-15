@@ -189,9 +189,20 @@ function datesOfWeek(wid) {
 
 /* ---------- the tools --------------------------------------------------- */
 
+/* Every tool carries `title` and the annotations a client needs to tell a
+   read from a write before it calls anything: `readOnlyHint` for the three
+   that only look, `destructiveHint` for the three that replace a whole list
+   with what they were given. `openWorldHint` is false throughout — nothing
+   here reaches past one person's own account.
+
+   They are also what the Claude Connectors Directory checks for, and a tool
+   without them is rejected. But the reason to have them is the first one: a
+   caller that cannot tell set_mission from get_today is one bad guess away
+   from overwriting somebody's year. */
 const TOOLS = [
   {
     name: 'get_week',
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     title: 'Read a week',
     description:
       'The Big Rocks planned for a week, day by day, with times, priorities and what is already done — ' +
@@ -209,6 +220,7 @@ const TOOLS = [
   },
   {
     name: 'get_today',
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     title: 'Read today',
     description:
       'What is on today, ordered from now forward, with anything overdue marked. The answer to ' +
@@ -217,6 +229,7 @@ const TOOLS = [
   },
   {
     name: 'get_scoreboard',
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     title: 'Read the scoreboard',
     description:
       'The numbers: habit streaks and this week\'s completions, training sessions done against the plan, ' +
@@ -225,6 +238,8 @@ const TOOLS = [
   },
   {
     name: 'add_rock',
+    annotations: { readOnlyHint: false, destructiveHint: false,
+               idempotentHint: false, openWorldHint: false },
     title: 'Add a Big Rock',
     description:
       'Put something on the week. A Big Rock is The Flow\'s task: a title, a day, optionally a time and ' +
@@ -251,6 +266,8 @@ const TOOLS = [
   },
   {
     name: 'update_rock',
+    annotations: { readOnlyHint: false, destructiveHint: false,
+               idempotentHint: true, openWorldHint: false },
     title: 'Change a Big Rock',
     description:
       'Change something already on the week: retitle it, move it to another day or time, change its ' +
@@ -275,6 +292,8 @@ const TOOLS = [
   },
   {
     name: 'add_habit',
+    annotations: { readOnlyHint: false, destructiveHint: false,
+               idempotentHint: false, openWorldHint: false },
     title: 'Add a habit',
     description:
       'Start tracking something done daily, with a streak. Use this rather than add_rock when the thing ' +
@@ -287,6 +306,8 @@ const TOOLS = [
   },
   {
     name: 'log_habit',
+    annotations: { readOnlyHint: false, destructiveHint: false,
+               idempotentHint: true, openWorldHint: false },
     title: 'Tick a habit',
     description: 'Record that a habit was done on a day — today unless you say otherwise.',
     inputSchema: {
@@ -301,6 +322,8 @@ const TOOLS = [
   },
   {
     name: 'set_blade_lines',
+    annotations: { readOnlyHint: false, destructiveHint: true,
+               idempotentHint: true, openWorldHint: false },
     title: 'Rewrite the weekly commitments',
     description:
       'Replace the Sharpen the Blade list — the handful of things somebody means to do every week, ' +
@@ -327,6 +350,8 @@ const TOOLS = [
   },
   {
     name: 'set_mission',
+    annotations: { readOnlyHint: false, destructiveHint: true,
+               idempotentHint: true, openWorldHint: false },
     title: 'Set the mission and roles',
     description:
       'The sentence at the top of the Week Compass saying what the week is for, and the roles the week ' +
@@ -345,6 +370,8 @@ const TOOLS = [
   },
   {
     name: 'set_training_day',
+    annotations: { readOnlyHint: false, destructiveHint: true,
+               idempotentHint: true, openWorldHint: false },
     title: 'Shape a training day',
     description:
       'Rewrite one day of the training week: what it is called, its focus, its type, the exercises, and ' +
@@ -820,7 +847,20 @@ async function dispatch(msg, ctx) {
     return rpcOk(id, {
       protocolVersion: SUPPORTED.indexOf(want) >= 0 ? want : PROTOCOL,
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'the-flow', title: 'The Flow', version: VERSION },
+      serverInfo: {
+        name: 'the-flow', title: 'The Flow', version: VERSION,
+        websiteUrl: ctx.origin || undefined,
+        /* SEP-973. Whether it is drawn is the client's decision — today most
+           of them show a generic letter for anything that is not a built-in
+           integration — but advertising it costs one field, and the icon
+           appears on its own the day that changes. Absolute and reachable
+           without signing in, because whatever fetches it is not this
+           person's browser and has none of their cookies. */
+        icons: ctx.origin ? [
+          { src: ctx.origin + '/icon-192.png', mimeType: 'image/png', sizes: ['192x192'] },
+          { src: ctx.origin + '/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }
+        ] : undefined
+      },
       instructions:
         'This is one person\'s Flow — their week, their habits, their training, their record.\n\n' +
         'Read before you write. get_week shows what is already planned and on which day; get_today ' +
@@ -917,7 +957,18 @@ async function handle(req, res, store, opts) {
   catch (e) { return send(200, rpcErr(null, -32700, 'That was not valid JSON.')); }
   if (!msg) return send(200, rpcErr(null, -32600, 'Empty request.'));
 
-  const ctx = { store, now: new Date() };
+  /* The server's own public address, which it only learns from the request.
+     Behind Render's proxy the scheme survives only in the forwarded header,
+     and an icon advertised as http would be fetched as http. */
+  const origin = (() => {
+    try {
+      const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
+        || (req.socket && req.socket.encrypted ? 'https' : 'http');
+      const host = req.headers['x-forwarded-host'] || req.headers.host;
+      return host ? proto + '://' + host : '';
+    } catch (e) { return ''; }
+  })();
+  const ctx = { store, now: new Date(), origin };
 
   /* A batch is a list. Notifications inside it produce nothing, and a batch of
      nothing but notifications gets 202 and an empty body. */

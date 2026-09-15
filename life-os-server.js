@@ -392,7 +392,16 @@ button{width:100%;border:0;border-radius:14px;padding:15px;font-size:16px;font-w
 // ── Server ──────────────────────────────────────────────────
 // --- The Flow: accounts + per-user data isolation -------------------------
 const flowAuth = require('./flow-auth');
+/* Kept from before the namespacing, and used for exactly one thing: the WHOOP
+   refresh tokens. Everything the page is allowed to see goes through the
+   protected store below — see flow-whoop.js for why a credential must not. */
+const rawStore = store;
 store = flowAuth.protect(store);
+
+/* WHOOP. Optional in the same way the MCP module is: absent file, absent
+   routes, and a server that still boots. */
+let whoop = null;
+try { whoop = require('./flow-whoop'); } catch (e) { whoop = null; }
 /* The MCP endpoint. Optional in the same way flow-extras is: a build without
    the file simply does not offer the route, rather than failing to boot. */
 let mcp = null;
@@ -649,6 +658,22 @@ const server = http.createServer(async (req, res) => {
       if (p.startsWith('/api/')) return json(res, 401, { error: 'auth required' });
       res.writeHead(302, { Location: '/login' });
       return res.end();
+    }
+
+    /* ── WHOOP ──
+       Below the login check, unlike MCP and the widget: these are reached from
+       a browser by somebody signed in, and the OAuth round trip comes back to
+       this origin as an ordinary navigation. `store` is already theirs;
+       `rawStore` is handed over separately because the tokens must not land
+       anywhere /api/all can reach — see flow-whoop.js. */
+    if (p.indexOf('/api/whoop') === 0) {
+      if (!whoop) return json(res, 503, { error: 'This build has no WHOOP module.' });
+      const done = await whoop.handle(req, res, {
+        path: p, query: u.searchParams, uid: req.__flowUid || null,
+        raw: rawStore, store, json
+      });
+      if (done) return;
+      res.writeHead(404); return res.end('Not found');
     }
 
     // ── The upgrade pack ──
