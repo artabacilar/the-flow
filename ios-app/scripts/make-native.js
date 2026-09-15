@@ -76,6 +76,7 @@ const COPY = [
   ['native/App/FlowViewController.swift', 'FlowViewController.swift'],
   ['native/Shared/FlowStore.swift', 'FlowStore.swift'],
   ['native/App/FlowSpeech.swift', 'FlowSpeech.swift'],
+  ['native/App/FlowHealth.swift', 'FlowHealth.swift'],
 ];
 
 for (const [from, to] of COPY) {
@@ -256,7 +257,7 @@ function addSource(fileName) {
   return true;
 }
 
-['FlowViewController.swift', 'FlowStore.swift', 'FlowSpeech.swift'].forEach(addSource);
+['FlowViewController.swift', 'FlowStore.swift', 'FlowSpeech.swift', 'FlowHealth.swift'].forEach(addSource);
 
 fs.writeFileSync(pbxPath, proj.writeSync());
 
@@ -311,6 +312,8 @@ const USAGE = {
     'The Flow uses the microphone so you can dictate journal entries and notes instead of typing them.',
   NSSpeechRecognitionUsageDescription:
     'Speech recognition turns what you dictate into text. On iPhones that support it this happens on the device.',
+  NSHealthShareUsageDescription:
+    'The Flow reads your sleep, heart rate variability, resting heart rate and workouts from Apple Health so your day is filled in without you typing it. It never writes anything back.',
 };
 
 for (const [key, text] of Object.entries(USAGE)) {

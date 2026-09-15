@@ -45,7 +45,11 @@ fs.copyFileSync(path.join(__dirname, '..', 'native', 'Widget', 'FlowWidget.swift
    memberships. The App target's copy and its membership are make-native.js's
    job — this script only ever touches the widget side of the seam. */
 
-const entitlements = `<?xml version="1.0" encoding="UTF-8"?>
+/* The app group is the seam between the app and the widget, so both ends
+ * carry it. HealthKit is the app's alone \u2014 a widget has no business reading
+ * somebody's sleep, and an entitlement granted to a target that does not use
+ * it is a capability the App ID has to carry for no reason. */
+const entPlist = (body) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -53,11 +57,18 @@ const entitlements = `<?xml version="1.0" encoding="UTF-8"?>
 \t<array>
 \t\t<string>${GROUP}</string>
 \t</array>
-</dict>
+${body}</dict>
 </plist>
 `;
-fs.writeFileSync(path.join(projDir, 'App', 'App.entitlements'), entitlements);
-fs.writeFileSync(path.join(wdir, WIDGET + '.entitlements'), entitlements);
+
+/* Reading only. `health-records` is a separate, far more sensitive
+ * entitlement covering clinical records from providers, and asking for it
+ * would mean an App Review conversation about data we do not want. */
+const HEALTHKIT = '\t<key>com.apple.developer.healthkit</key>\n\t<true/>\n' +
+                  '\t<key>com.apple.developer.healthkit-access</key>\n\t<array/>\n';
+
+fs.writeFileSync(path.join(projDir, 'App', 'App.entitlements'), entPlist(HEALTHKIT));
+fs.writeFileSync(path.join(wdir, WIDGET + '.entitlements'), entPlist(''));
 
 /* The extension point is what makes iOS treat this bundle as a widget rather
    than as an app that happens to contain one. */
