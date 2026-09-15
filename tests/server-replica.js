@@ -8,7 +8,7 @@ const DATA = process.env.SEED_FILE
   ? JSON.parse(require('fs').readFileSync(process.env.SEED_FILE, 'utf8'))
   : (process.env.SEED ? JSON.parse(process.env.SEED) : {});
 const DASH_PATH = process.env.DASH || path.join(__dirname,'..','life-dashboard.html');
-const PACK_FILES = ['flow-pack.js','flow-pack.css','flow-i18n.js','flow-lang-tr.js'];
+const PACK_FILES = ['flow-pack.js','flow-pack.css','flow-i18n.js','flow-lang-tr.js','flow-voice.js'];
 let SHELL = null;
 function packVersion(){
   try{ const h=require('crypto').createHash('sha256');

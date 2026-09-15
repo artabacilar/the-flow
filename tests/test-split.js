@@ -36,7 +36,7 @@ const H = 'http://localhost:4222';
      not move this hash would sit behind an immutable cache header and never
      reach anybody. */
   const want = require('crypto').createHash('sha256');
-  for (const f of ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js']) {
+  for (const f of ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js', 'flow-voice.js']) {
     try { want.update(fs.readFileSync(path.join(root, f))); } catch (e) { /* a language may not ship */ }
   }
   ok('and it is the hash of the files themselves',
