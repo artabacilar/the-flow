@@ -170,6 +170,71 @@ extension FlowViewController: WKNavigationDelegate, WKUIDelegate {
         if webView.url == nil { offline.isHidden = false }
     }
 
+    // MARK: - JavaScript dialogs
+    //
+    // WKWebView shows none of alert(), confirm() or prompt() on its own. With
+    // these three methods missing — and they were — it does not fail loudly
+    // either: alert() does nothing, confirm() returns false, and prompt()
+    // returns nil. Silently.
+    //
+    // So every confirmation in the app answered "no" without asking anybody.
+    // Sign out did nothing. Change password did nothing. And Delete account,
+    // which Apple requires to work from inside the app, could never have run
+    // at all. None of it showed up in the simulator because none of it was
+    // ever tapped there.
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        present(dialog: a, otherwise: completionHandler)
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+        present(dialog: a, otherwise: { completionHandler(false) })
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let a = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+        a.addTextField { field in
+            field.text = defaultText
+            /// A prompt asking for a password should not print it across the
+            /// screen. The web side no longer asks this way, but a browser
+            /// dialog that leaks the thing it is asking for is worth closing
+            /// off here too, for whatever asks next.
+            if prompt.range(of: "password", options: .caseInsensitive) != nil {
+                field.isSecureTextEntry = true
+                field.textContentType = .password
+            }
+        }
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+        a.addAction(UIAlertAction(title: "OK", style: .default) { [weak a] _ in
+            completionHandler(a?.textFields?.first?.text ?? "")
+        })
+        present(dialog: a, otherwise: { completionHandler(nil) })
+    }
+
+    /// A page can ask for a second dialog while one is already up, and
+    /// presenting over a presented controller throws. Answering the handler is
+    /// not optional: WKWebView blocks that frame's JavaScript until it is
+    /// called, so dropping it hangs the page for good.
+    private func present(dialog: UIAlertController, otherwise cancel: @escaping () -> Void) {
+        guard presentedViewController == nil, view.window != nil else { cancel(); return }
+        present(dialog, animated: true)
+    }
+
     /// iOS kills the web content process under memory pressure. Without this the
     /// app comes back to a white rectangle and no way out of it.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
