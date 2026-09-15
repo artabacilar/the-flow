@@ -158,6 +158,13 @@ window.__fail = function (code) {
   ok('an interim guess stays out of the field', mid.field === '', mid);
   ok('and is shown where it is obviously provisional',
     /wreckered/.test(mid.bubble) && mid.hidden === false, mid);
+  /* Docked to the viewport, not hung off the field. Anchored to the field it
+     always covered something — which is exactly what went wrong. */
+  ok('and it does not sit on top of the field being written into', await p.evaluate(() => {
+    const bub = document.querySelector('.fv-bubble'), f = document.getElementById('jr-body');
+    const a = bub.getBoundingClientRect(), r = f.getBoundingClientRect();
+    return a.bottom <= r.top + 1 || a.top >= r.bottom - 1;
+  }));
 
   await p.evaluate(() => window.__say('changed its mind again', false));
   await p.waitForTimeout(150);
@@ -315,6 +322,71 @@ window.__fail = function (code) {
     card && /\bok\b/.test(card.dot || ''), card && card.dot);
   ok('it mentions that Wispr Flow and the keyboard mic already work',
     card && /Wispr Flow/.test(card.text));
+
+  /* ------------------------------------------------------------------ *
+   * A turn belongs to one field
+   *
+   * The bug this section exists for: leaving the field did not stop the
+   * recogniser, so it kept listening with nowhere to put the words, and the
+   * bubble kept being repositioned over whatever the person had moved on to.
+   * Closing the entry did not help, because closing an entry was never
+   * connected to it. It sat there saying "Listening…" indefinitely.
+   * ------------------------------------------------------------------ */
+  console.log('\n— leaving the field ends the turn —');
+
+  ok('clicking away stops it listening', await p.evaluate(async () => {
+    const el = document.getElementById('jr-body');
+    el.value = ''; el.focus();
+    window.FlowVoice.start(el);
+    await new Promise(r => setTimeout(r, 150));
+    const was = window.FlowVoice.listening;
+
+    /* Exactly what happens when somebody closes the editor or opens an old
+       entry: focus goes somewhere that is not a writing surface. */
+    const btn = document.createElement('button');
+    document.body.appendChild(btn); btn.focus();
+    await new Promise(r => setTimeout(r, 400));
+    const now = window.FlowVoice.listening;
+    btn.remove();
+    return was === true && now === false;
+  }));
+
+  ok('and nothing is left on the screen', await p.evaluate(async () => {
+    await new Promise(r => setTimeout(r, 400));
+    const bub = document.querySelector('.fv-bubble');
+    const mic = document.querySelector('.fv-mic');
+    return (!bub || bub.hidden === true) && (!mic || !mic.classList.contains('on'));
+  }));
+
+  /* The half-spoken sentence should still land — stop, not cancel. */
+  ok('a sentence already under way still reaches the field', await p.evaluate(async () => {
+    const el = document.getElementById('jr-body');
+    el.value = ''; el.focus();
+    window.FlowVoice.start(el);
+    await new Promise(r => setTimeout(r, 150));
+    window.__say('the last thing I said', true);
+    await new Promise(r => setTimeout(r, 120));
+    const btn = document.createElement('button');
+    document.body.appendChild(btn); btn.focus();
+    await new Promise(r => setTimeout(r, 400));
+    btn.remove();
+    return el.value;
+  }).then(v => /the last thing I said/.test(v || '')));
+
+  /* A field that is scrolled away, or gone from the page entirely, must take
+     its microphone with it — the other way this ended up floating over
+     something unrelated. */
+  ok('a field removed from the page takes the mic with it', await p.evaluate(async () => {
+    const ta = document.createElement('textarea');
+    ta.style.cssText = 'position:fixed;left:20px;top:120px;width:300px;height:90px';
+    document.body.appendChild(ta); ta.focus();
+    await new Promise(r => setTimeout(r, 300));
+    const shown = document.querySelector('.fv-mic').classList.contains('on');
+    ta.remove();
+    await new Promise(r => setTimeout(r, 400));
+    const after = document.querySelector('.fv-mic').classList.contains('on');
+    return shown === true && after === false;
+  }));
 
   /* ------------------------------------------------------------------ *
    * The properties that make other people's dictation work
