@@ -15,6 +15,9 @@ final class FlowViewController: UIViewController {
 
     private var webView: WKWebView!
     private let refresher = UIRefreshControl()
+    /// One per screen, held here so a recognition that is running survives the
+    /// bridge call that started it.
+    private let speech = FlowSpeech()
     private lazy var offline = OfflineView(retry: { [weak self] in self?.load() })
 
     // MARK: - Lifecycle
@@ -235,6 +238,27 @@ extension FlowViewController: WKNavigationDelegate, WKUIDelegate {
         present(dialog, animated: true)
     }
 
+    /// WKWebView refuses `getUserMedia` by default and does it silently — the
+    /// promise rejects with a permission error and no prompt is ever shown, so
+    /// from inside the page it looks like the person said no. Nothing the page
+    /// does can fix that; only the host can answer.
+    ///
+    /// Dictation in the shell does not go through here — it is SFSpeechRecognizer
+    /// reading the microphone natively — but anything else the page ever asks
+    /// for does, and a silent refusal is the worst way to find that out.
+    ///
+    /// Granted only for the app's own origin. A page we did not serve asking
+    /// for the camera is not a thing to wave through on the person's behalf.
+    func webView(_ webView: WKWebView,
+                 requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let ours = FlowStore.origin
+        let same = origin.host == ours.host && origin.protocol == ours.scheme
+        decisionHandler(same ? .prompt : .deny)
+    }
+
     /// iOS kills the web content process under memory pressure. Without this the
     /// app comes back to a white rectangle and no way out of it.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -260,6 +284,10 @@ enum FlowBridge {
       window.__flowBridgeResolve = function (id, value) {
         var f = waiting[id]; delete waiting[id]; if (f) f(value || {});
       };
+      /* Recognition is a stream, not an answer: the shell pushes results in
+         through window.__flowVoiceEvent, which flow-voice.js defines. Calls
+         that arrive before it loads are dropped, which is correct — nothing
+         can be listening before the thing that listens exists. */
       function call(method, args) {
         return new Promise(function (resolve) {
           var id = 'b' + (++n);
@@ -272,7 +300,12 @@ enum FlowBridge {
       window.Capacitor.Plugins.FlowBridge = {
         setToken: function (a) { return call('setToken', a); },
         status:   function ()  { return call('status'); },
-        clear:    function ()  { return call('clear'); }
+        clear:    function ()  { return call('clear'); },
+        voiceStart:      function (a) { return call('voiceStart', a); },
+        voiceStop:       function ()  { return call('voiceStop'); },
+        voiceCancel:     function ()  { return call('voiceCancel'); },
+        voicePermission: function ()  { return call('voicePermission'); },
+        voiceRequest:    function ()  { return call('voiceRequest'); }
       };
       window.__FLOW_NATIVE = 'ios';
     })();
@@ -300,6 +333,36 @@ extension FlowViewController: WKScriptMessageHandler {
         case "status":
             result = ["connected": FlowStore.isConnected, "appGroup": FlowStore.appGroup]
 
+        case "voiceStart":
+            let tag = (args["locale"] as? String) ?? "en-GB"
+            if let problem = speech.start(locale: tag, emit: { [weak self] type, payload in
+                self?.emitVoice(type, payload)
+            }) {
+                result = ["ok": false, "error": problem]
+            } else {
+                result = ["ok": true]
+            }
+
+        case "voiceStop":
+            speech.stop()
+
+        case "voiceCancel":
+            speech.cancel()
+            /// Cancel is the one case the page does not get an "end" for from
+            /// the recogniser, because we never let it report one.
+            emitVoice("end", [:])
+
+        case "voicePermission":
+            result = FlowSpeech.permissions()
+
+        case "voiceRequest":
+            /// The two system prompts are asynchronous, so this one answers
+            /// late rather than immediately like the others.
+            FlowSpeech.request { [weak self] state in
+                self?.answer(id, with: state)
+            }
+            return
+
         case "clear":
             /// Signing out has to take the widget's copy with it. A widget left
             /// showing a signed-out person's day is the worst version of this bug.
@@ -310,9 +373,25 @@ extension FlowViewController: WKScriptMessageHandler {
             return
         }
 
+        answer(id, with: result)
+    }
+
+    /// Resolve one bridge call. Split out because `voiceRequest` cannot answer
+    /// on the same turn it was asked — it is waiting on two system prompts.
+    private func answer(_ id: String, with result: [String: Any]) {
         let json = (try? JSONSerialization.data(withJSONObject: result))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         webView.evaluateJavaScript("window.__flowBridgeResolve(\(quote(id)), \(json))")
+    }
+
+    /// Push, rather than reply: recognition produces many results per call.
+    private func emitVoice(_ type: String, _ payload: [String: Any]) {
+        let json = (try? JSONSerialization.data(withJSONObject: payload))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript(
+                "window.__flowVoiceEvent && window.__flowVoiceEvent(\(self?.quote(type) ?? "''"), \(json))")
+        }
     }
 
     private func quote(_ s: String) -> String {
