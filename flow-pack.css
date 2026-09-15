@@ -934,7 +934,7 @@
   #flow-side{
     display:flex;flex-direction:column;gap:2px;
     position:fixed;left:0;top:0;bottom:0;width:var(--fn-side-w);z-index:930;
-    background:#0e1015;border-right:1px solid var(--border);
+    background:var(--rail,#0e1015);border-right:1px solid var(--border);
     padding:16px 11px 18px;overflow-y:auto;scrollbar-width:none;
   }
   #flow-side::-webkit-scrollbar{display:none;}
@@ -965,7 +965,17 @@
     width:100%;text-align:left;
   }
   .fn-link:hover{background:var(--card);color:var(--text);}
-  .fn-link.on{background:rgba(0,147,231,.14);color:#63c2f7;border-color:rgba(0,147,231,.28);}
+  /* The selected item used to be a literal blue, which is why on Paper the one
+     thing you had selected was the one thing that ignored the theme. The
+     fallback line keeps a browser without color-mix on the old behaviour
+     rather than on no behaviour. */
+  .fn-link.on{background:var(--card2);color:var(--accentOn,#63c2f7);border-color:var(--border);}
+  @supports (background:color-mix(in srgb,red 10%,transparent)){
+    .fn-link.on{
+      background:color-mix(in srgb, var(--accent) 14%, transparent);
+      border-color:color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+  }
   .fn-link .fn-i{width:16px;height:16px;}
   .fn-link .fn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .fn-spacer{flex:1;min-height:14px;}
@@ -1051,65 +1061,183 @@
  * Available to everyone, including guests and brand-new accounts.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* Slate — masculine: cool steel blue on graphite. */
-html[data-flow-theme="slate"]{
-  --accent:#4076f0; --purple:#6d7be6; --teal:#4076f0;
-  --f-accent:#5b8cf0; --f-accent-soft:rgba(91,140,240,0.15); --f-accent-2:#5b8cf0;
-}
-html[data-flow-theme="slate"] body{background:radial-gradient(1200px 600px at 50% -200px,#12151d 0%,#07090d 60%);}
+/* Each theme below sets the WHOLE token set, not just an accent. That is the
+   difference between a theme and a tint: the old themes changed --accent and
+   the body gradient and left every card, border and surface exactly where it
+   was, so tapping one looked like nothing had happened. Every block here
+   repaints the surfaces, the lines, the ink and the accents together, and
+   carries the two axes that actually change a design's character — corner
+   radius and typeface — which is why Bold and Operator read as different
+   products rather than different colours.
 
-/* Rose — feminine: warm rose and plum. */
-html[data-flow-theme="rose"]{
-  --accent:#ff5f95; --purple:#c56cff; --teal:#ff5f95;
-  --f-accent:#ff7aa8; --f-accent-soft:rgba(255,122,168,0.16); --f-accent-2:#ff7aa8;
-}
-html[data-flow-theme="rose"] body{background:radial-gradient(1200px 600px at 50% -200px,#1b1016 0%,#0a0709 60%);}
+   Two things need saying about the selectors. Host tokens live on :root, so
+   html[data-flow-theme="x"] outranks them. Pack tokens are declared on the
+   .flow-x element itself, and a property set on an element beats one
+   inherited from <html> — so each theme repeats its pack half at
+   html[data-flow-theme="x"] .flow-x, which outranks a bare .flow-x. Miss that
+   second block and the theme changes the page around the app and nothing
+   inside it. */
 
-/* Cyber — tech: neon cyan and violet on near-black. */
-html[data-flow-theme="cyber"]{
-  --accent:#17d4ff; --purple:#7b5cff; --teal:#17d4ff;
-  --f-accent:#22d3ee; --f-accent-soft:rgba(34,211,238,0.16); --f-accent-2:#22d3ee;
+/* ── Signature — the original. Deep near-black, electric blue, mint. ────── */
+html[data-flow-theme="signature"]{
+  --bg:#0a0b0d; --card:#14161b; --card2:#1b1e25; --border:#262a33;
+  --text:#f5f7fa; --muted:#7e8493;
+  --accent:#0093e7; --green:#00e88a; --orange:#ffc200; --red:#ff294d;
+  --purple:#8b7bff; --teal:#00b7e0; --pink:#ff5ca8; --yellow:#ffde00;
+  --rail:#0e1015; --muted2:#5c626f;
+  --text2:#c3c8d4; --accentOn:#63c2f7;
 }
-html[data-flow-theme="cyber"] body{background:radial-gradient(1200px 600px at 50% -200px,#0a1220 0%,#05070e 60%);}
+html[data-flow-theme="signature"]{ background:#0a0b0d; }
+html[data-flow-theme="signature"] body{ background-color:#0a0b0d; background-image:radial-gradient(1200px 600px at 50% -200px,#15171d 0%,#0a0b0d 62%); }
+html[data-flow-theme="signature"] .flow-x{
+  --f-surface:#14161b; --f-surface-2:#1b1e25; --f-plane:#0a0b0d;
+  --f-ink:#f5f7fa; --f-ink-2:#b6bdc9; --f-muted:#7e8493;
+  --f-line:rgba(255,255,255,0.09); --f-grid:rgba(255,255,255,0.06);
+  --f-accent:#0093e7; --f-accent-soft:rgba(0,147,231,0.16); --f-accent-2:#00e88a;
+  --f-seq-1:#073b5c; --f-seq-2:#0a5583; --f-seq-3:#0071b4; --f-seq-4:#0093e7; --f-seq-5:#3fb4f0;
+  --f-radius:16px; --f-radius-sm:10px;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+}
 
-/* Executive — entrepreneur: gold on charcoal. */
-html[data-flow-theme="executive"]{
-  --accent:#d1a94e; --purple:#9a86ff; --teal:#d1a94e;
-  --f-accent:#d8b45f; --f-accent-soft:rgba(216,180,95,0.15); --f-accent-2:#d8b45f;
+/* ── Calm — quiet slate blue, low contrast, tighter corners. ───────────── */
+html[data-flow-theme="calm"]{
+  --bg:#0c0e11; --card:#14171b; --card2:#181c21; --border:#23272d;
+  --text:#e8ecf1; --muted:#828b96;
+  --accent:#7fa8dd; --green:#7fa8dd; --orange:#9aa3ad; --red:#c98a8a;
+  --purple:#8f9fc4; --teal:#7fa8dd; --pink:#c98a8a; --yellow:#c9b98a;
+  --rail:#101317; --muted2:#59616b;
+  --text2:#c2cad4; --accentOn:#9dc2ea;
 }
-html[data-flow-theme="executive"] body{background:radial-gradient(1200px 600px at 50% -200px,#14120b 0%,#090806 60%);}
+html[data-flow-theme="calm"]{ background:#0c0e11; }
+html[data-flow-theme="calm"] body{ background:#0c0e11; }
+html[data-flow-theme="calm"] .flow-x{
+  --f-surface:#14171b; --f-surface-2:#181c21; --f-plane:#0c0e11;
+  --f-ink:#e8ecf1; --f-ink-2:#a8b2bd; --f-muted:#5c646e;
+  --f-line:rgba(255,255,255,0.07); --f-grid:rgba(255,255,255,0.045);
+  --f-accent:#7fa8dd; --f-accent-soft:rgba(127,168,221,0.15); --f-accent-2:#9aa3ad;
+  --f-seq-1:#26374b; --f-seq-2:#33506e; --f-seq-3:#466b92; --f-seq-4:#7fa8dd; --f-seq-5:#a8c5e9;
+  --f-radius:12px; --f-radius-sm:8px;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+}
 
-/* Athlete — sporty: high-energy orange. */
-html[data-flow-theme="athlete"]{
-  --accent:#ff6a2c; --purple:#ff9e3d; --teal:#ff6a2c;
-  --f-accent:#ff7a3c; --f-accent-soft:rgba(255,122,60,0.16); --f-accent-2:#ff7a3c;
+/* ── Aurora — violet and teal over deep indigo, generous corners. ──────── */
+html[data-flow-theme="aurora"]{
+  --bg:#12101e; --card:#1b1830; --card2:#231e3c; --border:#302a54;
+  --text:#f3effb; --muted:#a096c2;
+  --accent:#c084fc; --green:#5eead4; --orange:#fbbf24; --red:#fb7185;
+  --purple:#c084fc; --teal:#5eead4; --pink:#fb7185; --yellow:#fbbf24;
+  --rail:#171430; --muted2:#6b6191;
+  --text2:#d5ccee; --accentOn:#d3a6ff;
 }
-html[data-flow-theme="athlete"] body{background:radial-gradient(1200px 600px at 50% -200px,#170f0a 0%,#0a0705 60%);}
+html[data-flow-theme="aurora"]{ background:#12101e; }
+html[data-flow-theme="aurora"] body{ background-color:#12101e; background-image:radial-gradient(1000px 460px at 50% -180px,#2a2148 0%,#12101e 64%); }
+html[data-flow-theme="aurora"] .flow-x{
+  --f-surface:#1b1830; --f-surface-2:#231e3c; --f-plane:#12101e;
+  --f-ink:#f3effb; --f-ink-2:#c3b9e0; --f-muted:#736a96;
+  --f-line:rgba(255,255,255,0.10); --f-grid:rgba(255,255,255,0.06);
+  --f-accent:#c084fc; --f-accent-soft:rgba(192,132,252,0.17); --f-accent-2:#5eead4;
+  --f-seq-1:#3b2a63; --f-seq-2:#533a87; --f-seq-3:#7a52c4; --f-seq-4:#c084fc; --f-seq-5:#d9b3ff;
+  --f-radius:20px; --f-radius-sm:13px;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+}
 
-/* Whoop — stark black with a desaturated recovery-green primary. Darker
-   surfaces across the board for that flat, near-black instrument look. */
-html[data-flow-theme="whoop"]{
-  --bg:#000000; --card:#0c0d11; --card2:#131519; --border:#20232b;
-  --accent:#00e6a0; --purple:#1f8bff; --teal:#00e6a0;
-  --f-accent:#00e6a0; --f-accent-soft:rgba(0,230,160,0.14); --f-accent-2:#1f8bff;
-  --f-surface:#0c0d11; --f-surface-2:#131519; --f-plane:#000000; --f-line:rgba(255,255,255,0.08);
+/* ── Bold — pure black, hazard yellow, square corners, Archivo. ────────── */
+html[data-flow-theme="bold"]{
+  --bg:#000000; --card:#111111; --card2:#181818; --border:#2b2b2b;
+  --text:#ffffff; --muted:#9a9a9a;
+  --accent:#ffe600; --green:#00ff9c; --orange:#ffe600; --red:#ff3b30;
+  --purple:#00ff9c; --teal:#00ff9c; --pink:#ff3b30; --yellow:#ffe600;
+  --rail:#0a0a0a; --muted2:#6b6b6b;
+  --text2:#d0d0d0; --accentOn:#ffe600;
 }
-html[data-flow-theme="whoop"] body{background:radial-gradient(900px 500px at 50% -160px,#0a0b0d 0%,#000000 55%);}
+html[data-flow-theme="bold"]{ background:#000000; }
+html[data-flow-theme="bold"] body{ background:#000000; }
+html[data-flow-theme="bold"] .flow-x{
+  --f-surface:#111111; --f-surface-2:#181818; --f-plane:#000000;
+  --f-ink:#ffffff; --f-ink-2:#c4c4c4; --f-muted:#6b6b6b;
+  --f-line:rgba(255,255,255,0.14); --f-grid:rgba(255,255,255,0.08);
+  --f-accent:#ffe600; --f-accent-soft:rgba(255,230,0,0.15); --f-accent-2:#00ff9c;
+  --f-seq-1:#4a4300; --f-seq-2:#6e6400; --f-seq-3:#a89a00; --f-seq-4:#ffe600; --f-seq-5:#fff27a;
+  --f-radius:4px; --f-radius-sm:3px;
+  font-family:'Archivo','Inter',system-ui,sans-serif;
+}
+/* Bold shouts. Headings go up a weight and lose their lower case. */
+html[data-flow-theme="bold"] .flow-hero,
+html[data-flow-theme="bold"] .flow-card > h3,
+html[data-flow-theme="bold"] .header h1{ font-weight:900; text-transform:uppercase; letter-spacing:-0.01em; }
 
-/* The pack declares its --f-* tokens on .flow-x, and a property set on an
-   element wins over one inherited from <html> — so the blocks above are
-   shadowed for every pack component. Re-assert the pack tokens at a selector
-   that outranks a bare .flow-x. Host tokens (--accent etc.) live on :root and
-   are already handled by the blocks above. */
-html[data-flow-theme="slate"]     .flow-x{ --f-accent:#5b8cf0; --f-accent-soft:rgba(91,140,240,0.15); --f-accent-2:#5b8cf0; }
-html[data-flow-theme="rose"]      .flow-x{ --f-accent:#ff7aa8; --f-accent-soft:rgba(255,122,168,0.16); --f-accent-2:#ff7aa8; }
-html[data-flow-theme="cyber"]     .flow-x{ --f-accent:#22d3ee; --f-accent-soft:rgba(34,211,238,0.16); --f-accent-2:#22d3ee; }
-html[data-flow-theme="executive"] .flow-x{ --f-accent:#d8b45f; --f-accent-soft:rgba(216,180,95,0.15); --f-accent-2:#d8b45f; }
-html[data-flow-theme="athlete"]   .flow-x{ --f-accent:#ff7a3c; --f-accent-soft:rgba(255,122,60,0.16); --f-accent-2:#ff7a3c; }
-html[data-flow-theme="whoop"]     .flow-x{
-  --f-accent:#00e6a0; --f-accent-soft:rgba(0,230,160,0.14); --f-accent-2:#1f8bff;
-  --f-surface:#0c0d11; --f-surface-2:#131519; --f-plane:#000000; --f-line:rgba(255,255,255,0.08);
+/* ── Operator — instrument green on carbon, monospaced. ────────────────── */
+html[data-flow-theme="operator"]{
+  --bg:#06090a; --card:#0c1113; --card2:#101619; --border:#1b2529;
+  --text:#cfe6da; --muted:#6f8a7e;
+  --accent:#00e08a; --green:#00e08a; --orange:#d7c94a; --red:#ff6b6b;
+  --purple:#00e08a; --teal:#00e08a; --pink:#ff6b6b; --yellow:#d7c94a;
+  --rail:#080d0e; --muted2:#4d635a;
+  --text2:#a9c7b9; --accentOn:#3bf0a8;
 }
+html[data-flow-theme="operator"]{ background:#06090a; }
+html[data-flow-theme="operator"] body{ background:#06090a; }
+html[data-flow-theme="operator"] .flow-x{
+  --f-surface:#0c1113; --f-surface-2:#101619; --f-plane:#06090a;
+  --f-ink:#cfe6da; --f-ink-2:#9dbcac; --f-muted:#4d635a;
+  --f-line:rgba(160,255,210,0.10); --f-grid:rgba(160,255,210,0.06);
+  --f-accent:#00e08a; --f-accent-soft:rgba(0,224,138,0.13); --f-accent-2:#d7c94a;
+  --f-seq-1:#04382a; --f-seq-2:#065643; --f-seq-3:#098a63; --f-seq-4:#00e08a; --f-seq-5:#5cf0b8;
+  --f-radius:6px; --f-radius-sm:4px;
+  font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+/* ── Paper — warm off-white, forest green. The app's first light theme. ──
+   Light means more than swapping two colours: every line and grid tone in
+   this app is white-on-dark, so those are re-declared as dark-on-light here
+   rather than inherited, and the boot veil's own background follows too. */
+html[data-flow-theme="paper"]{
+  --bg:#f8f5ef; --card:#fffdf8; --card2:#f1ece2; --border:#e3dbcc;
+  --text:#1d1a15; --muted:#726a5c;
+  --accent:#2f6f5e; --green:#2f6f5e; --orange:#b07d2a; --red:#b03a2e;
+  --purple:#6a5a8c; --teal:#2f6f5e; --pink:#b0567a; --yellow:#b07d2a;
+  color-scheme:light;
+  --rail:#f1ece2; --muted2:#8a8274;
+  --text2:#4a443a; --accentOn:#2f6f5e;
+}
+html[data-flow-theme="paper"]{ background:#f8f5ef; }
+html[data-flow-theme="paper"] body{ background:#f8f5ef; color:#1d1a15; }
+html[data-flow-theme="paper"] .flow-x{
+  --f-surface:#fffdf8; --f-surface-2:#f1ece2; --f-plane:#f8f5ef;
+  --f-ink:#1d1a15; --f-ink-2:#4a443a; --f-muted:#9a9184;
+  --f-line:rgba(29,26,21,0.14); --f-grid:rgba(29,26,21,0.08);
+  --f-accent:#2f6f5e; --f-accent-soft:rgba(47,111,94,0.14); --f-accent-2:#b07d2a;
+  --f-seq-1:#cfe3dc; --f-seq-2:#9cc6ba; --f-seq-3:#66a493; --f-seq-4:#2f6f5e; --f-seq-5:#1d4d40;
+  --f-radius:14px; --f-radius-sm:9px;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+}
+
+/* ── Bloom — soft rose on warm white, rounded. The second light theme. ─── */
+html[data-flow-theme="bloom"]{
+  --bg:#fdf8f7; --card:#fffbfa; --card2:#f8eeef; --border:#f0dfe0;
+  --text:#2b2024; --muted:#7f6b70;
+  --accent:#b0648a; --green:#6f9e7d; --orange:#cf9a4c; --red:#c25b6a;
+  --purple:#b0648a; --teal:#6f9e7d; --pink:#b0648a; --yellow:#cf9a4c;
+  color-scheme:light;
+  --rail:#f8eeef; --muted2:#9c8a8f;
+  --text2:#57454b; --accentOn:#a1507b;
+}
+html[data-flow-theme="bloom"]{ background:#fdf8f7; }
+html[data-flow-theme="bloom"] body{ background-color:#fdf8f7; background-image:radial-gradient(1000px 420px at 50% -170px,#fbeef0 0%,#fdf8f7 65%); color:#2b2024; }
+html[data-flow-theme="bloom"] .flow-x{
+  --f-surface:#fffbfa; --f-surface-2:#f8eeef; --f-plane:#fdf8f7;
+  --f-ink:#2b2024; --f-ink-2:#57454b; --f-muted:#a89599;
+  --f-line:rgba(43,32,36,0.13); --f-grid:rgba(43,32,36,0.07);
+  --f-accent:#b0648a; --f-accent-soft:rgba(176,100,138,0.14); --f-accent-2:#6f9e7d;
+  --f-seq-1:#f0d9e3; --f-seq-2:#dcadc3; --f-seq-3:#c684a5; --f-seq-4:#b0648a; --f-seq-5:#8a4368;
+  --f-radius:20px; --f-radius-sm:13px;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+}
+
+/* A light theme must also light the veil the app boots behind, or the first
+   second of every open is a black flash before the page appears. */
+html[data-flow-theme="paper"]:not(.flow-ready) body{ background:#f8f5ef; }
+html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 
 /* ── The picker in Settings ── */
 .theme-grid{
@@ -1127,8 +1255,13 @@ html[data-flow-theme="whoop"]     .flow-x{
   background:radial-gradient(circle at 32% 30%, #fff2, transparent 60%), var(--d);
   box-shadow:0 0 0 1px rgba(255,255,255,.08) inset;
 }
-.theme-swatch .sw-nm{ font-size:13.5px; font-weight:700; }
-.theme-swatch .sw-sub{ font-size:11px; color:var(--f-muted); margin-left:auto; }
+/* The language rows reuse the theme swatch, but their dot carries a two-letter
+   code instead of a colour, so it needs to be able to hold type. */
+.theme-swatch .sw-dot{ display:flex; align-items:center; justify-content:center;
+  font-size:9.5px; font-weight:800; letter-spacing:.04em; color:var(--f-plane); }
+.theme-swatch .sw-tx{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+.theme-swatch .sw-nm{ font-size:13.5px; font-weight:700; line-height:1.15; }
+.theme-swatch .sw-sub{ font-size:11px; color:var(--f-muted); line-height:1.2; }
 
 /* ---------- North Star -------------------------------------------------- */
 .ns-hero{

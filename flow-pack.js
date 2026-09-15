@@ -3077,26 +3077,61 @@ const FinanceUI = {
 const Theme = {
   KEY: 'flow:theme',
   LS: 'flowTheme',
+  /* `dot` is a full CSS background value, not just a colour, so a theme can
+     show the two shades it actually trades in rather than one flat circle.
+     `tc` is what goes into the theme-color meta, which is the strip iOS paints
+     behind the status bar — get it wrong and the app has a mismatched band
+     across the top of every screen. */
   LIST: [
-    { id: '',          name: 'Flow',      sub: 'default',      dot: '#0093e7', tc: '#0a0b0d' },
-    { id: 'slate',     name: 'Slate',     sub: 'masculine',    dot: '#4076f0', tc: '#07090d' },
-    { id: 'rose',      name: 'Rose',      sub: 'feminine',     dot: '#ff5f95', tc: '#0a0709' },
-    { id: 'cyber',     name: 'Cyber',     sub: 'tech',         dot: '#17d4ff', tc: '#05070e' },
-    { id: 'executive', name: 'Executive', sub: 'entrepreneur', dot: '#d1a94e', tc: '#090806' },
-    { id: 'athlete',   name: 'Athlete',   sub: 'sporty',       dot: '#ff6a2c', tc: '#0a0705' },
-    { id: 'whoop',     name: 'Whoop',     sub: 'stark black',  dot: '#00e6a0', tc: '#000000' }
+    { id: 'signature', name: 'Signature', sub: 'the original',
+      dot: 'linear-gradient(135deg,#00e88a,#0093e7)', tc: '#0a0b0d' },
+    { id: 'bloom',     name: 'Bloom',     sub: 'soft light',
+      dot: 'linear-gradient(135deg,#f5dfe4,#b0648a)', tc: '#fdf8f7' },
+    { id: 'aurora',    name: 'Aurora',    sub: 'violet night',
+      dot: 'linear-gradient(135deg,#c084fc,#5eead4)', tc: '#12101e' },
+    { id: 'paper',     name: 'Paper',     sub: 'warm light',
+      dot: 'linear-gradient(135deg,#f8f5ef,#2f6f5e)', tc: '#f8f5ef' },
+    { id: 'calm',      name: 'Calm',      sub: 'quiet blue',
+      dot: 'linear-gradient(135deg,#7fa8dd,#2a2f36)', tc: '#0c0e11' },
+    { id: 'bold',      name: 'Bold',      sub: 'loud and square',
+      dot: 'linear-gradient(135deg,#ffe600,#ff3b30)', tc: '#000000' },
+    { id: 'operator',  name: 'Operator',  sub: 'monospaced',
+      dot: 'linear-gradient(135deg,#00e08a,#06090a)', tc: '#06090a' }
   ],
-  meta(id) { return Theme.LIST.find(t => t.id === (id || '')) || Theme.LIST[0]; },
-  current() { return document.documentElement.getAttribute('data-flow-theme') || ''; },
+  DEFAULT: 'signature',
+
+  /* The seven themes this replaced were tints: they set an accent and a body
+     gradient and left every surface where it was, so choosing one looked like
+     nothing had happened. Anyone still carrying one of those ids gets moved to
+     the nearest of the new ones rather than to a blank screen. */
+  RETIRED: { '': 'signature', slate: 'calm', rose: 'bloom', cyber: 'aurora',
+             executive: 'paper', athlete: 'bold', whoop: 'operator' },
+  /* Anything unknown — a retired id, a typo, a value from a newer build —
+     resolves to the default rather than to undefined. */
+  resolve(id) {
+    id = String(id == null ? '' : id);
+    if (Theme.LIST.some(t => t.id === id)) return id;
+    return Theme.RETIRED[id] || Theme.DEFAULT;
+  },
+  meta(id) { return Theme.LIST.find(t => t.id === Theme.resolve(id)) || Theme.LIST[0]; },
+  current() { return Theme.resolve(document.documentElement.getAttribute('data-flow-theme')); },
 
   /* Paint it now. `save !== false` also persists it. */
   apply(id, save) {
-    id = id || '';
+    /* Every theme now carries a full token set, the default included, so the
+       attribute is always present. Removing it used to mean "the original",
+       which only worked while the original was the bare stylesheet. */
+    id = Theme.resolve(id);
     const root = document.documentElement;
-    if (id) root.setAttribute('data-flow-theme', id);
-    else root.removeAttribute('data-flow-theme');
+    root.setAttribute('data-flow-theme', id);
+    const tc = Theme.meta(id).tc;
     const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', Theme.meta(id).tc);
+    if (m) m.setAttribute('content', tc);
+    /* The pre-paint script writes this inline so the very first frame is the
+       right colour. An inline style outranks the stylesheet, so switching
+       theme has to move it too — otherwise the area behind the status bar
+       keeps the colour of whichever theme the app opened in. */
+    try { root.style.background = tc; } catch (e) {}
     try { localStorage.setItem(Theme.LS, id); } catch (e) {}     /* survives the ld_* purge */
     if (save !== false) { try { DB.set(Theme.KEY, id); } catch (e) {} }
   },
@@ -3107,7 +3142,59 @@ const Theme = {
     let id = null;
     try { if (window.__DB_ON) id = await DB.get(Theme.KEY, null); } catch (e) {}
     if (id == null) { try { id = localStorage.getItem(Theme.LS); } catch (e) {} }
-    Theme.apply(id || '', false);
+    /* A retired id needs writing back, not just translating on the way out,
+       or every future open pays for the migration again. */
+    const want = Theme.resolve(id);
+    Theme.apply(want, false);
+    if (id != null && String(id) !== want) { try { Theme.apply(want, true); } catch (e) {} }
+  }
+};
+
+/* =========================================================================
+ * 16b · Language
+ *
+ * The translation engine lives in flow-i18n.js and boots before this file, so
+ * that the sign-in screen — which renders before anybody is authenticated and
+ * therefore before this file knows who they are — is already in the right
+ * language. It decides from localStorage, or failing that from the device.
+ *
+ * This is the half that only makes sense once somebody is signed in: the
+ * choice belongs to the account, not to the browser. Pick Turkish on the
+ * phone and the laptop should open in Turkish too.
+ *
+ * The two halves disagree exactly once, on a device the person has not used
+ * before: it opens in whatever the device says, then the account's answer
+ * arrives a moment later and wins. That is the right way round — a wrong
+ * guess for half a second beats an English flash on every single open.
+ * ====================================================================== */
+const Lang = {
+  KEY: 'flow:lang',
+
+  get engine() { return typeof window !== 'undefined' ? window.FlowI18n : null; },
+  get current() { const e = Lang.engine; return e ? e.lang : 'en'; },
+  list() { const e = Lang.engine; return e ? e.languages() : [{ code: 'en', name: 'English', native: 'English' }]; },
+
+  /* Apply now; `save !== false` also writes it to the account. */
+  async set(code, save) {
+    const e = Lang.engine;
+    if (!e) return;
+    await e.set(code);
+    if (save !== false) { try { await DB.set(Lang.KEY, code); } catch (err) {} }
+  },
+
+  /* Reconcile at boot. An account that has never chosen keeps whatever the
+     device decided, and that decision is written back so the next device
+     inherits it rather than guessing again. */
+  async init() {
+    const e = Lang.engine;
+    if (!e) return;
+    let want = null;
+    try { if (window.__DB_ON) want = await DB.get(Lang.KEY, null); } catch (err) {}
+    if (want == null) {
+      try { if (window.__DB_ON) await DB.set(Lang.KEY, e.lang); } catch (err) {}
+      return;
+    }
+    if (want !== e.lang) await e.set(want);
   }
 };
 
@@ -3131,7 +3218,18 @@ const SettingsUI = {
         <div class="theme-grid">
           ${Theme.LIST.map(t => `<button type="button" class="theme-swatch${Theme.current() === t.id ? ' on' : ''}" data-theme="${t.id}">
             <span class="sw-dot" style="--d:${t.dot}"></span>
-            <span class="sw-nm">${t.name}</span><span class="sw-sub">${t.sub}</span>
+            <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
+          </button>`).join('')}
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <h3>🌐 Language</h3>
+        <p class="flow-sub">The whole app, in the language you pick. It changes the moment you tap it and is saved to your account, so your other devices follow. Anything you have written stays exactly as you wrote it.</p>
+        <div class="theme-grid">
+          ${Lang.list().map(l => `<button type="button" class="theme-swatch${Lang.current === l.code ? ' on' : ''}" data-lang="${esc(l.code)}">
+            <span class="sw-dot" style="--d:var(--f-accent)">${esc(l.code.toUpperCase())}</span>
+            <span class="sw-tx"><span class="sw-nm" data-i18n="off">${esc(l.native)}</span><span class="sw-sub" data-i18n="off">${esc(l.name)}</span></span>
           </button>`).join('')}
         </div>
       </div>
@@ -3398,6 +3496,17 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
 
     /* ---- recovery codes ---- */
     SettingsUI.recoveryStatus(section);
+
+    /* Language — same shape as the theme swatches. The engine repaints the
+       page itself, so nothing here needs to re-render the tab; marking the
+       chosen row is all that is left to do. */
+    section.querySelectorAll('[data-lang]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        section.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('on', b === btn));
+        try { await Lang.set(btn.getAttribute('data-lang')); }
+        catch (e) { toast('That language could not be loaded — staying in English.', 'err'); }
+      });
+    });
 
     /* Colour-theme swatches — apply instantly, persist, and re-mark the row. */
     section.querySelectorAll('[data-theme]').forEach(btn => {
@@ -8803,6 +8912,7 @@ async function boot() {
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
+  try { await Lang.init(); } catch (e) { console.warn('[Flow] language', e); }
   /* The chrome exists — lift the boot veil. The host holds the page invisible
      until this class lands, so nobody ever sees the pre-pack layout flash by
      before the real navigation appears. (The host also lifts it on a timer,
@@ -8848,7 +8958,7 @@ async function boot() {
 
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
-    DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile,
+    DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
     Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }

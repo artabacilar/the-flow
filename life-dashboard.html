@@ -25,7 +25,7 @@
 <!-- Apply the saved colour theme before first paint, so a returning visitor
      never sees the default flash before their theme loads. The pack reconciles
      this against the account value once it boots. -->
-<script>try{var t=localStorage.getItem('flowTheme');if(t)document.documentElement.setAttribute('data-flow-theme',t);}catch(e){}</script>
+<script>try{var R={'':'signature',slate:'calm',rose:'bloom',cyber:'aurora',executive:'paper',athlete:'bold',whoop:'operator'},L=['signature','bloom','aurora','paper','calm','bold','operator'],t=localStorage.getItem('flowTheme')||'';t=L.indexOf(t)>=0?t:(R[t]||'signature');document.documentElement.setAttribute('data-flow-theme',t);var T={signature:'#0a0b0d',bloom:'#fdf8f7',aurora:'#12101e',paper:'#f8f5ef',calm:'#0c0e11',bold:'#000000',operator:'#06090a'}[t];document.documentElement.style.background=T;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',T);}catch(e){}</script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -58,7 +58,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Archivo:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#0a0b0d; --card:#14161b; --card2:#1b1e25; --border:#262a33;
@@ -4661,6 +4661,8 @@ renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm()
   },{passive:true});
 })();
 </script>
+<script>window.FLOW_PACK_V="__PACK_V__";</script>
+<script src="/flow-i18n.js?v=__PACK_V__" defer></script>
 <script src="/flow-pack.js?v=__PACK_V__" defer></script>
 </body>
 </html>

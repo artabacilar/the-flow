@@ -190,7 +190,7 @@ function cachedPack(file) {
 }
 function sendFile(res, file, type, headers, req) {
   const r = req || CURRENT_REQ;
-  if (file === 'flow-pack.js' || file === 'flow-pack.css') {
+  if (PACK_FILES.indexOf(file) >= 0) {
     const c = cachedPack(file);
     if (!c) { res.writeHead(404); return res.end('Not found: ' + file); }
     const h = Object.assign({ 'Content-Type': type }, headers || {});
@@ -215,20 +215,31 @@ function sendFile(res, file, type, headers, req) {
 // whole point: change flow-pack.js on its own and the URL in the page changes
 // with it. There is no way to ship a new pack that an old cache can satisfy,
 // and no second file to remember to edit.
-const PACK_FILES = ['flow-pack.js', 'flow-pack.css'];
+const PACK_FILES = ['flow-pack.js', 'flow-pack.css', 'flow-i18n.js', 'flow-lang-tr.js'];
 let PACK_V = 'dev';
 let SHELL_HTML = null;
 
+/* Every pack file goes into one hash. A missing translation is not the same
+   kind of problem as a missing pack, though: the app reads perfectly well in
+   English without it, so it is noted and skipped rather than taking the
+   version — and with it every cache header — down with it. */
+const PACK_REQUIRED = ['flow-pack.js', 'flow-pack.css'];
+
 function packVersion() {
-  try {
-    const h = crypto.createHash('sha256');
-    for (const f of PACK_FILES) h.update(fs.readFileSync(path.join(APP_DIR, f)));
-    return h.digest('hex').slice(0, 12);
-  } catch (e) {
-    console.warn('[flow] the upgrade pack is missing (' + e.message + ') — the app will\n' +
+  const h = crypto.createHash('sha256');
+  let missing = [];
+  for (const f of PACK_FILES) {
+    try { h.update(fs.readFileSync(path.join(APP_DIR, f))); }
+    catch (e) { missing.push(f); }
+  }
+  const fatal = missing.filter((f) => PACK_REQUIRED.includes(f));
+  if (fatal.length) {
+    console.warn('[flow] the upgrade pack is missing (' + fatal.join(', ') + ') — the app will\n' +
                  '       load without it. Deploy flow-pack.js and flow-pack.css.');
     return 'missing';
   }
+  if (missing.length) console.warn('[flow] not shipping: ' + missing.join(', ') + ' — that language will fall back to English.');
+  return h.digest('hex').slice(0, 12);
 }
 
 function shell() {
@@ -643,7 +654,7 @@ const server = http.createServer(async (req, res) => {
     // ── The upgrade pack ──
     // Immutable is safe precisely because the URL carries the content hash: a
     // different pack is a different URL, so nothing can go stale.
-    if (p === '/flow-pack.js' || p === '/flow-pack.css') {
+    if (PACK_FILES.indexOf(p.slice(1)) >= 0) {
       return sendFile(res, p.slice(1),
         p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8',
         { 'Cache-Control': 'public, max-age=31536000, immutable' });

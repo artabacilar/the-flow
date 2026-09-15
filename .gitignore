@@ -13,3 +13,6 @@ src/base/
 # The app icons are drawn by ios-app/scripts/make-icons.js, which needs
 # nothing but Node. Generated output does not belong in the history.
 ios-app/native/Assets/
+
+# Screenshots the theme check writes; useful locally, noise in the repo.
+.theme-shots/
