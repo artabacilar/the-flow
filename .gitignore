@@ -9,3 +9,7 @@ tests/fixtures/.*.json
 # previous life-dashboard.html, which git already has.
 src/out/
 src/base/
+
+# The app icons are drawn by ios-app/scripts/make-icons.js, which needs
+# nothing but Node. Generated output does not belong in the history.
+ios-app/native/Assets/
