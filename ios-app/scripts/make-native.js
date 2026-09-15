@@ -259,6 +259,30 @@ function addSource(fileName) {
 
 fs.writeFileSync(pbxPath, proj.writeSync());
 
+/* ---- 4b · the app icon --------------------------------------------------- *
+ * Capacitor ships a placeholder icon, and a placeholder icon is a rejected
+ * build. These are drawn by make-icons.js at 1024 with no alpha channel and
+ * no corner rounding of their own, which is what App Store Connect and iOS
+ * respectively insist on. Three appearances: normal, dark and tinted.        */
+
+const iconSrc = path.join(root, 'native', 'Assets', 'AppIcon');
+const iconDst = path.join(srcDir, 'Assets.xcassets', 'AppIcon.appiconset');
+
+if (!fs.existsSync(iconSrc)) {
+  console.error('no icons at ' + iconSrc);
+  console.error('  run: node ios-app/scripts/make-icons.js');
+  process.exit(1);
+}
+
+fs.mkdirSync(iconDst, { recursive: true });
+/* Clear the placeholders out rather than leaving them beside ours — a stale
+   AppIcon-512@2x.png that nothing references is the sort of thing that gets
+   picked up by the next person to open the catalogue. */
+for (const f of fs.readdirSync(iconDst)) fs.unlinkSync(path.join(iconDst, f));
+for (const f of fs.readdirSync(iconSrc)) {
+  fs.copyFileSync(path.join(iconSrc, f), path.join(iconDst, f));
+}
+
 /* ---- 5 · Info.plist ------------------------------------------------------ */
 
 const plistPath = path.join(srcDir, 'Info.plist');
@@ -285,4 +309,25 @@ if (leaks.length) {
   process.exit(1);
 }
 
+/* The icon is the one asset that cannot be checked by reading the project
+   file, so check the bytes: 1024 square, and — the rule that actually trips
+   people at upload — no alpha channel on the one that becomes the marketing
+   icon. PNG colour type 6 and 4 carry alpha; 2 and 0 do not. */
+const iconAny = path.join(iconDst, 'AppIcon-1024.png');
+if (!fs.existsSync(iconAny)) {
+  console.error('the app icon did not make it into the catalogue');
+  process.exit(1);
+}
+const png = fs.readFileSync(iconAny);
+const w = png.readUInt32BE(16), h = png.readUInt32BE(20), colourType = png[25];
+if (w !== 1024 || h !== 1024) {
+  console.error('the app icon is ' + w + '×' + h + ', and it has to be 1024×1024');
+  process.exit(1);
+}
+if (colourType === 6 || colourType === 4) {
+  console.error('the app icon carries an alpha channel — App Store Connect rejects that');
+  process.exit(1);
+}
+
 console.log('ok: native shell — no CocoaPods, no Capacitor, nothing to resolve');
+console.log('ok: app icon 1024×1024, no alpha, three appearances');
