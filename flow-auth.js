@@ -522,15 +522,29 @@ async function seedStarter(uid, name) {
     if (await getJSON(STARTED(uid), null)) return 0;
     const pre = nsPrefix(uid);
     const all = await raw.all();
-    if (Object.keys(all || {}).some(k => k.indexOf(pre) === 0)) {
-      /* Not empty. Stamp it anyway: this account is past the point where a
-         starter week would help, and asking again on every open is waste. */
-      await setJSON(STARTED(uid), { at: nowISO(), seeded: 0, reason: 'not empty' });
+    const sections = starter.build(name, new Date());
+
+    /* Section by section, and only where there is nothing to lose.
+       The first version asked whether the NAMESPACE was empty, which is a
+       much stronger question than it needs to be — and it was strong enough
+       to be useless for the accounts this exists for. The demo account had
+       already been signed into once, so the app had written its blank
+       start-up defaults up to the server, so the namespace was not empty, so
+       the rescue refused, so the reviewer would still have opened onto
+       nothing. Which is the entire thing this was written to prevent.
+
+       Per section, the guarantee is stronger rather than weaker: a section is
+       only written when what is there now holds nothing anybody would miss. */
+    const payload = {};
+    for (const k of Object.keys(sections)) {
+      if (starter.hasContent(k, all[pre + k])) continue;
+      payload[pre + k] = JSON.stringify(sections[k]);
+    }
+
+    if (!Object.keys(payload).length) {
+      await setJSON(STARTED(uid), { at: nowISO(), seeded: 0, reason: 'already has a week' });
       return 0;
     }
-    const sections = starter.build(name, new Date());
-    const payload = {};
-    for (const k of Object.keys(sections)) payload[pre + k] = JSON.stringify(sections[k]);
     if (typeof raw.bulk === 'function') await raw.bulk(payload);
     else for (const k of Object.keys(payload)) await raw.set(k, payload[k]);
     const n = Object.keys(payload).length;

@@ -131,6 +131,35 @@ function training(wid) {
    default, the template's job is to leave it alone.
    Found by: tests/test-mcp.js, "the weekly commitments come with it". */
 
+/* Is there anything in this section a person would miss?
+   Not "does the key exist" — the app writes an empty section for everything
+   it finds missing during boot, so within seconds of a first open every key
+   exists and all of them are blank. An account that has been opened once and
+   an account that has been kept for a year are indistinguishable by key name,
+   which is why the emptiness test has to look inside. */
+function sectionHasContent(key, text) {
+  if (text == null || text === '') return false;
+  let v;
+  try { v = JSON.parse(text); } catch (e) { return true; }   /* unreadable — leave it alone */
+  if (v == null) return false;
+  switch (key) {
+    case 'ld_compass':
+      return !!(String(v.mission || '').trim()) ||
+             Object.keys(v.rocks || {}).some(w => (v.rocks[w] || []).length > 0);
+    case 'ld_habits':
+      return (v.habits || []).length > 0 ||
+             Object.keys(v.completions || {}).length > 0;
+    case 'ld_training':
+      return Object.keys(v.plans || {}).length > 0 ||
+             Object.keys(v.weeks || {}).length > 0 ||
+             (v.weights || []).length > 0;
+    case 'ld_journal':
+      return (Array.isArray(v) ? v : []).length > 0;
+    default:
+      return true;      /* anything unrecognised counts as content */
+  }
+}
+
 /* ------------------------------------------------------------------------ *
  * build()
  *
@@ -167,4 +196,4 @@ function build(name, now) {
   };
 }
 
-module.exports = { build, weekId, TOUR, ROLES };
+module.exports = { build, hasContent: sectionHasContent, weekId, TOUR, ROLES };
