@@ -341,6 +341,24 @@ for (const [key, text] of Object.entries(USAGE)) {
     '\t<key>' + key + '</key>\n\t<string>' + text + '</string>\n</dict>\n</plist>');
 }
 
+/* The export-compliance question, answered in the binary.
+ *
+ * Without this key every single upload arrives in TestFlight flagged
+ * "Missing Compliance" and the build cannot be attached to a version until
+ * somebody clicks through the same two questions again. The answer never
+ * changes, because what it describes never changes: this app contains no
+ * cryptography of its own — no CryptoKit, no CommonCrypto, no keys, nothing
+ * hand-rolled. The only encryption anywhere near it is the HTTPS that iOS
+ * itself performs when the web view loads theflow.today, which is exactly
+ * the exemption this key exists to declare.
+ *
+ * If that ever stops being true — if this app starts encrypting anything
+ * itself — this key becomes a false declaration and has to go. */
+if (plist.indexOf('<key>ITSAppUsesNonExemptEncryption</key>') < 0) {
+  plist = plist.replace('</dict>\n</plist>',
+    '\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>\n</dict>\n</plist>');
+}
+
 fs.writeFileSync(plistPath, plist);
 
 const WHY_REQUIRED = {
