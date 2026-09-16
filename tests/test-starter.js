@@ -127,6 +127,51 @@ const signup = (email, name, who) => call('/api/auth/signup', {
     Object.keys(t.ld_training));
 
   /* ------------------------------------------------------------------ *
+   * "Has this account got anything in it?"
+   *
+   * The rescue for accounts created before the template existed first asked
+   * whether the NAMESPACE was empty, and that question is useless: the app
+   * writes a blank section for everything it finds missing during boot, so
+   * seconds after a first open every key exists and all of them are blank.
+   * The demo account had been signed into once, so the rescue refused, so
+   * the App Store reviewer would still have opened onto nothing — which is
+   * the whole thing it was written to prevent.
+   *
+   * So the test looks inside. Blank is not the same as used.
+   * ------------------------------------------------------------------ */
+  console.log('\n— blank is not the same as used —');
+
+  const has = starter.hasContent;
+  ok('a section the account has never had is empty', has('ld_journal', null) === false);
+  ok('and so is one the app wrote blank at boot',
+    has('ld_compass', JSON.stringify({ mission: '', roles: ['Work'], rocks: {}, saw: {}, reviews: {} })) === false &&
+    has('ld_habits', JSON.stringify({ habits: [], completions: {} })) === false &&
+    has('ld_training', JSON.stringify({ weeks: {}, plans: {}, weights: [] })) === false &&
+    has('ld_journal', '[]') === false);
+
+  ok('one Big Rock counts as content',
+    has('ld_compass', JSON.stringify({ rocks: { '2026-W38': [{ id: '1' }] } })) === true);
+  ok('so does a mission somebody wrote',
+    has('ld_compass', JSON.stringify({ mission: 'Build the thing properly', rocks: {} })) === true);
+  ok('so does one habit', has('ld_habits', JSON.stringify({ habits: [{ id: 'h' }] })) === true);
+  /* A ticked day with no habit left is still a record of something. */
+  ok('so does a completion with no habit beside it',
+    has('ld_habits', JSON.stringify({ habits: [], completions: { h: { '2026-09-15': true } } })) === true);
+  ok('so does a weight, which nothing but a person can write',
+    has('ld_training', JSON.stringify({ weeks: {}, plans: {}, weights: [{ w: 80 }] })) === true);
+  ok('so does a shaped training week',
+    has('ld_training', JSON.stringify({ plans: { '2026-W38': { mon: {} } } })) === true);
+  ok('and one journal line', has('ld_journal', '[{"t":"x","txt":"mine"}]') === true);
+
+  /* The one that must not go the convenient way: if it cannot be read, it is
+     not empty. Guessing "probably blank" about bytes we failed to parse is
+     how a starter week lands on top of somebody's year. */
+  ok('anything unreadable counts as content and is left alone',
+    has('ld_journal', 'not json at all') === true);
+  ok('and so does a section this does not recognise',
+    has('ld_finance', JSON.stringify({ anything: 1 })) === true);
+
+  /* ------------------------------------------------------------------ *
    * Signing up for real
    * ------------------------------------------------------------------ */
   console.log('\n— a brand-new account —');
