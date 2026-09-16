@@ -112,8 +112,18 @@ ok('4 workouts a week is about 106 over six months', Math.round(4 * sp.weeks) ==
 ok('1 performance a month is about 6', Math.round(1 * sp.months) === 6, Math.round(1 * sp.months));
 
 console.log('\n— when the next one falls due —');
-let d = M.due(null, 6, D('2026-09-05'));
-ok('never run means due now', d.due === true && d.never === true, d);
+/* "Never run" used to mean "due now", full stop. Which is right for somebody
+   six months in and false for an account created this morning — the banner
+   says six months of record is sitting there waiting, to a person whose
+   record is empty. So the clock starts at the first thing the record actually
+   holds, and with nothing in the record there is no clock at all. */
+let d = M.due(null, 6, D('2026-09-05'), null);
+ok('never run and nothing recorded is not due', d.due === false && d.empty === true, d);
+d = M.due(null, 6, D('2026-09-05'), '2026-09-01');
+ok('never run and four days of record is still not due', d.due === false && d.never === true, d);
+ok('and it says when it will be', d.on === '2027-03-01', d.on);
+d = M.due(null, 6, D('2026-09-05'), '2026-02-01');
+ok('never run with six months behind it IS due', d.due === true && d.never === true, d);
 d = M.due('2026-09-05T10:00:00.000Z', 6, D('2026-09-05'));
 ok('just run is not due', d.due === false, d);
 ok('and it names the date', d.on === '2027-03-05', d.on);

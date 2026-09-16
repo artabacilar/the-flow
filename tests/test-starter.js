@@ -76,6 +76,30 @@ const signup = (email, name, who) => call('/api/auth/signup', {
     t.ld_compass.rocks['2026-W38'][0]);
   ok('none of them is already ticked',
     t.ld_compass.rocks['2026-W38'].every(r => r.done === false));
+
+  /* The one an App Store reviewer would have seen. Sign up on a Wednesday and
+     the first version put two rocks on Monday and Tuesday of that week, which
+     the app draws in red, marked OVERDUE, for work the account did not exist
+     to do. Opening by telling somebody they have already failed is the same
+     lie as a streak nobody earned, pointing the other way. */
+  const DAYNAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let behind = [];
+  for (const day of ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17',
+                     '2026-09-18', '2026-09-19', '2026-09-20']) {
+    const when = new Date(day + 'T11:00:00');
+    const idx = (when.getDay() + 6) % 7;
+    const built = starter.build('Sam', when);
+    const wk = built.ld_compass.rocks[Object.keys(built.ld_compass.rocks)[0]] || [];
+    if (!wk.length) behind.push(day + ': no rocks at all');
+    wk.forEach(r => { if (r.day < idx) behind.push(day + ' (' + DAYNAMES[idx] + ') -> ' + DAYNAMES[r.day]); });
+  }
+  ok('whatever day you sign up on, nothing is already overdue', behind.length === 0, behind);
+
+  /* A time is a commitment, and nobody has made one yet. A rock seeded at
+     09:00 on the day you sign up at 11:00 is overdue before you have read it. */
+  ok('and no rock claims a time the person never chose',
+    t.ld_compass.rocks['2026-W38'].every(r => r.time === '' && r.end === ''),
+    t.ld_compass.rocks['2026-W38'].map(r => r.time));
   ok('each one says it is an example and can go',
     t.ld_compass.rocks['2026-W38'].every(r => r.note.indexOf(starter.TOUR) >= 0));
 
@@ -263,6 +287,20 @@ const signup = (email, name, who) => call('/api/auth/signup', {
   ok('and the habits are on the Habits tab', await p.evaluate(() => hbData.habits.length >= 3));
   ok('while nothing claims to be done', await p.evaluate(() =>
     Object.keys(hbData.completions || {}).length === 0));
+
+  /* Nothing on the first screen may claim a past this account does not have.
+     The routine-audit banner said "six months of things you do every day are
+     sitting in the record" to an account minutes old, because "never audited"
+     was treated as "audit due". */
+  const claims = await p.evaluate(() => {
+    const t = document.body.innerText || '';
+    return {
+      audit: /Six months of things you do every day/i.test(t),
+      overdue: /OVERDUE/i.test(t)
+    };
+  });
+  ok('nothing tells them six months of record is waiting to be audited', claims.audit === false);
+  ok('and nothing on screen is overdue on the day they signed up', claims.overdue === false);
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
   await b.close();
