@@ -7778,12 +7778,26 @@ const AuditMath = {
   },
 
   /* When the next one falls due, and whether it already has. */
-  due(lastAt, months, now) {
+  /* Never audited is not the same as due.
+     It used to be: no previous audit meant due: true, unconditionally. Which
+     is right for somebody six months in and nonsense for an account created
+     this morning — the banner says "six months of things you do every day are
+     sitting in the record" to a person whose record is empty, and it said it
+     to the first App Store reviewer who signed in. There is nothing there to
+     audit and the sentence is simply false.
+     So the clock starts at the first thing the record actually holds. The
+     card still offers "Run one anyway" the whole time; this only governs
+     whether the app brings it up unprompted. */
+  due(lastAt, months, now, firstAt) {
     const n = now ? new Date(now.getTime()) : new Date();
-    if (!lastAt) return { due: true, on: isoDate(n), never: true };
-    const d = parseISO(String(lastAt).slice(0, 10));
+    const from = lastAt || firstAt;
+    if (!from) {
+      /* Nothing recorded at all. Not due, and no date to promise either. */
+      return { due: false, on: null, never: true, empty: true };
+    }
+    const d = parseISO(String(from).slice(0, 10));
     d.setMonth(d.getMonth() + months);
-    return { due: n >= d, on: isoDate(d), never: false,
+    return { due: n >= d, on: isoDate(d), never: !lastAt,
              daysAway: Math.round((d - n) / 86400000) };
   }
 };
@@ -8255,7 +8269,31 @@ const Audit = {
   saveDraft() { DB.set(Audit.K_DRAFT, Audit.draft); },
 
   last()  { return Audit.log.length ? Audit.log[Audit.log.length - 1] : null; },
-  due()   { const l = Audit.last(); return AuditMath.due(l && l.at, Audit.cfg.months); },
+  due()   { const l = Audit.last(); return AuditMath.due(l && l.at, Audit.cfg.months, null, Audit.firstRecord()); },
+
+  /* The earliest day this account has any record of doing anything — the
+     scoreboard's daily ledger and the habit ticks, which is what the audit
+     reads. Memoised: this is asked on every Today render, and the answer
+     only moves when somebody backfills a date earlier than the earliest one
+     they already had. */
+  _first: undefined,
+  firstRecord() {
+    if (Audit._first !== undefined) return Audit._first;
+    let earliest = null;
+    const keep = (d) => {
+      const s = String(d || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s) && (!earliest || s < earliest)) earliest = s;
+    };
+    try { Object.keys((Score && Score.log) || {}).forEach(keep); } catch (e) {}
+    try {
+      const S = NorthStar.host('S');
+      const hb = S && S.get('habits', null);
+      const comp = (hb && hb.completions) || {};
+      Object.keys(comp).forEach(h => Object.keys(comp[h] || {}).forEach(keep));
+    } catch (e) {}
+    Audit._first = earliest;
+    return earliest;
+  },
 
   /* ---- the host's own recurring things ---------------------------------- */
 
@@ -8458,6 +8496,7 @@ const Audit = {
     const due = Audit.due();
     const chip = Audit.draft ? (Audit.decided() + ' of ' + Audit.total() + ' decided')
                : due.due ? 'due now'
+               : due.empty ? 'once there is a record'
                : (due.daysAway > 45 ? 'in ' + Math.round(due.daysAway / 30) + ' months' : 'in ' + due.daysAway + ' days');
 
     return Fold.card('audit',
@@ -8477,7 +8516,10 @@ const Audit = {
         ' — kept ' + last.counts.kept + ', changed ' + last.counts.changed + ', cut ' + last.counts.cut + '. ' +
         (due.due ? 'The next one is due.' : 'Next due ' + esc(prettyDate(due.on)) + '.') + '</p>'
       : '<p class="flow-sub">You have not run one yet. It reads the last ' + Audit.cfg.months +
-        ' months of your own record — nothing to fill in.</p>';
+        ' months of your own record — nothing to fill in.' +
+        (due.empty ? ' There is nothing in the record yet, so there is nothing for it to read.'
+                   : (due.due ? '' : ' Worth running once ' + esc(prettyDate(due.on)) + ' has passed.')) +
+        '</p>';
 
     const prev = (Audit.log.length > 1 || (last && last.items && last.items.length))
       ? Audit.historyHtml() : '';

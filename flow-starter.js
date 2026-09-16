@@ -49,6 +49,9 @@ function weekId(d) {
   return dt.getUTCFullYear() + '-W' + String(w).padStart(2, '0');
 }
 
+/* Monday = 0, the same as the app and flow-mcp.js. */
+const dayIndex = (d) => (d.getDay() + 6) % 7;
+
 /* Ids only have to be unique inside this account, and this account is empty. */
 function ids(n) {
   const base = Date.now();
@@ -61,26 +64,54 @@ function ids(n) {
    knows both what the rock is teaching and that it is theirs to delete. */
 const TOUR = 'An example to get you started — change it or remove it.';
 
-function rocks(wid) {
+/* Five rocks, placed from today forward and never behind it.
+ *
+ * The first version put them on Monday, Tuesday, Wednesday, Thursday and
+ * Sunday of the current week. Sign up on a Wednesday — which is what the App
+ * Store reviewer will do — and the app opens with two rocks already in red,
+ * marked OVERDUE, for work the account did not exist to do. That is the same
+ * lie as a streak nobody earned, pointing the other way: it opens by telling
+ * somebody they have already failed.
+ *
+ * So the days are counted from today. Whatever is left of the week gets them,
+ * spread evenly, doubling up rather than reaching backwards when there are
+ * fewer than five days left.
+ *
+ * And no times. A time is a commitment, and nobody has made one yet — a rock
+ * seeded at 09:00 on the day you sign up at 11:00 is overdue before you have
+ * read it. The person puts the times in when they decide.
+ */
+function rocks(wid, todayIndex) {
   const id = ids(5);
-  const rock = (i, day, title, role, time, prio, note) => ({
-    id: id[i], title, role, day: DAY[day], time: time || '', end: '',
-    prio: prio || 'med', note, done: false
-  });
-  return {
-    [wid]: [
-      rock(0, 'mon', 'Decide the three things that would make this week count', 'Work', '09:00', 'high',
-        'Big Rocks go in first; everything else fits around them. ' + TOUR),
-      rock(1, 'tue', 'Write down what you are actually training for', 'Health & Body', '', 'med',
-        'The Training tab holds the plan; this is the reason behind it. ' + TOUR),
-      rock(2, 'wed', 'One honest paragraph in the Journal', 'Learning', '21:00', 'med',
-        'The Journal is the only place nothing is scored. ' + TOUR),
-      rock(3, 'thu', 'Clear the one thing you keep moving to tomorrow', 'Work', '', 'high',
-        'If it has moved three times, it is either not a rock or not yours. ' + TOUR),
-      rock(4, 'sun', 'Look back: what worked, what did not, what changes', 'Relationships', '18:00', 'med',
-        'Fifteen minutes here is worth more than any other fifteen in the week. ' + TOUR)
-    ]
-  };
+  const ROCKS = [
+    ['Decide the three things that would make this week count', 'Work', 'high',
+      'Big Rocks go in first; everything else fits around them.'],
+    ['Write down what you are actually training for', 'Health & Body', 'med',
+      'The Training tab holds the plan; this is the reason behind it.'],
+    ['One honest paragraph in the Journal', 'Learning', 'med',
+      'The Journal is the only place nothing is scored.'],
+    ['Clear the one thing you keep moving to tomorrow', 'Work', 'high',
+      'If it has moved three times, it is either not a rock or not yours.'],
+    ['Look back: what worked, what did not, what changes', 'Relationships', 'med',
+      'Fifteen minutes here is worth more than any other fifteen in the week.']
+  ];
+
+  const left = 7 - todayIndex;           /* today counts as one of them */
+  const list = ROCKS.map((r, i) => ({
+    id: id[i],
+    title: r[0],
+    role: r[1],
+    /* i * left / 5 spreads them over the days that remain: one each when
+       there are five or more, stacked toward the start when there are not.
+       Sunday signups get all five today, which is a busy screen and an
+       honest one. */
+    day: todayIndex + Math.floor((i * left) / ROCKS.length),
+    time: '', end: '',
+    prio: r[2],
+    note: r[3] + ' ' + TOUR,
+    done: false
+  }));
+  return { [wid]: list };
 }
 
 function habits() {
@@ -178,7 +209,7 @@ function build(name, now) {
          and a filled-in box is much harder to face than an empty one. */
       mission: '',
       roles: ROLES.slice(),
-      rocks: rocks(wid),
+      rocks: rocks(wid, dayIndex(when)),
       saw: {},
       reviews: {}
     },
