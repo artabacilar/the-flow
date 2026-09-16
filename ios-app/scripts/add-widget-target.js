@@ -29,7 +29,11 @@ const TEAM = (() => {
 const projDir  = path.join(__dirname, '..', 'ios', 'App');
 const pbxPath  = path.join(projDir, 'App.xcodeproj', 'project.pbxproj');
 
-fs.copyFileSync(pbxPath, pbxPath + '.original');
+/* The pristine project, kept for the "restore this and use the wizard" note
+   above. Written once: copying again on a re-run would overwrite the original
+   with an already-modified one, quietly destroying the only thing standing
+   between a bad run and starting over. */
+if (!fs.existsSync(pbxPath + '.original')) fs.copyFileSync(pbxPath, pbxPath + '.original');
 
 const proj = xcode.project(pbxPath).parseSync();
 
@@ -61,11 +65,22 @@ ${body}</dict>
 </plist>
 `;
 
-/* Reading only. `health-records` is a separate, far more sensitive
- * entitlement covering clinical records from providers, and asking for it
- * would mean an App Review conversation about data we do not want. */
-const HEALTHKIT = '\t<key>com.apple.developer.healthkit</key>\n\t<true/>\n' +
-                  '\t<key>com.apple.developer.healthkit-access</key>\n\t<array/>\n';
+/* One key, and only one.
+ *
+ * This used to also write `com.apple.developer.healthkit-access` as an empty
+ * array, with a comment explaining that an empty array meant "no clinical
+ * records". Two things were wrong with that. The key does not exist — Apple's
+ * is `com.apple.developer.healthkit.access`, with dots — so the provisioning
+ * service could not find it and refused to build a profile, which is a signing
+ * failure several steps away from anything that mentions HealthKit. And even
+ * spelled correctly it is the CLINICAL RECORDS entitlement: records pulled
+ * from a healthcare provider, which this app does not read and does not want
+ * to have a conversation with App Review about.
+ *
+ * `com.apple.developer.healthkit` alone is what an app that reads sleep and
+ * heart rate out of Health needs. Saying nothing about clinical records is
+ * how you say you are not asking for them. */
+const HEALTHKIT = '\t<key>com.apple.developer.healthkit</key>\n\t<true/>\n';
 
 fs.writeFileSync(path.join(projDir, 'App', 'App.entitlements'), entPlist(HEALTHKIT));
 fs.writeFileSync(path.join(wdir, WIDGET + '.entitlements'), entPlist(''));
@@ -103,7 +118,35 @@ fs.writeFileSync(path.join(wdir, 'Info.plist'), `<?xml version="1.0" encoding="U
 </plist>
 `);
 
-/* ---- 2. the target ------------------------------------------------------- */
+/* ---- 2. the target -------------------------------------------------------
+ * Stop here if it is already there.
+ *
+ * addTarget used to be called unconditionally, so a second run produced a
+ * second FlowWidget target: two targets with the same product name, two copies
+ * of every build phase, and a build that dies with "Multiple commands produce
+ * .../FlowWidget.appex" and twenty-one duplicate-output warnings that name
+ * derived-data paths and never once mention the duplicate target. There is no
+ * reading of that failure that leads you back here.
+ *
+ * Everything above this line is a file write that is safe to repeat — the
+ * sources, the entitlements, the Info.plist — so a re-run still refreshes what
+ * it owns. It just never builds a second target to own it with. */
+const existing = (() => {
+  const t = proj.pbxNativeTargetSection();
+  for (const k in t) {
+    if (k.endsWith('_comment')) continue;
+    if (t[k] && String(t[k].name).replace(/"/g, '') === WIDGET) return k;
+  }
+  return null;
+})();
+
+if (existing) {
+  console.log('ok: ' + WIDGET + ' target is already in this project — refreshed its');
+  console.log('    sources, entitlements and Info.plist, and left the target alone.');
+  console.log('    (Adding a second one is what "Multiple commands produce" means.)');
+  process.exit(0);
+}
+
 const target = proj.addTarget(WIDGET, 'app_extension', WIDGET, WIDGET_BUNDLE);
 
 /* addTarget gives a target with no phases at all; a target that compiles
