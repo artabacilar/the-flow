@@ -123,7 +123,19 @@ The privacy labels already declare Health & Fitness as data linked to you, so
 nothing changes there. Two things are worth having ready for the reviewer:
 
 - The app only ever **reads** from Health. It requests no write permission at
-  all, and `NSHealthUpdateUsageDescription` is deliberately absent.
-- `com.apple.developer.healthkit-access` is an empty array — this is not a
-  clinical-records app, and asking for `health-records` would start a
-  conversation about data we do not want.
+  all — but `NSHealthUpdateUsageDescription` is present anyway, and has to be.
+  An app carrying the HealthKit entitlement must carry both purpose strings or
+  App Store Connect refuses the upload with **error 90683**, whatever the app
+  actually does. This was got wrong here once, on exactly that reasoning, and
+  the way you find out is a failed validation after a full archive. The string
+  says plainly that nothing is written, because that is true and because iOS
+  would show it if anything ever asked.
+- The entitlements file asks for `com.apple.developer.healthkit` and nothing
+  else. It used to also carry `com.apple.developer.healthkit-access` as an
+  empty array, meaning "no clinical records" — but that key does not exist.
+  Apple's is `com.apple.developer.healthkit.access`, with dots, and it is the
+  clinical-records entitlement itself. The provisioning service could not find
+  the key it was handed and refused to issue a profile, which Xcode reports as
+  "Automatic signing failed" with no mention of HealthKit anywhere.
+  Saying nothing about clinical records is how you say you are not asking for
+  them.
