@@ -314,6 +314,20 @@ const USAGE = {
     'Speech recognition turns what you dictate into text. On iPhones that support it this happens on the device.',
   NSHealthShareUsageDescription:
     'The Flow reads your sleep, heart rate variability, resting heart rate and workouts from Apple Health so your day is filled in without you typing it. It never writes anything back.',
+  /* Required even though nothing is ever written.
+   *
+   * This key was deliberately left out, with a comment saying the app asks
+   * for no write permission so the key does not belong. That reasoning is
+   * sound and Apple does not accept it: an app carrying the HealthKit
+   * entitlement must carry BOTH purpose strings, and App Store Connect
+   * refuses the upload with error 90683 if either is missing. The refusal
+   * happens at validation, long after the archive, and it names the key
+   * rather than the rule — so the way you find out is by being turned away.
+   *
+   * The string still has to be true, and iOS will show it if anything ever
+   * does ask to write. So it says what is actually the case. */
+  NSHealthUpdateUsageDescription:
+    'The Flow does not write anything to Apple Health. It only reads what your watch or ring has already recorded, and Apple requires this text to be present either way.',
 };
 
 for (const [key, text] of Object.entries(USAGE)) {
@@ -329,9 +343,16 @@ for (const [key, text] of Object.entries(USAGE)) {
 
 fs.writeFileSync(plistPath, plist);
 
+const WHY_REQUIRED = {
+  NSMicrophoneUsageDescription: 'the app is killed the instant it touches the microphone',
+  NSSpeechRecognitionUsageDescription: 'SFSpeechRecognizer kills the app on first use',
+  NSHealthShareUsageDescription: 'reading Health would crash on first use',
+  NSHealthUpdateUsageDescription: 'App Store Connect refuses the upload with error 90683'
+};
+
 for (const key of Object.keys(USAGE)) {
   if (plist.indexOf('<key>' + key + '</key>') < 0) {
-    console.error('the Info.plist has no ' + key + ' — dictation would crash the app on first use');
+    console.error('the Info.plist has no ' + key + ' — ' + (WHY_REQUIRED[key] || 'the build is not shippable'));
     process.exit(1);
   }
 }
