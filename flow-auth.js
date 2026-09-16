@@ -516,10 +516,26 @@ async function adoptUnlistable(uid) {
    stamp is what stops it firing again after somebody clears the examples out
    on purpose. Returns the number of sections written, 0 for every other
    outcome — a failure here is never allowed to break the call it is inside. */
+/* Bumped whenever the rules below change what would have been written.
+   A stamp left by an older, worse version must not stop a better one. */
+const STARTED_V = 2;
+
 async function seedStarter(uid, name) {
   if (!starter) return 0;
   try {
-    if (await getJSON(STARTED(uid), null)) return 0;
+    /* A stamp is final only if the version that wrote it still applies.
+       The first version of this asked whether the whole NAMESPACE was empty,
+       found the App Store demo account non-empty because the app had already
+       written its blank start-up defaults, stamped it "not empty" and wrote
+       nothing. That stamp then outlived the fix: the per-section version
+       would have filled the account happily and never got the chance,
+       because a record of having done nothing was being read as a record of
+       being done. The demo account was still empty on the day it went up for
+       screenshots, and nothing in the logs said why.
+       So the stamp carries the version of the rules that produced it, and a
+       stamp from older rules is re-examined exactly once. */
+    const done = await getJSON(STARTED(uid), null);
+    if (done && Number(done.v || 0) >= STARTED_V) return 0;
     const pre = nsPrefix(uid);
     const all = await raw.all();
     const sections = starter.build(name, new Date());
@@ -542,13 +558,13 @@ async function seedStarter(uid, name) {
     }
 
     if (!Object.keys(payload).length) {
-      await setJSON(STARTED(uid), { at: nowISO(), seeded: 0, reason: 'already has a week' });
+      await setJSON(STARTED(uid), { at: nowISO(), v: STARTED_V, seeded: 0, reason: 'already has a week' });
       return 0;
     }
     if (typeof raw.bulk === 'function') await raw.bulk(payload);
     else for (const k of Object.keys(payload)) await raw.set(k, payload[k]);
     const n = Object.keys(payload).length;
-    await setJSON(STARTED(uid), { at: nowISO(), seeded: n });
+    await setJSON(STARTED(uid), { at: nowISO(), v: STARTED_V, seeded: n });
     return n;
   } catch (e) {
     console.error('[starter] could not seed ' + uid + ': ' + (e && e.message));
