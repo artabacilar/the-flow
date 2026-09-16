@@ -686,9 +686,23 @@ const IMPL = {
     const hb = await readJSON(ctx.store, 'ld_habits', { habits: [], completions: {} });
     if (!hb.completions) hb.completions = {};
     const list = hb.habits || [];
-    const h = list.find(x => x.id === q) ||
-              list.find(x => String(x.name || '').toLowerCase() === q.toLowerCase()) ||
-              list.find(x => String(x.name || '').toLowerCase().indexOf(q.toLowerCase()) >= 0);
+    /* Exact id, then exact name, then a partial — and a partial that fits
+       more than one habit is a question, not an answer. It used to take the
+       first match in array order, which is fine while somebody has one habit
+       with "read" in it and silently ticks the wrong streak the day they have
+       two. Since every account now starts with habits already in it, that day
+       is the first day. */
+    const lower = q.toLowerCase();
+    let h = list.find(x => x.id === q) ||
+            list.find(x => String(x.name || '').toLowerCase() === lower);
+    if (!h) {
+      const near = list.filter(x => String(x.name || '').toLowerCase().indexOf(lower) >= 0);
+      if (near.length > 1) {
+        throw new UserError('"' + q + '" matches more than one habit: ' +
+          near.map(x => x.name).join(', ') + '. Which one?');
+      }
+      h = near[0];
+    }
     if (!h) throw new UserError('No habit matching "' + q + '". The ones being tracked are: ' +
       (list.map(x => x.name).join(', ') || 'none yet') + '.');
 

@@ -2099,6 +2099,17 @@ function tWID(){ return weekId(tOffDate(tWeekOff)); }
 let tData=S.get('training',{weeks:{},times:{},weights:[]});
 if(!tData.plans) tData.plans={}; // per-week editable plans: {weekId:{mon:{title,focus,type,tag,note,exercises}}}
 if(!tData.workouts) tData.workouts={}; // per-week+day workouts: {weekId:{mon:[{start,end},...]}}
+/* The same healing, for the two fields that were only ever created by the
+   default literal above. Anything that writes ld_training from OUTSIDE this
+   file — the MCP's set_training_day, the starter week a new account is given
+   — writes the sections it knows about and nothing else. Then tRenderWeight
+   reaches for tData.weights.length during boot, throws, and takes the rest of
+   the script with it: cData and qData never get declared, and the whole app
+   is a blank page. Every field this file assumes exists has to be healed
+   here, not assumed into existence by one code path that happened to run
+   first. */
+if(!Array.isArray(tData.weights)) tData.weights=[];
+if(!tData.times||typeof tData.times!=='object') tData.times={};
 function ensureTWeek(wid){ if(!tData.weeks[wid]) tData.weeks[wid]={done:{},ex:{}}; return tData.weeks[wid]; }
 function ensureTDayWorkouts(wid,key){ if(!tData.workouts[wid]) tData.workouts[wid]={}; if(!tData.workouts[wid][key]) tData.workouts[wid][key]=[]; return tData.workouts[wid][key]; }
 ensureTWeek(WK);
@@ -3420,6 +3431,9 @@ if(!cData){
 if(!cData.reviews) cData.reviews={};
 if(!cData.saw) cData.saw={};
 if(!cData.rocks) cData.rocks={};
+/* Same reason: a compass written by the MCP or seeded at signup has roles,
+   but nothing guarantees it, and the role dropdown does cData.roles.map. */
+if(!Array.isArray(cData.roles)||!cData.roles.length) cData.roles=DEFAULT_ROLES.slice();
 let cOff = 0; // week offset from current week
 
 function offDate(off){ const d=new Date(); d.setDate(d.getDate()+off*7); return d; }

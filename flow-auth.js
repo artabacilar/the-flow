@@ -90,12 +90,23 @@ let oauthMod = null;
 let oauth = null;
 oauthMod = loadModule('flow-oauth', ['build']);
 
+/* The first week of a new account. Absent is valid: without it a new account
+   opens onto nothing, which is exactly what it did before this existed. */
+let starter = null;
+starter = loadModule('flow-starter', ['build']);
+
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
 /* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
    so adoption has to run once more to place them where all() can see them. */
 const LEGACY_CLAIMED = '__auth:legacy_claimed_v2';
 const NAMESPACED = /^ld_u[0-9a-f]+:/;
+/* The one place the namespace prefix is spelled out. It was written out by
+   hand in seven places, including inside the function whose own comment
+   explains why the exact shape of it matters — the prefix MUST stay inside
+   the host store's `ld_*` key space or all() cannot see the key. Seven copies
+   of a rule like that is six chances to get it wrong later. */
+const nsPrefix = (uid) => 'ld_u' + uid + ':';
 const SEED = (uid) => '__auth:seed:' + uid;
 /* Personal access tokens, for connecting an assistant to one account.
    Looked up by the hash of the token, never by the token: what is stored is
@@ -105,6 +116,10 @@ const PAT = (hash) => '__auth:pat:' + hash;
 const PAT_INDEX = (uid) => '__auth:pats:' + uid;
 const PAT_MAX = 10;
 const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
+/* Stamped the first and only time a starter week is written into an account.
+   Without it, somebody who signed up and then deliberately cleared everything
+   out would find the examples back on their next open, forever. */
+const STARTED = (uid) => '__auth:started:' + uid;
 /* One task, handed from one account to another. This is the ONLY channel
    between accounts in the whole system, so it is deliberately narrow: a
    record holds exactly what the sender typed plus who they are, and it lives
@@ -445,7 +460,7 @@ async function adoptLegacyKeys(uid, force) {
   let n = 0;
   for (const k of Object.keys(all || {})) {
     if (k.indexOf('__auth:') === 0 || k.indexOf('u:') === 0 || NAMESPACED.test(k)) continue;
-    await raw.set('ld_u' + uid + ':' + k, all[k]);
+    await raw.set(nsPrefix(uid) + k, all[k]);
     n++;
   }
   await setJSON(LEGACY_CLAIMED, { uid, at: new Date().toISOString(), keys: n });
@@ -466,7 +481,7 @@ const PACK_KEYS = [
 /* Copies an un-namespaced pack key into the owner's namespace ONLY when that
    namespaced key is empty, so it can never clobber something newer. */
 async function adoptUnlistable(uid) {
-  const pre = 'ld_u' + uid + ':';
+  const pre = nsPrefix(uid);
   const queue = PACK_KEYS.slice();
   const seen = new Set();
   let n = 0;
@@ -494,10 +509,43 @@ async function adoptUnlistable(uid) {
 
 /* Re-adopt only into an empty namespace. Returns the number of keys rescued,
    or 0 when there was nothing to do — which is the normal, steady state. */
+/* Write a first week into an account that has none.
+   The safety property is the same one healOwner relies on: it refuses the
+   moment the namespace holds anything at all, so the only case it can ever
+   fire in is the case where there is nothing of anyone's to overwrite. The
+   stamp is what stops it firing again after somebody clears the examples out
+   on purpose. Returns the number of sections written, 0 for every other
+   outcome — a failure here is never allowed to break the call it is inside. */
+async function seedStarter(uid, name) {
+  if (!starter) return 0;
+  try {
+    if (await getJSON(STARTED(uid), null)) return 0;
+    const pre = nsPrefix(uid);
+    const all = await raw.all();
+    if (Object.keys(all || {}).some(k => k.indexOf(pre) === 0)) {
+      /* Not empty. Stamp it anyway: this account is past the point where a
+         starter week would help, and asking again on every open is waste. */
+      await setJSON(STARTED(uid), { at: nowISO(), seeded: 0, reason: 'not empty' });
+      return 0;
+    }
+    const sections = starter.build(name, new Date());
+    const payload = {};
+    for (const k of Object.keys(sections)) payload[pre + k] = JSON.stringify(sections[k]);
+    if (typeof raw.bulk === 'function') await raw.bulk(payload);
+    else for (const k of Object.keys(payload)) await raw.set(k, payload[k]);
+    const n = Object.keys(payload).length;
+    await setJSON(STARTED(uid), { at: nowISO(), seeded: n });
+    return n;
+  } catch (e) {
+    console.error('[starter] could not seed ' + uid + ': ' + (e && e.message));
+    return 0;
+  }
+}
+
 async function healOwner(uid) {
   const all = await raw.all();
   const names = Object.keys(all || {});
-  const mine = 'ld_u' + uid + ':';
+  const mine = nsPrefix(uid);
   if (names.some(k => k.indexOf(mine) === 0)) return 0;      // already has data — never touch it
   const orphans = names.filter(k => k.indexOf('ld_') === 0 && !NAMESPACED.test(k));
   if (!orphans.length) return 0;                             // nothing to rescue
@@ -685,7 +733,7 @@ function protect(store) {
      `u:<id>:ld_journal` is written successfully but is invisible to all() —
      and the app hydrates entirely from /api/all. Prefixing INSIDE the pattern
      keeps every namespaced key discoverable. */
-  const pre = () => 'ld_u' + uid() + ':';
+  const pre = () => nsPrefix(uid());
   return {
     get engine() { return store.engine; },
     get file() { return store.file; },
@@ -1218,7 +1266,7 @@ async function gate(req, res) {
       /* extras never receives the raw store. It gets a reader already locked
          to the caller's own namespace, so a bug in a new feature cannot read
          across accounts even by accident. */
-      const pre = 'ld_u' + me.id + ':';
+      const pre = nsPrefix(me.id);
       const mine = {
         async get(key) {
           const v = await raw.get(pre + key);
@@ -1278,7 +1326,16 @@ async function gate(req, res) {
         }
       } catch (e) { packHealed = 0; }
     }
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed, packHealed });
+    /* An account that was created before there was anything to seed, or
+       whose signup-time write failed, still opens onto nothing. Rescue it on
+       the way past — seedStarter refuses unless the namespace is empty, so
+       for every account that already has a week this costs one read. */
+    let started = 0;
+    if (!me.owner || healed === 0) {
+      try { started = await seedStarter(me.id, me.name); } catch (e) { started = 0; }
+    }
+
+    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed, packHealed, started });
     return true;
   }
 
@@ -1289,7 +1346,7 @@ async function gate(req, res) {
     if (!me || !me.owner) return json(res, 403, { error: 'Not permitted.' }), true;
     const all = await raw.all();
     const names = Object.keys(all || {});
-    const mine0 = 'ld_u' + me.id + ':';
+    const mine0 = nsPrefix(me.id);
     const mine = mine0;
     json(res, 200, {
       uid: me.id,
@@ -1370,6 +1427,17 @@ async function gate(req, res) {
        boot, so by the time any client code looks, a brand-new account is
        indistinguishable from an old one. */
     await setJSON(SEED(id), adopted > 0 ? 'legacy' : 'template');
+
+    /* Fill the empty account with a first week to look at.
+       Written here, before the browser has ever asked for this account, so
+       there is nothing to race and nothing to overwrite — the namespace is
+       empty by construction at this point. An account that inherited an
+       existing Flow is skipped: it already has a week, and seeding over it
+       would be the one way this could destroy something.
+       A failure here must never cost somebody their signup. They would be
+       left holding a password for an account that does not exist, which is
+       far worse than opening onto a blank week. */
+    if (adopted === 0) await seedStarter(id, name);
 
     const { token, expires } = await newSession(id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(id, SESSION_DAYS * 86400)]);
@@ -1591,7 +1659,7 @@ async function gate(req, res) {
     const gone = { data: 0, sessions: 0, tokens: 0, oauth: 0, other: 0 };
 
     /* 1 · everything they wrote */
-    const mine = 'ld_u' + uid + ':';
+    const mine = nsPrefix(uid);
     const dataKeys = await raw.keys(mine + '*');
     for (const k of (dataKeys || [])) { await raw.set(k, ''); gone.data++; }
 
