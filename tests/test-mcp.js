@@ -248,14 +248,23 @@ const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
   ok('a habit is added', !res.isError && !!res.structuredContent.added.id);
   res = await call('add_habit', { name: 'read 20 MINUTES' });
   ok('the same habit twice is one habit, not two streaks', res.structuredContent.already_there === true, res.structuredContent);
-  res = await call('log_habit', { habit: 'read' });
+  /* "read" now fits two habits — the one just added and the one the starter
+     week came with — and an ambiguous partial must ask rather than guess. */
+  ok('a partial that fits two habits asks which, instead of ticking one',
+     /matches more than one habit/.test(((await call('log_habit', { habit: 'read' })).content || [{}])[0].text || ''),
+     ((await call('log_habit', { habit: 'read' })).content || [{}])[0].text);
+  res = await call('log_habit', { habit: '20 MINUTES' });
   ok('it can be ticked by a part of its name', !res.isError && res.structuredContent.done === true, res.content && res.content[0].text);
   ok('a habit nobody has is an error that lists the real ones',
      /Read 20 minutes/.test((await call('log_habit', { habit: 'juggling' })).content[0].text));
   ok('a day that has not happened cannot be ticked',
      (await call('log_habit', { habit: 'read', day: '2030-01-01' })).isError === true);
   const sc = (await call('get_scoreboard', {})).structuredContent;
-  ok('the scoreboard counts the streak', sc.habits[0].streak === 1, sc.habits);
+  /* By name, not by position. A new account now arrives with habits of its
+     own, so habits[0] is whichever one the starter template put first, and
+     an index here was only ever a guess that happened to be right. */
+  const readHabit = sc.habits.find(h => /Read 20 minutes/i.test(h.name));
+  ok('the scoreboard counts the streak', !!readHabit && readHabit.streak === 1, sc.habits);
   ok('and knows the training target is five, not seven',
      sc.training.sessions_planned === 5, sc.training);
 
@@ -271,10 +280,17 @@ const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
   res = await call('set_training_day', { day: 'monday', title: 'Push', type: 'Push', exercises: [{ name: 'Bench', sets: '4 × 8' }] });
   ok('a training day can be shaped', !res.isError && res.structuredContent.title === 'Push', res.content && res.content[0].text);
   ok('and it keeps their own word for the type', res.structuredContent.type === 'Push', res.structuredContent.type);
+  const plannedBefore = (await call('get_scoreboard', {})).structuredContent.training.sessions_planned;
   res = await call('set_training_day', { day: 'wednesday', title: 'Off', rest: true });
   ok('a rest day is a rest day', res.structuredContent.rest_day === true);
-  ok('which the scoreboard counts',
-     (await call('get_scoreboard', {})).structuredContent.training.sessions_planned === 5);
+  /* Relative, because the number it starts from is whatever the person's
+     week actually says. Asserting a fixed 5 on both sides of this — which is
+     what it used to do — proved nothing at all about rest days: it passed
+     while Wednesday was a training day and would have passed if the rest day
+     had been ignored entirely. */
+  ok('and the scoreboard stops counting that day',
+     (await call('get_scoreboard', {})).structuredContent.training.sessions_planned === plannedBefore - 1,
+     { before: plannedBefore });
 
   console.log('\n— every change leaves a line in the record —');
   const jr = await as('artur', '/api/get?key=ld_journal');
@@ -288,7 +304,12 @@ const signUp = (who, email, invite) => as(who, '/api/auth/signup', {
   const r2 = await as('sam', '/api/flow/tokens', { method: 'POST', body: JSON.stringify({ name: 'Sam' }) });
   const SAMTOK = r2.json.token;
   const samWeek = (await call('get_week', {}, SAMTOK)).structuredContent;
-  ok("Sam's week is Sam's", samWeek.days.every(d => d.rocks.length === 0), samWeek.days.filter(d => d.rocks.length));
+  /* Sam's week is not empty — his account was given a first week like
+     everybody's — so what has to hold is that none of it is Artur's. */
+  const samRocks = samWeek.days.reduce((a, d) => a.concat(d.rocks), []);
+  ok("Sam's week is Sam's",
+     samRocks.length > 0 && !samRocks.some(r => /Ship|Artur|only Artur knows/i.test(r.title)),
+     samRocks.map(r => r.title));
   ok('and carries none of the other mission', !samWeek.mission, samWeek.mission);
   await call('add_rock', { title: "Sam's own thing" }, SAMTOK);
   const arturToday = (await call('get_today', {})).structuredContent;

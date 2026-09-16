@@ -56,7 +56,12 @@ const call = async (p, o = {}, who = 'a') => {
   r = await call('/api/auth/me', {}, 'bro');
   ok('nothing is healed for a non-owner', !r.body.healed, r.body.healed);
   r = await call('/api/all', {}, 'bro');
-  ok('brother still sees an empty app', Object.keys(r.body || {}).length === 0, Object.keys(r.body || {}));
+  /* A new account starts with a starter week, so emptiness is the wrong
+     question — what matters is that healing put none of the owner's data in
+     it. His journal is one line long and says the account was created. */
+  ok('brother still sees none of the owner\'s data',
+     JSON.parse(r.body.ld_journal || '[]').length === 1 &&
+     /Account created/.test(r.body.ld_journal || ''), Object.keys(r.body || {}));
   r = await call('/api/auth/diag', {}, 'bro');
   ok('and cannot read the diagnostic', r.status === 403, r.status);
 

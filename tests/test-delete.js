@@ -40,9 +40,14 @@ const rawDump = () => fetch('http://localhost:4223').then(r => r.json());
   r = await post('/api/auth/signup', { email: 'sister@example.com', password: PW, name: 'Sister', invite: 'letmein' }, 'sis');
   ok('a second account signs up', r.status === 200, r.body);
 
-  await post('/api/set', { key: 'ld_journal', value: JSON.stringify([{ t: 'x', txt: 'his' }]) }, 'artur');
+  /* Distinctive on purpose. These markers used to be 'his' and 'hers', and
+     'his' is a substring of "this" — so the day a new account started life
+     with a Big Rock saying "the three things that would make this week
+     count", three checks here went red about data that had been deleted
+     correctly. A marker has to be a word that appears nowhere else. */
+  await post('/api/set', { key: 'ld_journal', value: JSON.stringify([{ t: 'x', txt: 'HIS-MARKER-7QF' }]) }, 'artur');
   await post('/api/set', { key: 'ld_expenses', value: JSON.stringify([{ a: 1 }]) }, 'artur');
-  await post('/api/set', { key: 'ld_journal', value: JSON.stringify([{ t: 'y', txt: 'hers' }]) }, 'sis');
+  await post('/api/set', { key: 'ld_journal', value: JSON.stringify([{ t: 'y', txt: 'HERS-MARKER-4XB' }]) }, 'sis');
 
   r = await post('/api/flow/tokens', { name: 'Claude' }, 'artur');
   ok('the owner makes an access token', r.status === 200 && !!(r.body.token || r.body.access), r.status);
@@ -78,7 +83,7 @@ const rawDump = () => fetch('http://localhost:4223').then(r => r.json());
   const live = (k) => k in d && d[k] !== '' && d[k] !== null;
 
   console.log('\n— nothing of his is left —');
-  ok('his entries are gone', !after.some(k => /^ld_u[0-9a-f]+:/.test(k) && live(k) && String(d[k]).indexOf('his') >= 0),
+  ok('his entries are gone', !after.some(k => /^ld_u[0-9a-f]+:/.test(k) && live(k) && String(d[k]).indexOf('HIS-MARKER-7QF') >= 0),
      after.filter(k => /^ld_u/.test(k) && live(k)));
   ok('his access token is gone', !after.some(k => k.indexOf('__auth:pat:') === 0 && live(k)));
   ok('the token index is gone', !after.some(k => k.indexOf('__auth:pats:') === 0 && live(k)));
@@ -106,13 +111,15 @@ const rawDump = () => fetch('http://localhost:4223').then(r => r.json());
   r = await call('/api/auth/me', {}, 'sis');
   ok('she is still signed in', r.status === 200 && r.body.user && r.body.user.email === 'sister@example.com', r.body);
   r = await call('/api/all', {}, 'sis');
-  ok('with her journal exactly as it was', JSON.stringify(r.body || {}).indexOf('hers') >= 0, Object.keys(r.body || {}));
+  ok('with her journal exactly as it was', JSON.stringify(r.body || {}).indexOf('HERS-MARKER-4XB') >= 0, Object.keys(r.body || {}));
 
   console.log('\n— the address is free again —');
   r = await post('/api/auth/signup', { email: OWNER, password: 'a different long password', name: 'Artur', invite: 'letmein' }, 'again');
   ok('the same email can make a fresh account', r.status === 200 && r.body.ok, { s: r.status, b: r.body });
   r = await call('/api/all', {}, 'again');
-  ok('and it starts empty, not with the old data', JSON.stringify(r.body || {}).indexOf('his') < 0, Object.keys(r.body || {}));
+  /* Not empty — a new account is given a first week — but none of it his. */
+  ok('and it starts fresh, with none of the old data',
+     JSON.stringify(r.body || {}).indexOf('HIS-MARKER-7QF') < 0, Object.keys(r.body || {}));
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

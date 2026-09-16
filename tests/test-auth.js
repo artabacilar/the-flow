@@ -45,7 +45,17 @@ async function call(path,opts={},who='anon'){
   ok('second account created', r.status===200, r.body);
   ok('second account is NOT owner', r.body.user.owner===false, r.body.user);
   r=await call('/api/all',{},'sis');
-  ok('sister starts empty', Object.keys(r.body||{}).length===0, r.body);
+  /* She no longer starts EMPTY — a new account is given a first week to look
+     at — so emptiness is the wrong thing to assert. What has to hold is what
+     always had to hold: everything she can see is hers. The starter week is
+     identical for everybody and carries nobody's content, so the test is that
+     her namespace holds exactly those sections and not one key more. */
+  const STARTER = ['ld_compass','ld_habits','ld_training','ld_journal'];
+  const sisKeys = Object.keys(r.body||{}).sort();
+  ok('sister starts with her own first week', sisKeys.join(',')===STARTER.slice().sort().join(','), sisKeys);
+  ok('and none of it is his', !JSON.stringify(r.body).includes('mine'), sisKeys);
+  ok('nothing in it claims she did anything yet',
+    Object.keys(JSON.parse(r.body.ld_habits).completions||{}).length===0, r.body.ld_habits);
   await call('/api/set',{method:'POST',body:JSON.stringify({key:'ld_journal',value:JSON.stringify([{t:'y',txt:'hers'}])})},'sis');
   r=await call('/api/all',{},'sis');
   ok('sister sees only her own journal', JSON.parse(r.body.ld_journal)[0].txt==='hers', r.body.ld_journal);
@@ -54,7 +64,8 @@ async function call(path,opts={},who='anon'){
   r=await call('/api/get?key=ld_journal',{},'sis');
   ok('cross-account read by key is impossible', JSON.parse(r.body.value)[0].txt==='hers', r.body.value);
   r=await call('/api/export',{},'sis');
-  ok('export is scoped too', Object.keys(r.body.data).length===1, Object.keys(r.body.data));
+  ok('export is scoped too', Object.keys(r.body.data).sort().join(',')===STARTER.slice().sort().join(','), Object.keys(r.body.data));
+  ok('and carries nothing of his', !JSON.stringify(r.body.data).includes('mine'), Object.keys(r.body.data));
 
   console.log('\n— passwords and sessions —');
   r=await call('/api/auth/login',{method:'POST',body:JSON.stringify({email:'artur@abko.com.tr',password:'wrong password here'})},'bad');

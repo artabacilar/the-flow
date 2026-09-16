@@ -119,11 +119,17 @@ const some = (who, keys) => as(who, '/api/some', {
 
   console.log('\n— and it is still your account and only yours —');
   const theirs = (await as('sam', '/api/manifest')).json;
-  ok('someone else sees none of your sections',
-     !('ld_journal' in theirs) && !('ld_compass' in theirs), Object.keys(theirs));
+  /* Sam has sections of those names — everybody does now, a new account is
+     given a first week — so the test is not "are they absent" but "are they
+     Sam's". A signature that matched would mean one account was being served
+     another's bytes. */
+  ok('someone else\'s sections are not yours',
+     theirs.ld_journal !== before.ld_journal && theirs.ld_compass !== before.ld_compass,
+     { theirs: theirs.ld_journal, mine: before.ld_journal });
   const stolen = await some('sam', ['ld_journal', 'ld_compass', 'ld_habits']);
-  ok('and cannot ask for them by name either',
-     Object.keys(stolen.json).length === 0, stolen.json);
+  ok('and asking for them by name gets Sam\'s own, never yours',
+     JSON.stringify(stolen.json).indexOf('Artur') < 0 &&
+     /Account created/.test(stolen.json.ld_journal || ''), Object.keys(stolen.json));
   ok('signed out, neither endpoint answers',
      (await rq('/api/manifest')).status === 401 &&
      (await rq('/api/some', { method: 'POST', body: '{"keys":["ld_journal"]}' })).status === 401);

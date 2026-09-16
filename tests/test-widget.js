@@ -91,7 +91,11 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
   ok('the rock shows on the owner’s widget',
      JSON.stringify(mine.lines).indexOf('only Artur knows') >= 0, mine.lines);
   ok('and on nobody else’s', JSON.stringify(theirs).indexOf('only Artur knows') < 0, theirs.lines);
-  ok('the other person still gets their own empty day', theirs.total === 0, theirs);
+  /* Their day is their own starter week now rather than nothing at all, so
+     what has to hold is that everything on it came from the template — no
+     rock of the owner's, and nothing ticked. */
+  ok('the other person gets only their own day',
+     theirs.done === 0 && JSON.stringify(theirs.lines).indexOf('only Artur knows') < 0, theirs);
 
   console.log('\n— it fits on a lock screen —');
   ok('it names the day', typeof mine.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(mine.date), mine.date);

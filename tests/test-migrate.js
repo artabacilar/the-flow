@@ -27,7 +27,13 @@ const call=async(p,o={},who='a')=>{const h=Object.assign({'Content-Type':'applic
   ok('second account created', r.status===200, r.body);
   ok('adopted nothing', r.body.adopted===0, r.body.adopted);
   r=await call('/api/all',{},'bro');
-  ok('brother sees an empty app', Object.keys(r.body||{}).length===0, r.body);
+  /* Not empty any more — every new account is given a first week — so the
+     question is no longer "is there anything there" but "is any of it his".
+     The owner's Flow is 295 journal entries and a finance section; the
+     starter template has neither. */
+  ok('brother gets his own first week, not the owner\'s Flow',
+     !('ld_finance' in (r.body||{})) && JSON.parse(r.body.ld_journal||'[]').length===1,
+     Object.keys(r.body||{}));
 
   console.log('\n— the migration only ever runs once —');
   await call('/api/set',{method:'POST',body:JSON.stringify({key:'ld_journal',value:JSON.stringify([{t:'new'}])})},'artur');
