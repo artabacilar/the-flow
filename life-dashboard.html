@@ -921,7 +921,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
 <div class="section active" id="tab-compass">
   <div class="banner" id="storageBanner">⚠️ This browser is blocking local storage, so entries cannot be saved here. Open this file in Chrome, or export a backup regularly from the 📓 Journal tab.</div>
   <div class="section-header">🧭 Week Compass</div>
-  <div class="section-sub">Write down what the week is for, then put the Big Rocks in before the gravel fills it. Use ← → to plan your upcoming weeks.</div>
+  <div class="section-sub">Start with what the week is for. Big Rocks are the few things that have to happen in it — the ones you would regret reaching Sunday without. A week fills up whether or not you choose what goes in it, so put these on a day first and let the small stuff fit around them; three to five is usually right. Use ← → to plan weeks ahead.</div>
 
   <!-- Week-at-a-glance grid sits at the very top: opening the tab shows the actual
        week first, with its Prev/Next nav directly above it. Mission, stats and the
@@ -1049,7 +1049,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
 ══════════════════════════════════════════════════════════ -->
 <div class="section" id="tab-quad">
   <div class="section-header">🎯 Priorities — Importance × Urgency</div>
-  <div class="section-sub">Pre-filled from your whiteboard. Effectiveness = living in Q2. Do Q1 now, schedule Q2 deliberately, minimize & batch Q3, keep Q4 as earned rewards. "→ Rock" sends an item to the week you're viewing in the Compass.</div>
+  <div class="section-sub">Every task is urgent or not, and important or not — that gives four boxes. Q1 is both: fires and deadlines, the things that break if you ignore them. Do them now. Q2 is important but never urgent — planning, training, learning, the people who matter. Nothing forces you to do it, which is why it gets skipped, and why it is the box that decides how your year goes. Schedule it on purpose. Q3 is urgent but not important to you — other people's priorities landing on your desk. Delegate it, or batch it into one slot. Q4 is neither: fine as a reward, once the real work is placed. "→ Rock" sends an item to the week you're viewing in the Compass.</div>
   <a href="languages" class="btn btn-green" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px;">🗣️ Study Languages — open LinguaCoach</a>
   <div class="qwrap">
     <div class="qbox q1"><h3>🔥 Q1 — Urgent & Important</h3><div class="qsub">DO first — necessity</div><div id="qlist1"></div><div class="qadd"><input type="text" id="qin1" placeholder="Add..."><button data-q="1">+</button></div></div>
@@ -2883,6 +2883,35 @@ const SAW_ITEMS=[
 sawHydrate();
 
 let hbData = S.get('habits', {habits:[], completions:{}}); // completions: {habitId: {date: true}}
+
+/* The same four an account gets seeded with on the server (flow-starter.js).
+   A brand-new account arrives with them; an account that reaches this screen
+   with nothing in it should look the same, rather than showing an empty box
+   and asking somebody who has not used the app yet to invent four habits.
+
+   The guard is completions, not the habit list. An empty list plus an empty
+   history is an account that has never used this screen — fill it. An empty
+   list with history behind it is somebody who deliberately deleted their
+   habits, and putting them back would be overruling them. */
+const HABIT_SEED=[
+  'Move for 30 minutes',
+  'In bed by the hour you chose',
+  'One block of deep work, no phone',
+  'Read something that is not a screen'
+];
+function hbHydrate(){
+  try{
+    if(!hbData||typeof hbData!=='object') hbData={habits:[],completions:{}};
+    if(!Array.isArray(hbData.habits)) hbData.habits=[];
+    if(!hbData.completions||typeof hbData.completions!=='object') hbData.completions={};
+    if(hbData.habits.length) return;
+    if(Object.keys(hbData.completions).length) return;
+    const base=Date.now();
+    HABIT_SEED.forEach((name,i)=>hbData.habits.push({id:String(base+i), name}));
+    S.set('habits',hbData);
+  }catch(e){}
+}
+hbHydrate();
 const DOW_LABELS=['M','T','W','T','F','S','S'];
 
 function getWeekDates(){
