@@ -277,8 +277,19 @@ const DEFAULT_RULES = [
 ];
 
 const SETTINGS_KEY = 'flow:settings';
+
+/* The line under "Today". It shipped as one fixed quote, the same for
+   everybody, which is a strange thing for the most personal screen in the
+   app to say. It is a setting now, defaulting to the line that was already
+   there — so nobody who liked it has to do anything, and anybody who wants
+   their own words, their coach's, or nothing at all can have that. */
+const DEFAULT_QUOTE = 'I am the master of my fate, I am the captain of my soul.';
+const DEFAULT_QUOTE_BY = 'William Ernest Henley, 1875';
+
 const SETTINGS_DEFAULTS = {
   displayName: '',
+  todayQuote: DEFAULT_QUOTE,
+  todayQuoteBy: DEFAULT_QUOTE_BY,
   timezone: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return 'Europe/Istanbul'; } })(),
   currency: 'TRY',
   weekStart: 1,
@@ -3234,6 +3245,18 @@ const SettingsUI = {
         </div>
       </div>
 
+      <div class="flow-card">
+        <h3>✍️ The line under Today</h3>
+        <p class="flow-sub">The words beside the date on your Today screen. Make them yours — something you are working towards, a line from someone you trust, or your own. Leave it blank for no line at all. It is saved to your account and never translated.</p>
+        <div class="flow-field"><label class="flow-label">The line</label>
+          <input class="flow-in" data-s="todayQuote" maxlength="200" placeholder="Leave blank for no line" value="${esc(s.todayQuote)}"></div>
+        <div class="flow-field" style="margin-top:8px"><label class="flow-label">Who said it <span style="opacity:.6">(optional)</span></label>
+          <input class="flow-in" data-s="todayQuoteBy" maxlength="80" placeholder="Nobody, or you" value="${esc(s.todayQuoteBy)}"></div>
+        <div class="flow-row" style="margin-top:10px">
+          <button type="button" class="flow-btn sm ghost" id="quote-default">Put the original back</button>
+        </div>
+      </div>
+
       <div class="flow-card" id="voice-card">
         <h3>🎤 Voice</h3>
         <p class="flow-sub">A microphone appears in the corner of whatever you are writing in. Tap it, talk, tap it again — the words land where your cursor was. It listens in the language the app is set to, so switching to Turkish switches the dictation too.</p>
@@ -3473,6 +3496,21 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       </div>`;
 
     /* --- persist any field with a data-s attribute --- */
+    /* Restoring the original is a real need: somebody clears the line to try
+       their own, decides they preferred Henley, and has no way back to words
+       they never wrote down. */
+    const qd = section.querySelector('#quote-default');
+    if (qd) qd.addEventListener('click', async () => {
+      await Settings.set('todayQuote', DEFAULT_QUOTE);
+      await Settings.set('todayQuoteBy', DEFAULT_QUOTE_BY);
+      const a1 = section.querySelector('[data-s="todayQuote"]');
+      const a2 = section.querySelector('[data-s="todayQuoteBy"]');
+      if (a1) a1.value = DEFAULT_QUOTE;
+      if (a2) a2.value = DEFAULT_QUOTE_BY;
+      try { TodayPlus.apply(); } catch (e) {}
+      toast('The original line is back.');
+    });
+
     section.querySelectorAll('[data-s]').forEach(el => {
       const key = el.getAttribute('data-s'), type = el.getAttribute('data-type');
       const commit = async () => {
@@ -3494,6 +3532,10 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         /* Reflect the change on the app straight away — no reload. The name
            feeds the planner tab and greetings; currency and budgets feed the
            money views; the rest is picked up by a light repaint. */
+        /* The quote lives on a screen that is not the one being edited, and
+           the Today header is only rebuilt by its own render — so ask for it
+           directly rather than hoping a general repaint reaches it. */
+        if (key === 'todayQuote' || key === 'todayQuoteBy') { try { TodayPlus.apply(); } catch (e) {} }
         try { Planner.applyTabName(); } catch (e) {}
         try { if (window.Flow && typeof window.Flow.refresh === 'function') window.Flow.refresh(); } catch (e) {}
         try { if (typeof window.renderToday === 'function') window.renderToday(); } catch (e) {}
@@ -5220,19 +5262,33 @@ const TodayPlus = {
        in beside the title. Re-added each render since the host rebuilds the
        header. */
     const title = $('.td-head .td-title', feed);
-    if (title && title.parentElement && !title.parentElement.querySelector('.flow-td-quote')) {
-      const narrow = (window.innerWidth || 999) < 640;
-      if (!narrow) { title.style.display = 'inline-block'; title.style.verticalAlign = 'baseline'; }
-      const quote = document.createElement('div');
-      quote.className = 'flow-td-quote';
-      quote.style.cssText = narrow
-        ? 'display:block;margin:12px 0 2px;max-width:560px'
-        : 'display:inline-block;vertical-align:baseline;margin-left:16px;max-width:540px';
-      const qs = narrow ? '14px' : '15px';
-      quote.innerHTML =
-        '<span style="font-family:Georgia,serif;font-style:italic;font-size:' + qs + ';line-height:1.5;color:var(--muted)">“I am the master of my fate, I am the captain of my soul.”</span>' +
-        '<span style="display:block;font-family:Georgia,serif;font-size:11px;letter-spacing:.4px;color:var(--muted);opacity:.7;margin-top:4px">— William Ernest Henley, 1875</span>';
-      title.insertAdjacentElement('afterend', quote);
+    if (title && title.parentElement) {
+      const text = String(Settings.get('todayQuote') || '').trim();
+      const by = String(Settings.get('todayQuoteBy') || '').trim();
+      let quote = title.parentElement.querySelector('.flow-td-quote');
+
+      /* Blank means blank. Somebody who clears the field wants no quote, not
+         the default back — there would be no other way to say so. */
+      if (!text) {
+        if (quote) quote.remove();
+      } else {
+        const narrow = (window.innerWidth || 999) < 640;
+        if (!narrow) { title.style.display = 'inline-block'; title.style.verticalAlign = 'baseline'; }
+        if (!quote) {
+          quote = document.createElement('div');
+          quote.className = 'flow-td-quote';
+          title.insertAdjacentElement('afterend', quote);
+        }
+        quote.style.cssText = narrow
+          ? 'display:block;margin:12px 0 2px;max-width:560px'
+          : 'display:inline-block;vertical-align:baseline;margin-left:16px;max-width:540px';
+        const qs = narrow ? '14px' : '15px';
+        /* data-i18n="off" throughout: this is the person's own line, and the
+           translator must never rewrite what somebody wrote. */
+        quote.innerHTML =
+          '<span data-i18n="off" style="font-family:Georgia,serif;font-style:italic;font-size:' + qs + ';line-height:1.5;color:var(--muted)">“' + esc(text) + '”</span>' +
+          (by ? '<span data-i18n="off" style="display:block;font-family:Georgia,serif;font-size:11px;letter-spacing:.4px;color:var(--muted);opacity:.7;margin-top:4px">— ' + esc(by) + '</span>' : '');
+      }
     }
 
     const rec = TodayPlus.recovery();
