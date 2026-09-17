@@ -30,6 +30,7 @@ const DASH = process.env.DASH || path.join(HERE, '..', 'life-dashboard.html');
    the two cannot be told apart by filename alone. */
 const SEEDS = {
   legacy:  ['mkseed-legacy.js', {}],
+  stamped: ['mkseed-stamped.js', {}],
   claimed: ['mkseed.js',        {}],
   v2:      ['mkseed.js',        { V2: '1' }],
   pack:    ['mkseed-pack.js',   {}],
@@ -58,6 +59,9 @@ const SUITES = [
   ['delete',   'test-delete.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['template', 'test-template.js', { SEED: JSON.stringify({ ld_journal: '[]' }) }],
   ['starter',  'test-starter.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  /* The account that was already there — created before any of this, opened
+     once, and stamped "nothing to do" by the version that asked wrongly. */
+  ['stamped',  'test-stamped.js',  { seed: 'stamped' }],
   ['owner',    'test-owner.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['heal',     'test-heal.js',     { FLOW_OWNER_EMAIL: OWNER, V2: '1', seed: 'v2' }],
   ['recover',  'test-recover.js',  { FLOW_OWNER_EMAIL: OWNER, seed: 'claimed' }],

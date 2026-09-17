@@ -36,6 +36,11 @@ const ok = (n, c, d) => {
   else { fail++; console.log('  ✗ ' + n + (d !== undefined ? '  → ' + JSON.stringify(d).slice(0, 300) : '')); }
 };
 
+/* A section off /api/all is a JSON string or an already-parsed object,
+   depending on the store underneath — Upstash deserialises, the file store
+   does not. The app handles both at its own hydrate; so must this. */
+const sect = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
+
 const jar = {};
 async function call(path, opts = {}, who = 'anon') {
   const h = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -190,6 +195,37 @@ const signup = (email, name, who) => call('/api/auth/signup', {
   /* The one that must not go the convenient way: if it cannot be read, it is
      not empty. Guessing "probably blank" about bytes we failed to parse is
      how a starter week lands on top of somebody's year. */
+  /* The shape that caused it. Upstash's REST API deserialises a value that
+     is valid JSON, so in production these arrive as objects, not strings.
+     Given an object this used to call JSON.parse on it, throw, and take the
+     "unreadable, leave it alone" branch — so every section already on the
+     server read as content and was skipped, and the demo account kept
+     opening with no Big Rocks while the whole suite stayed green. */
+  ok('a blank section that arrives already parsed is still empty',
+    has('ld_compass', { mission: '', roles: ['Work'], rocks: {}, saw: {}, reviews: {} }) === false &&
+    has('ld_habits', { habits: [], completions: {} }) === false &&
+    has('ld_training', { weeks: {}, plans: {}, weights: [] }) === false &&
+    has('ld_journal', []) === false);
+  ok('and one that arrives already parsed WITH content still counts',
+    has('ld_compass', { rocks: { '2026-W38': [{ id: '1' }] } }) === true &&
+    has('ld_habits', { habits: [{ id: 'h' }] }) === true &&
+    has('ld_journal', [{ t: 'x' }]) === true);
+
+  /* Filling a gap is not the same as replacing a section. Somebody can have
+     edited their roles and set no rocks at all — writing the template over
+     the top would take the roles away, quietly, and only from people who had
+     customised one thing and not another. */
+  const fill = starter.fill;
+  ok('a value already there is never overwritten',
+    fill({ mission: '', roles: ['Mine', 'Only'], rocks: {} },
+         { mission: '', roles: ['A', 'B', 'C'], rocks: { w: [1] } }).roles.join(',') === 'Mine,Only');
+  ok('while the empty parts beside it are filled',
+    Object.keys(fill({ roles: ['Mine'], rocks: {} }, { rocks: { w: [1] } }).rocks).length === 1);
+  ok('a section that does not exist yet is taken whole',
+    fill(null, { a: 1 }).a === 1);
+  ok('and a journal with entries in it is left alone',
+    fill([{ t: 'mine' }], [{ t: 'template' }])[0].t === 'mine');
+
   ok('anything unreadable counts as content and is left alone',
     has('ld_journal', 'not json at all') === true);
   ok('and so does a section this does not recognise',
@@ -211,13 +247,13 @@ const signup = (email, name, who) => call('/api/auth/signup', {
   ok('it opens onto a week rather than onto nothing',
     Object.keys(mine).length >= 4, Object.keys(mine));
   ok('with Big Rocks in it',
-    JSON.stringify(JSON.parse(mine.ld_compass).rocks).length > 100);
+    JSON.stringify(sect(mine.ld_compass).rocks).length > 100);
   ok('and habits to tick',
-    JSON.parse(mine.ld_habits).habits.length >= 3, mine.ld_habits);
+    sect(mine.ld_habits).habits.length >= 3, mine.ld_habits);
   ok('the welcome line uses their name',
     /Newcomer/.test(mine.ld_journal), mine.ld_journal);
   ok('and the scoreboard is honestly at zero',
-    Object.keys(JSON.parse(mine.ld_habits).completions).length === 0);
+    Object.keys(sect(mine.ld_habits).completions).length === 0);
 
   /* ------------------------------------------------------------------ *
    * The half that must not go wrong
@@ -235,9 +271,9 @@ const signup = (email, name, who) => call('/api/auth/signup', {
   for (let i = 0; i < 3; i++) await call('/api/auth/me', {}, 'new');
   r = await call('/api/all', {}, 'new');
   ok('a later open does not put the examples back',
-    JSON.parse(r.body.ld_habits).habits.length === 1, r.body.ld_habits);
+    sect(r.body.ld_habits).habits.length === 1, r.body.ld_habits);
   ok('and does not wipe what they logged',
-    JSON.parse(r.body.ld_habits).completions.h1['2026-09-15'] === true, r.body.ld_habits);
+    sect(r.body.ld_habits).completions.h1['2026-09-15'] === true, r.body.ld_habits);
 
   /* The owner inherits an existing Flow rather than starting one. Seeding on
      top of that is the single way this feature could destroy something. */
