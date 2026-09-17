@@ -168,10 +168,24 @@ function training(wid) {
    exists and all of them are blank. An account that has been opened once and
    an account that has been kept for a year are indistinguishable by key name,
    which is why the emptiness test has to look inside. */
-function sectionHasContent(key, text) {
-  if (text == null || text === '') return false;
-  let v;
-  try { v = JSON.parse(text); } catch (e) { return true; }   /* unreadable — leave it alone */
+function sectionHasContent(key, value) {
+  if (value == null || value === '') return false;
+
+  /* A section is a JSON string in every store this app has — Upstash over
+     the raw REST API, the JSON file, SQLite. It is read as an object too
+     anyway, because that costs one branch and the alternative failure is
+     silent: given an object, JSON.parse throws, the "unreadable" branch
+     calls it content, and the section is skipped with nothing logged.
+     (I briefly believed Upstash's REST API deserialised JSON for you and
+     that this was why the demo account stayed empty. It does not — that is
+     the @upstash/redis SDK, which this server does not use. The real cause
+     was a stamp from an older version; see seedStarter in flow-auth.js.) */
+  let v = value;
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch (e) { return true; }   /* unreadable — leave it alone */
+  } else if (typeof v !== 'object') {
+    return true;                                            /* not ours to judge */
+  }
   if (v == null) return false;
   switch (key) {
     case 'ld_compass':
@@ -227,4 +241,38 @@ function build(name, now) {
   };
 }
 
-module.exports = { build, hasContent: sectionHasContent, weekId, TOUR, ROLES };
+/* Fill the gaps in a section rather than replacing it.
+ *
+ * A section judged empty is not necessarily empty in every part. A compass
+ * with no rocks and no mission can still carry roles somebody edited, and
+ * a training section with no plans can still carry the times they train at.
+ * Writing the template over the top would take those away — quietly, and
+ * only from people who had customised one thing and not another, which is
+ * the worst possible group to lose work.
+ *
+ * So: the template supplies a key only where what is there now holds
+ * nothing. Anything with a value in it is left exactly as it was.
+ */
+function isBlank(v) {
+  if (v == null || v === '') return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === 'object') return Object.keys(v).length === 0;
+  return false;
+}
+
+function fillSection(existing, fresh) {
+  if (existing == null) return fresh;
+  /* The journal is a list, not a record of parts — there is nothing to
+     merge, and a list that is not empty was already treated as content. */
+  if (Array.isArray(fresh) || Array.isArray(existing)) {
+    return isBlank(existing) ? fresh : existing;
+  }
+  if (typeof existing !== 'object') return fresh;
+  const out = Object.assign({}, existing);
+  for (const k of Object.keys(fresh)) {
+    if (isBlank(out[k])) out[k] = fresh[k];
+  }
+  return out;
+}
+
+module.exports = { build, hasContent: sectionHasContent, fill: fillSection, weekId, TOUR, ROLES };

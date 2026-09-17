@@ -553,8 +553,17 @@ async function seedStarter(uid, name) {
        only written when what is there now holds nothing anybody would miss. */
     const payload = {};
     for (const k of Object.keys(sections)) {
-      if (starter.hasContent(k, all[pre + k])) continue;
-      payload[pre + k] = JSON.stringify(sections[k]);
+      const there = all[pre + k];
+      if (starter.hasContent(k, there)) continue;
+      /* Fill the gaps rather than replacing the section. A compass with no
+         rocks can still carry roles somebody edited; a training section with
+         no plans can still carry the times they train at. */
+      let current = null;
+      if (there != null && there !== '') {
+        if (typeof there === 'string') { try { current = JSON.parse(there); } catch (e) { current = null; } }
+        else if (typeof there === 'object') current = there;
+      }
+      payload[pre + k] = JSON.stringify(starter.fill(current, sections[k]));
     }
 
     if (!Object.keys(payload).length) {
