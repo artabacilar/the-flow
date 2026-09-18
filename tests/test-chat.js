@@ -61,7 +61,13 @@ const reader = (data, log) => ({
   delete process.env.ANTHROPIC_API_KEY;
   await m.handle('/api/flow/chat', { method: 'POST' }, res, mk());
   ok('503, not an exception', mk.code === 503, mk.code);
-  ok('and it names the variable to set', /ANTHROPIC_API_KEY/.test(mk.payload.error), mk.payload);
+  /* It used to be asserted that this named ANTHROPIC_API_KEY. That was
+     written from the operator's chair: the string is rendered on the
+     Direction card and in Ask, so what it actually named was my hosting
+     setup, to every person using the app. The variable belongs in the
+     server log; the person gets a sentence that means something to them. */
+  ok('and it says something a person can understand', /assistant/i.test(mk.payload.error), mk.payload);
+  ok('without naming an env var or a host', !/ANTHROPIC_API_KEY|Render/.test(mk.payload.error), mk.payload);
 
   console.log('\n— the cap is checked before any money is spent —');
   process.env.ANTHROPIC_API_KEY = 'not-a-real-key';

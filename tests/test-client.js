@@ -186,7 +186,7 @@ const H = 'http://localhost:4222';
   console.log('\n— when the assistant is switched off —');
   const off = (route) => route.fulfill({
     status: 503, contentType: 'application/json',
-    body: JSON.stringify({ error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' })
+    body: JSON.stringify({ error: 'The assistant is not switched on for this app yet.' })
   });
   await p2.route('**/api/flow/chat/stream', off);
   await p2.route('**/api/flow/chat', off);
@@ -194,6 +194,7 @@ const H = 'http://localhost:4222';
   await p2.fill('#ask-in', 'hello'); await p2.click('#ask-go'); await p2.waitForTimeout(1200);
   const offLog = await p2.evaluate(() => document.getElementById('ask-log').innerText);
   ok('it explains rather than failing silently', /not switched on/.test(offLog), offLog);
+  ok('and does not show the person an env var or a host', !/ANTHROPIC_API_KEY|Render/.test(offLog), offLog);
   ok('no page errors', e1.length === 0 && e2.length === 0, [e1.slice(0, 2), e2.slice(0, 2)]);
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
