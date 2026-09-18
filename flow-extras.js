@@ -1,4 +1,26 @@
 'use strict';
+
+/* What somebody using the app is told when the assistant cannot answer.
+ *
+ * These used to name ANTHROPIC_API_KEY and Render. That is a note to me,
+ * and it was being rendered on the Direction card and in Ask — to every
+ * person using the app, and to whoever reviews it for the App Store. The
+ * operator detail belongs in the server log, where I will actually see it;
+ * the person gets a sentence that is true and means something to them.
+ */
+const ASSISTANT_OFF = 'The assistant is not switched on for this app yet.';
+const ASSISTANT_UNAVAILABLE = 'The assistant could not be reached just now. Try again shortly.';
+
+/* The detail the person must not see, kept where I will. */
+function logUpstream(where, status) {
+  const why = (status === 401 || status === 403)
+    ? 'ANTHROPIC_API_KEY was rejected'
+    : status === 404
+      ? 'model "' + CHAT_MODEL + '" is not available on this key — set FLOW_CHAT_MODEL'
+      : 'upstream ' + status;
+  console.error('[flow/assistant] ' + where + ': ' + why);
+}
+
 /* ==========================================================================
  * The Flow — extras: live prices (and, later, the assistant)
  * --------------------------------------------------------------------------
@@ -308,7 +330,7 @@ async function handleChat(p, req, res, ctx) {
 
   const key = process.env.ANTHROPIC_API_KEY || '';
   if (!key) {
-    ctx.json(res, 503, { error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' });
+    ctx.json(res, 503, { error: ASSISTANT_OFF });
     return true;
   }
 
@@ -345,11 +367,13 @@ async function handleChat(p, req, res, ctx) {
   }, payload);
 
   if (r.status === 401 || r.status === 403) {
-    ctx.json(res, 502, { error: 'The API key was rejected. Check ANTHROPIC_API_KEY in Render.' });
+    logUpstream('chat', r.status);
+    ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE });
     return true;
   }
   if (r.status === 404) {
-    ctx.json(res, 502, { error: 'Model "' + CHAT_MODEL + '" is not available on this key. Set FLOW_CHAT_MODEL in Render to one that is.' });
+    logUpstream('chat', r.status);
+    ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE });
     return true;
   }
   if (r.status === 429) {
@@ -469,7 +493,7 @@ async function handleChatStream(p, req, res, ctx) {
      refusal has to be decided before the first byte goes out. */
   const key = process.env.ANTHROPIC_API_KEY || '';
   if (!key) {
-    ctx.json(res, 503, { error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' });
+    ctx.json(res, 503, { error: ASSISTANT_OFF });
     return true;
   }
   const used = (await ctx.counter.get(todayKey())) || 0;
@@ -534,12 +558,13 @@ async function handleChatStream(p, req, res, ctx) {
   }
 
   if (out && out.status !== 200) {
+    logUpstream('stream', out.status);
     const msg = out.status === 401 || out.status === 403
-      ? 'The API key was rejected. Check ANTHROPIC_API_KEY in Render.'
+      ? ASSISTANT_UNAVAILABLE
       : out.status === 429
         ? 'Anthropic is rate-limiting this key. Try again shortly.'
         : out.status === 404
-          ? 'Model "' + CHAT_MODEL + '" is not available on this key. Set FLOW_CHAT_MODEL in Render to one that is.'
+          ? ASSISTANT_UNAVAILABLE
           : 'The assistant could not answer just now (upstream ' + out.status + ').';
     send({ t: 'err', v: msg });
     send({ t: 'end' });
@@ -771,7 +796,7 @@ async function handleDirection(p, req, res, ctx) {
 
   const key = process.env.ANTHROPIC_API_KEY || '';
   if (!key) {
-    ctx.json(res, 503, { error: 'The assistant is not switched on. Add ANTHROPIC_API_KEY in Render to enable it.' });
+    ctx.json(res, 503, { error: ASSISTANT_OFF });
     return true;
   }
 
@@ -814,7 +839,8 @@ async function handleDirection(p, req, res, ctx) {
   });
 
   if (r.status === 401 || r.status === 403) {
-    ctx.json(res, 502, { error: 'The API key was rejected. Check ANTHROPIC_API_KEY in Render.' }); return true;
+    logUpstream('direction', r.status);
+    ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true;
   }
   if (r.status === 429) {
     ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again shortly.' }); return true;
