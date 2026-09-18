@@ -4887,6 +4887,45 @@ const wsDTC  = makeWorkspace({key:'work_dtc',  mountId:'ws-dtc',  name:'Side Pro
 if(!S.ok){ document.getElementById('storageBanner').style.display='block'; }
 updateDbIndicator();
 renderQuad(); renderDiet(); renderCompass(); renderJournal(); renderBrainstorm(); renderToday(); wsABKO.render(); wsDTC.render(); S.saved();
+
+/* Redraw every screen from the data as it stands right now.
+ *
+ * Settings used to reach the screen through a hand-written list: change the
+ * quote, call TodayPlus.apply; change the chips, rescan for chips. Anything
+ * not on that list only appeared after the app was closed and opened again,
+ * which is what people actually reported — and every new setting quietly
+ * joined the list of things that needed a relaunch.
+ *
+ * A setting can touch any screen, so the honest answer is to redraw all of
+ * them. Each renderer is called on its own: one that throws must not stop
+ * the rest, because a half-redrawn app is worse than the stale one.
+ *
+ * Deliberately absent: syncWhoop and syncHealth. Those go to the network,
+ * and saving a preference is not a reason to call somebody's watch. */
+window.flowRepaintAll = function(){
+  const each = (fn) => { try { if (typeof fn === 'function') fn(); } catch (e) { console.warn('[repaint]', e); } };
+  each(typeof renderToday==='function'?renderToday:null);
+  each(typeof renderCompass==='function'?renderCompass:null);
+  each(typeof renderQuad==='function'?renderQuad:null);
+  each(typeof renderHabits==='function'?renderHabits:null);
+  each(typeof renderBlade==='function'?renderBlade:null);
+  each(typeof renderDiet==='function'?renderDiet:null);
+  each(typeof renderJournal==='function'?renderJournal:null);
+  each(typeof renderBrainstorm==='function'?renderBrainstorm:null);
+  each(typeof renderFinance==='function'?renderFinance:null);
+  each(typeof renderTime==='function'?renderTime:null);
+  each(typeof renderSleep==='function'?renderSleep:null);
+  each(typeof renderSleepChart==='function'?renderSleepChart:null);
+  each(typeof renderMood==='function'?renderMood:null);
+  each(typeof renderMoodChart==='function'?renderMoodChart:null);
+  each(typeof tRender==='function'?tRender:null);
+  each(typeof tRenderStats==='function'?tRenderStats:null);
+  each(typeof tRenderWeight==='function'?tRenderWeight:null);
+  each(typeof tRenderNutri==='function'?tRenderNutri:null);
+  try { if (typeof wsABKO === 'object' && wsABKO) wsABKO.render(); } catch (e) { console.warn('[repaint]', e); }
+  try { if (typeof wsDTC === 'object' && wsDTC) wsDTC.render(); } catch (e) { console.warn('[repaint]', e); }
+  try { if (typeof updateDbIndicator === 'function') updateDbIndicator(); } catch (e) {}
+};
 /* Everything above is the app drawing itself — and the upgrade pack, which
    loads after this, seeds a little more. A write only counts as an edit worth
    queueing once a person has actually touched the app, or once start-up has

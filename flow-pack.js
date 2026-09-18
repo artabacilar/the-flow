@@ -314,6 +314,33 @@ const SETTINGS_DEFAULTS = {
 
 const Settings = {
   data: Object.assign({}, SETTINGS_DEFAULTS),
+
+  /* Put a saved setting on the screen without a relaunch.
+   *
+   * This used to be a list of special cases inside the settings binder, and
+   * the list was always one behind: people changed something, saw nothing,
+   * and closed and reopened the app to make it take. A setting can touch any
+   * screen, so this redraws the pack's own layers and then asks the app to
+   * redraw itself. Every step is caught separately — one failure must not
+   * leave the rest of the screen stale, which is the bug this replaces. */
+  reflect() {
+    const each = (fn) => { try { fn(); } catch (e) { console.warn('[settings] reflect', e); } };
+    each(() => { if (Settings.get('upgradeVisuals')) Visuals.upgradeAll(); else Visuals.restoreAll(); });
+    each(() => {
+      if (Settings.get('showTimeChips')) TimeChips.scan(document);
+      else {
+        $$('.flow-time-chip').forEach(c => c.remove());
+        $$('[data-flow-timed]').forEach(r => r.removeAttribute('data-flow-timed'));
+      }
+    });
+    each(() => TimeChips.repaintAll());
+    each(() => Planner.applyTabName());
+    each(() => Journal.rerender());
+    /* The Today header is built by its own render and a general repaint does
+       not reach it, so it is asked for by name. */
+    each(() => TodayPlus.apply());
+    each(() => { if (typeof window.flowRepaintAll === 'function') window.flowRepaintAll(); });
+  },
   async load() {
     const saved = await DB.get(SETTINGS_KEY, null);
     Settings.data = Object.assign({}, SETTINGS_DEFAULTS, saved || {});
@@ -3507,7 +3534,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       const a2 = section.querySelector('[data-s="todayQuoteBy"]');
       if (a1) a1.value = DEFAULT_QUOTE;
       if (a2) a2.value = DEFAULT_QUOTE_BY;
-      try { TodayPlus.apply(); } catch (e) {}
+      Settings.reflect();
       toast('The original line is back.');
     });
 
@@ -3529,16 +3556,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
             $$('[data-flow-timed]').forEach(r => r.removeAttribute('data-flow-timed'));
           }
         }
-        /* Reflect the change on the app straight away — no reload. The name
-           feeds the planner tab and greetings; currency and budgets feed the
-           money views; the rest is picked up by a light repaint. */
-        /* The quote lives on a screen that is not the one being edited, and
-           the Today header is only rebuilt by its own render — so ask for it
-           directly rather than hoping a general repaint reaches it. */
-        if (key === 'todayQuote' || key === 'todayQuoteBy') { try { TodayPlus.apply(); } catch (e) {} }
-        try { Planner.applyTabName(); } catch (e) {}
-        try { if (window.Flow && typeof window.Flow.refresh === 'function') window.Flow.refresh(); } catch (e) {}
-        try { if (typeof window.renderToday === 'function') window.renderToday(); } catch (e) {}
+        Settings.reflect();
         toast('Saved ✓', null, 1200);
       };
       el.addEventListener('change', commit);
@@ -3691,6 +3709,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         }
         else if (a === 'formDonut' || a === 'formBars') {
           await Settings.set('breakdownForm', a === 'formBars' ? 'bars' : 'donut');
+          Settings.reflect();
           $$('[data-flow-viz] .flow-viz').forEach(m => { if (m.__repaint) m.__repaint(); });
           SettingsUI.render(section);
         }
@@ -4123,6 +4142,7 @@ const Visuals = {
       const b = e.target.closest('[data-viz]');
       if (!b) return;
       await Settings.set('breakdownForm', b.getAttribute('data-viz'));
+      Settings.reflect();
       $$('[data-flow-viz] .flow-viz').forEach(m => { if (m.__repaint) m.__repaint(); });
     });
     mount.__repaint = paint;
