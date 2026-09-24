@@ -1612,6 +1612,28 @@ const SIG_KEY = 'ld__sigs';
    most of the weight. The app's own ld_ sections are not duplicated in here;
    they are already on the device under their real names. */
 const CACHE_KEY = 'ld__cache';
+/* ── One forced re-read, for devices already stuck ─────────────────────────
+   A device that recorded a signature for bytes it never stored is frozen on
+   that section: the signature matches, so the open never asks for it, so it
+   never finds out. The trim further down stops that state being created, but
+   it cannot undo one — when the signature matches, the section is not fetched,
+   and the device fills it in from itself. It has no way to learn it is wrong.
+
+   So every device clears its map once, and pays for one full sync, and starts
+   from the truth. Raise the stamp again only to force another. */
+const SIG_EPOCH = '2026-09-24-sigtrim';
+/* Named like the other bookkeeping keys, and excluded from the section sweep
+   below with them — anything under ld_ that is not excluded is treated as a
+   section of the person's data and mirrored to their account. */
+const EPOCH_KEY = 'ld__sigepoch';
+(function healFrozenSections(){
+  try{
+    if(localStorage.getItem(EPOCH_KEY) === SIG_EPOCH) return;
+    localStorage.removeItem(SIG_KEY);
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.setItem(EPOCH_KEY, SIG_EPOCH);
+  }catch(e){}
+})();
 /* Writes made while the app is still drawing itself. They are held here rather
    than sent, because at that moment the page may still be showing a stale copy
    and the reconcile has not run — mirroring them up is how a newer record gets
@@ -1750,7 +1772,7 @@ function syncPaint(){
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
-      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY&&k!==SIG_KEY&&k!==CACHE_KEY) painted[k]=localStorage.getItem(k);
+      if(k&&k.indexOf('ld_')===0&&k!==OWNER_KEY&&k!==DIRTY_KEY&&k!==SIG_KEY&&k!==CACHE_KEY&&k!==EPOCH_KEY) painted[k]=localStorage.getItem(k);
     }
   }catch(e){}
 
@@ -1958,6 +1980,33 @@ function syncPaint(){
         painted[k]=v;
       }
     });
+
+    /* ── The map must describe what is actually here ──────────────────────
+       The signature map is written from the manifest, for every section the
+       server listed. But the loop above deliberately does not apply a section
+       this device has a queued write for, and a setItem can fail on a full
+       device. Either way the map ends up claiming a version that was never
+       stored — and because the only question the next open asks is "did the
+       signature move?", the answer is no, forever. The section is frozen on
+       that device: the server's copy is never fetched again, no matter how
+       many times it changes, and nothing anywhere reports a problem.
+
+       That is not hypothetical either. It is why a week of Big Rocks sat on
+       the server while this browser kept insisting there were none.
+
+       So the claim is trimmed to the truth: any section whose bytes on this
+       device are not the bytes the signature describes is dropped from the
+       map, and the next open fetches it like a section it has never seen. */
+    try{
+      const mapNow=JSON.parse(lsGet(SIG_KEY)||'{}')||{};
+      let trimmed=false;
+      serverKeys.forEach(k=>{
+        if(!(k in mapNow)) return;
+        if(all[k]==null) return;
+        if(lsGet(k)!==all[k]){ delete mapNow[k]; trimmed=true; }
+      });
+      if(trimmed) localStorage.setItem(SIG_KEY, JSON.stringify(mapNow));
+    }catch(e){}
 
     if(Object.keys(push).length){
       try{
