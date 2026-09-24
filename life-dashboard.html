@@ -1643,6 +1643,10 @@ function syncPaint(){
   try{
     window.__FLOW_SYNC.pending = Object.keys(dirtyRead()).length;
     if(typeof updateDbIndicator==='function') updateDbIndicator();
+    /* The save line is part of the same truth. Without this it would sit on
+       "saving…" until the next edit happened to repaint it. S is declared
+       below this point, so the guard is not decorative. */
+    if(typeof S!=='undefined' && S && typeof S.saved==='function') S.saved();
   }catch(e){}
 }
 
@@ -1980,28 +1984,48 @@ function syncPaint(){
   }
   run();
 })();
+/* Which write to a section is the most recent one issued. A second edit to the
+   same section while the first is still in flight must not have the first's
+   answer clear the queue out from under it — the flag has to stand until the
+   newest write is the one that was acknowledged. */
+const writeSeq = {};
+function writeIssued(k){ return (writeSeq[k] = (writeSeq[k]||0) + 1); }
+function writeLanded(k, n){ if(writeSeq[k]===n) dirtyDrop([k]); }
+
 function dbSet(fullKey, valueStr){
   if(window.__FLOW_SEEDING){ seedBuf[fullKey]=valueStr; return; }
-  if(!window.__DB_ON){ dirtyMark(fullKey); return; }
+  /* Queued BEFORE the request goes out, not only when one comes back broken.
+     A request still in flight when the page is navigated away is neither a
+     success nor a caught failure — it simply stops, and on the old order
+     nothing had been written down. The section then looked clean to the next
+     open, whose reconcile saw the server's signature differ and pulled the
+     server's older bytes down over the edit: the work was gone, and the header
+     had been saying "saved" the whole time. Marked first, an interrupted write
+     is only a queued write, and the next reconcile pushes it up. */
+  dirtyMark(fullKey);
+  const n = writeIssued(fullKey);
+  if(!window.__DB_ON) return;
   try{
     fetch(DB_API+'/set',{method:'POST',headers:{'Content-Type':'application/json'},
       credentials:'same-origin',body:JSON.stringify({key:fullKey,value:valueStr})})
-      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); })
-      .catch(()=>{ window.__DB_ON=false; dirtyMark(fullKey);
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); writeLanded(fullKey, n); })
+      .catch(()=>{ window.__DB_ON=false;
         try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
-  }catch(e){ window.__DB_ON=false; dirtyMark(fullKey); }
+  }catch(e){ window.__DB_ON=false; }
 }
 function dbBulk(obj){
   const keys=Object.keys(obj||{});
   if(window.__FLOW_SEEDING){ keys.forEach(k=>{ seedBuf[k]=obj[k]; }); return; }
-  if(!window.__DB_ON){ keys.forEach(dirtyMark); return; }
+  keys.forEach(dirtyMark);
+  const ns={}; keys.forEach(k=>{ ns[k]=writeIssued(k); });
+  if(!window.__DB_ON) return;
   try{
     fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
       credentials:'same-origin',body:JSON.stringify({data:obj})})
-      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); })
-      .catch(()=>{ window.__DB_ON=false; keys.forEach(dirtyMark);
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); keys.forEach(k=>writeLanded(k, ns[k])); })
+      .catch(()=>{ window.__DB_ON=false;
         try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
-  }catch(e){ window.__DB_ON=false; keys.forEach(dirtyMark); }
+  }catch(e){ window.__DB_ON=false; }
 }
 
 // ════════════════════════════════════════════
@@ -2010,11 +2034,21 @@ function dbBulk(obj){
 const S = {
   ok:true,
   get(k, def){ try{ const v=localStorage.getItem('ld_'+k); return v!==null?JSON.parse(v):def; }catch(e){ return def; } },
-  set(k, v){ const s=JSON.stringify(v); try{ localStorage.setItem('ld_'+k, s); S.saved(); }catch(e){ S.ok=false; const b=document.getElementById('storageBanner'); if(b) b.style.display='block'; } dbSet('ld_'+k, s); },
+  /* The server is told before the line is painted, so what the line says can
+     be the truth about both copies rather than only about this device. */
+  set(k, v){ const s=JSON.stringify(v); try{ localStorage.setItem('ld_'+k, s); }catch(e){ S.ok=false; const b=document.getElementById('storageBanner'); if(b) b.style.display='block'; } dbSet('ld_'+k, s); S.saved(); },
   /* Written to both the header indicator (desktop) and the one beside the
-     backup buttons in the Journal tab (the only one a phone shows). */
+     backup buttons in the Journal tab (the only one a phone shows).
+     This used to read "✓ saved" and nothing else, always — painted the moment
+     the device copy succeeded, before the server had been asked, and whatever
+     the server went on to answer. So the one state it could not show was the
+     only one worth showing: written here, not there yet. A person who closed
+     the tab on that word lost the edit and had been told it was safe. */
   saved(){
-    const html='<b>✓ saved</b> '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+(typeof jData!=='undefined'?jData.length:0)+' journal entries';
+    let pending=0; try{ pending=Object.keys(dirtyRead()).length; }catch(e){}
+    const stamp=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const tail=' '+stamp+' · '+(typeof jData!=='undefined'?jData.length:0)+' journal entries';
+    const html=(pending?'<b>saving…</b>':'<b>✓ saved</b>')+tail;
     ['saveInd','saveInd2','saveInd3'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
   }
 };
