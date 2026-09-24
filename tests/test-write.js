@@ -170,6 +170,88 @@ const H = 'http://localhost:4222';
       return heldOpen && cleared;
     }));
 
+  console.log('\n— and the device never claims to hold a version it does not —');
+  /* The signature map is written from the manifest, for every section the
+     server listed — including ones the apply loop skipped because this device
+     had a queued write for them. The map then describes bytes that were never
+     stored, and since the only question the next open asks is "did the
+     signature move?", the answer is no for good. The section freezes on that
+     device while the server moves on, silently, forever.
+     Found in production: three Big Rocks sat on the server while the browser
+     kept reporting none, and dropping one signature by hand brought them back. */
+
+  /* Put the account and this device deliberately out of step, with the section
+     queued so the reconcile is obliged to leave the device's copy alone. */
+  await p.evaluate(async () => {
+    await fetch('/api/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ key: 'ld_quad', value: JSON.stringify({ items: [{ id: 'qs', q: 1, txt: 'what the account holds', done: false }] }) })
+    });
+    localStorage.setItem('ld_quad', JSON.stringify({ items: [{ id: 'qz', q: 1, txt: 'what this device holds', done: false }] }));
+    const d = JSON.parse(localStorage.getItem('ld__dirty') || '{}');
+    d.ld_quad = Date.now();
+    localStorage.setItem('ld__dirty', JSON.stringify(d));
+  });
+
+  /* Now let a real reconcile run over that state. */
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(6000);
+
+  ok('a section it was told about but did not store is not recorded as in sync',
+    await p.evaluate(async () => {
+      const sha = async (str) => {
+        const dg = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str));
+        return btoa(String.fromCharCode(...new Uint8Array(dg))).slice(0, 10);
+      };
+      const sigs = JSON.parse(localStorage.getItem('ld__sigs') || '{}');
+      const held = localStorage.getItem('ld_quad') || '';
+      if (!('ld_quad' in sigs)) return true;          /* dropped — honest */
+      return sigs.ld_quad === await sha(held);        /* kept — honest only if it matches */
+    }),
+    await p.evaluate(() => ({
+      sig: (JSON.parse(localStorage.getItem('ld__sigs') || '{}')).ld_quad,
+      held: (localStorage.getItem('ld_quad') || '').slice(0, 90)
+    })));
+
+  /* A device already in that state cannot reason its way out: when the
+     signature matches, the section is not fetched, and the reconcile fills it
+     in from the device itself. It never learns it is wrong. The trim above
+     stops the state being created; only a forced re-read repairs one that
+     exists. Note the account is NOT changed here — in production the recorded
+     signature equalled the account's current one, so no future edit was ever
+     going to shake the device loose. */
+  ok('a device already frozen is repaired, without the account having to change',
+    await (async () => {
+      await p.evaluate(async () => {
+        const acct = JSON.stringify({ items: [{ id: 'qs', q: 1, txt: 'what the account holds', done: false }] });
+        await fetch('/api/set', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify({ key: 'ld_quad', value: acct }) });
+        const man = await (await fetch('/api/manifest', { credentials: 'same-origin', cache: 'no-store' })).json();
+        /* The exact bad state: different bytes, nothing queued, and a map that
+           swears this device is already up to date with the account. */
+        localStorage.setItem('ld_quad', JSON.stringify({ items: [{ id: 'qz', q: 1, txt: 'stale bytes', done: false }] }));
+        localStorage.setItem('ld__dirty', '{}');
+        const sigs = JSON.parse(localStorage.getItem('ld__sigs') || '{}');
+        sigs.ld_quad = man.ld_quad;
+        localStorage.setItem('ld__sigs', JSON.stringify(sigs));
+        localStorage.removeItem('ld__sigepoch');     /* a device that has not been healed yet */
+      });
+      await p.reload({ waitUntil: 'load' });
+      await p.waitForTimeout(6000);
+      return (await p.evaluate(() => localStorage.getItem('ld_quad') || '')).includes('what the account holds');
+    })(),
+    await p.evaluate(() => (localStorage.getItem('ld_quad') || '').slice(0, 90)));
+
+  /* The repair adds a bookkeeping key under the same ld_ prefix the data uses.
+     Anything under that prefix which is not excluded is mirrored to the
+     account as if it were a section of the person's own data. */
+  ok('and its bookkeeping key is never mirrored into the account',
+    await p.evaluate(async () => {
+      const man = await (await fetch('/api/manifest', { credentials: 'same-origin', cache: 'no-store' })).json();
+      return !('ld__sigepoch' in man);
+    }),
+    await p.evaluate(async () => Object.keys(await (await fetch('/api/manifest', { credentials: 'same-origin', cache: 'no-store' })).json())));
+
   await b.close();
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
