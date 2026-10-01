@@ -3382,6 +3382,15 @@ const SettingsUI = {
         </ol>
       </div>
 
+      <div class="flow-card" id="pushCard">
+        <h3>📣 Push notifications</h3>
+        <p class="flow-sub">Reminders that arrive on the phone whether or not the app is open. Only available inside the iPhone app — a browser cannot receive these.</p>
+        <div class="flow-switch"><div class="t"><b>Allow notifications</b><span id="pushState">Checking…</span></div>
+          <button class="flow-btn" id="pushBtn" disabled>…</button></div>
+        <div style="margin-top:10px"><button class="flow-btn" id="pushTestBtn" disabled>Send me a test notification</button>
+          <span class="flow-sub" id="pushTestOut" style="margin-left:10px"></span></div>
+      </div>
+
       <div class="flow-card">
         <h3>🔔 iOS Reminders</h3>
         <p class="flow-sub">Apple gives no public web API for Reminders, so there are three real routes. The first works immediately; the second is the one worth setting up once.</p>
@@ -3594,6 +3603,79 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           b.classList.toggle('on', b === btn));
       });
     });
+
+    /* ── Push notifications ───────────────────────────────────────────
+       Only the iPhone shell can do this: a WKWebView has no Notification
+       API and a browser cannot hold an APNs token. So the card reports what
+       it is rather than offering a button that quietly does nothing. */
+    (function wirePush() {
+      const card = section.querySelector('#pushCard');
+      if (!card) return;
+      const state = card.querySelector('#pushState');
+      const btn = card.querySelector('#pushBtn');
+      const test = card.querySelector('#pushTestBtn');
+      const out = card.querySelector('#pushTestOut');
+      const native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge;
+
+      const serverStatus = () => fetch('/api/push/status', { credentials: 'same-origin' })
+        .then(r => r.json()).catch(() => ({ available: false, devices: 0 }));
+
+      async function paint() {
+        const srv = await serverStatus();
+        if (!native) {
+          state.textContent = srv.devices
+            ? 'On for ' + srv.devices + ' device' + (srv.devices === 1 ? '' : 's') + '. Open the iPhone app to change it.'
+            : 'Open this in the iPhone app to switch notifications on.';
+          btn.textContent = 'iPhone only';
+          btn.disabled = true;
+          test.disabled = !srv.devices;
+          return;
+        }
+        const d = await native.pushStatus();
+        if (d.denied) {
+          /* iOS asks once. After a no, the only way back is Settings.app,
+             and a button here would do nothing at all. */
+          state.textContent = 'Turned off in iOS Settings → Notifications → The Flow.';
+          btn.textContent = 'Blocked'; btn.disabled = true; test.disabled = true;
+          return;
+        }
+        if (d.granted && d.token) {
+          state.textContent = srv.available
+            ? 'On. ' + (srv.devices || 1) + ' device registered.'
+            : 'Allowed on this phone, but the server cannot send yet.';
+          btn.textContent = 'Allowed'; btn.disabled = true;
+          test.disabled = !srv.available;
+          return;
+        }
+        state.textContent = d.granted ? 'Allowed — finishing registration…' : 'Not switched on yet.';
+        btn.textContent = d.granted ? 'Retry' : 'Turn on'; btn.disabled = false;
+        test.disabled = true;
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          await native.pushRequest();
+          /* The token arrives in a delegate callback a moment after the
+             prompt is answered, so the first sync can be too early. */
+          await new Promise(r => setTimeout(r, 1200));
+          await native.pushSync();
+        } catch (e) {}
+        paint();
+      });
+
+      test.addEventListener('click', async () => {
+        test.disabled = true; out.textContent = 'Sending…';
+        try {
+          const r = await fetch('/api/push/test', { method: 'POST', credentials: 'same-origin' });
+          const j = await r.json();
+          out.textContent = j.ok ? 'Sent. It should appear in a moment.' : (j.error || 'It could not be sent.');
+        } catch (e) { out.textContent = 'It could not be sent.'; }
+        test.disabled = false;
+      });
+
+      paint();
+    })();
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {

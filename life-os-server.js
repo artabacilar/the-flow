@@ -406,6 +406,11 @@ try { whoop = require('./flow-whoop'); } catch (e) { whoop = null; }
    the file simply does not offer the route, rather than failing to boot. */
 let mcp = null;
 try { mcp = require('./flow-mcp'); } catch (e) { mcp = null; }
+/* Push. Optional the same way, and for the same reason: a checkout without
+   the file, or a deploy without APNs credentials, still boots and still
+   serves everything else. The routes answer honestly instead of 404ing. */
+let push = null;
+try { push = require('./flow-push'); } catch (e) { push = null; }
 // -------------------------------------------------------------------------
 /* ---------- the two pages the App Store asks for --------------------------
  *
@@ -666,6 +671,21 @@ const server = http.createServer(async (req, res) => {
        this origin as an ordinary navigation. `store` is already theirs;
        `rawStore` is handed over separately because the tokens must not land
        anywhere /api/all can reach — see flow-whoop.js. */
+    /* ── Push ──
+       Beside WHOOP, and for the same reason it is beside WHOOP: a device
+       token is the means of reaching somebody, not a fact about them, so it
+       goes in the raw store where /api/all can never mirror it into a
+       browser. */
+    if (p.indexOf('/api/push/') === 0) {
+      if (!push) return json(res, 503, { error: 'This build has no notifications module.' });
+      const done = await push.handle(req, res, {
+        path: p, uid: req.__flowUid || null,
+        raw: rawStore, json, readBody
+      });
+      if (done) return;
+      res.writeHead(404); return res.end('Not found');
+    }
+
     if (p.indexOf('/api/whoop') === 0) {
       if (!whoop) return json(res, 503, { error: 'This build has no WHOOP module.' });
       const done = await whoop.handle(req, res, {
