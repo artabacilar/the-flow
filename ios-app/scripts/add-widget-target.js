@@ -82,7 +82,24 @@ ${body}</dict>
  * how you say you are not asking for them. */
 const HEALTHKIT = '\t<key>com.apple.developer.healthkit</key>\n\t<true/>\n';
 
-fs.writeFileSync(path.join(projDir, 'App', 'App.entitlements'), entPlist(HEALTHKIT));
+/* Push.
+ *
+ * `development` here is not a mistake and not a thing to "fix" before
+ * shipping. The value in the entitlements file governs the DEVELOPMENT build;
+ * when Xcode exports for the App Store it rewrites it to `production` from
+ * the distribution profile. Hard-coding `production` instead breaks every
+ * build you can actually run on a phone from Xcode, because a production
+ * entitlement with a development profile fails to register and the token
+ * never arrives — the failure is silent, in a delegate nobody is watching.
+ *
+ * Which Apple host to send to is therefore not decided here. The device
+ * reports its own environment at registration (FlowPush.env) and the server
+ * sends each token to the host it belongs to, because a sandbox token posted
+ * to the production host answers BadDeviceToken and looks exactly like a
+ * broken signing key. */
+const PUSH = '\t<key>aps-environment</key>\n\t<string>development</string>\n';
+
+fs.writeFileSync(path.join(projDir, 'App', 'App.entitlements'), entPlist(HEALTHKIT + PUSH));
 fs.writeFileSync(path.join(wdir, WIDGET + '.entitlements'), entPlist(''));
 
 /* The extension point is what makes iOS treat this bundle as a widget rather
