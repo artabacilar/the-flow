@@ -821,6 +821,7 @@ if (remind && push) {
       return Object.values(users).map((u) => u && u.id).filter(Boolean);
     },
     sendToUser: push.sendToUser,
+    canSend: push.configured,
     nsPrefix: flowAuth.nsPrefix,
     log: (m) => console.error(m)
   });

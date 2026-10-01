@@ -149,6 +149,16 @@ async function tickUser(deps, uid, now) {
 
 async function tick(deps, now) {
   now = now || new Date();
+  /* Nothing below can produce a notification if there is no way to send one,
+     and the account list is a round trip to Upstash. Once a minute, for ever,
+     to reach a conclusion already known before the call is made — a cost
+     somebody pays in their database quota rather than anywhere visible. So
+     the question is asked here, where it is free.
+
+     Checked per tick rather than once at start-up: credentials arriving is a
+     restart on Render, but this way a deploy that gains them does not depend
+     on that being true. */
+  if (deps.canSend && !deps.canSend()) return [];
   let uids = [];
   try { uids = await deps.users(); } catch (e) { return []; }
   const out = [];
