@@ -382,6 +382,25 @@ extension FlowViewController: WKScriptMessageHandler {
             health.read(days: days) { [weak self] payload in self?.answer(id, with: payload) }
             return
 
+        case "pushStatus":
+            FlowPush.status { [weak self] state in self?.answer(id, with: state) }
+            return
+
+        case "pushRequest":
+            /// Two asynchronous steps — the system prompt, then iOS handing
+            /// over a token — so like voiceRequest this answers late.
+            FlowPush.request { [weak self] state in self?.answer(id, with: state) }
+            return
+
+        case "pushSync":
+            /// The page calls this after sign-in. The token is bound to a
+            /// phone; which account it belongs to is only known once somebody
+            /// is signed in, and that happens in the web view, not here.
+            FlowPush.registerWithServer { okd in
+                DispatchQueue.main.async { self.answer(id, with: ["ok": okd]) }
+            }
+            return
+
         case "clear":
             /// Signing out has to take the widget's copy with it. A widget left
             /// showing a signed-out person's day is the worst version of this bug.

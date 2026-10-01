@@ -15,7 +15,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         w.backgroundColor = FlowTheme.background
         w.makeKeyAndVisible()
         window = w
+        /* Not a permission prompt — only a token refresh for a phone that has
+           already said yes. iOS hands out a new token after a reinstall or a
+           restore without telling anybody, and a server holding the old one
+           pushes into nothing, silently, forever. */
+        FlowPush.refreshIfAlreadyAllowed()
         return true
+    }
+
+    /* iOS answers registerForRemoteNotifications() here, asynchronously and
+       possibly long after the call. */
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken token: Data) {
+        FlowPush.deviceToken = token.map { String(format: "%02x", $0) }.joined()
+        FlowPush.lastError = nil
+        FlowPush.registerWithServer()
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        /* The common causes are no Push Notifications capability on the
+           target, or a Simulator older than iOS 16 — neither of which the
+           person can do anything about, so it is logged, not shown. */
+        FlowPush.deviceToken = nil
+        FlowPush.lastError = error.localizedDescription
+        NSLog("[flow/push] registration failed: %@", error.localizedDescription)
     }
 }
 
