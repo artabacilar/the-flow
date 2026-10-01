@@ -35,7 +35,13 @@ let store = {
     return Object.keys(DATA).filter(k=>rx.test(k));
   }
 };
+const rawStore = store;                                     // EDIT 2a: before protect
 store = flowAuth.protect(store);                            // EDIT 2
+/* EDIT 2b: the push module, mirroring life-os-server.js. This file is a
+   hand-kept copy of the server's routing, so a route added there and not
+   here is a route the suites cannot see — tests would pass against a server
+   that does not have the feature. test-audit guards the pair. */
+let push=null; try{ push=require('../flow-push'); }catch(e){ push=null; }
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}
 function json(res,code,obj){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
 const server=http.createServer(async(req,res)=>{
@@ -107,6 +113,13 @@ const server=http.createServer(async(req,res)=>{
         'Cache-Control':'public, max-age=31536000, immutable'});
       return res.end(fs.readFileSync(f));}
     if(p==='/'||p==='/index.html'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(shell());}
+    if(p.indexOf('/api/push/')===0){                           // EDIT 2c
+      if(!push) return json(res,503,{error:'This build has no notifications module.'});
+      const done = await push.handle(req,res,{
+        path:p, uid:req.__flowUid||null, raw:rawStore, json, readBody
+      });
+      if(done) return;
+    }
     res.writeHead(404);res.end('Not found');
   }catch(e){ json(res,500,{error:String(e&&e.message||e)}); }
 });
