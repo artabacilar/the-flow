@@ -146,6 +146,34 @@ const account = (tz, rocks, extra) => Object.assign({
   ok('and it used the default zone, which is Istanbul, so it sent',
      bogus.sent.length === 1, bogus.sent);
 
+  console.log('\n— and it costs nothing at all when it cannot send —');
+  /* Every tick that gets past this asks Upstash for the account list. Once a
+     minute, for ever, to reach a conclusion that was already knowable for
+     free. That is a bill somebody pays in their database quota rather than
+     anywhere they would think to look. */
+  const idle = harness(account('Europe/Istanbul', { '2026-W40': [rock] }));
+  let asked = 0;
+  const realUsers = idle.deps.users;
+  idle.deps.users = async () => { asked++; return realUsers(); };
+  idle.deps.canSend = () => false;
+  const idleOut = await remind.tick(idle.deps, instant);
+  ok('it does not even ask who the accounts are', asked === 0, asked);
+  ok('and sends nothing', idle.sent.length === 0, idle.sent);
+  ok('returning an empty tick rather than throwing', Array.isArray(idleOut) && idleOut.length === 0, idleOut);
+
+  const live = harness(account('Europe/Istanbul', { '2026-W40': [rock] }));
+  live.deps.canSend = () => true;
+  await remind.tick(live.deps, instant);
+  ok('and when it can send, it still does', live.sent.length === 1, live.sent);
+
+  /* A deps object from before this existed must keep working, or the module
+     is only correct when the caller remembers to pass something. */
+  const noFlag = harness(account('Europe/Istanbul', { '2026-W40': [rock] }));
+  delete noFlag.deps.canSend;
+  await remind.tick(noFlag.deps, instant);
+  ok('a caller that passes no such check is not silently switched off',
+     noFlag.sent.length === 1, noFlag.sent);
+
   console.log('\n— the server actually starts it —');
   const fs = require('fs');
   const srv = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
@@ -156,6 +184,7 @@ const account = (tz, rocks, extra) => Object.assign({
   /* Without both halves there is nothing to send with, and a tick that calls
      an absent sender every minute is just an error loop. */
   ok('only when the sender exists too', /if \(remind && push\)/.test(srv));
+  ok('and hands it the question it can answer for free', /canSend:\s*push\.configured/.test(srv));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
