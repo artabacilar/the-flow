@@ -277,6 +277,8 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "🔎 Routine audit — kept {}, changed {}, cut {}": "🔎 Rutin denetimi — {} korundu, {} değişti, {} kesildi",
   "🔒 Not signed in": "🔒 Oturum açılmadı",
   "📣 Push notifications": "📣 Anlık bildirimler",
+  "Remind me about Big Rocks": "Büyük Taşları bana hatırlat",
+  "At the time on the rock, on the day it is planned for.": "Taşın üzerindeki saatte, planlandığı gün.",
   "Reminders that arrive on the phone whether or not the app is open. Only available inside the iPhone app — a browser cannot receive these.": "Uygulama açık olsun olmasın telefona gelen hatırlatmalar. Yalnızca iPhone uygulamasında çalışır — tarayıcı bunları alamaz.",
   "Allow notifications": "Bildirimlere izin ver",
   "Send me a test notification": "Bana deneme bildirimi gönder",

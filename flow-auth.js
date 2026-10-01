@@ -1882,4 +1882,7 @@ function attach(server) {
   return server;
 }
 
-module.exports = { protect, gate, attach, _internals: { hashPassword, verifyPassword, parseJar } };
+/* nsPrefix is exported because the reminder scheduler reads people's sections
+   straight out of the raw store, and a second copy of this rule living in
+   another file is a silent whole-account miss the first time either changes. */
+module.exports = { protect, gate, attach, nsPrefix, USERS_KEY, _internals: { hashPassword, verifyPassword, parseJar, nsPrefix } };

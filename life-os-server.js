@@ -411,6 +411,11 @@ try { mcp = require('./flow-mcp'); } catch (e) { mcp = null; }
    serves everything else. The routes answer honestly instead of 404ing. */
 let push = null;
 try { push = require('./flow-push'); } catch (e) { push = null; }
+/* The minute tick that decides when a reminder is due. Separate from the
+   sender on purpose: one knows how to reach a phone, the other knows what
+   somebody planned, and only the second needs to understand weeks. */
+let remind = null;
+try { remind = require('./flow-remind'); } catch (e) { remind = null; }
 // -------------------------------------------------------------------------
 /* ---------- the two pages the App Store asks for --------------------------
  *
@@ -802,6 +807,24 @@ flowAuth.attach(server);
 /* Read the pack once, at boot. Re-reading it per request would let a deploy be
    observed half-applied — the new HTML with the old pack, or the reverse. */
 PACK_V = packVersion();
+
+/* Started after the store and auth exist, and only when both halves are
+   present. It reads the account list straight from the raw store, because
+   there is no signed-in request to scope it to — this is the one thing in the
+   server that acts for everybody rather than for a caller. */
+if (remind && push) {
+  remind.start({
+    raw: rawStore,
+    users: async () => {
+      const v = await rawStore.get(flowAuth.USERS_KEY);
+      const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
+      return Object.values(users).map((u) => u && u.id).filter(Boolean);
+    },
+    sendToUser: push.sendToUser,
+    nsPrefix: flowAuth.nsPrefix,
+    log: (m) => console.error(m)
+  });
+}
 
 server.listen(PORT, '0.0.0.0', () => {
   const ip = lanIP();

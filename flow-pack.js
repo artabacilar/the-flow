@@ -305,6 +305,7 @@ const SETTINGS_DEFAULTS = {
   ocrAutoFill: true,
   bankProvider: 'none',
   statementDateFormat: 'auto',
+  pushRemindRocks: true,         // reminders at a rock's own time
   upgradeVisuals: true,
   breakdownForm: 'donut',
   categories: DEFAULT_CATEGORIES.slice(),
@@ -3387,6 +3388,8 @@ const SettingsUI = {
         <p class="flow-sub">Reminders that arrive on the phone whether or not the app is open. Only available inside the iPhone app — a browser cannot receive these.</p>
         <div class="flow-switch"><div class="t"><b>Allow notifications</b><span id="pushState">Checking…</span></div>
           <button class="flow-btn" id="pushBtn" disabled>…</button></div>
+        <div class="flow-switch"><div class="t"><b>Remind me about Big Rocks</b><span>At the time on the rock, on the day it is planned for.</span></div>
+          <input type="checkbox" data-s="pushRemindRocks" data-type="bool" ${s.pushRemindRocks !== false ? 'checked' : ''}></div>
         <div style="margin-top:10px"><button class="flow-btn" id="pushTestBtn" disabled>Send me a test notification</button>
           <span class="flow-sub" id="pushTestOut" style="margin-left:10px"></span></div>
       </div>
