@@ -41,11 +41,15 @@ No Xcode project, and Xcode is not needed. The Command Line Tools are enough
 (`xcode-select --install`; it says so if they are already there):
 
     cd mac-app
-    ./build.sh
+    bash build.sh
+
+(`bash build.sh`, not `./build.sh`: the file reaches GitHub through the web
+uploader, which does not keep the executable bit, so on a fresh clone
+`./build.sh` answers "permission denied".)
 
 That compiles for Apple silicon and Intel, assembles `build/The Flow.app`,
 signs it for this Mac only, and opens it. It runs on macOS 13.0 or later. You should get the same window as
-the Chrome one, minus Chrome. `./build.sh app` does the same without opening.
+the Chrome one, minus Chrome. `bash build.sh app` does the same without opening.
 
 What it does, so none of it is magic: `swiftc` on `native/*.swift` once per
 architecture; `lipo` to join them; an Info.plist and the icon into the bundle;
@@ -85,7 +89,7 @@ Once, to set up:
 
 Every release:
 
-    FLOW_BUILD=2 ./build.sh store
+    FLOW_BUILD=2 bash build.sh store
 
 (`FLOW_BUILD` must go up each upload; `FLOW_VERSION` defaults to 1.0.) It
 checks the profile is for this app and is not a development profile —
@@ -143,7 +147,7 @@ call can be written once for both shells.
   Mac. What *has* been checked, from Linux: every file parses as Swift
   (tree-sitter), and `tests/test-mac.js` pins the things that fail silently —
   the entry point, menu wiring, both ends of the bridge, the plists, the
-  bundle id, the icon. Type-checking happens on the first `./build.sh`, and
+  bundle id, the icon. Type-checking happens on the first `bash build.sh`, and
   that is the real test.
 - No widget. The iOS one is WidgetKit and would port, but it is not wired up.
 - No HealthKit, deliberately: it does not exist on macOS. `FlowHealth` from

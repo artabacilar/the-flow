@@ -1,9 +1,9 @@
 #!/bin/bash
 # The Flow for macOS — built without opening Xcode.
 #
-#   ./build.sh          build, sign for this Mac only, and open it   (default)
-#   ./build.sh app      build and sign for this Mac only; do not open
-#   ./build.sh store    build, sign for the Mac App Store, and package a .pkg
+#   bash build.sh          build, sign for this Mac only, and open it   (default)
+#   bash build.sh app      build and sign for this Mac only; do not open
+#   bash build.sh store    build, sign for the Mac App Store, and package a .pkg
 #                       for Transporter. Needs the two distribution
 #                       certificates and a Mac App Store provisioning profile —
 #                       see README.md, "Shipping it".
