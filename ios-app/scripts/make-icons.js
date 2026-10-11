@@ -96,7 +96,10 @@ function png(width, height, rgb) {
 }
 
 /* ---- the drawing -------------------------------------------------------- */
-function draw(S, variant) {
+/* Raw RGB, S*S*3 bytes. Split from the PNG step so the Mac icon
+   (mac-app/scripts/make-mac-icon.js) can composite the same artwork onto
+   its own canvas instead of redrawing it from different numbers. */
+function drawRaw(S, variant) {
   const SS = 3;                       /* subsamples per axis, for smooth edges */
   const px = Buffer.alloc(S * S * 3);
 
@@ -182,8 +185,15 @@ function draw(S, variant) {
       px[o + 2] = Math.max(0, Math.min(255, Math.round(b)));
     }
   }
-  return png(S, S, px);
+  return px;
 }
+
+function draw(S, variant) { return png(S, S, drawRaw(S, variant)); }
+
+module.exports = { drawRaw, A };
+
+/* Only write files when run, not when required. */
+if (require.main === module) {
 
 fs.mkdirSync(OUT, { recursive: true });
 for (const [name, variant] of [
@@ -208,3 +218,4 @@ fs.writeFileSync(path.join(OUT, 'Contents.json'), JSON.stringify({
 }, null, 2) + '\n');
 console.log('  Contents.json');
 console.log('ok: ' + OUT);
+}
