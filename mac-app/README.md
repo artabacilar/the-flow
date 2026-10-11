@@ -13,10 +13,13 @@ It is the same trade the iOS shell makes. The app *is* the website. Every
 server deploy reaches it with no new build and no review. Xcode is only
 touched when the shell itself changes.
 
+    native/main.swift               the entry point (see why it is not @main)
     native/AppDelegate.swift        the window, and the menu bar
     native/FlowWebController.swift  the web view, links, dialogs, offline
     native/FlowMacBridge.swift      what is injected before the page runs
     native/FlowNotifications.swift  reminders
+    build.sh                        compile, bundle, sign, package
+    Resources/AppIcon.icns          the icon (made by scripts/make-mac-icon.js)
 
 ## The one line that matters
 
@@ -32,35 +35,66 @@ Every other media query still reaches the real implementation, which matters:
 the layout is driven by width queries, and breaking those would trade one
 wrong answer for a dozen.
 
-## Building it the first time
+## Building it
 
-1. **Xcode → File → New → Project → macOS → App.**
-   - Product Name: `The Flow`
-   - Team: **ABKO İÇ VE DIŞ TİCARET LİMİTED ŞİRKETİ (CFDZ32QZUR)**
-   - Organization Identifier: `com.abko` → bundle id becomes `com.abko.theflow`
-   - Interface: **AppKit** · Language: **Swift**
+No Xcode project, and Xcode is not needed. The Command Line Tools are enough
+(`xcode-select --install`; it says so if they are already there):
 
-2. **Delete the storyboard**, or two windows open at launch and one is empty.
-   - Delete `Main.storyboard`.
-   - Target → Info → remove the **Main storyboard file base name** row
-     (`NSMainStoryboardFile`).
+    cd mac-app
+    ./build.sh
 
-3. **Replace the generated `AppDelegate.swift`** with the one in `native/`,
-   and drag in the other three files. Tick *Copy items if needed*.
+That compiles for Apple silicon and Intel, assembles `build/The Flow.app`,
+signs it for this Mac only, and opens it. It runs on macOS 13.0 or later. You should get the same window as
+the Chrome one, minus Chrome. `./build.sh app` does the same without opening.
 
-4. **Signing & Capabilities:**
-   - **App Sandbox** → Network → tick **Outgoing Connections (Client)**.
-     Without it the window is permanently on the offline page.
-   - **Push Notifications** is *not* needed — these are local notifications.
+What it does, so none of it is magic: `swiftc` on `native/*.swift` once per
+architecture; `lipo` to join them; an Info.plist and the icon into the bundle;
+the sandbox entitlements (outgoing network only); `codesign`. Every step is in
+`build.sh`, in that order.
 
-5. **Info.plist** — add:
+Two things it does on purpose:
 
-       NSUserNotificationsUsageDescription
-       The Flow uses notifications to remind you about your Big Rocks and habits.
+- **Swift 5 language mode, pinned.** The current compiler is Swift 6, whose
+  strict concurrency turns the WebKit callbacks into errors. Moving to it is a
+  change to make deliberately, not a side effect of an update.
+- **Sandboxed even for the local build.** It runs exactly as it will from the
+  store, so a sandbox problem shows up here rather than in review.
 
-6. Set **Minimum Deployment** to macOS 13.0.
+The icon is the iOS artwork on Apple's macOS grid — 824 points of rounded
+square inside 1024, transparent margin. `node scripts/make-mac-icon.js` redraws
+it; the result is committed so the build never needs Node.
 
-Run it. You should get the same window as the Chrome one, minus Chrome.
+## Shipping it
+
+Once, to set up:
+
+1. **Two certificates.** Xcode → Settings → Accounts → your Apple ID →
+   Manage Certificates → **+** → **Apple Distribution**, then again for
+   **Mac Installer Distribution**. (Without Xcode: developer.apple.com →
+   Certificates → **+**, with a signing request from Keychain Access.) Check:
+
+       security find-identity -v
+
+   should list both, each ending `(CFDZ32QZUR)`.
+
+2. **A provisioning profile.** developer.apple.com → Profiles → **+** →
+   Distribution → **Mac App Store Connect** → App ID `com.abko.theflow` (the
+   iOS one; App IDs are shared across platforms) → the Apple Distribution
+   certificate → download. Save it here as
+   `mac-app/TheFlow_MacAppStore.provisionprofile`. It is gitignored.
+
+Every release:
+
+    FLOW_BUILD=2 ./build.sh store
+
+(`FLOW_BUILD` must go up each upload; `FLOW_VERSION` defaults to 1.0.) It
+checks the profile is for this app and is not a development profile —
+either mistake otherwise signs cleanly and fails at upload, with a message
+that names neither — then signs and writes `build/TheFlow-1.0-2.pkg`.
+
+Upload that with **Transporter** (free, Mac App Store), signed in as the
+account holder. Then in App Store Connect, pick the build on the macOS
+version and submit.
 
 ## Universal Purchase, and what it replaces
 
@@ -68,13 +102,15 @@ To ship this on the same App Store listing rather than as a second app:
 
 - Same bundle id as iOS — `com.abko.theflow` — and in App Store Connect,
   **Add Platform → macOS** on the existing app record.
-- Apple then stops offering the iOS build on the Mac App Store. From their
-  own help: *"When an app supports universal purchase and already has a
-  presence on the Mac App Store through the macOS platform, you won't have
-  the option to offer the iOS app on the Mac App Store."* That is the point —
-  this replaces "Designed for iPad", it does not sit beside it.
-- The **"Not verified for macOS"** label on the listing belongs to the
-  Designed-for-iPad route and goes with it.
+- This replaces "Designed for iPad"; it does not sit beside it. **But only
+  when the macOS version is released**, not when the platform is added. From
+  Apple's help: adding a macOS app *"…releasing it to the store will replace
+  the iOS app on the Mac App Store. Existing users of the iOS app will be
+  updated to the macOS app."* So the platform can be added and filled in
+  while there is no Mac build yet, and the current Mac listing keeps working
+  until the day the native one goes live.
+- The **"Not verified for macOS"** label belongs to the Designed-for-iPad
+  route and goes with it, on that same day.
 
 ## Reminders, and why they are not push
 
@@ -103,8 +139,12 @@ call can be written once for both shells.
 
 ## Not yet done here
 
-- **Nothing in this folder has been compiled.** It was written without a Mac.
-  Expect to fix something on first build.
+- **Nothing in this folder has been compiled yet.** It was written without a
+  Mac. What *has* been checked, from Linux: every file parses as Swift
+  (tree-sitter), and `tests/test-mac.js` pins the things that fail silently —
+  the entry point, menu wiring, both ends of the bridge, the plists, the
+  bundle id, the icon. Type-checking happens on the first `./build.sh`, and
+  that is the real test.
 - No widget. The iOS one is WidgetKit and would port, but it is not wired up.
 - No HealthKit, deliberately: it does not exist on macOS. `FlowHealth` from
   the iOS shell must not be added to this target, and if the two are ever
