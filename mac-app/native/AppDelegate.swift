@@ -16,7 +16,8 @@ import WebKit
 /// window, which is a desktop viewport, which is the layout you actually
 /// wanted. It is deliberately thin — the app is the website, exactly as the
 /// iOS shell is, and every server deploy still reaches it with no new build.
-@main
+///
+/// Started from main.swift, not `@main` — see there for why that matters.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var window: NSWindow!
@@ -43,13 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.backgroundColor = NSColor(red: 0.039, green: 0.043, blue: 0.051, alpha: 1)
         window.isReleasedWhenClosed = false
 
-        /* Remembers where it was and how big, per the standard AppKit
-           mechanism, so it opens where you left it rather than centred every
-           time. setFrameAutosaveName returns false when it restored nothing,
-           which is the first launch — that is when centring is right. */
-        if !window.setFrameAutosaveName("FlowMainWindow") {
-            window.center()
-        }
+        /* Centre first, then name the frame. Naming it restores the saved
+           frame when there is one, which overrides the centring — so the
+           first launch is centred and every later one opens where it was
+           left. (The return value of setFrameAutosaveName is not "did it
+           restore"; it is false only when another window already uses the
+           name. Reading it the other way round put the first launch in the
+           bottom-left corner of the screen.) */
+        window.center()
+        window.setFrameAutosaveName("FlowMainWindow")
 
         buildMenu()
         window.makeKeyAndOrderFront(nil)
