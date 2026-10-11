@@ -16,3 +16,12 @@ ios-app/native/Assets/
 
 # Screenshots the theme check writes; useful locally, noise in the repo.
 .theme-shots/
+
+# The Mac build: its output, and the provisioning profile (downloaded per
+# account from the developer site, and nothing anyone else should have).
+mac-app/build/
+mac-app/*.provisionprofile
+# The 1024 preview is regenerated on demand. AppIcon.icns itself IS committed,
+# unlike the iOS icons above, and on purpose: the Mac build has to work with
+# nothing but the Command Line Tools, and Node is not one of them.
+mac-app/Resources/AppIcon-1024.png

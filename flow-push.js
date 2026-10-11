@@ -126,12 +126,46 @@ async function writeDevices(raw, uid, list) {
   await raw.set(devKey(uid), JSON.stringify(list));
 }
 
+/* ── Present is not the same as usable ───────────────────────────────────
+   configured() only asks whether the three variables are non-empty. A .p8
+   pasted with a line missing, or the wrong .pem pasted entirely, is still
+   three non-empty variables — so the status said "available" and the first
+   anybody heard of it was a phone that never buzzed, weeks later.
+
+   ready() tries once: is it an EC P-256 key (what Apple issues, and the only
+   kind ES256 means), and does it actually sign? The answer is kept for the
+   life of the process, because the variables cannot change without a
+   redeploy, and a redeploy is a new process.
+
+   What this cannot catch: a good key under the wrong Key ID, or the right key
+   with the wrong team. Both sign perfectly here; only Apple can refuse them,
+   and /api/push/test is how to ask. */
+let usable = null;
+function ready() {
+  if (!configured()) return false;
+  if (usable === null) {
+    try {
+      const k = crypto.createPrivateKey(PRIVATE_KEY);
+      const curve = k.asymmetricKeyDetails && k.asymmetricKeyDetails.namedCurve;
+      if (k.asymmetricKeyType !== 'ec' || curve !== 'prime256v1') {
+        throw new Error('expected an EC P-256 key, got ' + k.asymmetricKeyType + (curve ? ' ' + curve : ''));
+      }
+      authToken();
+      usable = true;
+    } catch (e) {
+      usable = false;
+      logWhy('key', 'APNS_PRIVATE_KEY is not a usable APNs key — ' + e.message);
+    }
+  }
+  return usable;
+}
+
 /* ── Sending ──────────────────────────────────────────────────────────────
    Returns what happened per device rather than a bare boolean, because the
    interesting failure is "Apple says this device is gone", and the only
    correct response to it is to stop keeping the token. */
 async function sendToUser(raw, uid, note) {
-  if (!configured()) return { ok: false, error: PUSH_OFF, sent: 0 };
+  if (!ready()) return { ok: false, error: PUSH_OFF, sent: 0 };
   const devices = await readDevices(raw, uid);
   if (!devices.length) return { ok: false, error: 'No device is registered for notifications.', sent: 0 };
 
@@ -187,7 +221,7 @@ async function handle(req, res, ctx) {
     json(res, 200, {
       /* Deliberately not "why". A person cannot act on a missing server
          credential, and the log already says it plainly. */
-      available: configured(),
+      available: ready(),
       devices: devices.length,
       platforms: devices.map((d) => d.platform || 'ios')
     });
@@ -219,7 +253,7 @@ async function handle(req, res, ctx) {
        this into an unbounded list. */
     const kept = devices.slice(-10);
     await writeDevices(raw, uid, kept);
-    json(res, 200, { ok: true, devices: kept.length, available: configured() });
+    json(res, 200, { ok: true, devices: kept.length, available: ready() });
     return true;
   }
 
@@ -250,10 +284,11 @@ module.exports = {
   handle,
   sendToUser,
   configured,
+  ready,
   _internals: {
     PUSH_OFF, PUSH_FAILED,
     readDevices, writeDevices, devKey, authToken,
     setSender(fn) { sender = fn || apnsPost; },
-    resetJwt() { cachedJwt = null; cachedAt = 0; }
+    resetJwt() { cachedJwt = null; cachedAt = 0; usable = null; }
   }
 };
