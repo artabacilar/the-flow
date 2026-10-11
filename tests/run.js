@@ -94,6 +94,7 @@ const SUITES = [
   ['write',    'test-write.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['push',     'test-push.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['remind',   'test-remind.js',   {}],
+  ['mac',      'test-mac.js',      {}],
   ['voice',    'test-voice.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['whoop',    'test-whoop.js',    {}],
   ['refresh',  'test-refresh.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],

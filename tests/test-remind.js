@@ -184,7 +184,9 @@ const account = (tz, rocks, extra) => Object.assign({
   /* Without both halves there is nothing to send with, and a tick that calls
      an absent sender every minute is just an error loop. */
   ok('only when the sender exists too', /if \(remind && push\)/.test(srv));
-  ok('and hands it the question it can answer for free', /canSend:\s*push\.configured/.test(srv));
+  /* ready, not configured: three non-empty variables holding a broken key is
+     not a sender, and the tick should not wake every minute for one. */
+  ok('and hands it the question that means "a send could work"', /canSend:\s*push\.ready\b/.test(srv));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);

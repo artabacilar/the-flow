@@ -156,6 +156,7 @@ const TOKEN_B = 'b'.repeat(64);
   });
 
   ok('with credentials present it reports itself available', push2.configured());
+  ok('and a real P-256 key is usable, not just present', push2.ready() === true);
 
   const out = await push2.sendToUser(raw, 'u1', { title: 'Rock', body: 'Two hours on the plan' });
   ok('it sent to the live device', out.ok && out.sent === 1, out);
@@ -196,6 +197,63 @@ const TOKEN_B = 'b'.repeat(64);
   await push2.sendToUser(raw, 'u1', { title: 'Again', body: 'x' });
   const after = String(seen[seen.length - 1].headers.authorization || '').replace(/^bearer /, '');
   ok('a second send presents the same token', after === before);
+
+  console.log('\n— a key that is there but broken —');
+  /* The case configured() alone cannot see: three non-empty variables, and a
+     key nothing can sign with. Before ready(), the status said "available"
+     here, and nobody found out until a phone never buzzed. */
+  const goodPem = process.env.APNS_PRIVATE_KEY;
+  const fresh = () => {
+    delete require.cache[require.resolve(path.join(__dirname, '..', 'flow-push.js'))];
+    return require(path.join(__dirname, '..', 'flow-push.js'));
+  };
+  const statusOf = async (mod) => {
+    let got = null;
+    await mod.handle({ method: 'GET' }, {}, { path: '/api/push/status', uid: 'u1', raw,
+      json: (_r, code, body) => { got = { code, body }; }, readBody: async () => '' });
+    return got;
+  };
+  const silence = console.error; const logged = []; console.error = (m) => logged.push(String(m));
+  try {
+    /* A paste that lost a line out of the middle — the commonest accident. */
+    const lines = goodPem.trim().split('\n');
+    process.env.APNS_PRIVATE_KEY = lines.slice(0, 2).concat(lines.slice(3)).join('\n') + '\n';
+    const torn = fresh();
+    ok('a key missing a line is still "configured"', torn.configured() === true);
+    ok('but it is not ready', torn.ready() === false);
+    const st = await statusOf(torn);
+    ok('so the status no longer claims it is available', st && st.body.available === false, st);
+    ok('and nothing is sent with it', (await torn.sendToUser(raw, 'u1', { title: 'x' })).ok === false);
+    ok('the log says why, for whoever reads it', logged.some((m) => /not a usable APNs key/.test(m)), logged);
+
+    /* The right shape of file, the wrong kind of key — say, a TLS key. It
+       signs; APNs would refuse it with a 403 that names nothing useful. */
+    const { generateKeyPairSync: gk } = require('node:crypto');
+    process.env.APNS_PRIVATE_KEY = gk('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+    const rsa = fresh();
+    ok('an RSA key is refused even though it signs', rsa.ready() === false);
+    /* The point of refusing it before sending: an RSA key signs without
+       complaint, so without this the server would call Apple with a token
+       Apple must reject — once per device, per reminder, every time. */
+    const calls = [];
+    rsa._internals.setSender(async (h, t) => { calls.push(t); return { status: 403, reason: 'InvalidProviderToken' }; });
+    await I.writeDevices(raw, 'u9', [{ token: TOKEN_A, env: 'production' }]);
+    const r9 = await rsa.sendToUser(raw, 'u9', { title: 'x' });
+    ok('and Apple is never called with it', r9.ok === false && calls.length === 0, { r9, calls: calls.length });
+    process.env.APNS_PRIVATE_KEY = gk('ec', { namedCurve: 'secp384r1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+    ok('and so is an EC key on the wrong curve', fresh().ready() === false);
+
+    /* Pasted as one line with literal \n — what some dashboards force. */
+    process.env.APNS_PRIVATE_KEY = goodPem.trim().split('\n').join('\\n');
+    const oneLine = fresh();
+    ok('a key pasted as one line with \\n escapes is accepted', oneLine.ready() === true);
+    const st2 = await statusOf(oneLine);
+    ok('and reported available', st2 && st2.body.available === true, st2);
+  } finally {
+    console.error = silence;
+    process.env.APNS_PRIVATE_KEY = goodPem;
+    fresh();
+  }
 
   console.log('\n— and the harness actually routes what the server routes —');
   /* tests/server-replica.js is a hand-kept copy of the server's routing, not
