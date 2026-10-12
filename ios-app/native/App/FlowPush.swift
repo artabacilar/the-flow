@@ -17,27 +17,42 @@ import UserNotifications
 /// us one, and the server treats a token it already has as a refresh rather
 /// than a second device.
 ///
-/// Sandbox and production are different token namespaces at Apple. A build
-/// from Xcode or TestFlight gets a sandbox token, and sending it to the
-/// production host answers BadDeviceToken — which looks exactly like a broken
-/// signing key and costs an afternoon. The device knows which it is; the
-/// server does not; so the device says.
+/// Sandbox and production are different token namespaces at Apple, and a
+/// token sent to the wrong host answers BadDeviceToken — which looks exactly
+/// like a broken signing key and costs an afternoon. The device knows which
+/// it is; the server does not; so the device says (see `env`).
 enum FlowPush {
 
     /// Set by the AppDelegate the moment iOS answers, read when the page asks.
     static var deviceToken: String?
     static var lastError: String?
 
-    #if DEBUG
-    static let env = "sandbox"
-    #else
-    /// A TestFlight build is a release build with a sandbox APNs entitlement.
-    /// The receipt's name is the only reliable tell at runtime.
-    static var env: String {
-        let receipt = Bundle.main.appStoreReceiptURL?.lastPathComponent ?? ""
-        return receipt == "sandboxReceipt" ? "sandbox" : "production"
-    }
-    #endif
+    /// Which APNs environment this build's tokens belong to — read from what
+    /// the build was actually signed with, not guessed.
+    ///
+    /// A build installed from Xcode carries embedded.mobileprovision, and its
+    /// aps-environment says which: `development` means sandbox. A build from
+    /// App Store Connect — the App Store, and TestFlight too — carries no
+    /// profile at all and is always production.
+    ///
+    /// An earlier version guessed from the receipt: TestFlight's is named
+    /// "sandboxReceipt". That is the in-app-purchase sandbox, not APNs, and it
+    /// labelled every TestFlight phone sandbox — so every send to one would
+    /// have come back BadDeviceToken.
+    static let env: String = {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              /* The profile is a signed envelope around a plain-text plist.
+                 Latin-1 maps every byte to a character, so this never fails,
+                 and the plist part reads as itself. */
+              let text = String(data: data, encoding: .isoLatin1),
+              let key = text.range(of: "<key>aps-environment</key>") else { return "production" }
+        let rest = text[key.upperBound...]
+        guard let open = rest.range(of: "<string>"),
+              let close = rest.range(of: "</string>"),
+              open.upperBound <= close.lowerBound else { return "production" }
+        return rest[open.upperBound..<close.lowerBound] == "development" ? "sandbox" : "production"
+    }()
 
     /// What the page needs to draw the switch correctly: whether iOS has been
     /// asked, what it said, and whether the server has a token for us.
