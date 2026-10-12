@@ -184,6 +184,14 @@ $STORE_KEYS
 ENTS
 plutil -lint -s "$ENT" || fail "entitlements did not validate"
 
+# ---- strip extended attributes ---------------------------------------------
+# Files that arrived by download (this folder from a zip, the profile from a
+# browser) carry com.apple.quarantine, and cp carries it into the bundle. App
+# Store Connect refuses any app containing it (error 91109), and only says so
+# after the upload. Done here for everything copied so far, and again in the
+# store branch after the provisioning profile goes in.
+xattr -cr "$APP"
+
 # ---- sign: this Mac only ---------------------------------------------------
 if [ "$MODE" != store ]; then
   # "-" is an ad-hoc signature: no certificate, valid on this machine only.
@@ -215,6 +223,11 @@ if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$PDEC" >/dev/null 2>&
   fail "that is a development profile (it lists devices). Make a 'Mac App Store Connect' distribution profile."
 fi
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+# The profile came from a browser download: quarantined. See above.
+xattr -cr "$APP"
+if [ -n "$(xattr -lr "$APP")" ]; then
+  fail "files in $APP still carry extended attributes — App Store Connect rejects those (91109)"
+fi
 
 # Identities by team, not by the full display name: the team's legal name has
 # Turkish characters in it, and matching on those is a quoting accident
