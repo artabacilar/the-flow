@@ -224,9 +224,18 @@ if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$PDEC" >/dev/null 2>&
 fi
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
 # The profile came from a browser download: quarantined. See above.
-xattr -cr "$APP"
-if [ -n "$(xattr -lr "$APP")" ]; then
-  fail "files in $APP still carry extended attributes — App Store Connect rejects those (91109)"
+xattr -cr "$APP" 2>/dev/null || true
+# Only quarantine is refused. macOS keeps some attributes no user can remove
+# (com.apple.provenance on Ventura and later); every Xcode build carries those
+# too, so they are reported, not fatal. A case match, not `| grep -q`, so
+# pipefail cannot turn an early grep exit into a silent pass.
+LEFT="$(xattr -lr "$APP" 2>/dev/null || true)"
+case "$LEFT" in
+  *com.apple.quarantine*)
+    fail "files in $APP still carry com.apple.quarantine — App Store Connect rejects that (91109)";;
+esac
+if [ -n "$LEFT" ]; then
+  say "note: attributes macOS keeps (not quarantine): $(printf '%s\n' "$LEFT" | awk -F': ' '{print $2}' | sort -u | tr '\n' ' ')"
 fi
 
 # Identities by team, not by the full display name: the team's legal name has
