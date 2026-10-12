@@ -35,6 +35,14 @@ const pbxPath = path.join(appDir, 'App.xcodeproj', 'project.pbxproj');
 /** Kept in one place because the widget target has to agree with it. */
 const DEPLOYMENT_TARGET = '17.0';
 
+/** The version, from ios-app/version.json — the one place it is written.
+ *  The app and the widget must carry the same version or App Store Connect
+ *  refuses the upload (ITMS-90473), and a version that is already on the
+ *  store cannot be uploaded again, so every release changes this file and
+ *  nothing else. add-widget-target.js reads the same file. */
+const { version: VERSION, build: BUILD } = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'version.json'), 'utf8'));
+
 /** Optional. Present, both targets sign automatically against it; absent,
  *  Xcode asks — which is the old behaviour, not a failure. */
 const TEAM = (() => {
@@ -71,13 +79,16 @@ for (const p of DEAD_PATHS) {
 
 /* ---- 2 · the sources that replace them ---------------------------------- */
 
-const COPY = [
-  ['native/App/AppDelegate.swift', 'AppDelegate.swift'],
-  ['native/App/FlowViewController.swift', 'FlowViewController.swift'],
-  ['native/Shared/FlowStore.swift', 'FlowStore.swift'],
-  ['native/App/FlowSpeech.swift', 'FlowSpeech.swift'],
-  ['native/App/FlowHealth.swift', 'FlowHealth.swift'],
-];
+/* Every Swift file in native/App, plus the one in native/Shared that both
+ * targets read — taken from the folders, not typed out. This list used to be
+ * written by hand, twice (here and in the Sources phase below), and the first
+ * file added after it was written — FlowPush.swift — was missing from both.
+ * AppDelegate and FlowViewController call it, so the generated project would
+ * not have compiled, while this script still printed "ok". */
+const swiftIn = (dir) => fs.readdirSync(path.join(root, dir))
+  .filter((f) => f.endsWith('.swift')).sort()
+  .map((f) => [dir + '/' + f, f]);
+const COPY = [...swiftIn('native/App'), ...swiftIn('native/Shared')];
 
 for (const [from, to] of COPY) {
   fs.copyFileSync(path.join(root, from), path.join(srcDir, to));
@@ -201,6 +212,8 @@ real(section('XCBuildConfiguration')).forEach((u) => {
    * sit at 17 so the widget can use `containerBackground` without a maze of
    * availability guards, and so there is only ever one number to change. */
   if (s.IPHONEOS_DEPLOYMENT_TARGET) s.IPHONEOS_DEPLOYMENT_TARGET = DEPLOYMENT_TARGET;
+  if (s.MARKETING_VERSION) s.MARKETING_VERSION = VERSION;
+  if (s.CURRENT_PROJECT_VERSION) s.CURRENT_PROJECT_VERSION = BUILD;
 
   /* Signing, written down rather than chosen from a menu. Picking a team by
    * hand is the step that has to be repeated on every machine, in every clone,
@@ -257,7 +270,22 @@ function addSource(fileName) {
   return true;
 }
 
-['FlowViewController.swift', 'FlowStore.swift', 'FlowSpeech.swift', 'FlowHealth.swift'].forEach(addSource);
+/* AppDelegate.swift is already in the generated project — the copy above
+   replaced its contents — so everything else that was copied is added. */
+COPY.map(([, to]) => to).filter((f) => f !== 'AppDelegate.swift').forEach(addSource);
+
+/* And then check the claim rather than trust it: every file that was copied
+   is in the App target's Sources phase. Missing one is not a warning — it is
+   a project that will not build, discovered in Xcode instead of here. */
+{
+  const inSources = new Set(section('PBXSourcesBuildPhase')[sourcesPhase].files
+    .map((f) => String(f.comment || '').replace(/ in Sources$/, '')));
+  const missing = COPY.map(([, to]) => to).filter((f) => !inSources.has(f));
+  if (missing.length) {
+    console.error('error: copied but not compiled: ' + missing.join(', '));
+    process.exit(1);
+  }
+}
 
 fs.writeFileSync(pbxPath, proj.writeSync());
 

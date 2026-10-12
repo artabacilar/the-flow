@@ -17,6 +17,10 @@ const GROUP  = 'group.' + BUNDLE;
 const WIDGET = 'FlowWidget';
 const WIDGET_BUNDLE = BUNDLE + '.' + WIDGET;
 
+/** Same file as make-native.js — see there. */
+const { version: VERSION, build: BUILD } = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'version.json'), 'utf8'));
+
 /** Same source as make-native.js: identity lives in capacitor.config.json. */
 const TEAM = (() => {
   try {
@@ -123,9 +127,9 @@ fs.writeFileSync(path.join(wdir, 'Info.plist'), `<?xml version="1.0" encoding="U
 \t<key>CFBundlePackageType</key>
 \t<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 \t<key>CFBundleShortVersionString</key>
-\t<string>1.0</string>
+\t<string>$(MARKETING_VERSION)</string>
 \t<key>CFBundleVersion</key>
-\t<string>1</string>
+\t<string>$(CURRENT_PROJECT_VERSION)</string>
 \t<key>NSExtension</key>
 \t<dict>
 \t\t<key>NSExtensionPointIdentifier</key>
@@ -227,8 +231,10 @@ settingsFor(target.uuid).forEach(s => {
   s.TARGETED_DEVICE_FAMILY = '"1,2"';
   s.SKIP_INSTALL = 'YES';
   s.GENERATE_INFOPLIST_FILE = 'NO';
-  s.MARKETING_VERSION = '1.0';
-  s.CURRENT_PROJECT_VERSION = '1';
+  /* From ios-app/version.json, like the app — the two must match or the
+     upload is refused. The Info.plist above reads these, not literals. */
+  s.MARKETING_VERSION = VERSION;
+  s.CURRENT_PROJECT_VERSION = BUILD;
   s.SWIFT_EMIT_LOC_STRINGS = 'YES';
   s.ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = 'AccentColor';
 });
