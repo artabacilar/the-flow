@@ -274,6 +274,68 @@ const TOKEN_B = 'b'.repeat(64);
   ok('both hand it the raw store, not the per-account one',
      /raw:\s*rawStore/.test(real) && /raw:\s*rawStore/.test(replica));
 
+  console.log('\n— a key that the paste damaged, and a key that was never a key —');
+  /* Production said, of the first real key: "DECODER routines::unsupported".
+     The usual causes are a paste that collapsed the line breaks, or carried
+     quotes, or lost the header — all of which still hold the whole key, so
+     they are rebuilt rather than refused. What cannot be rebuilt is reported
+     by shape, so the log says WHY without anybody revealing the secret. */
+  {
+    const good = process.env.APNS_PRIVATE_KEY;
+    const body = good.split('\n').filter((l) => l && !/-----/.test(l)).join('');
+    const quiet = console.error; const said = []; console.error = (m) => said.push(String(m));
+    const readyWith = (v) => { process.env.APNS_PRIVATE_KEY = v; return fresh().ready(); };
+    try {
+      ok('line breaks turned into spaces still works', readyWith(good.replace(/\n/g, ' ')) === true);
+      ok('line breaks removed altogether still works', readyWith(good.replace(/\n/g, '')) === true);
+      ok('Windows line endings still work', readyWith(good.replace(/\n/g, '\r\n')) === true);
+      ok('pasted with its quotes still works', readyWith('"' + good.trim() + '"') === true);
+      ok('just the body, no header or footer, still works', readyWith(body) === true);
+
+      said.length = 0;
+      ok('half a key is still refused', readyWith(good.slice(0, Math.floor(good.length / 2))) === false);
+      const line = said.find((m) => /not a usable APNs key/.test(m)) || '';
+      ok('and the log says what shape it was', /length \d+, lines \d+, BEGIN header yes, END footer no/.test(line), line);
+      said.length = 0;
+      ok('a file path instead of the file is refused', readyWith('/Users/me/Downloads/AuthKey_2FGJKZ2735.p8') === false);
+      ok('and the log says it looks like a path',
+         said.some((m) => /looks like a file path yes/.test(m)), said);
+
+      /* The point of describing the shape instead of the value. */
+      said.length = 0;
+      readyWith(good.slice(0, Math.floor(good.length / 2)));
+      const chunks = []; for (let i = 0; i + 16 <= body.length; i += 8) chunks.push(body.slice(i, i + 16));
+      ok('and no part of the key ever appears in the log',
+         said.length > 0 && !said.some((m) => chunks.some((c) => m.includes(c))));
+    } finally {
+      console.error = quiet;
+      process.env.APNS_PRIVATE_KEY = good;
+      fresh();
+    }
+  }
+
+  console.log('\n— the phone says which host its token belongs to, correctly —');
+  /* TestFlight builds are signed for distribution and use PRODUCTION APNs.
+     Their purchase receipt is still called "sandboxReceipt" — that is the
+     in-app-purchase sandbox — and the first version read it as the push
+     environment, which would have labelled every TestFlight phone sandbox
+     and had every send to one refused with BadDeviceToken. */
+  const fpSrc = require('fs').readFileSync(path.join(__dirname, '..', 'ios-app', 'native', 'App', 'FlowPush.swift'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  ok('the push environment is not guessed from the purchase receipt',
+     !/appStoreReceiptURL|sandboxReceipt/.test(fpSrc));
+  ok('it is read from the profile the build was signed with',
+     /embedded"\s*,\s*withExtension:\s*"mobileprovision"/.test(fpSrc) && /aps-environment/.test(fpSrc));
+  ok('only a development profile means sandbox',
+     /==\s*"development"\s*\?\s*"sandbox"\s*:\s*"production"/.test(fpSrc));
+  /* No profile is the App Store and TestFlight case. Every way out of the
+     parse that is not "found development" must land on production. */
+  const exits = fpSrc.match(/return\s+"(sandbox|production)"/g) || [];
+  ok('and no profile — App Store, TestFlight — means production', exits.length >= 2
+     && exits.every((e) => /production/.test(e)), exits);
+  ok('the server comment no longer says TestFlight is sandbox',
+     !/TestFlight or Xcode\s+build is sandbox/.test(require('fs').readFileSync(path.join(__dirname, '..', 'flow-push.js'), 'utf8')));
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
