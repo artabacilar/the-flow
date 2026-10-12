@@ -35,12 +35,50 @@ const PUSH_FAILED = 'That notification could not be sent just now. Try again sho
 
 const KEY_ID = process.env.APNS_KEY_ID || '';
 const TEAM_ID = process.env.APNS_TEAM_ID || '';
-const PRIVATE_KEY = (process.env.APNS_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+/* What a pasted .p8 turns into on its way into a dashboard box. Apple's file
+   is a PEM: a header line, the key in base64 wrapped at 64, a footer line.
+   Pasting it can collapse the line breaks into spaces, keep the quotes from
+   a .env file, carry Windows line endings, arrive as literal "\\n" escapes
+   (which some dashboards force), or lose the header and footer. Every one of
+   those still holds the same base64 body, so rebuild the PEM from the body
+   rather than asking anyone to paste it again. Anything that is not a base64
+   body is left alone, and ready() says what shape it was. */
+function normalizeKey(raw) {
+  let s = String(raw || '').trim();
+  if (s.length > 1 && /^(["']).*\1$/s.test(s)) s = s.slice(1, -1).trim();
+  s = s.replace(/\\n/g, '\n').replace(/\r/g, '');
+  if (!s) return '';
+  const m = s.match(/-----BEGIN ([A-Z ]+?)-----([\s\S]*?)-----END \1-----/);
+  const label = m ? m[1] : 'PRIVATE KEY';
+  const body = (m ? m[2] : s).replace(/\s+/g, '');
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return s;
+  return '-----BEGIN ' + label + '-----\n' + body.match(/.{1,64}/g).join('\n') + '\n-----END ' + label + '-----\n';
+}
+
+/* What the value looked like, in terms that say nothing about the key
+   itself: lengths, counts, and whether the standard header and footer were
+   there. Enough to tell "only half got copied" from "that is a file path"
+   from "that is some other file" — read from the log, without anyone having
+   to reveal the secret on a screen to find out. */
+function keyShape(raw) {
+  const s = String(raw || '');
+  const body = s.replace(/-----(BEGIN|END) [A-Z ]+-----/g, '').replace(/\s+/g, '');
+  return 'length ' + s.length +
+    ', lines ' + s.split(/\r?\n/).length +
+    ', BEGIN header ' + (/-----BEGIN [A-Z ]+-----/.test(s) ? 'yes' : 'no') +
+    ', END footer ' + (/-----END [A-Z ]+-----/.test(s) ? 'yes' : 'no') +
+    ', body ' + body.length + ' chars (an Apple .p8 has about 200)' +
+    ', looks like a file path ' + (/^\s*[\/~]|\.p8\s*$/i.test(s) ? 'yes' : 'no');
+}
+
+const RAW_PRIVATE_KEY = process.env.APNS_PRIVATE_KEY || '';
+const PRIVATE_KEY = normalizeKey(RAW_PRIVATE_KEY);
 const BUNDLE_ID = process.env.APNS_BUNDLE_ID || 'com.abko.theflow';
 /* Sandbox tokens and production tokens are different namespaces at Apple, and
-   sending one to the other host answers BadDeviceToken. A TestFlight or Xcode
-   build is sandbox; the App Store build is production. The device says which
-   it is at registration, so one server serves both. */
+   sending one to the other host answers BadDeviceToken. A build installed
+   from Xcode is sandbox; App Store and TestFlight builds are production
+   (TestFlight is signed for distribution). The device says which it is at
+   registration, so one server serves both. */
 const HOSTS = {
   production: 'https://api.push.apple.com',
   sandbox: 'https://api.sandbox.push.apple.com'
@@ -154,7 +192,7 @@ function ready() {
       usable = true;
     } catch (e) {
       usable = false;
-      logWhy('key', 'APNS_PRIVATE_KEY is not a usable APNs key — ' + e.message);
+      logWhy('key', 'APNS_PRIVATE_KEY is not a usable APNs key — ' + e.message + ' (' + keyShape(RAW_PRIVATE_KEY) + ')');
     }
   }
   return usable;
@@ -287,7 +325,7 @@ module.exports = {
   ready,
   _internals: {
     PUSH_OFF, PUSH_FAILED,
-    readDevices, writeDevices, devKey, authToken,
+    readDevices, writeDevices, devKey, authToken, normalizeKey, keyShape,
     setSender(fn) { sender = fn || apnsPost; },
     resetJwt() { cachedJwt = null; cachedAt = 0; usable = null; }
   }
