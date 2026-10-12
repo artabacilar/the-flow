@@ -224,6 +224,46 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
      /still referenced in the project file/.test(native) && /process\.exit\(1\)/.test(native));
   ok('both targets are given the same deployment target',
      /DEPLOYMENT_TARGET = '17\.0'/.test(native));
+  /* The list of native files used to be typed out by hand, twice, and the
+     first file added after it was written — FlowPush.swift — was left out of
+     both. AppDelegate calls it, so the generated project could not compile,
+     and the script still printed "ok". Found by actually running it. */
+  ok('the native files are taken from the folders, not typed out',
+     /readdirSync\(path\.join\(root, dir\)\)/.test(native) &&
+     /swiftIn\('native\/App'\)/.test(native) && /swiftIn\('native\/Shared'\)/.test(native) &&
+     !/\['native\/App\/[A-Za-z]+\.swift', '[A-Za-z]+\.swift'\]/.test(native));
+  ok('everything copied is compiled, from the same list',
+     /COPY\.map\(\(\[, to\]\) => to\)\.filter\(\(f\) => f !== 'AppDelegate\.swift'\)\.forEach\(addSource\)/.test(native));
+  /* The app and its widget must carry the same version or App Store Connect
+     refuses the upload, and a version already on the store cannot be
+     uploaded again. The widget's Info.plist had "1.0" typed into it, so the
+     first update would have shipped an app at 1.0.1 and a widget at 1.0. */
+  {
+    const vfile = path.join(__dirname, '..', 'ios-app', 'version.json');
+    const v = fs.existsSync(vfile) ? JSON.parse(fs.readFileSync(vfile, 'utf8')) : {};
+    const widgetScript = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'scripts', 'add-widget-target.js'), 'utf8');
+    ok('the iOS version lives in one file', /^\d+\.\d+(\.\d+)?$/.test(v.version || '') && /^\d+$/.test(v.build || ''), v);
+    ok('both scripts read it', /version\.json/.test(native) && /version\.json/.test(widgetScript));
+    ok('the widget takes its version from the build, not a literal',
+       /CFBundleShortVersionString<\/key>\s*\\t<string>\$\(MARKETING_VERSION\)/.test(widgetScript) &&
+       /CFBundleVersion<\/key>\s*\\t<string>\$\(CURRENT_PROJECT_VERSION\)/.test(widgetScript) &&
+       !/MARKETING_VERSION = '[\d.]+'/.test(widgetScript));
+    ok('and the app is set from the same values', /s\.MARKETING_VERSION = VERSION/.test(native) && /s\.CURRENT_PROJECT_VERSION = BUILD/.test(native));
+  }
+  ok('and it checks the Sources phase afterwards instead of trusting itself',
+     /copied but not compiled/.test(native) && /process\.exit\(1\)/.test(native));
+  /* What that would have caught: a type one file calls that no file in the
+     target defines. */
+  {
+    const appDir = path.join(nativeDir, 'App');
+    const appSrc = fs.readdirSync(appDir).filter((f) => f.endsWith('.swift'))
+      .map((f) => fs.readFileSync(path.join(appDir, f), 'utf8')).join('\n')
+      + fs.readFileSync(path.join(nativeDir, 'Shared', 'FlowStore.swift'), 'utf8');
+    const ours = ['FlowPush', 'FlowHealth', 'FlowSpeech', 'FlowStore'];
+    const undefinedUsed = ours.filter((t) => new RegExp('\\b' + t + '\\.').test(appSrc)
+      && !new RegExp('(enum|class|struct|final class)\\s+' + t + '\\b').test(appSrc));
+    ok('every Flow type the app calls is defined in a file the app compiles', undefinedUsed.length === 0, undefinedUsed);
+  }
 
 
   console.log('\n— the app and the widget agree on who they are —');
