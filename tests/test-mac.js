@@ -126,8 +126,14 @@ ok('refuses a profile for some other app', /P_APPID.*!=|\[ "\$P_APPID" = "\$TEAM
      strips.some((i) => i > iconCp && i < firstSign));
   ok('strips again after the downloaded profile goes in, before the store signature',
      strips.some((i) => i > profCp && i < storeSign));
-  ok('refuses to sign a bundle that still has extended attributes',
-     /\[ -n "\$\(xattr -lr "\$APP"\)" \]/.test(buildRun) && !/xattr -lr[^\n]*\| *grep -q/.test(buildRun));
+  /* Quarantine, specifically: macOS keeps com.apple.provenance on files no
+     matter what, so failing on any attribute stops every build (it did). */
+  const guard = buildRun.match(/case "\$LEFT" in\s*\*com\.apple\.quarantine\*\)\s*fail/);
+  ok('refuses to sign a bundle that still carries quarantine',
+     !!guard && /LEFT="\$\(xattr -lr "\$APP"/.test(buildRun) && !/xattr -lr[^\n]*\| *grep -q/.test(buildRun));
+  ok('does not fail on attributes macOS will not let anyone remove',
+     !/\[ -n "\$\(xattr -lr "\$APP"\)" \]\s*;\s*then\s*fail/.test(buildRun)
+     && !!guard && guard.index > profCp && guard.index < storeSign);
 }
 ok('picks certificates by team, not by the legal name', /grep "\(\$TEAM\)\\""/.test(buildRun));
 
