@@ -111,6 +111,24 @@ ok('stops at the first error rather than packaging a half-build', /^set -euo pip
 ok('kills an old copy by exact name, never by pattern', /pkill -x "\$EXE"/.test(buildRun) && !/pkill -f/.test(buildRun));
 ok('refuses a development profile before signing with it', /ProvisionedDevices/.test(buildRun));
 ok('refuses a profile for some other app', /P_APPID.*!=|\[ "\$P_APPID" = "\$TEAM\.\$BUNDLE_ID" \]/.test(buildRun));
+{
+  /* App Store Connect rejects any file carrying com.apple.quarantine (91109),
+     and a folder unzipped from a download carries it on everything. Every
+     copy into the bundle must be followed by a strip before the first sign. */
+  const at = (re) => { const m = buildRun.match(re); return m ? m.index : -1; };
+  const lastAt = (re) => { let i = -1; for (const m of buildRun.matchAll(new RegExp(re.source, 'g'))) i = m.index; return i; };
+  const strips = [...buildRun.matchAll(/xattr -cr "\$APP"/g)].map((m) => m.index);
+  const firstSign = at(/codesign --force/);
+  const iconCp = at(/cp Resources\/AppIcon\.icns/);
+  const profCp = at(/cp "\$PROFILE"/);
+  const storeSign = lastAt(/codesign --force/);
+  ok('strips quarantine from the bundle before the first signature',
+     strips.some((i) => i > iconCp && i < firstSign));
+  ok('strips again after the downloaded profile goes in, before the store signature',
+     strips.some((i) => i > profCp && i < storeSign));
+  ok('refuses to sign a bundle that still has extended attributes',
+     /\[ -n "\$\(xattr -lr "\$APP"\)" \]/.test(buildRun) && !/xattr -lr[^\n]*\| *grep -q/.test(buildRun));
+}
 ok('picks certificates by team, not by the legal name', /grep "\(\$TEAM\)\\""/.test(buildRun));
 
 /* The two plists are heredocs. Render them the way bash would and read them
