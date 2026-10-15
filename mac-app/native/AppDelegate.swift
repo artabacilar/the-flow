@@ -41,8 +41,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /* The page is near-black. Without this the window flashes white for
            the length of one frame on every launch, which is the single most
            obvious tell that something is a web view in a box. */
-        window.backgroundColor = NSColor(red: 0.039, green: 0.043, blue: 0.051, alpha: 1)
+        window.backgroundColor = FlowWebController.defaultBackground
         window.isReleasedWhenClosed = false
+
+        /* The title bar takes the page's colour, as an installed site's does
+           in Chrome: transparent, so the window's background shows through,
+           and that background follows the page's theme-color. The title text
+           and the traffic lights then need the matching appearance — dark
+           on a dark theme, light on a light one — or they vanish into it. */
+        window.titlebarAppearsTransparent = true
+        applyTheme(nil)
+        web.onThemeColor = { [weak self] color in self?.applyTheme(color) }
 
         /* Centre first, then name the frame. Naming it restores the saved
            frame when there is one, which overrides the centring — so the
@@ -57,6 +66,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyTheme(_ color: NSColor?) {
+        let bg = color ?? FlowWebController.defaultBackground
+        window.backgroundColor = bg
+        window.appearance = NSAppearance(named: Self.isDark(bg) ? .darkAqua : .aqua)
+    }
+
+    /// Relative luminance below the midpoint reads as dark. Converted to sRGB
+    /// first: a colour from the page can arrive in any colour space, and
+    /// reading components off the wrong one throws.
+    static func isDark(_ color: NSColor) -> Bool {
+        guard let c = color.usingColorSpace(.sRGB) else { return true }
+        let l = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        return l < 0.5
     }
 
     /* Clicking the dock icon with no window open should bring it back, not sit

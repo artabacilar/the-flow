@@ -5,8 +5,17 @@ import WebKit
 final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     static let home = URL(string: "https://theflow.today")!
+    /// The near-black the page starts on, before it has said anything.
+    static let defaultBackground = NSColor(red: 0.039, green: 0.043, blue: 0.051, alpha: 1)
+
     private var webView: WKWebView!
     private let notes = FlowNotifications()
+    private var themeObservation: NSKeyValueObservation?
+
+    /// Called with the page's theme colour whenever it changes — the
+    /// `<meta name="theme-color">` the page rewrites when the person picks a
+    /// theme. nil means the page has none; the window keeps the default.
+    var onThemeColor: ((NSColor?) -> Void)?
 
     override func loadView() {
         let config = WKWebViewConfiguration()
@@ -38,8 +47,21 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
            public way to change it — setValue(false, forKey: "drawsBackground")
            is the widely copied alternative and it is undeclared API, which is
            not worth a rejection on an app that is already in review once. */
-        webView.underPageBackgroundColor = NSColor(red: 0.039, green: 0.043, blue: 0.051, alpha: 1)
+        webView.underPageBackgroundColor = FlowWebController.defaultBackground
         view = webView
+
+        /* Chrome paints an installed site's title bar in the page's
+           theme-color, which is why the same site there reads as one black
+           slab and here had a grey system bar on top. WKWebView reports the
+           same meta tag as `themeColor`, and it is observable — so the
+           window can follow it, including when the person switches to one of
+           the light themes. */
+        themeObservation = webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] web, _ in
+            guard let self else { return }
+            let color = web.themeColor
+            web.underPageBackgroundColor = color ?? FlowWebController.defaultBackground
+            self.onThemeColor?(color)
+        }
     }
 
     override func viewDidLoad() {
