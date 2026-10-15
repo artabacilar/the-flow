@@ -28,6 +28,17 @@
  * minted for the browser still demands the same session that made it, as
  * WHOOP's does.
  *
+ * Coming back in a browser
+ * ------------------------
+ * Google posts the token back from its own site, and a session cookie is
+ * SameSite=Lax, so that POST arrives without one even in the browser that
+ * started it. A browser round trip therefore lands in two steps: the POST
+ * is checked and parked under its state, and the page it returns sends the
+ * browser on to /finish — a same-site navigation, which does carry the
+ * cookie — where the parked result is attached only if the session is the
+ * one that started it. An app round trip ends at the POST: the browser it
+ * finishes in has no session to check.
+ *
  * Where it is kept
  * ----------------
  * Outside the account's data namespace — `conn:<uid>:<provider>` — for the
@@ -38,10 +49,18 @@
  * it is drawn, and Google is not told every time somebody opens the app.
  * Deleting the account removes these with everything else (flow-auth.js).
  *
+ * No client secret
+ * ----------------
+ * Google is asked for an ID token directly (response_type=id_token, posted
+ * back as a form), not for a code to trade for one. Trading a code needs a
+ * client secret; an ID token does not — it is checked here instead, against
+ * Google's published signing keys, its audience, issuer, expiry and the
+ * nonce this server put in the request. So the only configuration is a
+ * client ID, which is public by nature: it is in every sign-in URL.
+ *
  * Configuration
  * -------------
  *   GOOGLE_CLIENT_ID      a "Web application" OAuth client
- *   GOOGLE_CLIENT_SECRET  from the same client
  *   GOOGLE_REDIRECT_URI   optional; https://<host>/api/connect/google/callback
  *                         is derived from the request when absent, and must
  *                         be registered on the client exactly
@@ -77,19 +96,18 @@ const PROVIDERS = {
     name: 'Google',
     blurb: 'Your name and profile photo, from your Google account.',
     clientId: () => process.env.GOOGLE_CLIENT_ID || '',
-    clientSecret: () => process.env.GOOGLE_CLIENT_SECRET || '',
     fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
+    jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
     scope: 'openid email profile',
     /* select_account: somebody with a work and a personal Google account
        should be asked which, not silently given whichever is signed in. */
-    extra: { prompt: 'select_account', access_type: 'online' },
+    extra: { prompt: 'select_account', response_type: 'id_token', response_mode: 'form_post' },
     finish: finishGoogle
   }
 };
 
-const configured = (pv) => !!(pv && pv.clientId() && pv.clientSecret());
+const configured = (pv) => !!(pv && pv.clientId());
 
 function redirectFor(pv, req) {
   if (pv.fixedRedirect()) return pv.fixedRedirect();
@@ -106,23 +124,53 @@ function redirectFor(pv, req) {
  * Google
  * ------------------------------------------------------------------ */
 
-/* The ID token arrives in the body of a TLS response from Google's own token
-   endpoint, in exchange for a code only Google could have issued — which is
-   the case OpenID Connect Core 3.1.3.7 allows to skip the signature check.
-   Everything else is still checked: who it is for, who issued it, that it is
-   current, and that it answers this request and no other (the nonce). */
-function readIdToken(idToken, clientId, nonce, now) {
+/* Google's signing keys, cached for as long as Google says they are good
+   for (its Cache-Control), and fetched again when a token names a key we do
+   not hold — which is what a key rotation looks like from here. */
+let jwksCache = { at: 0, ttl: 0, keys: [] };
+async function signingKey(kid, url, fetchImpl, now) {
+  const fresh = () => jwksCache.keys.length && (now - jwksCache.at) < jwksCache.ttl;
+  let k = fresh() ? jwksCache.keys.find((x) => x.kid === kid) : null;
+  if (k) return k;
+  const res = await (fetchImpl || fetch)(url);
+  if (!res.ok) throw new Error('Google\'s signing keys could not be fetched');
+  const body = await res.json();
+  const cc = String((res.headers && res.headers.get && res.headers.get('cache-control')) || '');
+  const age = Number((cc.match(/max-age=(\d+)/) || [])[1] || 3600);
+  jwksCache = { at: now, ttl: Math.min(age, 86400) * 1000, keys: Array.isArray(body.keys) ? body.keys : [] };
+  return jwksCache.keys.find((x) => x.kid === kid) || null;
+}
+
+const unb64 = (s) => Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+/* The ID token arrives from the browser, so nothing in it is believed until
+   its signature checks out against Google's own keys. Then: who it is for,
+   who issued it, that it is current, and that it answers this request and no
+   other (the nonce this server put in the URL). */
+async function readIdToken(idToken, opts) {
   const parts = String(idToken || '').split('.');
   if (parts.length !== 3) throw new Error('Google did not return an ID token');
-  let claims;
-  try { claims = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')); }
-  catch (e) { throw new Error('the ID token could not be read'); }
-  const t = Math.floor((now || Date.now()) / 1000);
+  let header, claims;
+  try {
+    header = JSON.parse(unb64(parts[0]).toString('utf8'));
+    claims = JSON.parse(unb64(parts[1]).toString('utf8'));
+  } catch (e) { throw new Error('the ID token could not be read'); }
+  if (header.alg !== 'RS256') throw new Error('the ID token is not signed the way Google signs');
+  const now = opts.now || Date.now();
+  const jwk = await signingKey(header.kid, opts.jwksUrl, opts.fetch, now);
+  if (!jwk) throw new Error('the ID token is signed with a key Google does not publish');
+  let good = false;
+  try {
+    const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    good = crypto.verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]), key, unb64(parts[2]));
+  } catch (e) { good = false; }
+  if (!good) throw new Error('the ID token\'s signature does not check out');
+  const t = Math.floor(now / 1000);
   const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (aud.indexOf(clientId) < 0) throw new Error('the ID token is for a different app');
+  if (aud.indexOf(opts.clientId) < 0) throw new Error('the ID token is for a different app');
   if (claims.iss !== 'https://accounts.google.com' && claims.iss !== 'accounts.google.com') throw new Error('the ID token was not issued by Google');
   if (!(Number(claims.exp) > t - 60)) throw new Error('the ID token has expired');
-  if (!nonce || claims.nonce !== nonce) throw new Error('the ID token answers a different request');
+  if (!opts.nonce || claims.nonce !== opts.nonce) throw new Error('the ID token answers a different request');
   return claims;
 }
 
@@ -156,31 +204,15 @@ async function fetchPhoto(u, fetchImpl) {
   } catch (e) { return null; }
 }
 
-async function finishGoogle(pv, code, rec, deps) {
-  const fetchImpl = deps.fetch || fetch;
-  const res = await fetchImpl(pv.tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: code,
-      client_id: pv.clientId(),
-      client_secret: pv.clientSecret(),
-      redirect_uri: rec.redirect,
-      code_verifier: rec.verifier
-    }).toString()
+async function finishGoogle(pv, posted, rec, deps) {
+  const c = await readIdToken(posted.id_token, {
+    clientId: pv.clientId(), nonce: rec.nonce, jwksUrl: pv.jwksUrl, fetch: deps.fetch, now: deps.now
   });
-  let data = null;
-  try { data = await res.json(); } catch (e) {}
-  if (!res.ok || !data || !data.id_token) {
-    throw new Error((data && (data.error_description || data.error)) || ('Google said ' + res.status));
-  }
-  const c = readIdToken(data.id_token, pv.clientId(), rec.nonce, deps.now);
   return {
     account: String(c.sub || ''),
     email: c.email_verified === false ? '' : String(c.email || ''),
     name: String(c.name || ''),
-    photo: await fetchPhoto(c.picture, fetchImpl)
+    photo: await fetchPhoto(c.picture, deps.fetch)
   };
 }
 
@@ -260,7 +292,7 @@ async function handle(req, res, ctx) {
     return true;
   }
 
-  const m = p.match(/^\/api\/connect\/([a-z0-9-]+)\/(start|callback|disconnect)$/);
+  const m = p.match(/^\/api\/connect\/([a-z0-9-]+)\/(start|callback|finish|disconnect)$/);
   if (!m) return false;
   const pv = PROVIDERS[m[1]];
   if (!pv) return json(res, 404, { error: 'No such connection.' }), true;
@@ -277,72 +309,85 @@ async function handle(req, res, ctx) {
     let body = {};
     try { body = JSON.parse((await ctx.readBody(req)) || '{}'); } catch (e) {}
     const state = b64url(crypto.randomBytes(16));
-    const verifier = b64url(crypto.randomBytes(32));
     const nonce = b64url(crypto.randomBytes(16));
     const redirect = redirectFor(pv, req);
-    await writeJSON(raw, ST(state), { uid: me.id, provider: pv.id, at: now(), app: !!body.app, verifier, nonce, redirect });
+    await writeJSON(raw, ST(state), { uid: me.id, provider: pv.id, at: now(), app: !!body.app, nonce, redirect });
     const url = pv.authUrl + '?' + new URLSearchParams(Object.assign({
-      response_type: 'code',
       client_id: pv.clientId(),
       redirect_uri: redirect,
       scope: pv.scope,
       state: state,
-      nonce: nonce,
-      code_challenge: b64url(crypto.createHash('sha256').update(verifier).digest()),
-      code_challenge_method: 'S256'
+      nonce: nonce
     }, pv.extra || {})).toString();
     json(res, 200, { url: url, expires: now() + STATE_TTL_MS });
     return true;
   }
 
-  /* ---- come back ---- */
+  const failPage = (why) => donePage('Not connected', '<p>' + esc(why) + '</p><p>Go back to The Flow and try again from Settings.</p>', false);
+  const okPage = (profile) => donePage(pv.name + ' connected',
+    (profile.email ? '<p>' + esc(profile.email) + '</p>' : '') +
+    '<p>You can close this and go back to The Flow.</p>', true);
+  const save = (uid, profile) => writeJSON(raw, KEY(uid, pv.id), {
+    account: profile.account, email: profile.email, name: profile.name,
+    photo: profile.photo, since: new Date(now()).toISOString()
+  });
+  const home = (status) => { res.writeHead(302, { Location: '/?connect=' + pv.id + ':' + status + '#settings', 'Cache-Control': 'no-store' }); res.end(); return true; };
+  const page = (code, html) => { res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(html); return true; };
+
+  /* ---- come back ----
+     Google posts the ID token here as a form (or sends an error as a
+     query). There is no session on this request even in the browser that
+     started it — the cookie is SameSite=Lax and this is a cross-site POST —
+     so an app round trip ends here, and a browser one is parked and sent on
+     to /finish, where its own cookie can be checked. */
   if (step === 'callback') {
-    const q = ctx.query;
-    const state = q.get('state') || '';
+    let posted = {};
+    if (req.method === 'POST') {
+      try { posted = Object.fromEntries(new URLSearchParams((await ctx.readBody(req)) || '')); } catch (e) { posted = {}; }
+    }
+    const pick = (k) => (posted[k] != null ? String(posted[k]) : (ctx.query.get(k) || ''));
+    const state = pick('state');
     const rec = state ? await readJSON(raw, ST(state), null) : null;
     /* Spent on first sight, whatever happens next: a state is single-use or
        it is a reusable key to somebody's account. */
     if (state) await raw.set(ST(state), '');
 
     const viaApp = !!(rec && rec.app);
-    const finish = (status, page) => {
-      if (viaApp) {
-        res.writeHead(status === 'connected' ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(page);
-      } else {
-        res.writeHead(302, { Location: '/?connect=' + pv.id + ':' + status + '#settings' });
-        res.end();
-      }
-      return true;
-    };
-    const failPage = (why) => donePage('Not connected', '<p>' + esc(why) + '</p><p>Go back to The Flow and try again from Settings.</p>', false);
+    const fail = (status, why) => viaApp ? page(400, failPage(why)) : home(status);
 
-    if (!rec || rec.provider !== pv.id || now() - rec.at > STATE_TTL_MS) {
-      return finish('expired', failPage('That link has expired.'));
-    }
-    /* A browser round trip must come back to the account that started it.
-       Only an app round trip may arrive without a session — it is opened in
-       a browser that has none — and then the state alone names the account. */
-    if (!viaApp && (!me || String(me.id) !== String(rec.uid))) return finish('mismatch', failPage('Signed in as somebody else.'));
-    if (viaApp && me && String(me.id) !== String(rec.uid)) return finish('mismatch', failPage('This browser is signed in to a different Flow account.'));
-
-    if (q.get('error')) return finish('denied', failPage('Permission was not given.'));
-    const code = q.get('code');
-    if (!code) return finish('incomplete', failPage('Google did not finish.'));
+    if (!rec || rec.provider !== pv.id || now() - rec.at > STATE_TTL_MS) return fail('expired', 'That link has expired.');
+    if (pick('error')) return fail('denied', 'Permission was not given.');
+    if (!pick('id_token')) return fail('incomplete', pv.name + ' did not finish.');
 
     let profile;
-    try { profile = await pv.finish(pv, code, rec, deps); }
+    try { profile = await pv.finish(pv, posted, rec, deps); }
     catch (e) {
       console.error('[connect/' + pv.id + '] ' + (e && e.message));
-      return finish('failed', failPage('Google did not accept the sign-in. Please try again.'));
+      return fail('failed', pv.name + ' did not accept the sign-in. Please try again.');
     }
-    await writeJSON(raw, KEY(rec.uid, pv.id), {
-      account: profile.account, email: profile.email, name: profile.name,
-      photo: profile.photo, since: new Date(now()).toISOString()
-    });
-    return finish('connected', donePage(pv.name + ' connected',
-      (profile.email ? '<p>' + esc(profile.email) + '</p>' : '') +
-      '<p>You can close this and go back to The Flow.</p>', true));
+
+    if (viaApp) { await save(rec.uid, profile); return page(200, okPage(profile)); }
+
+    /* A browser round trip: park the result under a fresh one-time key and
+       send the browser on to /finish. The page does the navigation, from
+       this origin, so the session cookie goes with it. */
+    const park = b64url(crypto.randomBytes(16));
+    await writeJSON(raw, ST(park), { uid: rec.uid, provider: pv.id, at: now(), parked: profile });
+    const to = '/api/connect/' + pv.id + '/finish?p=' + park;
+    return page(200, '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' + to + '">' +
+      '<title>The Flow</title><style>body{background:#0a0b0d}</style>' +
+      '<script>location.replace(' + JSON.stringify(to) + ')</script>');
+  }
+
+  /* ---- the browser's second step ---- */
+  if (step === 'finish') {
+    const park = ctx.query.get('p') || '';
+    const rec = park ? await readJSON(raw, ST(park), null) : null;
+    if (park) await raw.set(ST(park), '');
+    if (!rec || !rec.parked || rec.provider !== pv.id || now() - rec.at > STATE_TTL_MS) return home('expired');
+    if (!me || String(me.id) !== String(rec.uid)) return home('mismatch');
+    await save(rec.uid, rec.parked);
+    return home('connected');
   }
 
   /* ---- stop ---- */
@@ -361,5 +406,6 @@ module.exports = {
   handle,
   purgeUser,
   PROVIDERS,
-  _internals: { readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage }
+  _internals: { readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
+                resetKeys: () => { jwksCache = { at: 0, ttl: 0, keys: [] }; } }
 };
