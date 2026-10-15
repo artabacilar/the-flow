@@ -212,8 +212,26 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
     .map((f) => fs.readFileSync(path.join(nativeDir, f), 'utf8'));
   ok('no Swift source imports a framework that has to be fetched',
      swiftFiles.every((s) => !/^import Capacitor$/m.test(s)));
-  ok('the shell builds its own window, so no storyboard has to be found',
-     /UIWindow\(frame: UIScreen\.main\.bounds\)/.test(swiftFiles[0]));
+  /* iOS 27 stops an app built with its SDK that has no scene lifecycle, at
+     launch. 1.0.1 (2) was rejected for exactly that — it crashed on every
+     device App Review tried. The window must come from a scene. */
+  const sceneSrc = fs.existsSync(path.join(nativeDir, 'App', 'SceneDelegate.swift'))
+    ? fs.readFileSync(path.join(nativeDir, 'App', 'SceneDelegate.swift'), 'utf8') : '';
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  ok('the shell builds its own window from a scene, so no storyboard has to be found',
+     /class SceneDelegate: UIResponder, UIWindowSceneDelegate/.test(sceneSrc) &&
+     /UIWindow\(windowScene: windowScene\)/.test(strip(sceneSrc)) &&
+     /rootViewController = FlowViewController\(\)/.test(strip(sceneSrc)));
+  ok('and AppDelegate no longer makes a window of its own',
+     !/UIWindow\(/.test(strip(swiftFiles[0])) && !/var window/.test(strip(swiftFiles[0])));
+  ok('AppDelegate hands every scene to SceneDelegate',
+     /configurationForConnecting/.test(swiftFiles[0]) &&
+     /delegateClass = SceneDelegate\.self/.test(strip(swiftFiles[0])) &&
+     /"Default Configuration"/.test(swiftFiles[0]));
+  ok('push registration stays with the app, not the window',
+     /FlowPush\.refreshIfAlreadyAllowed\(\)/.test(strip(swiftFiles[0])) &&
+     /didRegisterForRemoteNotificationsWithDeviceToken/.test(swiftFiles[0]) &&
+     !/FlowPush/.test(strip(sceneSrc)));
 
   const native = fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'scripts', 'make-native.js'), 'utf8');
   ok('the conversion removes CocoaPods rather than trusting it to be absent',
@@ -224,6 +242,15 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
      /still referenced in the project file/.test(native) && /process\.exit\(1\)/.test(native));
   ok('both targets are given the same deployment target',
      /DEPLOYMENT_TARGET = '17\.0'/.test(native));
+  ok('the Info.plist declares the scene manifest, naming SceneDelegate',
+     /<key>UIApplicationSceneManifest<\/key>/.test(native) &&
+     /\$\(PRODUCT_MODULE_NAME\)\.SceneDelegate/.test(native) &&
+     /UIWindowSceneSessionRoleApplication/.test(native));
+  ok('under the same configuration name AppDelegate returns',
+     /<string>Default Configuration<\/string>/.test(native) && /"Default Configuration"/.test(swiftFiles[0]));
+  ok('one window only', /UIApplicationSupportsMultipleScenes<\/key>',\s*'\\t\\t<false\/>/.test(native));
+  ok('and the build stops if the plist does not end up with exactly one',
+     /does not declare exactly one scene manifest/.test(native));
   /* The list of native files used to be typed out by hand, twice, and the
      first file added after it was written — FlowPush.swift — was left out of
      both. AppDelegate calls it, so the generated project could not compile,
