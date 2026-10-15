@@ -387,6 +387,64 @@ if (plist.indexOf('<key>ITSAppUsesNonExemptEncryption</key>') < 0) {
     '\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>\n</dict>\n</plist>');
 }
 
+/* The scene lifecycle — required from iOS 27.
+ *
+ * An app built with the iOS 27 SDK that has not adopted scenes is stopped by
+ * UIKit at launch (_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycle-
+ * Adoption, EXC_BREAKPOINT). That is how 1.0.1 (2) was rejected: it crashed
+ * on launch on every device App Review tried. The manifest names
+ * SceneDelegate, which makes the window; AppDelegate returns the same
+ * configuration in code. One window only — the app has nothing a second
+ * window could show differently.
+ *
+ * Any manifest already present is taken out first, whole: it is a nested
+ * dictionary, so it is cut by counting <dict> depth rather than by a regex
+ * that would stop at the first </dict> inside it. */
+const SCENE_KEY = '<key>UIApplicationSceneManifest</key>';
+{
+  const at = plist.indexOf(SCENE_KEY);
+  if (at >= 0) {
+    let i = plist.indexOf('<dict>', at), depth = 0, end = -1;
+    for (const re = /<\/?dict>/g; ; ) {
+      re.lastIndex = i;
+      const m = re.exec(plist);
+      if (!m) break;
+      depth += m[0] === '<dict>' ? 1 : -1;
+      i = m.index + m[0].length;
+      if (depth === 0) { end = i; break; }
+    }
+    if (end < 0) { console.error('Info.plist: unbalanced UIApplicationSceneManifest'); process.exit(1); }
+    plist = plist.slice(0, plist.lastIndexOf('\n', at) + 1) + plist.slice(end).replace(/^\s*\n/, '');
+  }
+}
+plist = plist.replace('</dict>\n</plist>', [
+  '\t' + SCENE_KEY,
+  '\t<dict>',
+  '\t\t<key>UIApplicationSupportsMultipleScenes</key>',
+  '\t\t<false/>',
+  '\t\t<key>UISceneConfigurations</key>',
+  '\t\t<dict>',
+  '\t\t\t<key>UIWindowSceneSessionRoleApplication</key>',
+  '\t\t\t<array>',
+  '\t\t\t\t<dict>',
+  '\t\t\t\t\t<key>UISceneConfigurationName</key>',
+  '\t\t\t\t\t<string>Default Configuration</string>',
+  '\t\t\t\t\t<key>UISceneDelegateClassName</key>',
+  '\t\t\t\t\t<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>',
+  '\t\t\t\t</dict>',
+  '\t\t\t</array>',
+  '\t\t</dict>',
+  '\t</dict>',
+  '</dict>',
+  '</plist>'
+].join('\n'));
+
+if ((plist.match(/<key>UIApplicationSceneManifest<\/key>/g) || []).length !== 1 ||
+    plist.indexOf('$(PRODUCT_MODULE_NAME).SceneDelegate') < 0) {
+  console.error('the Info.plist does not declare exactly one scene manifest naming SceneDelegate — iOS 27 will not launch the app');
+  process.exit(1);
+}
+
 fs.writeFileSync(plistPath, plist);
 
 const WHY_REQUIRED = {
