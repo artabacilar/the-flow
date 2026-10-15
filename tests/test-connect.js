@@ -76,32 +76,34 @@ const I = conn._internals;
   console.log('\n— starting —');
   const S = await post('ana', '/api/connect/google/start', {});
   const url = S.json && S.json.url ? new URL(S.json.url) : null;
+  const sp = url ? url.searchParams : new URLSearchParams();
   ok('answers with a URL rather than redirecting (the apps open it in a browser)', S.status === 200 && !!url, S.json);
   ok('to Google', url && url.origin === 'https://accounts.google.com');
-  ok('for this server\'s client', url && url.searchParams.get('client_id') === 'test-client.apps.googleusercontent.com');
-  ok('asking for name, email and photo — and nothing else', url && url.searchParams.get('scope') === 'openid email profile');
-  ok('coming back to /api/connect/google/callback', url && /\/api\/connect\/google\/callback$/.test(url.searchParams.get('redirect_uri') || ''));
-  ok('with PKCE', url && url.searchParams.get('code_challenge_method') === 'S256' && (url.searchParams.get('code_challenge') || '').length >= 43);
-  ok('with a nonce and a state of 128 bits or more',
-     url && (url.searchParams.get('nonce') || '').length >= 20 && (url.searchParams.get('state') || '').length >= 20);
-  ok('letting somebody choose between their Google accounts', url && url.searchParams.get('prompt') === 'select_account');
+  ok('for this server\'s client', sp.get('client_id') === 'test-client.apps.googleusercontent.com');
+  ok('asking for name, email and photo — and nothing else', sp.get('scope') === 'openid email profile');
+  ok('for an ID token, posted back — so no client secret is needed anywhere',
+     sp.get('response_type') === 'id_token' && sp.get('response_mode') === 'form_post');
+  ok('coming back to /api/connect/google/callback', /\/api\/connect\/google\/callback$/.test(sp.get('redirect_uri') || ''));
+  ok('with a nonce and a state of 128 bits or more', (sp.get('nonce') || '').length >= 20 && (sp.get('state') || '').length >= 20);
+  ok('letting somebody choose between their Google accounts', sp.get('prompt') === 'select_account');
 
-  console.log('\n— a browser round trip must come back to whoever started it —');
+  console.log('\n— a state is good once, and only for ten minutes —');
   const st1 = stateOf(S.json.url);
-  const noSess = await rq('/api/connect/google/callback?state=' + st1 + '&code=x');
-  ok('no session → refused, and sent home rather than shown an error page',
-     noSess.status === 302 && /connect=google:mismatch/.test(noSess.headers.location || ''), noSess.headers.location);
-  const again = await as('ana', '/api/connect/google/callback?state=' + st1 + '&code=x');
-  ok('the state is spent by that first sight — reusing it is "expired"',
+  const den = await rq('/api/connect/google/callback?state=' + st1 + '&error=access_denied');
+  ok('a refusal on a browser round trip goes home and says so',
+     den.status === 302 && /connect=google:denied/.test(den.headers.location || ''), den.headers.location);
+  const again = await rq('/api/connect/google/callback?state=' + st1 + '&error=access_denied');
+  ok('the state was spent by that first sight — reusing it is "expired"',
      again.status === 302 && /connect=google:expired/.test(again.headers.location || ''), again.headers.location);
-
-  await signUp('bea', 'bea@example.com');
-  const S2 = await post('ana', '/api/connect/google/start', {});
-  const other = await as('bea', '/api/connect/google/callback?state=' + stateOf(S2.json.url) + '&code=x');
-  ok('somebody else\'s session cannot finish it', other.status === 302 && /mismatch/.test(other.headers.location || ''), other.headers.location);
-
-  const made = await as('ana', '/api/connect/google/callback?state=madeup&code=x');
+  const made = await rq('/api/connect/google/callback', { method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'state=madeup&id_token=x.y.z' });
   ok('a made-up state is "expired", not an error', made.status === 302 && /expired/.test(made.headers.location || ''));
+  const fin = await as('ana', '/api/connect/google/finish?p=madeup');
+  ok('so is a made-up finish', fin.status === 302 && /expired/.test(fin.headers.location || ''));
+  const forged = await rq('/api/connect/google/callback', { method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'state=' + stateOf((await post('ana', '/api/connect/google/start', {})).json.url) + '&id_token=a.b.c' });
+  ok('a forged token is refused before anything is stored', forged.status === 302 && /google:failed/.test(forged.headers.location || ''), forged.headers.location);
 
   console.log('\n— an app round trip finishes in a browser that is not signed in —');
   const A = await post('ana', '/api/connect/google/start', { app: true });
@@ -109,99 +111,136 @@ const I = conn._internals;
   ok('it gets a page, not a redirect into a sign-in screen', denied.status === 400 && /text\/html/.test(denied.headers['content-type'] || ''), denied.status);
   ok('the page says nothing was connected', /Not connected/.test(denied.text) && /Permission was not given/.test(denied.text));
   ok('and nothing was', !(await as('ana', '/api/connect/list')).json.connections.find((c) => c.id === 'google').connected);
-  const A2 = await post('ana', '/api/connect/google/start', { app: true });
-  const wrongWho = await as('bea', '/api/connect/google/callback?state=' + stateOf(A2.json.url) + '&code=x');
-  ok('but a browser signed in as somebody else still cannot finish an app round trip',
-     wrongWho.status === 400 && /different Flow account/.test(wrongWho.text));
 
   /* ================================================================ */
   console.log('\n— the token, believed only as far as it should be (module, Google replaced) —');
+  const crypto = require('crypto');
+  const KID = 'test-key-1';
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const other = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwk = Object.assign(publicKey.export({ format: 'jwk' }), { kid: KID, alg: 'RS256', use: 'sig' });
+  const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const sign = (claims, o) => {
+    o = o || {};
+    const h = b64u(JSON.stringify({ alg: o.alg || 'RS256', kid: o.kid || KID, typ: 'JWT' }));
+    const b = b64u(JSON.stringify(claims));
+    const sig = o.alg === 'none' ? '' : b64u(crypto.sign('RSA-SHA256', Buffer.from(h + '.' + b), o.key || privateKey));
+    return h + '.' + b + '.' + sig;
+  };
+
   const raw = new Map();
   const store = { get: async (k) => raw.has(k) ? raw.get(k) : null, set: async (k, v) => { raw.set(k, v); } };
   const send = () => { const r = { status: 0, headers: {}, body: '' };
     r.writeHead = (s, h) => { r.status = s; Object.assign(r.headers, h || {}); }; r.end = (b) => { r.body = String(b || ''); }; return r; };
   const json = (res, s, obj) => { res.status = s; res.body = JSON.stringify(obj); };
   const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
-  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const jwt = (claims) => b64u({ alg: 'RS256' }) + '.' + b64u(claims) + '.sig';
-
-  async function round(claimsFor, opts) {
-    opts = opts || {};
-    const me = { id: 'u1', email: 'a@x' };
-    const startRes = send();
-    const startReq = { method: 'POST', headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } };
-    await conn.handle(startReq, startRes, { path: '/api/connect/google/start', query: new URLSearchParams(), me, raw: store, json,
-      readBody: async () => JSON.stringify({ app: true }) });
-    const st = new URL(JSON.parse(startRes.body).url).searchParams;
-    const rec = JSON.parse(raw.get(I.ST(st.get('state'))));
-    const seen = [];
-    const fakeFetch = async (u, init) => {
-      seen.push({ u: String(u), init });
-      if (String(u) === 'https://oauth2.googleapis.com/token') {
-        return { ok: true, status: 200, json: async () => ({ id_token: jwt(claimsFor(rec, st)) }) };
-      }
-      const big = opts.bigPhoto ? Buffer.alloc(300 * 1024) : PNG;
-      return { ok: true, status: 200, headers: { get: () => opts.photoType || 'image/png' }, arrayBuffer: async () => big };
-    };
-    const cbRes = send();
-    await conn.handle({ method: 'GET', headers: {} }, cbRes, {
-      path: '/api/connect/google/callback',
-      query: new URLSearchParams({ state: st.get('state'), code: 'the-code' }),
-      me: null, raw: store, json, fetch: fakeFetch });
-    return { cbRes, seen, rec, saved: raw.get(I.KEY('u1', 'google')) };
-  }
-  const good = (rec, st) => ({ iss: 'https://accounts.google.com', aud: 'test-client.apps.googleusercontent.com',
-    exp: Math.floor(Date.now() / 1000) + 600, nonce: rec.nonce, sub: '1077', email: 'artur@gmail.com',
-    email_verified: true, name: 'Artur', picture: 'https://lh3.googleusercontent.com/a/abc=s96-c' });
-
-  const r1 = await round(good);
-  const saved1 = r1.saved ? JSON.parse(r1.saved) : null;
-  ok('a good token, with no session, from an app state: connected', r1.cbRes.status === 200 && /Google connected/.test(r1.cbRes.body), r1.cbRes.status);
-  ok('to the account that started it', saved1 && saved1.email === 'artur@gmail.com' && saved1.name === 'Artur');
-  const tokCall = r1.seen.find((s) => s.u === 'https://oauth2.googleapis.com/token');
-  const form = tokCall ? new URLSearchParams(tokCall.init.body) : new URLSearchParams();
-  ok('the exchange sends the PKCE verifier and the same redirect it started with',
-     form.get('code_verifier') === r1.rec.verifier && form.get('redirect_uri') === r1.rec.redirect && form.get('code') === 'the-code');
-  ok('the photo is fetched at 128px, once, and kept as a data URL',
-     r1.seen.some((s) => s.u === 'https://lh3.googleusercontent.com/a/abc=s128-c') && /^data:image\/png;base64,/.test(saved1.photo || ''));
-  ok('no Google token is kept', saved1 && !('access' in saved1) && !('id_token' in saved1) && !/eyJ/.test(r1.saved));
-  ok('and it is kept outside the data namespace, where /api/all cannot hand it out',
-     I.KEY('u1', 'google').indexOf('ld_') !== 0 && !/^ld_/.test(I.KEY('u1', 'google')));
-
-  const bad = async (name, mut, opts) => {
-    raw.delete(I.KEY('u1', 'google'));
-    const r = await round((rec, st) => Object.assign(good(rec, st), mut(rec)), opts);
-    ok(name, r.cbRes.status === 400 && !r.saved, { status: r.cbRes.status, saved: !!r.saved });
+  let seen = [], photoOpts = {};
+  const fakeFetch = async (u) => {
+    seen.push(String(u));
+    if (String(u) === 'https://www.googleapis.com/oauth2/v3/certs') {
+      return { ok: true, status: 200, headers: { get: () => 'public, max-age=20000' }, json: async () => ({ keys: [jwk] }) };
+    }
+    const big = photoOpts.big ? Buffer.alloc(300 * 1024) : PNG;
+    return { ok: true, status: 200, headers: { get: () => photoOpts.type || 'image/png' }, arrayBuffer: async () => big };
   };
+  const me1 = { id: 'u1', email: 'a@x' };
+  async function begin(app) {
+    const r = send();
+    await conn.handle({ method: 'POST', headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, r,
+      { path: '/api/connect/google/start', query: new URLSearchParams(), me: me1, raw: store, json,
+        readBody: async () => JSON.stringify({ app: !!app }) });
+    const st = new URL(JSON.parse(r.body).url).searchParams;
+    return { state: st.get('state'), nonce: st.get('nonce') };
+  }
+  async function back(state, idToken) {
+    const r = send();
+    await conn.handle({ method: 'POST', headers: {} }, r, {
+      path: '/api/connect/google/callback', query: new URLSearchParams(), me: null, raw: store, json, fetch: fakeFetch,
+      readBody: async () => new URLSearchParams({ state, id_token: idToken }).toString() });
+    return r;
+  }
+  const good = (nonce) => ({ iss: 'https://accounts.google.com', aud: 'test-client.apps.googleusercontent.com',
+    exp: Math.floor(Date.now() / 1000) + 600, nonce, sub: '1077', email: 'artur@gmail.com',
+    email_verified: true, name: 'Artur', picture: 'https://lh3.googleusercontent.com/a/abc=s96-c' });
+  const savedNow = () => { const v = raw.get(I.KEY('u1', 'google')); return v ? JSON.parse(v) : null; };
+
+  /* app round trip */
+  I.resetKeys(); seen = [];
+  let b0 = await begin(true);
+  let r1 = await back(b0.state, sign(good(b0.nonce)));
+  const saved1 = savedNow();
+  ok('an app round trip with a good token, and no session: connected', r1.status === 200 && /Google connected/.test(r1.body), r1.status);
+  ok('to the account that started it', saved1 && saved1.email === 'artur@gmail.com' && saved1.name === 'Artur');
+  ok('the signature was checked against Google\'s published keys', seen[0] === 'https://www.googleapis.com/oauth2/v3/certs');
+  ok('the photo is fetched at 128px, once, and kept as a data URL',
+     seen.includes('https://lh3.googleusercontent.com/a/abc=s128-c') && /^data:image\/png;base64,/.test(saved1.photo || ''));
+  ok('no token of any kind is kept', !/eyJ/.test(raw.get(I.KEY('u1', 'google'))));
+  ok('and it is kept outside the data namespace, where /api/all cannot hand it out', !/^ld_/.test(I.KEY('u1', 'google')));
+  seen = []; b0 = await begin(true); await back(b0.state, sign(good(b0.nonce)));
+  ok('the keys are cached, not fetched on every connection', !seen.includes('https://www.googleapis.com/oauth2/v3/certs'));
+
+  /* browser round trip */
+  raw.delete(I.KEY('u1', 'google'));
+  const bb = await begin(false);
+  const r2 = await back(bb.state, sign(good(bb.nonce)));
+  const to = (r2.body.match(/location\.replace\("([^"]+)"\)/) || [])[1] || '';
+  ok('a browser round trip is parked, not attached, at the POST', r2.status === 200 && !savedNow() && /\/api\/connect\/google\/finish\?p=/.test(to), r2.body.slice(0, 200));
+  const finish = async (who, path) => { const r = send();
+    await conn.handle({ method: 'GET', headers: {} }, r, { path: '/api/connect/google/finish', query: new URL('http://x' + path).searchParams, me: who, raw: store, json });
+    return r; };
+  const f0 = await finish(null, to);
+  ok('finishing without the session that started it is refused', f0.status === 302 && /mismatch/.test(f0.headers.Location) && !savedNow());
+  const bb2 = await begin(false);
+  const to2 = ((await back(bb2.state, sign(good(bb2.nonce)))).body.match(/location\.replace\("([^"]+)"\)/) || [])[1];
+  const f1 = await finish({ id: 'someone-else' }, to2);
+  ok('and so is finishing as somebody else', /mismatch/.test(f1.headers.Location) && !savedNow());
+  const bb3 = await begin(false);
+  const to3 = ((await back(bb3.state, sign(good(bb3.nonce)))).body.match(/location\.replace\("([^"]+)"\)/) || [])[1];
+  const f2 = await finish(me1, to3);
+  ok('the right session finishes it: connected', f2.status === 302 && /google:connected/.test(f2.headers.Location) && savedNow() && savedNow().email === 'artur@gmail.com');
+  const f3 = await finish(me1, to3);
+  ok('and a finish link is good once', /expired/.test(f3.headers.Location));
+
+  const bad = async (name, claimsMut, signOpts) => {
+    raw.delete(I.KEY('u1', 'google'));
+    const b = await begin(true);
+    const r = await back(b.state, sign(Object.assign(good(b.nonce), claimsMut(b)), signOpts));
+    ok(name, r.status === 400 && !savedNow(), { status: r.status, saved: !!savedNow() });
+  };
+  await bad('a token signed by anybody but Google is refused', () => ({}), { key: other.privateKey });
+  await bad('an unsigned token (alg none) is refused', () => ({}), { alg: 'none' });
+  await bad('a token naming a key Google does not publish is refused', () => ({}), { kid: 'nope' });
   await bad('a token for another app is refused', () => ({ aud: 'someone-else.apps.googleusercontent.com' }));
   await bad('a token from another issuer is refused', () => ({ iss: 'https://evil.example' }));
   await bad('an expired token is refused', () => ({ exp: Math.floor(Date.now() / 1000) - 3600 }));
   await bad('a token answering a different request (nonce) is refused', () => ({ nonce: 'not-ours' }));
 
-  raw.delete(I.KEY('u1', 'google'));
-  const r2 = await round((rec, st) => Object.assign(good(rec, st), { picture: 'https://169.254.169.254/latest/meta-data' }));
-  ok('a photo URL that is not Google\'s image host is never fetched',
-     !r2.seen.some((s) => /169\.254/.test(s.u)) && r2.saved && JSON.parse(r2.saved).photo === null);
-  raw.delete(I.KEY('u1', 'google'));
-  const r3 = await round(good, { bigPhoto: true });
-  ok('an oversized photo is dropped, not stored', r3.saved && JSON.parse(r3.saved).photo === null);
-  raw.delete(I.KEY('u1', 'google'));
-  const r4 = await round(good, { photoType: 'text/html' });
-  ok('a "photo" that is not an image is dropped', r4.saved && JSON.parse(r4.saved).photo === null);
-  raw.delete(I.KEY('u1', 'google'));
-  const r5 = await round((rec, st) => Object.assign(good(rec, st), { email_verified: false }));
-  ok('an unverified address is not shown as theirs', r5.saved && JSON.parse(r5.saved).email === '');
+  const withPhoto = async (mut, opts) => {
+    raw.delete(I.KEY('u1', 'google')); photoOpts = opts || {}; seen = [];
+    const b = await begin(true);
+    await back(b.state, sign(Object.assign(good(b.nonce), mut)));
+    photoOpts = {};
+    return savedNow();
+  };
+  let sv = await withPhoto({ picture: 'https://169.254.169.254/latest/meta-data' });
+  ok('a photo URL that is not Google\'s image host is never fetched', !seen.some((u) => /169\.254/.test(u)) && sv && sv.photo === null);
+  sv = await withPhoto({}, { big: true });
+  ok('an oversized photo is dropped, not stored', sv && sv.photo === null);
+  sv = await withPhoto({}, { type: 'text/html' });
+  ok('a "photo" that is not an image is dropped', sv && sv.photo === null);
+  sv = await withPhoto({ email_verified: false });
+  ok('an unverified address is not shown as theirs', sv && sv.email === '');
 
   console.log('\n— the list, disconnecting, and deleting the account —');
-  await round(good);
+  await withPhoto({});
   const lres = send();
-  await conn.handle({ method: 'GET', headers: {} }, lres, { path: '/api/connect/list', query: new URLSearchParams(), me: { id: 'u1' }, raw: store, json });
+  await conn.handle({ method: 'GET', headers: {} }, lres, { path: '/api/connect/list', query: new URLSearchParams(), me: me1, raw: store, json });
   const lg = JSON.parse(lres.body).connections.find((c) => c.id === 'google');
   ok('the list shows it connected, with the photo', lg.connected && /^data:image\/png/.test(lg.photo || '') && lg.email === 'artur@gmail.com');
   const dres = send();
-  await conn.handle({ method: 'POST', headers: {} }, dres, { path: '/api/connect/google/disconnect', query: new URLSearchParams(), me: { id: 'u1' }, raw: store, json });
+  await conn.handle({ method: 'POST', headers: {} }, dres, { path: '/api/connect/google/disconnect', query: new URLSearchParams(), me: me1, raw: store, json });
   ok('disconnecting removes it', dres.status === 200 && !raw.get(I.KEY('u1', 'google')));
-  await round(good);
+  await withPhoto({});
   ok('deleting the account removes it (purgeUser)', (await conn.purgeUser(store, 'u1')) === 1 && !raw.get(I.KEY('u1', 'google')));
 
   /* ================================================================ */
@@ -210,6 +249,8 @@ const I = conn._internals;
   const iConn = auth.indexOf("p.indexOf('/api/connect/') === 0");
   const iGate = auth.indexOf('---- everything else under /api needs a session ----');
   ok('the routes are mounted before the session check (the app callback has none)', iConn > 0 && iGate > 0 && iConn < iGate);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'flow-connect.js'), 'utf8');
+  ok('no client secret is read or sent anywhere', !/CLIENT_SECRET|client_secret|clientSecret/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')));
   ok('account deletion purges connections', /connect\.purgeUser\(raw, uid\)/.test(auth));
   ok('and WHOOP\'s refresh token, which it used to leave behind', /raw\.set\('whoop:tok:' \+ uid, ''\)/.test(auth));
 

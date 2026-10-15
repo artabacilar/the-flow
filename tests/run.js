@@ -98,7 +98,7 @@ const SUITES = [
   ['voice',    'test-voice.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['whoop',    'test-whoop.js',    {}],
   ['connect',  'test-connect.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein',
-                                    GOOGLE_CLIENT_ID: 'test-client.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'test-secret' }],
+                                    GOOGLE_CLIENT_ID: 'test-client.apps.googleusercontent.com' }],
   ['refresh',  'test-refresh.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   /* test-client signs up three ordinary people, so the owner rule would
      reject the first of them. It deliberately runs without one. */
