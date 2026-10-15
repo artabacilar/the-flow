@@ -279,5 +279,37 @@ const before = fs.statSync(iosIcon).mtimeMs;
 execFileSync(process.execPath, ['-e', "require(" + JSON.stringify(path.join(ROOT, 'ios-app', 'scripts', 'make-icons.js')) + ")"]);
 ok('requiring the iOS icon drawer writes nothing', fs.statSync(iosIcon).mtimeMs === before);
 
+/* The title bar. Chrome paints an installed site's title bar in the page's
+   theme-color; the Mac app used to leave the system's grey bar on top of a
+   black page, and it was the first thing anybody noticed side by side. */
+console.log('\n— the title bar is the page\'s colour, as it is in Chrome —');
+{
+  const d = code(delegateSrc), w = code(webSrc);
+  ok('the title bar is transparent, so the window colour shows through',
+     /window\.titlebarAppearsTransparent\s*=\s*true/.test(d));
+  ok('the web view\'s theme-color is observed, not read once',
+     /\.observe\(\\\.themeColor/.test(w) && /themeObservation\s*=/.test(w));
+  ok('the observation fires at once, for the first paint',
+     /observe\(\\\.themeColor,\s*options:\s*\[\s*\.initial/.test(w));
+  ok('the window follows it, and so does the overscroll backdrop',
+     /onThemeColor\s*=/.test(d) && /window\.backgroundColor\s*=\s*bg/.test(d) && /underPageBackgroundColor\s*=\s*color/.test(w));
+  ok('the title text and traffic lights switch appearance with it',
+     /NSAppearance\(named:\s*Self\.isDark\(bg\)\s*\?\s*\.darkAqua\s*:\s*\.aqua\)/.test(d));
+  /* The same luminance rule as isDark(), against every theme the page
+     defines — the light ones must come out light, or their title would be
+     white on cream. */
+  const lum = (h) => { const n = parseInt(h.slice(1), 16);
+    return 0.2126 * ((n >> 16) & 255) / 255 + 0.7152 * ((n >> 8) & 255) / 255 + 0.0722 * (n & 255) / 255; };
+  const page = read(ROOT, 'life-dashboard.html');
+  const m = page.match(/var T=\{([^}]*)\}/);
+  const themes = m ? Object.fromEntries([...m[1].matchAll(/(\w+):'(#[0-9a-fA-F]{6})'/g)].map((x) => [x[1], x[2]])) : {};
+  const wrong = Object.entries(themes).filter(([name, hex]) =>
+    (lum(hex) < 0.5) !== !['bloom', 'paper'].includes(name)).map(([n]) => n);
+  ok('every theme the page defines is read the right way round (' + Object.keys(themes).length + ' themes)',
+     Object.keys(themes).length >= 7 && wrong.length === 0, wrong);
+  ok('the luminance rule in the app is the one tested here',
+     /0\.2126\s*\*\s*c\.redComponent\s*\+\s*0\.7152\s*\*\s*c\.greenComponent\s*\+\s*0\.0722\s*\*\s*c\.blueComponent/.test(d) && /l\s*<\s*0\.5/.test(d));
+}
+
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
