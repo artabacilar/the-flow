@@ -95,6 +95,11 @@ oauthMod = loadModule('flow-oauth', ['build']);
 let starter = null;
 starter = loadModule('flow-starter', ['build']);
 
+/* Other apps connected to an account — Google first. Absent is valid: no
+   Connections section, and nothing else changes. */
+let connect = null;
+connect = loadModule('flow-connect', ['handle', 'purgeUser']);
+
 const USERS_KEY = '__auth:users';
 const SESS = (t) => '__auth:sess:' + t;
 /* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
@@ -1723,6 +1728,15 @@ async function gate(req, res) {
     for (const k of [SEED(uid), PACK_CLAIMED(uid), INBOX(uid)]) {
       await raw.set(k, ''); gone.other++;
     }
+    /* Connected apps, and WHOOP's tokens. Both live outside the data
+       namespace on purpose (see flow-connect.js, flow-whoop.js), which is
+       exactly why step 1 does not reach them: a deleted account must not
+       leave a refresh token to somebody's health record behind. */
+    if (connect) {
+      try { gone.other += await connect.purgeUser(raw, uid); }
+      catch (e) { console.error('[delete] connections purge failed: ' + (e && e.message)); }
+    }
+    if (await raw.get('whoop:tok:' + uid)) { await raw.set('whoop:tok:' + uid, ''); gone.other++; }
     /* The rate-limit counters are keyed by email address, so leaving them
        behind leaves the address behind. */
     const tries = await raw.keys('__auth:rctry:' + rec.email + ':*');
@@ -1823,6 +1837,18 @@ async function gate(req, res) {
     if (oauth) await oauth.revokeGrant(me0.id, String(b.client_id || ''));
     json(res, 200, { ok: true });
     return true;
+  }
+
+  /* ---- connections to other apps ----
+     Above the session check because one of its routes cannot have a
+     session: the iPhone and Mac apps finish Google's sign-in in the real
+     browser, which is not signed in here. flow-connect decides route by
+     route — the callback trusts a single-use state minted by a signed-in
+     request; everything else demands the session itself. */
+  if (connect && p.indexOf('/api/connect/') === 0) {
+    const meC = await currentUser(req);
+    const done = await connect.handle(req, res, { path: p, query: u.searchParams, me: meC, raw, json, readBody });
+    if (done) return true;
   }
 
   /* ---- everything else under /api needs a session ---- */

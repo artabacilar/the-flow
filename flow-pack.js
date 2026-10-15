@@ -3341,6 +3341,12 @@ const SettingsUI = {
         <p class="flow-sub" style="margin-top:10px">Bars are easier to read once there are more than about four categories, because length beats angle for comparing magnitudes. The ring caps at five slices and folds the rest into “Other” — past five, no single-hue scale keeps its steps distinguishable.</p>
       </div>
 
+      <div class="flow-card" id="connCard">
+        <h3>🔗 Connections</h3>
+        <p class="flow-sub">Other apps you use, connected to this account. Each one asks for the least it needs, and you can disconnect it here at any time.</p>
+        <div id="connList" class="conn-list"><div class="flow-sub">Loading…</div></div>
+      </div>
+
       <div class="flow-card" id="mcp-card">
         <h3>🤖 Connect to Claude</h3>
         <p class="flow-sub">Give Claude an access token and it can read your week, add Big Rocks, tick habits and reword your own lists — working on this account and no other. It can add and change things; removing anything stays something you do here.</p>
@@ -3576,6 +3582,9 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
 
     /* ---- Connect to Claude ---- */
     SettingsUI.mcpWire(section);
+
+    /* ---- Connections (Google, and whatever follows it) ---- */
+    try { Connect.wire(section); } catch (e) { console.warn('[Flow] connections', e); }
 
     /* ---- recovery codes ---- */
     SettingsUI.recoveryStatus(section);
@@ -6750,6 +6759,195 @@ const NAV_ICONS = {
 };
 
 
+/* ==========================================================================
+ * Connect — other apps, connected to this account (server: flow-connect.js)
+ *
+ * Google is the first: it gives the account its owner's name and photo, which
+ * then stand in for the letter in the avatar and the person icon in the
+ * sidebar. The card is written for a list, because the list is meant to grow.
+ *
+ * Inside the iPhone and Mac apps the sign-in has to happen in the real
+ * browser — Google refuses embedded web views — and a browser will only be
+ * opened by window.open() inside the tap itself, not after a fetch has
+ * resolved. So in the app the start URL is fetched when the card is drawn,
+ * and the tap only opens it. Coming back to the app re-reads the list.
+ * ======================================================================== */
+const Connect = {
+  list: [],
+  ready: {},          /* provider id → { url, expires } prepared for an in-app tap */
+
+  inApp() {
+    return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.flowBridge);
+  },
+
+  photo() {
+    const g = Connect.list.find(c => c.connected && c.photo);
+    return g ? g.photo : null;
+  },
+
+  async load() {
+    try {
+      const r = await fetch('/api/connect/list', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) return Connect.list;
+      const j = await r.json();
+      Connect.list = Array.isArray(j.connections) ? j.connections : [];
+    } catch (e) {}
+    Connect.paintFace();
+    return Connect.list;
+  },
+
+  /* The photo replaces the letter in the header avatar and the person icon
+     beside the account's name in the sidebar. With no photo both go back to
+     what they were, so disconnecting leaves nothing half-drawn. */
+  paintFace() {
+    const src = Connect.photo();
+    const av = document.getElementById('fn-avatar');
+    if (av) {
+      if (src) { av.innerHTML = '<img class="fn-face" alt="" src="' + esc(src) + '">'; av.classList.add('has-face'); }
+      else { av.classList.remove('has-face'); av.textContent = Nav.initial(); }
+    }
+    const side = Nav.sideEl && Nav.sideEl.querySelector('[data-fn-side="artur"]');
+    if (side) {
+      const old = side.querySelector('svg, img.fn-face');
+      if (src) {
+        const img = document.createElement('img');
+        img.className = 'fn-face fn-i'; img.alt = ''; img.src = src;
+        if (old) old.replaceWith(img); else side.insertBefore(img, side.firstChild);
+      } else if (old && old.tagName === 'IMG') {
+        const tmp = document.createElement('span');
+        tmp.innerHTML = Nav.svg(Nav.ICON.artur || 'user');
+        old.replaceWith(tmp.firstElementChild || tmp);
+      }
+    }
+  },
+
+  async start(id, app) {
+    const r = await fetch('/api/connect/' + id + '/start', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app: !!app })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || 'Could not start.');
+    return j;
+  },
+
+  async prepare(id) {
+    const have = Connect.ready[id];
+    if (have && have.expires - Date.now() > 60 * 1000) return have;
+    const j = await Connect.start(id, true);
+    Connect.ready[id] = { url: j.url, expires: j.expires || (Date.now() + 9 * 60 * 1000) };
+    return Connect.ready[id];
+  },
+
+  row(c) {
+    const face = c.photo
+      ? '<img class="conn-face" alt="" src="' + esc(c.photo) + '">'
+      : '<span class="conn-face conn-mark">' + esc((c.name || '?')[0]) + '</span>';
+    let right, sub;
+    if (c.connected) {
+      sub = esc(c.email || c.name_on_account || 'Connected');
+      right = '<button type="button" class="flow-btn sm ghost" data-conn-off="' + esc(c.id) + '">Disconnect</button>';
+    } else if (c.configured) {
+      sub = esc(c.blurb || '');
+      right = '<button type="button" class="flow-btn sm primary" data-conn-on="' + esc(c.id) + '">Connect</button>';
+    } else {
+      sub = 'Not set up on this server yet.';
+      right = '<button type="button" class="flow-btn sm" disabled>Connect</button>';
+    }
+    return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
+      '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + sub + '</span></div>' + right + '</div>';
+  },
+
+  async wire(section) {
+    const box = section.querySelector('#connList');
+    if (!box) return;
+    const paint = async () => {
+      await Connect.load();
+      if (!Connect.list.length) { box.innerHTML = '<div class="flow-sub">Nothing to connect on this server yet.</div>'; return; }
+      box.innerHTML = Connect.list.map(Connect.row).join('') +
+        '<p class="flow-sub conn-more">More apps are on the way.</p>';
+      if (Connect.inApp()) {
+        Connect.list.filter(c => c.configured && !c.connected).forEach(c =>
+          Connect.prepare(c.id).catch(() => {}));
+      }
+    };
+    box.addEventListener('click', async (ev) => {
+      const on = ev.target.closest('[data-conn-on]');
+      const off = ev.target.closest('[data-conn-off]');
+      if (on) {
+        const id = on.getAttribute('data-conn-on');
+        if (Connect.inApp()) {
+          const ready = Connect.ready[id];
+          if (!ready || ready.expires < Date.now()) {
+            on.disabled = true;
+            try { await Connect.prepare(id); toast('Ready — tap Connect again.', null, 2400); }
+            catch (e) { toast(e.message || 'Could not start.', 'err'); }
+            on.disabled = false;
+            return;
+          }
+          delete Connect.ready[id];   /* a state is good once */
+          window.open(ready.url, '_blank');
+          toast('Finish in your browser, then come back here.', null, 4000);
+          return;
+        }
+        on.disabled = true;
+        try { const j = await Connect.start(id, false); location.href = j.url; }
+        catch (e) { on.disabled = false; toast(e.message || 'Could not start.', 'err'); }
+        return;
+      }
+      if (off) {
+        const id = off.getAttribute('data-conn-off');
+        off.disabled = true;
+        try {
+          const r = await fetch('/api/connect/' + id + '/disconnect', { method: 'POST', credentials: 'same-origin' });
+          if (!r.ok) throw new Error();
+          toast('Disconnected.', null, 1600);
+        } catch (e) { toast('Could not disconnect — try again.', 'err'); }
+        await paint();
+      }
+    });
+    await paint();
+    /* Back from the browser: the app was in the background while the person
+       signed in there, so read the list again when it comes to the front. */
+    if (!Connect._vis) {
+      Connect._vis = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        const live = document.getElementById('connList');
+        if (live && live.isConnected) paint(); else Connect.load();
+      });
+    }
+  },
+
+  /* After a round trip in this same tab the server sends the page back with
+     ?connect=google:connected; say so once and take it out of the address. */
+  announce() {
+    try {
+      const q = new URLSearchParams(location.search);
+      const v = q.get('connect');
+      if (!v) return;
+      const [id, status] = v.split(':');
+      const name = (Connect.list.find(c => c.id === id) || {}).name || 'That app';
+      const say = {
+        connected: [name + ' connected ✓', null],
+        denied: ['Permission was not given.', 'err'],
+        expired: ['That took too long — try connecting again.', 'err'],
+        mismatch: ['Signed in as somebody else — try again.', 'err']
+      }[status] || ['Could not connect ' + name + '.', 'err'];
+      toast(say[0], say[1], 3200);
+      q.delete('connect');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    } catch (e) {}
+  },
+
+  async boot() {
+    await Connect.load();
+    Connect.announce();
+  }
+};
+
 const Nav = {
   installed: false,
 
@@ -7230,7 +7428,7 @@ const Nav = {
       });
     }
     const av = document.getElementById('fn-avatar');
-    if (av) av.textContent = Nav.initial();
+    if (av && !av.classList.contains('has-face')) av.textContent = Nav.initial();
   },
 
   /* ---- keeping everything in step --------------------------------------- */
@@ -9184,6 +9382,8 @@ async function boot() {
   /* Navigation first. It needs the pills, which exist by now, and nothing
      else — so it must not queue behind two network calls. */
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
+  /* Not awaited: the photo arrives when it arrives, and nothing waits on it. */
+  if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }

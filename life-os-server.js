@@ -481,6 +481,11 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>Recovery codes</b>, hashed the same way as the password.</li>
     <li><b>Session and access tokens</b>, so you stay signed in and so an assistant you have
         connected can read your day.</li>
+    <li><b>Apps you connect yourself</b>, and only if you do. Connecting Google stores the
+        name, email address and profile photo of the Google account you chose, so the app can
+        show it as yours — nothing else: The Flow does not ask for, and cannot read, your mail,
+        calendar, contacts or files. No Google token is kept after the connection is made.
+        Disconnecting in Settings, or deleting your account, removes all of it.</li>
   </ul>
 
   <h2>Where it is stored</h2>
