@@ -3390,8 +3390,8 @@ const SettingsUI = {
       </div>
 
       <div class="flow-card" id="pushCard">
-        <h3>📣 Push notifications</h3>
-        <p class="flow-sub">Reminders that arrive on the phone whether or not the app is open. Only available inside the iPhone app — a browser cannot receive these.</p>
+        <h3>📣 Notifications</h3>
+        <p class="flow-sub">Reminders that arrive whether or not the app is open — on the iPhone app and the Mac app. A browser cannot receive these.</p>
         <div class="flow-switch"><div class="t"><b>Allow notifications</b><span id="pushState">Checking…</span></div>
           <button class="flow-btn" id="pushBtn" disabled>…</button></div>
         <div class="flow-switch"><div class="t"><b>Remind me about Big Rocks</b><span>At the time on the rock, on the day it is planned for.</span></div>
@@ -3566,6 +3566,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         else v = el.value;
         await Settings.set(key, v);
         if (key === 'upgradeVisuals') { if (v) Visuals.upgradeAll(); else Visuals.restoreAll(); }
+        if (key === 'pushRemindRocks') Notify.syncMac();
         if (key === 'showTimeChips') {
           if (v) {
             TimeChips.scan(document);
@@ -3616,78 +3617,8 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
       });
     });
 
-    /* ── Push notifications ───────────────────────────────────────────
-       Only the iPhone shell can do this: a WKWebView has no Notification
-       API and a browser cannot hold an APNs token. So the card reports what
-       it is rather than offering a button that quietly does nothing. */
-    (function wirePush() {
-      const card = section.querySelector('#pushCard');
-      if (!card) return;
-      const state = card.querySelector('#pushState');
-      const btn = card.querySelector('#pushBtn');
-      const test = card.querySelector('#pushTestBtn');
-      const out = card.querySelector('#pushTestOut');
-      const native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge;
-
-      const serverStatus = () => fetch('/api/push/status', { credentials: 'same-origin' })
-        .then(r => r.json()).catch(() => ({ available: false, devices: 0 }));
-
-      async function paint() {
-        const srv = await serverStatus();
-        if (!native) {
-          state.textContent = srv.devices
-            ? 'On for ' + srv.devices + ' device' + (srv.devices === 1 ? '' : 's') + '. Open the iPhone app to change it.'
-            : 'Open this in the iPhone app to switch notifications on.';
-          btn.textContent = 'iPhone only';
-          btn.disabled = true;
-          test.disabled = !srv.devices;
-          return;
-        }
-        const d = await native.pushStatus();
-        if (d.denied) {
-          /* iOS asks once. After a no, the only way back is Settings.app,
-             and a button here would do nothing at all. */
-          state.textContent = 'Turned off in iOS Settings → Notifications → The Flow.';
-          btn.textContent = 'Blocked'; btn.disabled = true; test.disabled = true;
-          return;
-        }
-        if (d.granted && d.token) {
-          state.textContent = srv.available
-            ? 'On. ' + (srv.devices || 1) + ' device registered.'
-            : 'Allowed on this phone, but the server cannot send yet.';
-          btn.textContent = 'Allowed'; btn.disabled = true;
-          test.disabled = !srv.available;
-          return;
-        }
-        state.textContent = d.granted ? 'Allowed — finishing registration…' : 'Not switched on yet.';
-        btn.textContent = d.granted ? 'Retry' : 'Turn on'; btn.disabled = false;
-        test.disabled = true;
-      }
-
-      btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.textContent = '…';
-        try {
-          await native.pushRequest();
-          /* The token arrives in a delegate callback a moment after the
-             prompt is answered, so the first sync can be too early. */
-          await new Promise(r => setTimeout(r, 1200));
-          await native.pushSync();
-        } catch (e) {}
-        paint();
-      });
-
-      test.addEventListener('click', async () => {
-        test.disabled = true; out.textContent = 'Sending…';
-        try {
-          const r = await fetch('/api/push/test', { method: 'POST', credentials: 'same-origin' });
-          const j = await r.json();
-          out.textContent = j.ok ? 'Sent. It should appear in a moment.' : (j.error || 'It could not be sent.');
-        } catch (e) { out.textContent = 'It could not be sent.'; }
-        test.disabled = false;
-      });
-
-      paint();
-    })();
+    /* Push on iPhone, local reminders on the Mac — see Notify. */
+    Notify.wire(section);
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -6772,6 +6703,275 @@ const NAV_ICONS = {
  * resolved. So in the app the start URL is fetched when the card is drawn,
  * and the tap only opens it. Coming back to the app re-reads the list.
  * ======================================================================== */
+/* ── Notifications, on the two apps that can show them ─────────────────────
+ *
+ * iPhone: push. The server sends at the rock's time (flow-remind.js) to every
+ * phone it holds a token for. The page's job is to get permission and make
+ * sure the server actually holds this phone's token. Two things broke that
+ * up to app 1.0.1, both invisible: the shell's bridge never exposed the push
+ * methods (so the switch threw before asking anything), and the shell's own
+ * registration went out without the session cookie (so the server answered
+ * 401 and kept nothing). The first is worked around here by speaking to the
+ * same message channel directly; the second needs app 1.0.2, which hands the
+ * page its token so the page can register with its own session.
+ *
+ * Mac: local notifications. The Mac app has no push entitlement, but it can
+ * ask macOS to show something at a time, app open or not. So this keeps the
+ * Mac's queue equal to the timed, unfinished Big Rocks of the next eight days
+ * — rescheduled whenever the plan changes, the app comes forward, or every
+ * few minutes while it is open. Ids are `rock:<week>:<id>`, so anything
+ * else in that queue is never touched.
+ */
+const Notify = {
+  waiting: {},
+  hooked: false,
+
+  /* ── which app, if any ── */
+  isIOS() {
+    return window.__FLOW_NATIVE === 'ios' &&
+      !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.flowBridge);
+  },
+  mac() {
+    return (window.FlowMac && window.FlowMac.notifications) || null;
+  },
+
+  /* ── iPhone bridge ──
+     Prefer the shim's own method; on a build whose shim lacks it, post to the
+     channel ourselves and catch the answer on its way to the shim. A method
+     the build does not know is never answered, so everything has a time
+     limit except the permission prompt, which waits on a person. */
+  ios(method, ms) {
+    const P = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge;
+    const viaShim = P && typeof P[method] === 'function';
+    const ask = viaShim ? Promise.resolve().then(() => P[method]()) : new Promise((resolve) => {
+      if (!Notify.hooked) {
+        const prev = window.__flowBridgeResolve;
+        window.__flowBridgeResolve = function (id, value) {
+          const f = Notify.waiting[id];
+          if (f) { delete Notify.waiting[id]; f(value || {}); return; }
+          if (typeof prev === 'function') return prev(id, value);
+        };
+        Notify.hooked = true;
+      }
+      const id = 'fn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      Notify.waiting[id] = resolve;
+      try { window.webkit.messageHandlers.flowBridge.postMessage({ id, method, args: {} }); }
+      catch (e) { delete Notify.waiting[id]; resolve({}); }
+    });
+    if (!ms) return ask.catch(() => ({}));
+    return Promise.race([ask.catch(() => ({})), new Promise((r) => setTimeout(() => r({}), ms))]);
+  },
+
+  async server() {
+    try {
+      const r = await fetch('/api/push/status', { credentials: 'same-origin' });
+      return r.ok ? await r.json() : { available: false, devices: 0 };
+    } catch (e) { return { available: false, devices: 0 }; }
+  },
+
+  /* Give the server this phone's token under the page's own session. */
+  async registerIOS() {
+    const t = await Notify.ios('pushToken', 3000);
+    if (t && t.token) {
+      try {
+        const r = await fetch('/api/push/register', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: t.token, env: t.env || 'production', platform: 'ios' })
+        });
+        if (r.ok) return true;
+      } catch (e) {}
+    }
+    const s = await Notify.ios('pushSync', 8000);
+    return !!(s && s.ok);
+  },
+
+  /* ── Mac queue ── */
+  weekId(d) {
+    const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = dt.getUTCDay() || 7; dt.setUTCDate(dt.getUTCDate() + 4 - day);
+    const y0 = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+    return dt.getUTCFullYear() + '-W' + String(Math.ceil(((dt - y0) / 86400000 + 1) / 7)).padStart(2, '0');
+  },
+  /* What macOS's ISO8601DateFormatter reads: no milliseconds. */
+  iso(d) { return d.toISOString().replace(/\.\d{3}Z$/, 'Z'); },
+
+  /* What the queue should hold right now, by id. Pure, for the tests. */
+  wanted(compass, now, enabled) {
+    const out = {};
+    if (enabled === false) return out;
+    const rocks = (compass && compass.rocks) || {};
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const wid = Notify.weekId(d), dow = (d.getDay() + 6) % 7;
+      (rocks[wid] || []).forEach((r) => {
+        if (!r || r.done || r.day !== dow) return;
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(r.time || ''));
+        if (!m) return;
+        const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Number(m[1]), Number(m[2]), 0);
+        if (at - now < 30000) return;
+        out['rock:' + wid + ':' + r.id] = {
+          title: String(r.title || 'Big Rock').slice(0, 120),
+          body: r.note ? String(r.note).split('\n')[0].slice(0, 160) : ('It is ' + r.time + '.'),
+          at: Notify.iso(at)
+        };
+      });
+    }
+    return out;
+  },
+
+  busy: null,
+  async syncMac() {
+    const N = Notify.mac();
+    if (!N) return;
+    if (Notify.busy) return Notify.busy;
+    Notify.busy = (async () => {
+      const st = await N.status();
+      if (!st || !st.granted) return;
+      let compass = {};
+      try { compass = (typeof S !== 'undefined' && S.get('compass', {})) || {}; } catch (e) {}
+      const want = Notify.wanted(compass, new Date(), Settings.get('pushRemindRocks'));
+      const have = {};
+      try { ((await N.pending()).pending || []).forEach((p) => { have[p.id] = p; }); } catch (e) {}
+      for (const id of Object.keys(have)) {
+        if (id.indexOf('rock:') === 0 && !want[id]) await N.cancel(id);
+      }
+      for (const id of Object.keys(want)) {
+        const w = want[id], h = have[id];
+        if (h && h.at === w.at && h.title === w.title) continue;
+        await N.schedule({ notifId: id, title: w.title, body: w.body, at: w.at });
+      }
+    })().catch((e) => console.warn('[Flow] notify', e)).finally(() => { Notify.busy = null; });
+    return Notify.busy;
+  },
+
+  soon: null,
+  later() { clearTimeout(Notify.soon); Notify.soon = setTimeout(() => Notify.syncMac(), 1500); },
+
+  boot() {
+    if (Notify.mac()) {
+      /* The plan is written through S.set; a change from another device
+         lands through the same door. */
+      try {
+        if (typeof S !== 'undefined' && S && !S.__flowNotify) {
+          const set = S.set.bind(S);
+          S.set = function (k, v) { const r = set(k, v); if (k === 'compass') Notify.later(); return r; };
+          S.__flowNotify = true;
+        }
+      } catch (e) {}
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) Notify.later(); });
+      setInterval(() => Notify.syncMac(), 5 * 60 * 1000);
+      Notify.later();
+      return;
+    }
+    if (Notify.isIOS()) {
+      /* Every launch: if this phone already allows notifications, make sure
+         the server has it. Quiet — nothing to show unless it is asked for. */
+      Notify.ios('pushStatus', 4000).then(async (d) => {
+        if (!d || !d.granted) return;
+        const srv = await Notify.server();
+        if (!srv.devices) await Notify.registerIOS();
+      }).catch(() => {});
+    }
+  },
+
+  /* ── The Settings card ── */
+  wire(section) {
+    const card = section.querySelector('#pushCard');
+    if (!card) return;
+    const state = card.querySelector('#pushState');
+    const btn = card.querySelector('#pushBtn');
+    const test = card.querySelector('#pushTestBtn');
+    const out = card.querySelector('#pushTestOut');
+    const mac = Notify.mac(), ios = Notify.isIOS();
+    const set = (text, label, on, testOn) => {
+      state.textContent = text; btn.textContent = label; btn.disabled = !on; test.disabled = !testOn;
+    };
+
+    async function paint() {
+      if (mac) {
+        const st = await mac.status();
+        if (st && st.granted) {
+          set('On for this Mac. Big Rocks with a time will remind you, app open or not.', 'Allowed', false, true);
+          Notify.syncMac();
+        } else if (st && st.asked) {
+          set('Turned off in System Settings → Notifications → The Flow.', 'Blocked', false, false);
+        } else {
+          set('Not switched on yet.', 'Turn on', true, false);
+        }
+        return;
+      }
+      const srv = await Notify.server();
+      if (!ios) {
+        set(srv.devices
+          ? 'On for ' + srv.devices + ' iPhone' + (srv.devices === 1 ? '' : 's') + '. Open the iPhone or Mac app to change it.'
+          : 'Open the iPhone or Mac app to switch notifications on.', 'In the app', false, !!srv.devices);
+        return;
+      }
+      const d = await Notify.ios('pushStatus', 4000);
+      if (!d || d.supported === undefined) {
+        set('This version of the app cannot do notifications. Update it from the App Store.', 'Update', false, false);
+        return;
+      }
+      if (d.denied) {
+        set('Turned off in iOS Settings → Notifications → The Flow.', 'Blocked', false, false);
+        return;
+      }
+      if (d.granted) {
+        let s2 = srv;
+        if (!s2.devices) { await Notify.registerIOS(); s2 = await Notify.server(); }
+        if (s2.devices) {
+          set(s2.available
+            ? 'On. ' + s2.devices + ' device' + (s2.devices === 1 ? '' : 's') + ' registered.'
+            : 'Allowed on this phone, but the server cannot send yet.', 'Allowed', false, !!s2.available);
+        } else {
+          set('Allowed on this phone, but it has not reached the server. Update The Flow from the App Store, then open this again.', 'Retry', true, false);
+        }
+        return;
+      }
+      set('Not switched on yet.', 'Turn on', true, false);
+    }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        if (mac) {
+          await mac.request();
+          await Notify.syncMac();
+        } else if (ios) {
+          await Notify.ios('pushRequest');
+          /* The token arrives in a delegate callback a moment after the
+             prompt is answered. */
+          await new Promise((r) => setTimeout(r, 1500));
+          await Notify.registerIOS();
+        }
+      } catch (e) {}
+      paint();
+    });
+
+    test.addEventListener('click', async () => {
+      test.disabled = true; out.textContent = 'Sending…';
+      try {
+        if (mac) {
+          const r = await mac.schedule({
+            notifId: 'flow-test', title: 'The Flow',
+            body: 'Notifications are working. This is what a reminder will look like.',
+            at: Notify.iso(new Date(Date.now() + 5000))
+          });
+          out.textContent = r && r.ok ? 'Sent. It will appear in about five seconds.' : ((r && r.error) || 'It could not be sent.');
+        } else {
+          const r = await fetch('/api/push/test', { method: 'POST', credentials: 'same-origin' });
+          const j = await r.json();
+          out.textContent = j.ok ? 'Sent. It should appear in a moment.' : (j.error || 'It could not be sent.');
+        }
+      } catch (e) { out.textContent = 'It could not be sent.'; }
+      test.disabled = false;
+    });
+
+    paint();
+  }
+};
+
 const Connect = {
   list: [],
   ready: {},          /* provider id → { url, expires } prepared for an in-app tap */
@@ -9384,6 +9584,7 @@ async function boot() {
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
   /* Not awaited: the photo arrives when it arrives, and nothing waits on it. */
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
+  if (Auth.user && !Auth.user.guest) { try { Notify.boot(); } catch (e) { console.warn('[Flow] notify', e); } }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
