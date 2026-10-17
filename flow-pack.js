@@ -7044,19 +7044,36 @@ const Connect = {
     const face = c.photo
       ? '<img class="conn-face" alt="" src="' + esc(c.photo) + '">'
       : '<span class="conn-face conn-mark">' + esc((c.name || '?')[0]) + '</span>';
-    let right, sub;
+    let right, sub, below = '';
     if (c.connected) {
-      sub = esc(c.email || c.name_on_account || 'Connected');
+      sub = c.broken ? 'Needs reconnecting.' : esc(c.email || c.name_on_account || 'Connected');
       right = '<button type="button" class="flow-btn sm ghost" data-conn-off="' + esc(c.id) + '">Disconnect</button>';
+      const act = {
+        fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Import meetings</button>',
+        gmail: '<button type="button" class="flow-btn sm" data-conn-act="gmail">Add starred emails as Big Rocks</button>',
+        notion: '<button type="button" class="flow-btn sm" data-conn-act="notion-pick">' +
+          (c.target ? 'Page: ' + esc(c.target) : 'Choose a page') + '</button> ' +
+          (c.target ? '<button type="button" class="flow-btn sm" data-conn-act="notion-send">Send this week</button>' : ''),
+        gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>'
+      }[c.id];
+      if (act && !c.broken) below = '<div class="conn-acts">' + act + '<span class="conn-out flow-sub"></span></div>';
+      if (c.broken && c.kind !== 'key') right = '<button type="button" class="flow-btn sm primary" data-conn-on="' + esc(c.id) + '">Reconnect</button>';
     } else if (c.configured) {
       sub = esc(c.blurb || '');
-      right = '<button type="button" class="flow-btn sm primary" data-conn-on="' + esc(c.id) + '">Connect</button>';
+      right = '<button type="button" class="flow-btn sm primary" data-conn-' + (c.kind === 'key' ? 'key' : 'on') + '="' + esc(c.id) + '">Connect</button>';
+      if (c.kind === 'key') {
+        below = '<form class="conn-keyform" data-conn-keyform="' + esc(c.id) + '" hidden>' +
+          '<p class="flow-sub">' + esc(c.keyHelp || '') +
+          (c.keyUrl ? ' <a href="' + esc(c.keyUrl) + '" target="_blank" rel="noopener">Open ' + esc(c.name) + ' ↗</a>' : '') + '</p>' +
+          '<div class="conn-keyrow"><input type="password" autocomplete="off" spellcheck="false" placeholder="' + esc(c.keyLabel || 'Key') + '">' +
+          '<button type="submit" class="flow-btn sm primary">Save</button></div></form>';
+      }
     } else {
       sub = 'Not set up on this server yet.';
       right = '<button type="button" class="flow-btn sm" disabled>Connect</button>';
     }
     return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
-      '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + sub + '</span></div>' + right + '</div>';
+      '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + sub + '</span></div>' + right + below + '</div>';
   },
 
   async wire(section) {
@@ -7066,13 +7083,58 @@ const Connect = {
       await Connect.load();
       if (!Connect.list.length) { box.innerHTML = '<div class="flow-sub">Nothing to connect on this server yet.</div>'; return; }
       box.innerHTML = Connect.list.map(Connect.row).join('') +
-        '<p class="flow-sub conn-more">More apps are on the way.</p>';
+        '<p class="flow-sub conn-more">Keys you paste stay on The Flow\u2019s server and are never shown again. Disconnecting deletes them.</p>';
       if (Connect.inApp()) {
         Connect.list.filter(c => c.configured && !c.connected).forEach(c =>
           Connect.prepare(c.id).catch(() => {}));
       }
     };
+    box.addEventListener('submit', async (ev) => {
+      const form = ev.target.closest('[data-conn-keyform]');
+      if (!form) return;
+      ev.preventDefault();
+      const id = form.getAttribute('data-conn-keyform');
+      const input = form.querySelector('input');
+      const btn = form.querySelector('button');
+      const key = (input.value || '').trim();
+      if (!key) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const r = await fetch('/api/connect/' + id + '/key', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'That key did not work.');
+        input.value = '';
+        toast((Connect.list.find(c => c.id === id) || {}).name + ' connected ✓', null, 2400);
+        await paint();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Save';
+        toast(e.message || 'That key did not work.', 'err', 4200);
+      }
+    });
     box.addEventListener('click', async (ev) => {
+      const keyBtn = ev.target.closest('[data-conn-key]');
+      if (keyBtn) {
+        const form = box.querySelector('[data-conn-keyform="' + keyBtn.getAttribute('data-conn-key') + '"]');
+        if (form) { form.hidden = !form.hidden; if (!form.hidden) { const i = form.querySelector('input'); if (i) i.focus(); } }
+        return;
+      }
+      const act = ev.target.closest('[data-conn-act]');
+      if (act) {
+        const row = act.closest('.conn-row');
+        const out = row && row.querySelector('.conn-out');
+        act.disabled = true;
+        try {
+          const msg = await ConnectApps.run(act.getAttribute('data-conn-act'), row);
+          if (out && msg) out.textContent = msg;
+          if (act.getAttribute('data-conn-act') === 'notion-pick') await paint();
+        } catch (e) {
+          if (out) out.textContent = '';
+          toast(e.message || 'That did not work.', 'err', 4200);
+        }
+        act.disabled = false;
+        return;
+      }
       const on = ev.target.closest('[data-conn-on]');
       const off = ev.target.closest('[data-conn-off]');
       if (on) {
@@ -7133,7 +7195,8 @@ const Connect = {
         connected: [name + ' connected ✓', null],
         denied: ['Permission was not given.', 'err'],
         expired: ['That took too long — try connecting again.', 'err'],
-        mismatch: ['Signed in as somebody else — try again.', 'err']
+        mismatch: ['Signed in as somebody else — try again.', 'err'],
+        scope: ['The permission The Flow needs was unticked — connect again and leave it ticked.', 'err']
       }[status] || ['Could not connect ' + name + '.', 'err'];
       toast(say[0], say[1], 3200);
       q.delete('connect');
@@ -7145,6 +7208,196 @@ const Connect = {
   async boot() {
     await Connect.load();
     Connect.announce();
+    try { ConnectApps.calendarBoot(); } catch (e) {}
+  }
+};
+
+/* ── What each connection does, once it is connected ─────────────────────
+ *
+ * Imports are remembered by id in the account's own data (`connSeen`), so a
+ * meeting or an email becomes one Journal entry or one Big Rock however many
+ * devices press the button. Everything lands through the app's own functions
+ * — addRock(), J() — so it is saved and synced exactly as if typed.
+ */
+const ConnectApps = {
+  seen() {
+    let v = {};
+    try { v = (typeof S !== 'undefined' && S.get('connSeen', {})) || {}; } catch (e) {}
+    return v && typeof v === 'object' ? v : {};
+  },
+  markSeen(kind, ids) {
+    const v = ConnectApps.seen();
+    const list = Array.isArray(v[kind]) ? v[kind] : [];
+    ids.forEach((id) => { if (list.indexOf(id) < 0) list.push(id); });
+    v[kind] = list.slice(-500);
+    try { S.set('connSeen', v); } catch (e) {}
+  },
+  async get(path) {
+    const r = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'That did not work.');
+    return j;
+  },
+  async post(path, body) {
+    const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'That did not work.');
+    return j;
+  },
+  today() {
+    const d = new Date();
+    const wid = (typeof weekId === 'function') ? weekId(d) : Notify.weekId(d);
+    return { wid, day: (d.getDay() + 6) % 7 };
+  },
+  rock(title, note) {
+    const t = ConnectApps.today();
+    if (typeof addRock !== 'function') throw new Error('Open the Week Compass once, then try again.');
+    addRock(String(title).slice(0, 200), '', t.day, '', t.wid, { note: note || '', prio: 'med' });
+  },
+
+  async run(what, row) {
+    if (what === 'fathom') return ConnectApps.fathom();
+    if (what === 'gmail') return ConnectApps.gmail();
+    if (what === 'notion-pick') return ConnectApps.notionPick(row);
+    if (what === 'notion-send') return ConnectApps.notionSend();
+    return '';
+  },
+
+  async fathom() {
+    const seen = ConnectApps.seen().fathom || [];
+    const j = await ConnectApps.get('/api/connect/fathom/meetings');
+    const me = String(j.me || '').toLowerCase();
+    const fresh = (j.meetings || []).filter((m) => m.id && seen.indexOf(m.id) < 0)
+      .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    let rocks = 0;
+    fresh.forEach((m) => {
+      const when = m.at ? new Date(m.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      const body = '🎙️ ' + m.title + (when ? ' · ' + when : '') +
+        (m.summary ? '\n\n' + m.summary : '') + (m.url ? '\n\n' + m.url : '');
+      if (typeof J === 'function') J('meeting', body);
+      /* Your own action items, and anybody's that nobody owns. */
+      (m.actions || []).filter((a) => !a.email || !me || a.email.toLowerCase() === me).forEach((a) => {
+        ConnectApps.rock(a.text, 'From Fathom: ' + m.title + (m.url ? ' — ' + m.url : ''));
+        rocks++;
+      });
+    });
+    ConnectApps.markSeen('fathom', fresh.map((m) => m.id));
+    if (!fresh.length) return 'Nothing new from the last two weeks.';
+    return fresh.length + ' meeting' + (fresh.length === 1 ? '' : 's') + ' added to your Journal' +
+      (rocks ? ', ' + rocks + ' action item' + (rocks === 1 ? '' : 's') + ' added as Big Rocks for today.' : '.');
+  },
+
+  async gmail() {
+    const seen = ConnectApps.seen().gmail || [];
+    const j = await ConnectApps.get('/api/connect/gmail/starred');
+    const fresh = (j.messages || []).filter((m) => m.id && seen.indexOf(m.id) < 0);
+    fresh.forEach((m) => ConnectApps.rock('✉️ ' + m.subject, (m.from ? 'From ' + m.from + ' — ' : '') + m.link));
+    ConnectApps.markSeen('gmail', fresh.map((m) => m.id));
+    return fresh.length
+      ? fresh.length + ' starred email' + (fresh.length === 1 ? '' : 's') + ' added as Big Rocks for today.'
+      : 'No new starred emails.';
+  },
+
+  async notionPick(row) {
+    const j = await ConnectApps.get('/api/connect/notion/pages');
+    const pages = j.pages || [];
+    if (!pages.length) throw new Error('The Flow cannot see any pages yet. In Notion, open a page and add your integration under … → Connections.');
+    const acts = row.querySelector('.conn-acts');
+    const sel = document.createElement('select');
+    sel.className = 'conn-pick';
+    sel.innerHTML = '<option value="">Choose the page to send to…</option>' +
+      pages.map((pg) => '<option value="' + esc(pg.id) + '">' + esc(pg.title) + '</option>').join('');
+    acts.insertBefore(sel, acts.firstChild);
+    return new Promise((resolve, reject) => {
+      sel.addEventListener('change', async () => {
+        const pg = pages.find((x) => x.id === sel.value);
+        if (!pg) return;
+        try { await ConnectApps.post('/api/connect/notion/target', { id: pg.id, title: pg.title }); resolve('Sending to ' + pg.title + '.'); }
+        catch (e) { reject(e); }
+      });
+    });
+  },
+
+  /* This week, as Notion blocks: the Big Rocks as to-dos, then what was
+     written in the Journal since Monday. */
+  async notionSend() {
+    const t = ConnectApps.today();
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    let rocks = [];
+    try { rocks = ((typeof cData !== 'undefined' && cData.rocks) || {})[t.wid] || []; } catch (e) {}
+    const monday = new Date(); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - t.day);
+    let entries = [];
+    try { entries = (typeof jData !== 'undefined' ? jData : []).filter((e) => e && e.t && new Date(e.t) >= monday); } catch (e) {}
+    const blocks = [{ type: 'h', text: 'Big Rocks' }];
+    rocks.slice().sort((a, b) => (a.day - b.day) || String(a.time || '').localeCompare(String(b.time || '')))
+      .forEach((r) => blocks.push({ type: 'todo', done: !!r.done,
+        text: DAYS[r.day] + (r.time ? ' ' + r.time : '') + ' — ' + r.title + (r.note ? ' (' + String(r.note).split('\n')[0].slice(0, 200) + ')' : '') }));
+    if (!rocks.length) blocks.push({ type: 'p', text: 'No Big Rocks this week.' });
+    blocks.push({ type: 'h', text: 'Journal' });
+    entries.slice(-60).forEach((e) => blocks.push({ type: 'li',
+      text: new Date(e.t).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) + ' · ' + String(e.txt || '') }));
+    if (!entries.length) blocks.push({ type: 'p', text: 'Nothing written yet this week.' });
+    const range = monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const j = await ConnectApps.post('/api/connect/notion/send',
+      { title: 'The Flow — ' + t.wid.replace('-W', ' week ') + ' (from ' + range + ')', blocks });
+    if (j.url) window.open(j.url, '_blank');
+    return 'Sent to Notion ✓';
+  },
+
+  /* ── Google Calendar on Today ── */
+  cal: null,
+  async calendarLoad() {
+    const c = Connect.list.find((x) => x.id === 'gcal');
+    if (!c || !c.connected || c.broken) { ConnectApps.cal = null; ConnectApps.calendarPaint(); return; }
+    const from = new Date(); from.setHours(0, 0, 0, 0);
+    const to = new Date(from); to.setDate(to.getDate() + 1);
+    try {
+      const j = await ConnectApps.get('/api/connect/gcal/events?' + new URLSearchParams({ from: from.toISOString(), to: to.toISOString() }));
+      ConnectApps.cal = j.events || [];
+    } catch (e) { ConnectApps.cal = null; }
+    ConnectApps.calendarPaint();
+  },
+  calendarHtml() {
+    const ev = ConnectApps.cal;
+    if (!ev) return '';
+    const hm = (s) => new Date(s).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const rows = ev.length ? ev.map((e) => {
+      const when = e.allDay ? 'All day' : hm(e.start) + '–' + hm(e.end);
+      const go = e.video || e.link;
+      return '<div class="td-rock"><div class="dot med"></div><div class="rk-title">' +
+        (go ? '<a href="' + esc(go) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a>' : esc(e.title)) +
+        (e.location ? '<div class="td-rk-note">📍 ' + esc(e.location) + '</div>' : '') +
+        '</div><div class="rk-meta">' + esc(when) + '</div></div>';
+    }).join('') : '<div class="td-rocks-empty">No meetings today.</div>';
+    return '<div class="td-rocks" id="td-cal"><div class="td-rocks-head"><span class="lbl">Today · Calendar</span><span class="cnt">' +
+      ev.length + '</span></div>' + rows + '</div>';
+  },
+  calendarPaint() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    const old = feed.querySelector('#td-cal');
+    const html = ConnectApps.calendarHtml();
+    if (!html) { if (old) old.remove(); return; }
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    const card = box.firstElementChild;
+    if (old) { old.replaceWith(card); return; }
+    const rocks = feed.querySelector('.td-rocks');
+    if (rocks) rocks.parentNode.insertBefore(card, rocks); else feed.appendChild(card);
+  },
+  calendarBoot() {
+    if (ConnectApps._calOn) return;
+    ConnectApps._calOn = true;
+    const feed = document.getElementById('today-feed');
+    /* Today is redrawn wholesale; put the card back each time it is. */
+    if (feed && window.MutationObserver) {
+      new MutationObserver(() => { if (ConnectApps.cal && !feed.querySelector('#td-cal')) ConnectApps.calendarPaint(); })
+        .observe(feed, { childList: true });
+    }
+    ConnectApps.calendarLoad();
+    setInterval(() => ConnectApps.calendarLoad(), 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) ConnectApps.calendarLoad(); });
   }
 };
 

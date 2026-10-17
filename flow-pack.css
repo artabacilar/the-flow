@@ -1798,3 +1798,17 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .conn-t b{font-size:14px;}
 .conn-t span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .conn-more{margin:4px 2px 0;}
+/* Connections that do something once connected, and the ones joined with a
+   pasted key: their controls sit on a second line inside the same row. */
+.conn-row{flex-wrap:wrap;}
+.conn-t span{white-space:normal;}
+.conn-acts,.conn-keyform{flex:1 0 100%;margin:2px 0 0 46px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.conn-keyform{flex-direction:column;align-items:stretch;}
+.conn-keyform[hidden]{display:none;}
+.conn-keyform p{margin:0;}
+.conn-keyrow{display:flex;gap:8px;}
+.conn-keyrow input{flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);color:inherit;font:inherit;font-size:13px;}
+.conn-pick{max-width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:inherit;font:inherit;font-size:13px;}
+.conn-out{font-size:12px;}
+@media (max-width:520px){.conn-acts,.conn-keyform{margin-left:0;}}

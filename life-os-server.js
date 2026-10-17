@@ -481,11 +481,26 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>Recovery codes</b>, hashed the same way as the password.</li>
     <li><b>Session and access tokens</b>, so you stay signed in and so an assistant you have
         connected can read your day.</li>
-    <li><b>Apps you connect yourself</b>, and only if you do. Connecting Google stores the
-        name, email address and profile photo of the Google account you chose, so the app can
-        show it as yours — nothing else: The Flow does not ask for, and cannot read, your mail,
-        calendar, contacts or files. No Google token is kept after the connection is made.
-        Disconnecting in Settings, or deleting your account, removes all of it.</li>
+    <li><b>Apps you connect yourself</b>, and only if you do, each separately:
+      <ul>
+        <li><b>Google</b> stores the name, email address and profile photo of the account you
+            chose, so the app can show it as yours. No Google token is kept.</li>
+        <li><b>Google Calendar</b> keeps a read-only token so today's events can be shown on
+            Today. Events are read when you open the app and are not stored.</li>
+        <li><b>Gmail</b> keeps a read-only token. The Flow reads only the sender, subject and date
+            of messages you have starred, and only when you press the button that turns them into
+            Big Rocks. It never reads message bodies, never sends mail and never changes anything.</li>
+        <li><b>Fathom</b> keeps the API key you paste, to read your meetings' titles, summaries and
+            action items when you press Import. What is imported becomes part of your Journal and
+            Big Rocks.</li>
+        <li><b>Notion</b> keeps the integration secret you paste, to create a page under the
+            Notion page you chose when you press Send.</li>
+      </ul>
+      Keys and tokens are kept on the server, outside your data, and are never sent back to the
+      app. Google data is used only to show it to you, under Google's Limited Use rules: it is
+      not used for advertising, not sold, and not read by people. Disconnecting in Settings, or
+      deleting your account, removes all of it, and disconnecting Google Calendar or Gmail also
+      revokes The Flow's access at Google.</li>
   </ul>
 
   <h2>Where it is stored</h2>

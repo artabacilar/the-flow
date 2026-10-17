@@ -64,6 +64,11 @@
  *   GOOGLE_REDIRECT_URI   optional; https://<host>/api/connect/google/callback
  *                         is derived from the request when absent, and must
  *                         be registered on the client exactly
+ *   GOOGLE_CLIENT_SECRET  only for Google Calendar and Gmail, which need a
+ *                         token kept and refreshed (the profile does not)
+ *
+ * Fathom and Notion need nothing here: each person pastes a key made in
+ * that app, verified on the spot and kept server-side.
  *
  * A provider without its credentials is listed as not configured and its
  * button is not shown. Nothing else notices.
@@ -104,10 +109,86 @@ const PROVIDERS = {
        should be asked which, not silently given whichever is signed in. */
     extra: { prompt: 'select_account', response_type: 'id_token', response_mode: 'form_post' },
     finish: finishGoogle
+  },
+
+  /* Calendar and Gmail need more than who somebody is: an access token, kept
+     and refreshed, because they are read again later without the person
+     there. That is the authorisation-code flow, and trading a code needs the
+     client secret — so these two are listed but not offered until
+     GOOGLE_CLIENT_SECRET is set. They come back through Google's registered
+     callback (`via`), so no second redirect URI has to be added to the
+     client. */
+  gcal: {
+    id: 'gcal',
+    kind: 'oauth',
+    via: 'google',
+    name: 'Google Calendar',
+    blurb: 'Today\u2019s meetings on your Today screen, next to your Big Rocks.',
+    clientId: () => process.env.GOOGLE_CLIENT_ID || '',
+    secret: () => process.env.GOOGLE_CLIENT_SECRET || '',
+    fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope: 'openid email https://www.googleapis.com/auth/calendar.readonly',
+    need: 'https://www.googleapis.com/auth/calendar.readonly',
+    needWhy: 'Tick the box that lets The Flow see your calendar, then try again.',
+    extra: { response_type: 'code', access_type: 'offline', prompt: 'consent select_account' },
+    finish: finishCode,
+    actions: { events: gcalEvents }
+  },
+  gmail: {
+    id: 'gmail',
+    kind: 'oauth',
+    via: 'google',
+    name: 'Gmail',
+    blurb: 'Emails you star become Big Rocks. The Flow reads only starred mail\u2019s sender and subject.',
+    clientId: () => process.env.GOOGLE_CLIENT_ID || '',
+    secret: () => process.env.GOOGLE_CLIENT_SECRET || '',
+    fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope: 'openid email https://www.googleapis.com/auth/gmail.readonly',
+    need: 'https://www.googleapis.com/auth/gmail.readonly',
+    needWhy: 'Tick the box that lets The Flow read your email, then try again.',
+    extra: { response_type: 'code', access_type: 'offline', prompt: 'consent select_account' },
+    finish: finishCode,
+    actions: { starred: gmailStarred }
+  },
+
+  /* Fathom and Notion are connected with a key the person makes in that
+     app and pastes here, once. Neither offers sign-in without a secret of
+     our own, and a personal key is what both document for one person's
+     use. The key is kept server-side and never handed back to the page. */
+  fathom: {
+    id: 'fathom',
+    kind: 'key',
+    name: 'Fathom',
+    blurb: 'Meeting summaries in your Journal; action items as Big Rocks.',
+    keyLabel: 'Fathom API key',
+    keyHelp: 'In Fathom: Settings \u2192 API Access \u2192 Generate API key. Copy it and paste it here.',
+    keyUrl: 'https://fathom.video/customize#api-access-header',
+    verify: verifyFathom,
+    actions: { meetings: fathomMeetings }
+  },
+  notion: {
+    id: 'notion',
+    kind: 'key',
+    name: 'Notion',
+    blurb: 'Send your week \u2014 Big Rocks and journal \u2014 to a Notion page.',
+    keyLabel: 'Notion integration secret',
+    keyHelp: 'In Notion: Settings \u2192 Connections \u2192 Develop or manage integrations \u2192 New integration (Internal). Copy its secret and paste it here, then open the Notion page you want and add the integration under \u2026 \u2192 Connections.',
+    keyUrl: 'https://www.notion.so/profile/integrations',
+    verify: verifyNotion,
+    actions: { pages: notionPages, target: notionTarget, send: notionSend }
   }
 };
 
-const configured = (pv) => !!(pv && pv.clientId());
+const kindOf = (pv) => pv.kind || 'oauth';
+const configured = (pv) => {
+  if (!pv) return false;
+  if (kindOf(pv) === 'key') return true;
+  return !!(pv.clientId() && (!pv.secret || pv.secret()));
+};
 
 function redirectFor(pv, req) {
   if (pv.fixedRedirect()) return pv.fixedRedirect();
@@ -117,7 +198,7 @@ function redirectFor(pv, req) {
   const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
     || (req.socket && req.socket.encrypted ? 'https' : 'http');
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
-  return proto + '://' + host + '/api/connect/' + pv.id + '/callback';
+  return proto + '://' + host + '/api/connect/' + (pv.via || pv.id) + '/callback';
 }
 
 /* ---------------------------------------------------------------------
@@ -217,6 +298,258 @@ async function finishGoogle(pv, posted, rec, deps) {
 }
 
 /* ---------------------------------------------------------------------
+ * Google, with a token: Calendar and Gmail
+ * ------------------------------------------------------------------ */
+
+class Refused extends Error {}
+
+async function finishCode(pv, posted, rec, deps) {
+  const f = deps.fetch || fetch;
+  const res = await f(pv.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code: String(posted.code || ''), client_id: pv.clientId(), client_secret: pv.secret(),
+      redirect_uri: rec.redirect, grant_type: 'authorization_code'
+    }).toString()
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.access_token) throw new Error('the code was not accepted (' + (j.error || res.status) + ')');
+  /* Google lets people untick a permission on the consent screen. A token
+     without the one this connection exists for is not a connection. */
+  const granted = String(j.scope || '').split(/\s+/);
+  if (granted.indexOf(pv.need) < 0) throw new Refused(pv.needWhy);
+  /* This ID token came straight from Google's token endpoint over TLS, in
+     answer to our own client secret — OpenID Connect lets it be read
+     without checking the signature again. Only the address is taken. */
+  let claims = {};
+  try { claims = JSON.parse(unb64(String(j.id_token || '').split('.')[1] || '').toString('utf8')); } catch (e) {}
+  const now = deps.now || Date.now();
+  return {
+    account: String(claims.sub || ''),
+    email: claims.email_verified === false ? '' : String(claims.email || ''),
+    name: '', photo: null,
+    tok: { access: j.access_token, refresh: j.refresh_token || null, exp: now + (Number(j.expires_in) || 3600) * 1000 }
+  };
+}
+
+/* A current access token, refreshed when it is within a minute of expiry.
+   A refresh Google refuses means the person revoked access in their Google
+   account: the connection is marked so the page can say "reconnect". */
+async function accessToken(pv, rec, ctx) {
+  const now = ctx.now || Date.now();
+  const t = rec.tok || {};
+  if (t.access && t.exp - now > 60 * 1000) return t.access;
+  if (!t.refresh) throw new Refused('Reconnect ' + pv.name + ' in Settings.');
+  const res = await (ctx.fetch || fetch)(pv.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: pv.clientId(), client_secret: pv.secret(), refresh_token: t.refresh, grant_type: 'refresh_token'
+    }).toString()
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.access_token) {
+    if (j.error === 'invalid_grant') { rec.broken = true; await ctx.saveRec(rec); }
+    throw new Refused('Reconnect ' + pv.name + ' in Settings.');
+  }
+  rec.tok = { access: j.access_token, refresh: j.refresh_token || t.refresh, exp: now + (Number(j.expires_in) || 3600) * 1000 };
+  delete rec.broken;
+  await ctx.saveRec(rec);
+  return rec.tok.access;
+}
+
+async function googleGet(pv, rec, ctx, url) {
+  const tok = await accessToken(pv, rec, ctx);
+  const res = await (ctx.fetch || fetch)(url, { headers: { Authorization: 'Bearer ' + tok } });
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) throw new Refused('Reconnect ' + pv.name + ' in Settings.');
+  if (!res.ok) throw new Error(pv.name + ' answered ' + res.status);
+  return j;
+}
+
+const isoOk = (s) => typeof s === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.test(s) && !isNaN(Date.parse(s));
+
+/* The person's own day, from the page: it knows where midnight is. */
+async function gcalEvents(pv, rec, ctx) {
+  const from = ctx.query.get('from'), to = ctx.query.get('to');
+  if (!isoOk(from) || !isoOk(to)) return { status: 400, body: { error: 'from and to are required' } };
+  const span = Date.parse(to) - Date.parse(from);
+  if (!(span > 0 && span <= 8 * 86400000)) return { status: 400, body: { error: 'at most eight days at a time' } };
+  const q = new URLSearchParams({ singleEvents: 'true', orderBy: 'startTime', maxResults: '50', timeMin: from, timeMax: to });
+  const j = await googleGet(pv, rec, ctx, 'https://www.googleapis.com/calendar/v3/calendars/primary/events?' + q);
+  const events = (j.items || []).filter((e) => e && e.status !== 'cancelled').map((e) => {
+    const video = e.hangoutLink || (((e.conferenceData || {}).entryPoints || []).find((x) => x.entryPointType === 'video') || {}).uri || '';
+    return {
+      id: String(e.id || ''),
+      title: String(e.summary || '(no title)').slice(0, 200),
+      start: (e.start && (e.start.dateTime || e.start.date)) || '',
+      end: (e.end && (e.end.dateTime || e.end.date)) || '',
+      allDay: !!(e.start && e.start.date && !e.start.dateTime),
+      location: String(e.location || '').slice(0, 200),
+      link: String(e.htmlLink || ''),
+      video: String(video)
+    };
+  });
+  return { status: 200, body: { events } };
+}
+
+async function gmailStarred(pv, rec, ctx) {
+  const base = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
+  const list = await googleGet(pv, rec, ctx, base + '?' + new URLSearchParams({ q: 'is:starred', maxResults: '20' }));
+  const out = [];
+  for (const m of (list.messages || []).slice(0, 20)) {
+    const q = new URLSearchParams([['format', 'metadata'], ['metadataHeaders', 'Subject'], ['metadataHeaders', 'From'], ['metadataHeaders', 'Date']]);
+    let one;
+    try { one = await googleGet(pv, rec, ctx, base + '/' + encodeURIComponent(m.id) + '?' + q); }
+    catch (e) { if (e instanceof Refused) throw e; continue; }
+    const h = {};
+    ((one.payload || {}).headers || []).forEach((x) => { h[String(x.name).toLowerCase()] = String(x.value || ''); });
+    out.push({
+      id: String(m.id),
+      subject: (h.subject || '(no subject)').slice(0, 200),
+      from: h.from ? h.from.replace(/\s*<[^>]*>\s*$/, '').replace(/^"|"$/g, '').slice(0, 120) : '',
+      date: h.date || '',
+      link: 'https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(String(one.threadId || m.threadId || m.id))
+    });
+  }
+  return { status: 200, body: { messages: out } };
+}
+
+/* ---------------------------------------------------------------------
+ * Fathom
+ * ------------------------------------------------------------------ */
+
+const FATHOM = 'https://api.fathom.ai/external/v1';
+
+async function fathomGet(key, path, ctx) {
+  const res = await (ctx.fetch || fetch)(FATHOM + path, { headers: { 'X-Api-Key': key, Accept: 'application/json' } });
+  if (res.status === 401 || res.status === 403) throw new Refused('Fathom did not accept that key.');
+  if (res.status === 429) throw new Refused('Fathom is busy \u2014 try again in a minute.');
+  if (!res.ok) throw new Error('Fathom answered ' + res.status);
+  return res.json();
+}
+
+async function verifyFathom(key, ctx) {
+  const since = new Date((ctx.now || Date.now()) - 30 * 86400000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const j = await fathomGet(key, '/meetings?' + new URLSearchParams({ created_after: since }), ctx);
+  const first = (j.items || [])[0] || {};
+  const by = first.recorded_by || {};
+  return { email: String(by.email || ''), name: String(by.name || '') };
+}
+
+async function fathomMeetings(pv, rec, ctx) {
+  const now = ctx.now || Date.now();
+  let since = ctx.query.get('since');
+  if (!isoOk(since)) since = new Date(now - 14 * 86400000).toISOString();
+  since = new Date(Math.max(Date.parse(since), now - 90 * 86400000)).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const out = [];
+  let cursor = '';
+  for (let page = 0; page < 3; page++) {
+    const q = new URLSearchParams({ created_after: since, include_summary: 'true', include_action_items: 'true' });
+    if (cursor) q.set('cursor', cursor);
+    const j = await fathomGet(rec.key, '/meetings?' + q, ctx);
+    for (const m of (j.items || [])) {
+      out.push({
+        id: String(m.recording_id != null ? m.recording_id : (m.url || '')),
+        title: String(m.title || m.meeting_title || 'Meeting').slice(0, 200),
+        url: String(m.share_url || m.url || ''),
+        at: String(m.recording_start_time || m.scheduled_start_time || m.created_at || ''),
+        summary: String(((m.default_summary || {}).markdown_formatted) || '').slice(0, 6000),
+        actions: (m.action_items || []).filter((a) => a && !a.completed && a.description).map((a) => ({
+          text: String(a.description).slice(0, 300),
+          who: String(((a.assignee || {}).name) || ''),
+          email: String(((a.assignee || {}).email) || '')
+        }))
+      });
+    }
+    cursor = j.next_cursor || '';
+    if (!cursor) break;
+  }
+  return { status: 200, body: { meetings: out, me: rec.email || '' } };
+}
+
+/* ---------------------------------------------------------------------
+ * Notion
+ * ------------------------------------------------------------------ */
+
+const NOTION = 'https://api.notion.com/v1';
+
+async function notionCall(key, path, ctx, method, body) {
+  const res = await (ctx.fetch || fetch)(NOTION + path, {
+    method: method || 'GET',
+    headers: { Authorization: 'Bearer ' + key, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Refused('Notion did not accept that secret.');
+  if (res.status === 404 && path.indexOf('/pages') === 0) throw new Refused('The Flow cannot see that page. In Notion, open it and add the integration under \u2026 \u2192 Connections.');
+  if (res.status === 429) throw new Refused('Notion is busy \u2014 try again in a minute.');
+  if (!res.ok) throw new Error('Notion answered ' + res.status + (j.message ? ': ' + j.message : ''));
+  return j;
+}
+
+async function verifyNotion(key, ctx) {
+  const j = await notionCall(key, '/users/me', ctx);
+  return { email: '', name: String(((j.bot || {}).workspace_name) || j.name || 'Notion') };
+}
+
+const plain = (rich) => (rich || []).map((t) => t.plain_text || '').join('');
+
+async function notionPages(pv, rec, ctx) {
+  const j = await notionCall(rec.key, '/search', ctx, 'POST', {
+    filter: { property: 'object', value: 'page' }, page_size: 50,
+    sort: { direction: 'descending', timestamp: 'last_edited_time' }
+  });
+  const pages = (j.results || []).map((pg) => {
+    const props = pg.properties || {};
+    const tp = Object.values(props).find((x) => x && x.type === 'title');
+    return { id: String(pg.id), title: (tp ? plain(tp.title) : '') || 'Untitled' };
+  });
+  return { status: 200, body: { pages, target: rec.target || null } };
+}
+
+async function notionTarget(pv, rec, ctx) {
+  if (ctx.req.method !== 'POST') return { status: 405, body: { error: 'POST' } };
+  let b = {};
+  try { b = JSON.parse((await ctx.readBody(ctx.req)) || '{}'); } catch (e) {}
+  const id = String(b.id || '');
+  if (!/^[0-9a-f-]{32,36}$/i.test(id)) return { status: 400, body: { error: 'Choose a page.' } };
+  rec.target = { id, title: String(b.title || 'Untitled').slice(0, 200) };
+  await ctx.saveRec(rec);
+  return { status: 200, body: { ok: true, target: rec.target } };
+}
+
+/* The page hands over a small, closed shape — headings, paragraphs,
+   bullets and to-dos — and only that becomes Notion blocks. */
+function notionBlocks(list) {
+  const rt = (s) => [{ type: 'text', text: { content: String(s || '').slice(0, 1900) } }];
+  const out = [];
+  for (const b of (Array.isArray(list) ? list : []).slice(0, 95)) {
+    if (!b || !b.text) continue;
+    if (b.type === 'h') out.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: rt(b.text) } });
+    else if (b.type === 'li') out.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt(b.text) } });
+    else if (b.type === 'todo') out.push({ object: 'block', type: 'to_do', to_do: { rich_text: rt(b.text), checked: !!b.done } });
+    else out.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: rt(b.text) } });
+  }
+  return out;
+}
+
+async function notionSend(pv, rec, ctx) {
+  if (ctx.req.method !== 'POST') return { status: 405, body: { error: 'POST' } };
+  if (!rec.target) return { status: 400, body: { error: 'Choose a Notion page first.' } };
+  let b = {};
+  try { b = JSON.parse((await ctx.readBody(ctx.req)) || '{}'); } catch (e) {}
+  const title = String(b.title || 'The Flow').slice(0, 200);
+  const j = await notionCall(rec.key, '/pages', ctx, 'POST', {
+    parent: { page_id: rec.target.id },
+    properties: { title: { title: [{ type: 'text', text: { content: title } }] } },
+    children: notionBlocks(b.blocks)
+  });
+  return { status: 200, body: { ok: true, url: String(j.url || '') } };
+}
+
+/* ---------------------------------------------------------------------
  * Storage
  * ------------------------------------------------------------------ */
 
@@ -279,9 +612,12 @@ async function handle(req, res, ctx) {
     for (const pv of Object.values(PROVIDERS)) {
       const rec = await readJSON(raw, KEY(me.id, pv.id), null);
       out.push({
-        id: pv.id, name: pv.name, blurb: pv.blurb,
+        id: pv.id, name: pv.name, blurb: pv.blurb, kind: kindOf(pv),
+        keyLabel: pv.keyLabel || null, keyHelp: pv.keyHelp || null, keyUrl: pv.keyUrl || null,
         configured: configured(pv),
         connected: !!rec,
+        broken: !!(rec && rec.broken),
+        target: (rec && rec.target && rec.target.title) || null,
         email: (rec && rec.email) || null,
         name_on_account: (rec && rec.name) || null,
         photo: (rec && rec.photo) || null,
@@ -292,11 +628,49 @@ async function handle(req, res, ctx) {
     return true;
   }
 
-  const m = p.match(/^\/api\/connect\/([a-z0-9-]+)\/(start|callback|finish|disconnect)$/);
+  const m = p.match(/^\/api\/connect\/([a-z0-9-]+)\/([a-z-]+)$/);
   if (!m) return false;
   const pv = PROVIDERS[m[1]];
   if (!pv) return json(res, 404, { error: 'No such connection.' }), true;
   const step = m[2];
+
+  /* ---- a key, pasted by the person ---- */
+  if (step === 'key') {
+    if (!me) return json(res, 401, { error: 'auth required' }), true;
+    if (req.method !== 'POST') return json(res, 405, { error: 'POST' }), true;
+    if (kindOf(pv) !== 'key') return json(res, 404, { error: 'No such step.' }), true;
+    let body = {};
+    try { body = JSON.parse((await ctx.readBody(req)) || '{}'); } catch (e) {}
+    const key = String(body.key || '').trim();
+    if (key.length < 10 || key.length > 400 || /\s/.test(key)) return json(res, 400, { error: 'That does not look like a ' + pv.keyLabel + '.' }), true;
+    let who;
+    try { who = await pv.verify(key, { fetch: ctx.fetch, now: ctx.now }); }
+    catch (e) {
+      if (!(e instanceof Refused)) console.error('[connect/' + pv.id + '] ' + (e && e.message));
+      return json(res, e instanceof Refused ? 400 : 502, { error: e instanceof Refused ? e.message : pv.name + ' could not be reached. Try again shortly.' }), true;
+    }
+    await writeJSON(raw, KEY(me.id, pv.id), { key, email: who.email || '', name: who.name || '', since: new Date(now()).toISOString() });
+    json(res, 200, { ok: true });
+    return true;
+  }
+
+  /* ---- what a connection is for, once it exists ---- */
+  if (pv.actions && pv.actions[step]) {
+    if (!me) return json(res, 401, { error: 'auth required' }), true;
+    const rec = await readJSON(raw, KEY(me.id, pv.id), null);
+    if (!rec) return json(res, 409, { error: pv.name + ' is not connected.' }), true;
+    const actx = { req, query: ctx.query, fetch: ctx.fetch, now: ctx.now, readBody: ctx.readBody,
+                   saveRec: (r) => writeJSON(raw, KEY(me.id, pv.id), r) };
+    try {
+      const out = await pv.actions[step](pv, rec, actx);
+      json(res, out.status, out.body);
+    } catch (e) {
+      if (!(e instanceof Refused)) console.error('[connect/' + pv.id + '/' + step + '] ' + (e && e.message));
+      json(res, e instanceof Refused ? 409 : 502, { error: e instanceof Refused ? e.message : pv.name + ' could not be reached. Try again shortly.' });
+    }
+    return true;
+  }
+  if (['start', 'callback', 'finish', 'disconnect'].indexOf(step) < 0) return json(res, 404, { error: 'No such step.' }), true;
 
   /* ---- begin ----
      A POST that answers with the URL, rather than a GET that redirects:
@@ -305,6 +679,7 @@ async function handle(req, res, ctx) {
   if (step === 'start') {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
     if (req.method !== 'POST') return json(res, 405, { error: 'POST' }), true;
+    if (kindOf(pv) === 'key') return json(res, 400, { error: pv.name + ' is connected with a key, not a sign-in.' }), true;
     if (!configured(pv)) return json(res, 503, { error: pv.name + ' is not set up on this server yet.' }), true;
     let body = {};
     try { body = JSON.parse((await ctx.readBody(req)) || '{}'); } catch (e) {}
@@ -324,14 +699,16 @@ async function handle(req, res, ctx) {
   }
 
   const failPage = (why) => donePage('Not connected', '<p>' + esc(why) + '</p><p>Go back to The Flow and try again from Settings.</p>', false);
-  const okPage = (profile) => donePage(pv.name + ' connected',
+  const okPageFor = (P, profile) => donePage(P.name + ' connected',
     (profile.email ? '<p>' + esc(profile.email) + '</p>' : '') +
     '<p>You can close this and go back to The Flow.</p>', true);
-  const save = (uid, profile) => writeJSON(raw, KEY(uid, pv.id), {
+  const saveFor = (P, uid, profile) => writeJSON(raw, KEY(uid, P.id), Object.assign({
     account: profile.account, email: profile.email, name: profile.name,
     photo: profile.photo, since: new Date(now()).toISOString()
-  });
-  const home = (status) => { res.writeHead(302, { Location: '/?connect=' + pv.id + ':' + status + '#settings', 'Cache-Control': 'no-store' }); res.end(); return true; };
+  }, profile.tok ? { tok: profile.tok } : {}));
+  const save = (uid, profile) => saveFor(pv, uid, profile);
+  const homeFor = (P, status) => { res.writeHead(302, { Location: '/?connect=' + P.id + ':' + status + '#settings', 'Cache-Control': 'no-store' }); res.end(); return true; };
+  const home = (status) => homeFor(pv, status);
   const page = (code, html) => { res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(html); return true; };
 
   /* ---- come back ----
@@ -353,27 +730,34 @@ async function handle(req, res, ctx) {
     if (state) await raw.set(ST(state), '');
 
     const viaApp = !!(rec && rec.app);
-    const fail = (status, why) => viaApp ? page(400, failPage(why)) : home(status);
+    /* Calendar and Gmail come back through Google's registered callback;
+       the state says which connection this is. */
+    const real = rec && PROVIDERS[rec.provider];
+    const R = real || pv;
+    const fail = (status, why) => viaApp ? page(400, failPage(why)) : homeFor(R, status);
 
-    if (!rec || rec.provider !== pv.id || now() - rec.at > STATE_TTL_MS) return fail('expired', 'That link has expired.');
+    if (!rec || !real || (real.id !== pv.id && real.via !== pv.id) || now() - rec.at > STATE_TTL_MS) return fail('expired', 'That link has expired.');
     if (pick('error')) return fail('denied', 'Permission was not given.');
-    if (!pick('id_token')) return fail('incomplete', pv.name + ' did not finish.');
+    const want = (real.extra || {}).response_type === 'code' ? 'code' : 'id_token';
+    if (!pick(want)) return fail('incomplete', real.name + ' did not finish.');
+    if (want === 'code') posted.code = pick('code');
 
     let profile;
-    try { profile = await pv.finish(pv, posted, rec, deps); }
+    try { profile = await real.finish(real, posted, rec, deps); }
     catch (e) {
-      console.error('[connect/' + pv.id + '] ' + (e && e.message));
-      return fail('failed', pv.name + ' did not accept the sign-in. Please try again.');
+      if (e instanceof Refused) return fail('scope', e.message);
+      console.error('[connect/' + real.id + '] ' + (e && e.message));
+      return fail('failed', real.name + ' did not accept the sign-in. Please try again.');
     }
 
-    if (viaApp) { await save(rec.uid, profile); return page(200, okPage(profile)); }
+    if (viaApp) { await saveFor(R, rec.uid, profile); return page(200, okPageFor(R, profile)); }
 
     /* A browser round trip: park the result under a fresh one-time key and
        send the browser on to /finish. The page does the navigation, from
        this origin, so the session cookie goes with it. */
     const park = b64url(crypto.randomBytes(16));
-    await writeJSON(raw, ST(park), { uid: rec.uid, provider: pv.id, at: now(), parked: profile });
-    const to = '/api/connect/' + pv.id + '/finish?p=' + park;
+    await writeJSON(raw, ST(park), { uid: rec.uid, provider: R.id, at: now(), parked: profile });
+    const to = '/api/connect/' + R.id + '/finish?p=' + park;
     return page(200, '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' + to + '">' +
       '<title>The Flow</title><style>body{background:#0a0b0d}</style>' +
       '<script>location.replace(' + JSON.stringify(to) + ')</script>');
@@ -394,7 +778,15 @@ async function handle(req, res, ctx) {
   if (step === 'disconnect') {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
     if (req.method !== 'POST') return json(res, 405, { error: 'POST' }), true;
+    const was = await readJSON(raw, KEY(me.id, pv.id), null);
     await raw.set(KEY(me.id, pv.id), '');
+    /* Hand the access back too, not just forget it. Best effort: the local
+       record is gone either way. */
+    const t = was && was.tok && (was.tok.refresh || was.tok.access);
+    if (t) {
+      try { await (ctx.fetch || fetch)('https://oauth2.googleapis.com/revoke', { method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t }).toString() }); } catch (e) {}
+    }
     json(res, 200, { ok: true });
     return true;
   }
@@ -406,6 +798,6 @@ module.exports = {
   handle,
   purgeUser,
   PROVIDERS,
-  _internals: { readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
+  _internals: { notionBlocks, Refused, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
                 resetKeys: () => { jwksCache = { at: 0, ttl: 0, keys: [] }; } }
 };
