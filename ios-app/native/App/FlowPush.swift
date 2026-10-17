@@ -1,5 +1,6 @@
 import UIKit
 import UserNotifications
+import WebKit
 
 /// Getting this phone a device token, and giving it to the server.
 ///
@@ -70,6 +71,7 @@ enum FlowPush {
                     /// silently does nothing.
                     "denied": s.authorizationStatus == .denied,
                     "token": FlowPush.deviceToken != nil,
+                    "registered": FlowPush.registered,
                     "env": FlowPush.env
                 ])
             }
@@ -91,24 +93,50 @@ enum FlowPush {
     /// Called once iOS has a token, and after every launch where permission
     /// already exists. Posts it to the server, which scopes it to whoever is
     /// signed in on that session.
+    ///
+    /// The session is the web view's, and the web view does NOT share its
+    /// cookies with URLSession. WKWebsiteDataStore keeps its own jar in the
+    /// web content process; HTTPCookieStorage.shared, which URLSession.shared
+    /// reads, never sees flow_sid. Versions up to 1.0.1 assumed otherwise, so
+    /// every registration arrived signed out, the server answered 401, and no
+    /// phone was ever registered — while the Settings card said "On". So the
+    /// cookie is read from the web view's own store and attached by hand.
     static func registerWithServer(_ done: ((Bool) -> Void)? = nil) {
-        guard let token = deviceToken,
-              let url = URL(string: "https://theflow.today/api/push/register") else { done?(false); return }
+        guard let token = deviceToken else { done?(false); return }
+        DispatchQueue.main.async {
+            /* httpCookieStore must be used on the main thread. */
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { all in
+                let host = FlowStore.origin.host ?? "theflow.today"
+                let ours = all.filter { c in
+                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == d || host.hasSuffix("." + d)
+                }
+                post(token: token, cookies: ours, done: done)
+            }
+        }
+    }
+
+    private static func post(token: String, cookies: [HTTPCookie], done: ((Bool) -> Void)?) {
+        let url = FlowStore.origin.appendingPathComponent("api/push/register")
         var r = URLRequest(url: url)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (k, v) in HTTPCookie.requestHeaderFields(with: cookies) { r.setValue(v, forHTTPHeaderField: k) }
+        /* Never let URLSession add or store cookies of its own on top. */
+        r.httpShouldHandleCookies = false
         r.httpBody = try? JSONSerialization.data(withJSONObject: [
             "token": token, "env": env, "platform": "ios"
         ])
-        /// The session cookie lives in the shared store the web view uses, so
-        /// this request is authenticated as the same person without the shell
-        /// ever handling a credential.
         URLSession.shared.dataTask(with: r) { _, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if code != 200 { FlowPush.lastError = "the server answered \(code)" }
+            FlowPush.lastError = code == 200 ? nil : "the server answered \(code)"
+            FlowPush.registered = code == 200
             done?(code == 200)
         }.resume()
     }
+
+    /// Whether the server accepted this phone's token on the last attempt.
+    static var registered = false
 
     /// If permission already exists, ask iOS for the token again on launch.
     /// Cheap, and it is how a changed token ever reaches the server.

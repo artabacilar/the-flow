@@ -44,6 +44,10 @@ final class FlowViewController: UIViewController {
     /// web content process we get a blank view and must reload.
     @objc private func didBecomeActive() {
         if webView.url == nil { load() }
+        /* A token iOS replaced while we were away, or a registration that
+           failed while signed out, gets another go every time the app is
+           opened. Does nothing unless notifications are already allowed. */
+        FlowPush.refreshIfAlreadyAllowed()
     }
 
     // MARK: - Web view
@@ -311,7 +315,15 @@ enum FlowBridge {
         voiceRequest:    function ()  { return call('voiceRequest'); },
         healthStatus:    function ()  { return call('healthStatus'); },
         healthRequest:   function ()  { return call('healthRequest'); },
-        healthRead:      function (a) { return call('healthRead', a); }
+        healthRead:      function (a) { return call('healthRead', a); },
+        /* The native side has answered these since push was added; the
+           page could never reach them because they were missing here, so
+           the Settings switch threw before it asked anything. A test now
+           holds every case the bridge answers to a method in this list. */
+        pushStatus:      function ()  { return call('pushStatus'); },
+        pushRequest:     function ()  { return call('pushRequest'); },
+        pushSync:        function ()  { return call('pushSync'); },
+        pushToken:       function ()  { return call('pushToken'); }
       };
       window.__FLOW_NATIVE = 'ios';
     })();
@@ -391,6 +403,12 @@ extension FlowViewController: WKScriptMessageHandler {
             /// over a token — so like voiceRequest this answers late.
             FlowPush.request { [weak self] state in self?.answer(id, with: state) }
             return
+
+        case "pushToken":
+            /// The page registers with its own session as well: a fetch from
+            /// the page carries the cookie by definition, whatever the shell's
+            /// own request manages.
+            result = ["token": FlowPush.deviceToken ?? "", "env": FlowPush.env]
 
         case "pushSync":
             /// The page calls this after sign-in. The token is bound to a
