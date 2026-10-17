@@ -250,7 +250,10 @@ const I = conn._internals;
   const iGate = auth.indexOf('---- everything else under /api needs a session ----');
   ok('the routes are mounted before the session check (the app callback has none)', iConn > 0 && iGate > 0 && iConn < iGate);
   const src = fs.readFileSync(path.join(__dirname, '..', 'flow-connect.js'), 'utf8');
-  ok('no client secret is read or sent anywhere', !/CLIENT_SECRET|client_secret|clientSecret/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')));
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  const gBlock = code.slice(code.indexOf('  google: {'), code.indexOf('  gcal: {'));
+  ok('the profile connection still needs no client secret', gBlock.length > 100 && !/secret/i.test(gBlock));
+  ok('the secret is read only from the environment, for Calendar and Gmail', (code.match(/GOOGLE_CLIENT_SECRET/g) || []).length === 2);
   ok('account deletion purges connections', /connect\.purgeUser\(raw, uid\)/.test(auth));
   ok('and WHOOP\'s refresh token, which it used to leave behind', /raw\.set\('whoop:tok:' \+ uid, ''\)/.test(auth));
 
@@ -264,8 +267,201 @@ const I = conn._internals;
   ok('relabelling after sign-in does not wipe the photo', /if \(av && !av\.classList\.contains\('has-face'\)\) av\.textContent = Nav\.initial\(\)/.test(pack));
   ok('coming back to the app re-reads the list', /visibilitychange[\s\S]{0,200}document\.visibilityState !== 'visible'/.test(pack));
   const server = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
-  ok('the privacy policy says what a Google connection stores, and that it reads no mail',
-     /Connecting Google stores the\s+name, email address and profile photo/.test(server) && /cannot read, your mail/.test(server));
+  ok('the privacy policy says what each connection keeps, and how Gmail is limited',
+     /<b>Google<\/b> stores the name, email address and profile photo/.test(server) &&
+     /never reads message bodies/.test(server) && /<b>Fathom<\/b>/.test(server) && /<b>Notion<\/b>/.test(server) && /Limited Use/.test(server));
+
+  /* ================================================================ */
+  console.log('\n— Google Calendar and Gmail: a token, kept and refreshed —');
+  {
+    const raw2 = new Map();
+    const st2 = { get: async (k) => raw2.has(k) ? raw2.get(k) : null, set: async (k, v) => { raw2.set(k, v); } };
+    const meX = { id: 'u9' };
+    process.env.GOOGLE_CLIENT_SECRET = '';
+    let lr = send();
+    await conn.handle({ method: 'GET', headers: {} }, lr, { path: '/api/connect/list', query: new URLSearchParams(), me: meX, raw: st2, json });
+    let lst = JSON.parse(lr.body).connections;
+    ok('without a client secret, Calendar and Gmail are listed but not offered',
+       lst.find((c) => c.id === 'gcal').configured === false && lst.find((c) => c.id === 'gmail').configured === false);
+    ok('Fathom and Notion need nothing on the server', lst.find((c) => c.id === 'fathom').configured && lst.find((c) => c.id === 'notion').configured);
+    process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
+    lr = send();
+    await conn.handle({ method: 'GET', headers: {} }, lr, { path: '/api/connect/list', query: new URLSearchParams(), me: meX, raw: st2, json });
+    ok('with it, they are', JSON.parse(lr.body).connections.find((c) => c.id === 'gcal').configured === true);
+
+    const sr = send();
+    await conn.handle({ method: 'POST', headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, sr,
+      { path: '/api/connect/gcal/start', query: new URLSearchParams(), me: meX, raw: st2, json, readBody: async () => '{"app":true}' });
+    const gu = new URL(JSON.parse(sr.body).url);
+    ok('Calendar asks for a code, offline, read-only calendar and nothing more',
+       gu.searchParams.get('response_type') === 'code' && gu.searchParams.get('access_type') === 'offline' &&
+       gu.searchParams.get('scope') === 'openid email https://www.googleapis.com/auth/calendar.readonly');
+    ok('and comes back through Google\'s already-registered callback',
+       gu.searchParams.get('redirect_uri') === 'https://theflow.today/api/connect/google/callback');
+    const gstate = gu.searchParams.get('state');
+
+    let calls = [];
+    let scopeBack = 'openid https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email';
+    const idt = 'x.' + Buffer.from(JSON.stringify({ sub: '42', email: 'artur@gmail.com', email_verified: true })).toString('base64url') + '.y';
+    const gFetch = async (u, o) => {
+      calls.push({ u: String(u), o: o || {} });
+      if (String(u) === 'https://oauth2.googleapis.com/token') {
+        const b = new URLSearchParams(o.body);
+        if (b.get('grant_type') === 'refresh_token') {
+          return { ok: true, status: 200, json: async () => ({ access_token: 'acc-2', expires_in: 3600 }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ access_token: 'acc-1', refresh_token: 'ref-1', expires_in: 3600, scope: scopeBack, id_token: idt }) };
+      }
+      if (/calendar\/v3/.test(String(u))) {
+        return { ok: true, status: 200, json: async () => ({ items: [
+          { id: 'e1', summary: 'Standup', start: { dateTime: '2026-10-17T09:00:00+03:00' }, end: { dateTime: '2026-10-17T09:15:00+03:00' }, hangoutLink: 'https://meet.google.com/abc' },
+          { id: 'e2', status: 'cancelled', summary: 'Gone', start: { dateTime: '2026-10-17T10:00:00+03:00' }, end: { dateTime: '2026-10-17T11:00:00+03:00' } },
+          { id: 'e3', summary: 'Holiday', start: { date: '2026-10-17' }, end: { date: '2026-10-18' } }
+        ] }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const cb = send();
+    await conn.handle({ method: 'GET', headers: {} }, cb, { path: '/api/connect/google/callback',
+      query: new URLSearchParams({ state: gstate, code: 'the-code' }), me: null, raw: st2, json, fetch: gFetch, readBody: async () => '' });
+    const tokCall = calls.find((c) => c.u === 'https://oauth2.googleapis.com/token');
+    const tb = new URLSearchParams(tokCall ? tokCall.o.body : '');
+    ok('the code is traded server-side with the secret, at the redirect it was issued for',
+       tb.get('code') === 'the-code' && tb.get('client_secret') === 'test-secret' && tb.get('redirect_uri') === 'https://theflow.today/api/connect/google/callback');
+    const recG = JSON.parse(raw2.get(I.KEY('u9', 'gcal')) || 'null');
+    ok('saved under Calendar, not Google, with the account\'s address and a refresh token',
+       cb.status === 200 && /Google Calendar connected/.test(cb.body) && recG && recG.email === 'artur@gmail.com' && recG.tok.refresh === 'ref-1' && !raw2.get(I.KEY('u9', 'google')));
+
+    lr = send();
+    await conn.handle({ method: 'GET', headers: {} }, lr, { path: '/api/connect/list', query: new URLSearchParams(), me: meX, raw: st2, json });
+    ok('the list never carries a token or key', !/acc-1|ref-1|test-secret/.test(lr.body));
+
+    const ev = send();
+    await conn.handle({ method: 'GET', headers: {} }, ev, { path: '/api/connect/gcal/events',
+      query: new URLSearchParams({ from: '2026-10-16T21:00:00.000Z', to: '2026-10-17T21:00:00.000Z' }), me: meX, raw: st2, json, fetch: gFetch });
+    const evs = JSON.parse(ev.body).events || [];
+    ok('today\'s events come back, cancelled ones dropped, all-day marked, the Meet link kept',
+       ev.status === 200 && evs.length === 2 && evs[0].video === 'https://meet.google.com/abc' && evs[1].allDay === true, ev.body.slice(0, 200));
+    const evCall = calls.find((c) => /calendar\/v3/.test(c.u));
+    ok('with the access token, read-only, from the primary calendar',
+       evCall && evCall.o.headers.Authorization === 'Bearer acc-1' && /calendars\/primary\/events\?/.test(evCall.u));
+    const bad = send();
+    await conn.handle({ method: 'GET', headers: {} }, bad, { path: '/api/connect/gcal/events',
+      query: new URLSearchParams({ from: '2026-01-01T00:00:00Z', to: '2026-03-01T00:00:00Z' }), me: meX, raw: st2, json, fetch: gFetch });
+    ok('more than eight days at once is refused', bad.status === 400);
+
+    const r2 = JSON.parse(raw2.get(I.KEY('u9', 'gcal'))); r2.tok.exp = Date.now() - 1000; raw2.set(I.KEY('u9', 'gcal'), JSON.stringify(r2));
+    calls = [];
+    const ev2 = send();
+    await conn.handle({ method: 'GET', headers: {} }, ev2, { path: '/api/connect/gcal/events',
+      query: new URLSearchParams({ from: '2026-10-16T21:00:00Z', to: '2026-10-17T21:00:00Z' }), me: meX, raw: st2, json, fetch: gFetch });
+    ok('an expired token is refreshed first, and the new one kept',
+       ev2.status === 200 && calls[0].u === 'https://oauth2.googleapis.com/token' && JSON.parse(raw2.get(I.KEY('u9', 'gcal'))).tok.access === 'acc-2');
+
+    const other = send();
+    await conn.handle({ method: 'GET', headers: {} }, other, { path: '/api/connect/gcal/events',
+      query: new URLSearchParams({ from: '2026-10-16T21:00:00Z', to: '2026-10-17T21:00:00Z' }), me: { id: 'someone' }, raw: st2, json, fetch: gFetch });
+    ok('another account cannot read it', other.status === 409);
+
+    /* unticked permission */
+    const sr2 = send();
+    await conn.handle({ method: 'POST', headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, sr2,
+      { path: '/api/connect/gmail/start', query: new URLSearchParams(), me: meX, raw: st2, json, readBody: async () => '{"app":true}' });
+    const mu = new URL(JSON.parse(sr2.body).url);
+    ok('Gmail asks for read-only mail', mu.searchParams.get('scope') === 'openid email https://www.googleapis.com/auth/gmail.readonly');
+    scopeBack = 'openid email';
+    const cb2 = send();
+    await conn.handle({ method: 'GET', headers: {} }, cb2, { path: '/api/connect/google/callback',
+      query: new URLSearchParams({ state: mu.searchParams.get('state'), code: 'c2' }), me: null, raw: st2, json, fetch: gFetch, readBody: async () => '' });
+    ok('a sign-in with the mail permission unticked is not a connection', cb2.status === 400 && /read your email/.test(cb2.body) && !raw2.get(I.KEY('u9', 'gmail')));
+
+    calls = [];
+    const dc = send();
+    await conn.handle({ method: 'POST', headers: {} }, dc, { path: '/api/connect/gcal/disconnect', query: new URLSearchParams(), me: meX, raw: st2, json, fetch: gFetch });
+    ok('disconnecting forgets it and revokes it at Google', dc.status === 200 && !raw2.get(I.KEY('u9', 'gcal')) && calls.some((c) => c.u === 'https://oauth2.googleapis.com/revoke'));
+  }
+
+  console.log('\n— Fathom and Notion: a key the person pastes —');
+  {
+    const raw3 = new Map();
+    const st3 = { get: async (k) => raw3.has(k) ? raw3.get(k) : null, set: async (k, v) => { raw3.set(k, v); } };
+    const meK = { id: 'u7' };
+    let calls = [];
+    const kFetch = async (u, o) => {
+      calls.push({ u: String(u), o: o || {} });
+      const h = (o && o.headers) || {};
+      if (/api\.fathom\.ai/.test(String(u))) {
+        if (h['X-Api-Key'] !== 'fathom-good-key-123') return { ok: false, status: 401, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => ({ next_cursor: null, items: [{
+          recording_id: 77, title: 'Supplier call', share_url: 'https://fathom.video/share/x', created_at: '2026-10-16T10:00:00Z',
+          recorded_by: { name: 'Artur', email: 'artur@abko.com.tr' },
+          default_summary: { markdown_formatted: '## Notes\nAgreed MOQ.' },
+          action_items: [{ description: 'Send samples', completed: false, assignee: { name: 'Artur', email: 'artur@abko.com.tr' } },
+                         { description: 'Done already', completed: true, assignee: {} }] }] }) };
+      }
+      if (/api\.notion\.com/.test(String(u))) {
+        if (h.Authorization !== 'Bearer ntn_good_secret_123') return { ok: false, status: 401, json: async () => ({}) };
+        if (/\/users\/me$/.test(String(u))) return { ok: true, status: 200, json: async () => ({ name: 'The Flow', bot: { workspace_name: 'ABKO' } }) };
+        if (/\/search$/.test(String(u))) return { ok: true, status: 200, json: async () => ({ results: [
+          { id: '1234567890abcdef1234567890abcdef', properties: { title: { type: 'title', title: [{ plain_text: 'Weekly' }] } } }] }) };
+        if (/\/pages$/.test(String(u))) return { ok: true, status: 200, json: async () => ({ url: 'https://notion.so/new-page' }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const call = async (pth, method, body, q) => { const r = send();
+      await conn.handle({ method, headers: {} }, r, { path: pth, query: new URLSearchParams(q || {}), me: meK, raw: st3, json, fetch: kFetch,
+        readBody: async () => JSON.stringify(body || {}) });
+      return { status: r.status, j: JSON.parse(r.body || '{}') }; };
+
+    let r = await call('/api/connect/fathom/key', 'POST', { key: 'wrong-key-0000' });
+    ok('a key Fathom refuses is not saved, and the person is told', r.status === 400 && /did not accept/.test(r.j.error) && !raw3.get(I.KEY('u7', 'fathom')));
+    r = await call('/api/connect/fathom/key', 'POST', { key: 'has spaces in it' });
+    ok('something that is not a key is refused before anybody is asked', r.status === 400 && !calls.some((c) => /has%20spaces|has spaces/.test(JSON.stringify(c))));
+    r = await call('/api/connect/fathom/key', 'POST', { key: 'fathom-good-key-123' });
+    const fr = JSON.parse(raw3.get(I.KEY('u7', 'fathom')) || 'null');
+    ok('a good key is checked with Fathom and kept, with whose meetings they are', r.status === 200 && fr && fr.key === 'fathom-good-key-123' && fr.email === 'artur@abko.com.tr');
+    r = await call('/api/connect/fathom/meetings', 'GET');
+    const mt = (r.j.meetings || [])[0] || {};
+    ok('meetings come back with the summary and only the open action items',
+       r.status === 200 && mt.id === '77' && /Agreed MOQ/.test(mt.summary) && mt.actions.length === 1 && mt.actions[0].text === 'Send samples');
+    const lastF = calls.filter((c) => /api\.fathom\.ai/.test(c.u)).pop();
+    ok('asked with the key in a header, never in the URL', lastF.o.headers['X-Api-Key'] === 'fathom-good-key-123' && !/fathom-good-key/.test(lastF.u) && /include_summary=true/.test(lastF.u) && /include_action_items=true/.test(lastF.u));
+
+    r = await call('/api/connect/notion/send', 'POST', { title: 'x', blocks: [] });
+    ok('Notion is not used before it is connected', r.status === 409);
+    r = await call('/api/connect/notion/key', 'POST', { key: 'ntn_good_secret_123' });
+    ok('a Notion secret is checked and kept', r.status === 200 && JSON.parse(raw3.get(I.KEY('u7', 'notion'))).name === 'ABKO');
+    r = await call('/api/connect/notion/send', 'POST', { title: 'x', blocks: [] });
+    ok('sending needs a chosen page', r.status === 400 && /Choose/.test(r.j.error));
+    r = await call('/api/connect/notion/pages', 'GET');
+    ok('the pages it can see are listed', r.status === 200 && r.j.pages[0].title === 'Weekly');
+    r = await call('/api/connect/notion/target', 'POST', { id: '../../etc', title: 'x' });
+    ok('a page id that is not one is refused', r.status === 400);
+    r = await call('/api/connect/notion/target', 'POST', { id: '1234567890abcdef1234567890abcdef', title: 'Weekly' });
+    ok('a page is chosen', r.status === 200 && JSON.parse(raw3.get(I.KEY('u7', 'notion'))).target.title === 'Weekly');
+    calls = [];
+    r = await call('/api/connect/notion/send', 'POST', { title: 'The Flow — 2026 week 42', blocks: [
+      { type: 'h', text: 'Big Rocks' }, { type: 'todo', text: 'Mon — Ship', done: true }, { type: 'li', text: 'wrote' },
+      { type: 'script', text: 'not a block type' }] });
+    const sent = JSON.parse((calls.find((c) => /\/pages$/.test(c.u)) || { o: { body: '{}' } }).o.body);
+    ok('a page is made under the chosen one, with the week as blocks',
+       r.status === 200 && r.j.url === 'https://notion.so/new-page' && sent.parent.page_id === '1234567890abcdef1234567890abcdef' &&
+       sent.children[0].type === 'heading_2' && sent.children[1].to_do.checked === true && sent.children[2].type === 'bulleted_list_item');
+    ok('anything that is not a known block becomes plain text', sent.children[3].type === 'paragraph');
+    const lr = send();
+    await conn.handle({ method: 'GET', headers: {} }, lr, { path: '/api/connect/list', query: new URLSearchParams(), me: meK, raw: st3, json });
+    ok('the list never carries a pasted key', !/fathom-good-key|ntn_good_secret/.test(lr.body) && /"target":"Weekly"/.test(lr.body));
+    r = await call('/api/connect/fathom/start', 'POST', {});
+    ok('a key connection has no sign-in to start', r.status === 400);
+    ok('deleting the account removes both', (await conn.purgeUser(st3, 'u7')) === 2 && !raw3.get(I.KEY('u7', 'fathom')) && !raw3.get(I.KEY('u7', 'notion')));
+  }
+
+  console.log('\n— in the app —');
+  ok('pasted keys are typed into a password field and never painted back', /type="password" autocomplete="off"/.test(pack) && !/c\.key\b/.test(pack.slice(pack.indexOf('const Connect = {'), pack.indexOf('const Nav = {'))));
+  ok('an import is remembered by id, so pressing it twice adds nothing twice',
+     /markSeen\('fathom'/.test(pack) && /markSeen\('gmail'/.test(pack) && /seen\.indexOf\(m\.id\) < 0/.test(pack));
+  ok('imports land through addRock and J, the app\'s own saving path', /addRock\(String\(title\)/.test(pack) && /J\('meeting', body\)/.test(pack));
+  ok('the calendar card is put back whenever Today is redrawn', /new MutationObserver\([\s\S]{0,120}#td-cal/.test(pack));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
