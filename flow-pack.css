@@ -1812,3 +1812,5 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .conn-pick{max-width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:inherit;font:inherit;font-size:13px;}
 .conn-out{font-size:12px;}
 @media (max-width:520px){.conn-acts,.conn-keyform{margin-left:0;}}
+.conn-keyform p,.conn-more,.conn-out{font-size:12px;color:var(--muted);line-height:1.45;}
+.conn-keyform p a{color:inherit;text-decoration:underline;}
