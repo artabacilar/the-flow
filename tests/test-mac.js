@@ -311,5 +311,72 @@ console.log('\n— the title bar is the page\'s colour, as it is in Chrome —')
      /0\.2126\s*\*\s*c\.redComponent\s*\+\s*0\.7152\s*\*\s*c\.greenComponent\s*\+\s*0\.0722\s*\*\s*c\.blueComponent/.test(d) && /l\s*<\s*0\.5/.test(d));
 }
 
+console.log('\n— reminders on the Mac, and the iPhone switch that never worked —');
+{
+  const vm = require('vm');
+  const pack = read(ROOT, 'flow-pack.js');
+  const a = pack.indexOf('const Notify = {');
+  const b = pack.indexOf('\n};\n', a);
+  ok('the page has one Notify module', a > 0 && b > a);
+  const sandbox = { window: {}, document: { addEventListener() {} }, Settings: { get: () => true },
+    setTimeout, clearTimeout, setInterval() {}, console, fetch: async () => ({ ok: false }) };
+  vm.createContext(sandbox);
+  vm.runInContext(pack.slice(a, b + 3).replace('const Notify', 'var Notify'), sandbox);
+  const N = sandbox.Notify;
+
+  /* A Friday at 08:00 local. Rocks: today 09:00 (due), today 07:00 (passed),
+     today 10:00 done, today with no time, Saturday 11:30, and next Friday
+     09:00 — eight days ahead is the edge of the window and counts. */
+  const now = new Date(2026, 9, 16, 8, 0, 0);
+  const wk = N.weekId(now);
+  const nextWk = N.weekId(new Date(2026, 9, 23));
+  const compass = { rocks: {
+    [wk]: [
+      { id: 'a', title: 'Ship', day: 4, time: '09:00', note: 'first line\nsecond' },
+      { id: 'b', title: 'Gone', day: 4, time: '07:00' },
+      { id: 'c', title: 'Done', day: 4, time: '10:00', done: true },
+      { id: 'd', title: 'Untimed', day: 4 },
+      { id: 'e', title: 'Weekend', day: 5, time: '11:30' }
+    ],
+    [nextWk]: [{ id: 'f', title: 'Next Friday', day: 4, time: '9:00' }]
+  } };
+  const w = N.wanted(compass, now, true);
+  ok('week ids match the page and the server (' + wk + ')', wk === '2026-W42' && nextWk === '2026-W43', [wk, nextWk]);
+  ok('a timed rock later today is queued, at its local time',
+     w['rock:' + wk + ':a'] && w['rock:' + wk + ':a'].at === new Date(2026, 9, 16, 9, 0, 0).toISOString().replace(/\.\d{3}Z$/, 'Z'), w);
+  ok('the time is in the form macOS reads (no milliseconds)', /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test((w['rock:' + wk + ':a'] || {}).at || ''));
+  ok('its body is the first line of the note, like the push', (w['rock:' + wk + ':a'] || {}).body === 'first line');
+  ok('passed, finished and untimed rocks are not queued',
+     !w['rock:' + wk + ':b'] && !w['rock:' + wk + ':c'] && !w['rock:' + wk + ':d']);
+  ok('tomorrow and next week are queued too', !!w['rock:' + wk + ':e'] && !!w['rock:' + nextWk + ':f'], Object.keys(w));
+  ok('a rock without a note says the time', (w['rock:' + wk + ':e'] || {}).body === 'It is 11:30.');
+  ok('switching Big Rock reminders off empties the queue', Object.keys(N.wanted(compass, now, false)).length === 0);
+  ok('only rock: ids are ever cancelled', /id\.indexOf\('rock:'\)\s*===\s*0\s*&&\s*!want\[id\]/.test(pack));
+  ok('the Mac card uses the Mac bridge, not "iPhone only"',
+     /mac\.request\(\)/.test(pack) && !/'iPhone only'/.test(pack));
+  ok('the Mac schedules in the bridge shape it implements',
+     /notifySchedule/.test(notesSrc) && /schedule\(\{\s*notifId:/.test(pack));
+  ok('a plan change reschedules (S.set compass) and so does the setting',
+     /k === 'compass'\) Notify\.later\(\)/.test(pack) && /key === 'pushRemindRocks'\) Notify\.syncMac\(\)/.test(pack));
+
+  /* iPhone. Every method the shell answers must be reachable from the page —
+     push was answered natively and missing here, so the switch threw. */
+  const vc = read(ROOT, 'ios-app', 'native', 'App', 'FlowViewController.swift');
+  const answered = [...code(vc).matchAll(/case "(\w+)":/g)].map((m) => m[1]);
+  const shimStart = vc.indexOf('static let shim');
+  const shim = vc.slice(shimStart, vc.indexOf('"""', vc.indexOf('"""', shimStart) + 3));
+  const missing = answered.filter((m) => !new RegExp("call\\('" + m + "'").test(shim));
+  ok('every bridge method the iPhone shell answers is in its shim (' + answered.length + ')', answered.length >= 14 && !missing.length, missing);
+  ok('the page can still reach push on 1.0.1, whose shim lacks it',
+     /messageHandlers\.flowBridge\.postMessage\(\{ id, method/.test(pack) && /__flowBridgeResolve = function/.test(pack));
+  const fp = read(ROOT, 'ios-app', 'native', 'App', 'FlowPush.swift');
+  ok('the shell registers with the web view\'s session cookie, not URLSession\'s empty jar',
+     /WKWebsiteDataStore\.default\(\)\.httpCookieStore\.getAllCookies/.test(fp) && /HTTPCookie\.requestHeaderFields/.test(fp) && /httpShouldHandleCookies = false/.test(fp));
+  ok('the page also registers with its own session when the shell gives it the token',
+     /case "pushToken":/.test(vc) && /fetch\('\/api\/push\/register'/.test(pack));
+  ok('"registered" is only claimed when the server says so',
+     !/srv\.devices \|\| 1/.test(pack));
+}
+
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
