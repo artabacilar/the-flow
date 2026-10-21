@@ -55,6 +55,8 @@ const stateOf = (url) => new URL(url).searchParams.get('state');
 
 const conn = require(path.join(__dirname, '..', 'flow-connect.js'));
 const I = conn._internals;
+/* The first account in a stored connection, whichever shape it was saved in. */
+const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Array.isArray(o.accounts) ? o.accounts[0] || null : o; };
 
 (async () => {
   /* ================================================================ */
@@ -162,7 +164,7 @@ const I = conn._internals;
   const good = (nonce) => ({ iss: 'https://accounts.google.com', aud: 'test-client.apps.googleusercontent.com',
     exp: Math.floor(Date.now() / 1000) + 600, nonce, sub: '1077', email: 'artur@gmail.com',
     email_verified: true, name: 'Artur', picture: 'https://lh3.googleusercontent.com/a/abc=s96-c' });
-  const savedNow = () => { const v = raw.get(I.KEY('u1', 'google')); return v ? JSON.parse(v) : null; };
+  const savedNow = () => first(raw.get(I.KEY('u1', 'google')));
 
   /* app round trip */
   I.resetKeys(); seen = [];
@@ -328,7 +330,7 @@ const I = conn._internals;
     const tb = new URLSearchParams(tokCall ? tokCall.o.body : '');
     ok('the code is traded server-side with the secret, at the redirect it was issued for',
        tb.get('code') === 'the-code' && tb.get('client_secret') === 'test-secret' && tb.get('redirect_uri') === 'https://theflow.today/api/connect/google/callback');
-    const recG = JSON.parse(raw2.get(I.KEY('u9', 'gcal')) || 'null');
+    const recG = first(raw2.get(I.KEY('u9', 'gcal')));
     ok('saved under Calendar, not Google, with the account\'s address and a refresh token',
        cb.status === 200 && /Google Calendar connected/.test(cb.body) && recG && recG.email === 'artur@gmail.com' && recG.tok.refresh === 'ref-1' && !raw2.get(I.KEY('u9', 'google')));
 
@@ -350,13 +352,13 @@ const I = conn._internals;
       query: new URLSearchParams({ from: '2026-01-01T00:00:00Z', to: '2026-03-01T00:00:00Z' }), me: meX, raw: st2, json, fetch: gFetch });
     ok('more than eight days at once is refused', bad.status === 400);
 
-    const r2 = JSON.parse(raw2.get(I.KEY('u9', 'gcal'))); r2.tok.exp = Date.now() - 1000; raw2.set(I.KEY('u9', 'gcal'), JSON.stringify(r2));
+    const r2 = JSON.parse(raw2.get(I.KEY('u9', 'gcal'))); r2.accounts[0].tok.exp = Date.now() - 1000; raw2.set(I.KEY('u9', 'gcal'), JSON.stringify(r2));
     calls = [];
     const ev2 = send();
     await conn.handle({ method: 'GET', headers: {} }, ev2, { path: '/api/connect/gcal/events',
       query: new URLSearchParams({ from: '2026-10-16T21:00:00Z', to: '2026-10-17T21:00:00Z' }), me: meX, raw: st2, json, fetch: gFetch });
     ok('an expired token is refreshed first, and the new one kept',
-       ev2.status === 200 && calls[0].u === 'https://oauth2.googleapis.com/token' && JSON.parse(raw2.get(I.KEY('u9', 'gcal'))).tok.access === 'acc-2');
+       ev2.status === 200 && calls[0].u === 'https://oauth2.googleapis.com/token' && first(raw2.get(I.KEY('u9', 'gcal'))).tok.access === 'acc-2');
 
     const other = send();
     await conn.handle({ method: 'GET', headers: {} }, other, { path: '/api/connect/gcal/events',
@@ -418,7 +420,7 @@ const I = conn._internals;
     r = await call('/api/connect/fathom/key', 'POST', { key: 'has spaces in it' });
     ok('something that is not a key is refused before anybody is asked', r.status === 400 && !calls.some((c) => /has%20spaces|has spaces/.test(JSON.stringify(c))));
     r = await call('/api/connect/fathom/key', 'POST', { key: 'fathom-good-key-123' });
-    const fr = JSON.parse(raw3.get(I.KEY('u7', 'fathom')) || 'null');
+    const fr = first(raw3.get(I.KEY('u7', 'fathom')));
     ok('a good key is checked with Fathom and kept, with whose meetings they are', r.status === 200 && fr && fr.key === 'fathom-good-key-123' && fr.email === 'artur@abko.com.tr');
     r = await call('/api/connect/fathom/meetings', 'GET');
     const mt = (r.j.meetings || [])[0] || {};
@@ -430,7 +432,7 @@ const I = conn._internals;
     r = await call('/api/connect/notion/send', 'POST', { title: 'x', blocks: [] });
     ok('Notion is not used before it is connected', r.status === 409);
     r = await call('/api/connect/notion/key', 'POST', { key: 'ntn_good_secret_123' });
-    ok('a Notion secret is checked and kept', r.status === 200 && JSON.parse(raw3.get(I.KEY('u7', 'notion'))).name === 'ABKO');
+    ok('a Notion secret is checked and kept', r.status === 200 && first(raw3.get(I.KEY('u7', 'notion'))).name === 'ABKO');
     r = await call('/api/connect/notion/send', 'POST', { title: 'x', blocks: [] });
     ok('sending needs a chosen page', r.status === 400 && /Choose/.test(r.j.error));
     r = await call('/api/connect/notion/pages', 'GET');
@@ -438,7 +440,7 @@ const I = conn._internals;
     r = await call('/api/connect/notion/target', 'POST', { id: '../../etc', title: 'x' });
     ok('a page id that is not one is refused', r.status === 400);
     r = await call('/api/connect/notion/target', 'POST', { id: '1234567890abcdef1234567890abcdef', title: 'Weekly' });
-    ok('a page is chosen', r.status === 200 && JSON.parse(raw3.get(I.KEY('u7', 'notion'))).target.title === 'Weekly');
+    ok('a page is chosen', r.status === 200 && first(raw3.get(I.KEY('u7', 'notion'))).target.title === 'Weekly');
     calls = [];
     r = await call('/api/connect/notion/send', 'POST', { title: 'The Flow — 2026 week 42', blocks: [
       { type: 'h', text: 'Big Rocks' }, { type: 'todo', text: 'Mon — Ship', done: true }, { type: 'li', text: 'wrote' },
@@ -456,12 +458,149 @@ const I = conn._internals;
     ok('deleting the account removes both', (await conn.purgeUser(st3, 'u7')) === 2 && !raw3.get(I.KEY('u7', 'fathom')) && !raw3.get(I.KEY('u7', 'notion')));
   }
 
+  console.log('\n— several accounts, and Outlook —');
+  {
+    const raw4 = new Map();
+    const st4 = { get: async (k) => raw4.has(k) ? raw4.get(k) : null, set: async (k, v) => { raw4.set(k, v); } };
+    const meM = { id: 'u5' };
+    process.env.MS_CLIENT_ID = '';
+    process.env.MS_CLIENT_SECRET = '';
+    const call = async (pth, method, body, q, f) => { const r = send();
+      await conn.handle({ method, headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, r, { path: pth, query: new URLSearchParams(q || {}), me: meM, raw: st4, json, fetch: f,
+        readBody: async () => JSON.stringify(body || {}) });
+      return { status: r.status, body: r.body, j: (() => { try { return JSON.parse(r.body || '{}'); } catch (e) { return {}; } })() }; };
+    let L = await call('/api/connect/list', 'GET');
+    ok('without Microsoft credentials, Outlook is listed but not offered', L.j.connections.find((c) => c.id === 'outlook').configured === false);
+    process.env.MS_CLIENT_ID = 'ms-client-id';
+    process.env.MS_CLIENT_SECRET = 'ms-secret';
+    L = await call('/api/connect/list', 'GET');
+    ok('with them, it is', L.j.connections.find((c) => c.id === 'outlook').configured === true);
+
+    /* a legacy single record reads as one account */
+    raw4.set(I.KEY('u5', 'gcal'), JSON.stringify({ account: 'old', email: 'old@gmail.com', tok: { access: 'o', refresh: 'or', exp: Date.now() + 3600e3 } }));
+    L = await call('/api/connect/list', 'GET');
+    const lg = L.j.connections.find((c) => c.id === 'gcal');
+    ok('a connection saved before accounts existed is read as one account', lg.connected && lg.accounts.length === 1 && lg.accounts[0].email === 'old@gmail.com');
+
+    const mkTok = (sub, email) => ({ access_token: 'acc-' + sub, refresh_token: 'ref-' + sub, expires_in: 3600,
+      scope: 'openid https://www.googleapis.com/auth/calendar.readonly',
+      id_token: 'x.' + Buffer.from(JSON.stringify({ sub, email, email_verified: true })).toString('base64url') + '.y' });
+    let nextTok = null, calls = [];
+    const gF = async (u, o) => {
+      calls.push({ u: String(u), o: o || {} });
+      if (String(u) === 'https://oauth2.googleapis.com/token') return { ok: true, status: 200, json: async () => nextTok };
+      if (/calendar\/v3/.test(String(u))) {
+        const who = (o.headers.Authorization || '').replace('Bearer ', '');
+        if (who === 'acc-bad') return { ok: false, status: 401, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => ({ items: [{ id: 'e-' + who, summary: 'From ' + who,
+          start: { dateTime: '2026-10-21T09:00:00Z' }, end: { dateTime: '2026-10-21T10:00:00Z' } }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    const connectG = async (sub, email) => {
+      const s1 = await call('/api/connect/gcal/start', 'POST', { app: true });
+      const st = new URL(s1.j.url).searchParams.get('state');
+      nextTok = mkTok(sub, email);
+      const r = send();
+      await conn.handle({ method: 'GET', headers: {} }, r, { path: '/api/connect/google/callback',
+        query: new URLSearchParams({ state: st, code: 'c-' + sub }), me: null, raw: st4, json, fetch: gF, readBody: async () => '' });
+      return r;
+    };
+    await connectG('work', 'artur@abko.com.tr');
+    L = await call('/api/connect/list', 'GET');
+    let acc = L.j.connections.find((c) => c.id === 'gcal').accounts;
+    ok('connecting a second Google account adds it, keeping the first', acc.length === 2 && acc.map((a) => a.email).join() === 'old@gmail.com,artur@abko.com.tr', acc);
+    await connectG('work', 'artur@abko.com.tr');
+    acc = (await call('/api/connect/list', 'GET')).j.connections.find((c) => c.id === 'gcal').accounts;
+    ok('connecting the same account again replaces it, no twin', acc.length === 2);
+    ok('no account\'s token reaches the list', !/acc-|ref-|"tok"/.test((await call('/api/connect/list', 'GET')).body));
+
+    calls = [];
+    let ev = await call('/api/connect/gcal/events', 'GET', null, { from: '2026-10-20T21:00:00Z', to: '2026-10-21T21:00:00Z' }, gF);
+    ok('today\'s events come from every account, each saying whose',
+       ev.status === 200 && ev.j.events.length === 2 && ev.j.events.some((e) => e.account === 'old@gmail.com') && ev.j.events.some((e) => e.account === 'artur@abko.com.tr'), ev.j);
+
+    /* one account failing does not hide the others */
+    const allG = JSON.parse(raw4.get(I.KEY('u5', 'gcal')));
+    allG.accounts[0].tok.access = 'acc-bad';
+    raw4.set(I.KEY('u5', 'gcal'), JSON.stringify(allG));
+    ev = await call('/api/connect/gcal/events', 'GET', null, { from: '2026-10-20T21:00:00Z', to: '2026-10-21T21:00:00Z' }, gF);
+    ok('one account that fails does not hide the other, and is named',
+       ev.status === 200 && ev.j.events.length === 1 && ev.j.problems && ev.j.problems[0].account === 'old@gmail.com', ev.j);
+
+    calls = [];
+    const off = await call('/api/connect/gcal/disconnect', 'POST', { aid: 'work' }, null, gF);
+    acc = (await call('/api/connect/list', 'GET')).j.connections.find((c) => c.id === 'gcal').accounts;
+    ok('disconnecting one account leaves the others', off.status === 200 && acc.length === 1 && acc[0].email === 'old@gmail.com');
+    ok('and revokes only that one at Google', calls.filter((c) => /revoke/.test(c.u)).length === 1 &&
+       new URLSearchParams(calls.find((c) => /revoke/.test(c.u)).o.body).get('token') === 'ref-work');
+
+    /* Outlook */
+    const s2 = await call('/api/connect/outlook/start', 'POST', { app: false });
+    const mu = new URL(s2.j.url);
+    ok('Outlook asks Microsoft (any account) for a code, offline, calendar and mail read-only',
+       mu.origin + mu.pathname === 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize' &&
+       mu.searchParams.get('response_type') === 'code' && /offline_access/.test(mu.searchParams.get('scope')) &&
+       /Calendars\.Read/.test(mu.searchParams.get('scope')) && /Mail\.Read/.test(mu.searchParams.get('scope')) &&
+       !/ReadWrite|Send/.test(mu.searchParams.get('scope')));
+    ok('on its own registered callback', mu.searchParams.get('redirect_uri') === 'https://theflow.today/api/connect/outlook/callback');
+    let msScope = 'Calendars.Read Mail.Read User.Read openid profile email';
+    const msF = async (u, o) => {
+      calls.push({ u: String(u), o: o || {} });
+      if (/login\.microsoftonline\.com\/common\/oauth2\/v2\.0\/token/.test(String(u))) {
+        return { ok: true, status: 200, json: async () => ({ access_token: 'ms-acc', refresh_token: 'ms-ref', expires_in: 3600, scope: msScope,
+          id_token: 'x.' + Buffer.from(JSON.stringify({ oid: 'oid-1', preferred_username: 'artur@abko.com.tr', name: 'Artur' })).toString('base64url') + '.y' }) };
+      }
+      if (/graph\.microsoft\.com\/v1\.0\/me\/calendarView/.test(String(u))) {
+        return { ok: true, status: 200, json: async () => ({ value: [
+          { id: 'm1', subject: 'Supplier call', start: { dateTime: '2026-10-21T08:00:00.0000000' }, end: { dateTime: '2026-10-21T08:30:00.0000000' },
+            isAllDay: false, location: { displayName: 'Teams' }, onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/x' }, webLink: 'https://outlook.office.com/x' },
+          { id: 'm2', subject: 'Cancelled', isCancelled: true, start: { dateTime: '2026-10-21T10:00:00' }, end: { dateTime: '2026-10-21T11:00:00' } }] }) };
+      }
+      if (/graph\.microsoft\.com\/v1\.0\/me\/messages/.test(String(u))) {
+        return { ok: true, status: 200, json: async () => ({ value: [{ id: 'f1', subject: 'Invoice', from: { emailAddress: { name: 'Kaan', address: 'k@x' } }, webLink: 'https://outlook.office.com/mail/f1' }] }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    calls = [];
+    const cbr = send();
+    await conn.handle({ method: 'GET', headers: {} }, cbr, { path: '/api/connect/outlook/callback',
+      query: new URLSearchParams({ state: mu.searchParams.get('state'), code: 'ms-code' }), me: null, raw: st4, json, fetch: msF, readBody: async () => '' });
+    const parkTo = (cbr.body.match(/location\.replace\("([^"]+)"\)/) || [])[1] || '';
+    const fin = send();
+    await conn.handle({ method: 'GET', headers: {} }, fin, { path: '/api/connect/outlook/finish', query: new URL('http://x' + parkTo).searchParams, me: meM, raw: st4, json });
+    const ol = first(raw4.get(I.KEY('u5', 'outlook')));
+    const tokBody = new URLSearchParams((calls.find((c) => /oauth2\/v2\.0\/token/.test(c.u)) || { o: { body: '' } }).o.body);
+    ok('the code is traded with Microsoft using the secret', tokBody.get('client_secret') === 'ms-secret' && tokBody.get('code') === 'ms-code');
+    ok('a work account is connected under its sign-in address', /outlook:connected/.test(fin.headers.Location || '') && ol && ol.email === 'artur@abko.com.tr' && ol.aid === 'oid-1');
+    const oe = await call('/api/connect/outlook/events', 'GET', null, { from: '2026-10-20T21:00:00Z', to: '2026-10-21T21:00:00Z' }, msF);
+    const gv = calls.find((c) => /calendarView/.test(c.u));
+    ok('Outlook events are read in UTC and come back with the zone stated, cancelled ones dropped, the Teams link kept',
+       oe.status === 200 && oe.j.events.length === 1 && oe.j.events[0].start === '2026-10-21T08:00:00.000Z' &&
+       oe.j.events[0].video === 'https://teams.microsoft.com/l/x' && gv.o.headers.Prefer === 'outlook.timezone="UTC"', oe.j);
+    const fl = await call('/api/connect/outlook/flagged', 'GET', null, null, msF);
+    ok('flagged mail comes back as sender and subject only', fl.status === 200 && fl.j.messages[0].subject === 'Invoice' && fl.j.messages[0].from === 'Kaan' && !('body' in fl.j.messages[0]));
+    ok('read-only: Graph is only ever asked with GET', calls.filter((c) => /graph\.microsoft\.com/.test(c.u)).every((c) => !c.o.method || c.o.method === 'GET'));
+    msScope = 'User.Read openid';
+    const s3 = await call('/api/connect/outlook/start', 'POST', { app: true });
+    const cb3 = send();
+    await conn.handle({ method: 'GET', headers: {} }, cb3, { path: '/api/connect/outlook/callback',
+      query: new URLSearchParams({ state: new URL(s3.j.url).searchParams.get('state'), code: 'c' }), me: null, raw: st4, json, fetch: msF, readBody: async () => '' });
+    ok('an Outlook sign-in without the calendar and mail permissions is not a connection', cb3.status === 400 && /calendar and mail/.test(cb3.body));
+    const dOut = send();
+    await conn.handle({ method: 'POST', headers: {} }, dOut, { path: '/api/connect/outlook/disconnect', query: new URLSearchParams(), me: meM, raw: st4, json, fetch: msF, readBody: async () => '{}' });
+    ok('disconnecting Outlook without naming an account removes them all', !raw4.get(I.KEY('u5', 'outlook')));
+  }
+
   console.log('\n— in the app —');
   ok('pasted keys are typed into a password field and never painted back', /type="password" autocomplete="off"/.test(pack) && !/c\.key\b/.test(pack.slice(pack.indexOf('const Connect = {'), pack.indexOf('const Nav = {'))));
   ok('an import is remembered by id, so pressing it twice adds nothing twice',
-     /markSeen\('fathom'/.test(pack) && /markSeen\('gmail'/.test(pack) && /seen\.indexOf\(m\.id\) < 0/.test(pack));
+     /markSeen\('fathom'/.test(pack) && /markSeen\(id, fresh/.test(pack) && /seen\.indexOf\(m\.id\) < 0/.test(pack));
   ok('imports land through addRock and J, the app\'s own saving path', /addRock\(String\(title\)/.test(pack) && /J\('meeting', body\)/.test(pack));
   ok('the calendar card is put back whenever Today is redrawn', /new MutationObserver\([\s\S]{0,120}#td-cal/.test(pack));
+  ok('Today\'s calendar is every Google and Outlook account at once, without duplicates',
+     /\['gcal', 'outlook'\]/.test(pack) && /if \(seen\[k\]\) return false/.test(pack));
+  ok('each account can be disconnected on its own, and another added', /data-conn-off="' \+ esc\(c\.id\) \+ '" data-aid=/.test(pack) && /\+ Add another account/.test(pack));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
