@@ -201,8 +201,10 @@ const H = 'http://localhost:4222';
   console.log('\n— the dictionary itself —');
   const dict = await p.evaluate(() => {
     const d = window.FlowI18n && window.__TR_DICT ? window.__TR_DICT : null;
-    return { size: (window.FlowI18n.missing({ chrome: true }) || []).length };
+    const list = window.FlowI18n.missing({ chrome: true }) || [];
+    return { size: list.length, list: list.slice(0, 80) };
   });
+  if (process.env.I18N_DUMP) require('fs').writeFileSync(process.env.I18N_DUMP, JSON.stringify(dict.list, null, 1));
   ok('little English is left on the screens this test walked', dict.size < 40, dict.size);
 
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
