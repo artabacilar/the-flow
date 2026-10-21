@@ -67,6 +67,11 @@
  *   GOOGLE_CLIENT_SECRET  only for Google Calendar and Gmail, which need a
  *                         token kept and refreshed (the profile does not)
  *
+ *   MS_CLIENT_ID          Outlook: an Azure app registration ("personal and
+ *   MS_CLIENT_SECRET      work accounts"), Web redirect
+ *                         https://<host>/api/connect/outlook/callback
+ *   MS_REDIRECT_URI       optional, as for Google
+ *
  * Fathom and Notion need nothing here: each person pastes a key made in
  * that app, verified on the spot and kept server-side.
  *
@@ -155,6 +160,28 @@ const PROVIDERS = {
     actions: { starred: gmailStarred }
   },
 
+  /* Outlook and Microsoft 365, through Microsoft Graph: personal and work
+     accounts alike (the "common" endpoint). One connection covers the
+     calendar and flagged mail, because Microsoft asks once for both. It has
+     its own registered callback, unlike Calendar and Gmail. */
+  outlook: {
+    id: 'outlook',
+    kind: 'oauth',
+    name: 'Outlook',
+    blurb: 'Your Outlook calendar on Today; flagged emails as Big Rocks.',
+    clientId: () => process.env.MS_CLIENT_ID || '',
+    secret: () => process.env.MS_CLIENT_SECRET || '',
+    fixedRedirect: () => process.env.MS_REDIRECT_URI || '',
+    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    scope: 'openid email profile offline_access User.Read Calendars.Read Mail.Read',
+    need: ['calendars.read', 'mail.read'],
+    needWhy: 'Allow The Flow to read your calendar and mail, then try again.',
+    extra: { response_type: 'code', response_mode: 'query', prompt: 'select_account' },
+    finish: finishCode,
+    actions: { events: outlookEvents, flagged: outlookFlagged }
+  },
+
   /* Fathom and Notion are connected with a key the person makes in that
      app and pastes here, once. Neither offers sign-in without a secret of
      our own, and a personal key is what both document for one person's
@@ -179,7 +206,8 @@ const PROVIDERS = {
     keyHelp: 'In Notion: Settings \u2192 Connections \u2192 Develop or manage integrations \u2192 New integration (Internal). Copy its secret and paste it here, then open the Notion page you want and add the integration under \u2026 \u2192 Connections.',
     keyUrl: 'https://www.notion.so/profile/integrations',
     verify: verifyNotion,
-    actions: { pages: notionPages, target: notionTarget, send: notionSend }
+    actions: { pages: notionPages, target: notionTarget, send: notionSend },
+    oneAccount: ['pages', 'target', 'send']
   }
 };
 
@@ -317,18 +345,24 @@ async function finishCode(pv, posted, rec, deps) {
   if (!res.ok || !j.access_token) throw new Error('the code was not accepted (' + (j.error || res.status) + ')');
   /* Google lets people untick a permission on the consent screen. A token
      without the one this connection exists for is not a connection. */
-  const granted = String(j.scope || '').split(/\s+/);
-  if (granted.indexOf(pv.need) < 0) throw new Refused(pv.needWhy);
+  const granted = String(j.scope || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const needs = (Array.isArray(pv.need) ? pv.need : [pv.need]).map((x) => String(x).toLowerCase());
+  const has = (n) => granted.some((g) => g === n || g.endsWith('/' + n));
+  if (!needs.every(has)) throw new Refused(pv.needWhy);
   /* This ID token came straight from Google's token endpoint over TLS, in
      answer to our own client secret — OpenID Connect lets it be read
      without checking the signature again. Only the address is taken. */
   let claims = {};
   try { claims = JSON.parse(unb64(String(j.id_token || '').split('.')[1] || '').toString('utf8')); } catch (e) {}
   const now = deps.now || Date.now();
+  /* Google says sub and email; Microsoft says oid, and the address may only
+     be in preferred_username (a work sign-in name is an address). */
+  const email = claims.email_verified === false ? '' :
+    String(claims.email || (/@/.test(String(claims.preferred_username || '')) ? claims.preferred_username : '') || '');
   return {
-    account: String(claims.sub || ''),
-    email: claims.email_verified === false ? '' : String(claims.email || ''),
-    name: '', photo: null,
+    account: String(claims.oid || claims.sub || ''),
+    email,
+    name: String(claims.name || ''), photo: null,
     tok: { access: j.access_token, refresh: j.refresh_token || null, exp: now + (Number(j.expires_in) || 3600) * 1000 }
   };
 }
@@ -359,9 +393,9 @@ async function accessToken(pv, rec, ctx) {
   return rec.tok.access;
 }
 
-async function googleGet(pv, rec, ctx, url) {
+async function googleGet(pv, rec, ctx, url, extraHeaders) {
   const tok = await accessToken(pv, rec, ctx);
-  const res = await (ctx.fetch || fetch)(url, { headers: { Authorization: 'Bearer ' + tok } });
+  const res = await (ctx.fetch || fetch)(url, { headers: Object.assign({ Authorization: 'Bearer ' + tok }, extraHeaders || {}) });
   const j = await res.json().catch(() => ({}));
   if (res.status === 401 || res.status === 403) throw new Refused('Reconnect ' + pv.name + ' in Settings.');
   if (!res.ok) throw new Error(pv.name + ' answered ' + res.status);
@@ -417,6 +451,53 @@ async function gmailStarred(pv, rec, ctx) {
 }
 
 /* ---------------------------------------------------------------------
+ * Outlook (Microsoft Graph)
+ * ------------------------------------------------------------------ */
+
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+/* Graph answers in whatever zone it is asked for, without an offset. Asking
+   for UTC and adding the Z back makes every time unambiguous. */
+const utc = (s) => s ? (/[Zz]|[+-]\d\d:\d\d$/.test(s) ? s : String(s).replace(/(\.\d{3})\d*$/, '$1') + 'Z') : '';
+
+async function outlookEvents(pv, rec, ctx) {
+  const from = ctx.query.get('from'), to = ctx.query.get('to');
+  if (!isoOk(from) || !isoOk(to)) return { status: 400, body: { error: 'from and to are required' } };
+  const span = Date.parse(to) - Date.parse(from);
+  if (!(span > 0 && span <= 8 * 86400000)) return { status: 400, body: { error: 'at most eight days at a time' } };
+  const q = new URLSearchParams({
+    startDateTime: from, endDateTime: to, $top: '50', $orderby: 'start/dateTime',
+    $select: 'id,subject,start,end,isAllDay,isCancelled,location,webLink,onlineMeeting'
+  });
+  const j = await googleGet(pv, rec, ctx, GRAPH + '/me/calendarView?' + q, { Prefer: 'outlook.timezone="UTC"' });
+  const events = (j.value || []).filter((e) => e && !e.isCancelled).map((e) => ({
+    id: String(e.id || ''),
+    title: String(e.subject || '(no title)').slice(0, 200),
+    start: e.isAllDay ? String((e.start || {}).dateTime || '').slice(0, 10) : utc((e.start || {}).dateTime),
+    end: e.isAllDay ? String((e.end || {}).dateTime || '').slice(0, 10) : utc((e.end || {}).dateTime),
+    allDay: !!e.isAllDay,
+    location: String(((e.location || {}).displayName) || '').slice(0, 200),
+    link: String(e.webLink || ''),
+    video: String(((e.onlineMeeting || {}).joinUrl) || '')
+  }));
+  return { status: 200, body: { events } };
+}
+
+async function outlookFlagged(pv, rec, ctx) {
+  const q = new URLSearchParams({
+    $filter: "flag/flagStatus eq 'flagged'", $top: '20', $select: 'id,subject,from,receivedDateTime,webLink'
+  });
+  const j = await googleGet(pv, rec, ctx, GRAPH + '/me/messages?' + q);
+  const messages = (j.value || []).map((m) => ({
+    id: String(m.id || ''),
+    subject: String(m.subject || '(no subject)').slice(0, 200),
+    from: String((((m.from || {}).emailAddress) || {}).name || (((m.from || {}).emailAddress) || {}).address || '').slice(0, 120),
+    date: String(m.receivedDateTime || ''),
+    link: String(m.webLink || '')
+  }));
+  return { status: 200, body: { messages } };
+}
+
+/* ---------------------------------------------------------------------
  * Fathom
  * ------------------------------------------------------------------ */
 
@@ -452,6 +533,7 @@ async function fathomMeetings(pv, rec, ctx) {
     for (const m of (j.items || [])) {
       out.push({
         id: String(m.recording_id != null ? m.recording_id : (m.url || '')),
+        me: rec.email || '',
         title: String(m.title || m.meeting_title || 'Meeting').slice(0, 200),
         url: String(m.share_url || m.url || ''),
         at: String(m.recording_start_time || m.scheduled_start_time || m.created_at || ''),
@@ -562,6 +644,34 @@ async function readJSON(raw, key, dflt) {
 }
 const writeJSON = (raw, key, val) => raw.set(key, JSON.stringify(val));
 
+/* One connection can hold several accounts — a personal and a work Gmail,
+   two Outlooks, two Fathoms. Stored as { v: 2, accounts: [...] }; a record
+   written before that (one account, no list) is read as a list of one. Each
+   account has an `aid`: who it is at the other end, so connecting the same
+   account again replaces it rather than adding a twin. */
+const aidOf = (r) => String((r && (r.aid || r.account || r.email || r.name)) || 'main').slice(0, 120);
+async function readAccounts(raw, uid, id) {
+  const v = await readJSON(raw, KEY(uid, id), null);
+  if (!v) return [];
+  const list = Array.isArray(v.accounts) ? v.accounts : [v];
+  return list.filter(Boolean).map((r) => Object.assign({}, r, { aid: aidOf(r) }));
+}
+async function writeAccounts(raw, uid, id, list) {
+  if (!list.length) return raw.set(KEY(uid, id), '');
+  return writeJSON(raw, KEY(uid, id), { v: 2, accounts: list.slice(0, 10) });
+}
+async function upsertAccount(raw, uid, id, rec) {
+  const list = await readAccounts(raw, uid, id);
+  const aid = aidOf(rec);
+  const i = list.findIndex((r) => r.aid === aid);
+  /* Reconnecting keeps what the account was set up to do (Notion's page). */
+  const merged = Object.assign({}, i >= 0 ? { target: list[i].target } : {}, rec, { aid });
+  if (!merged.target) delete merged.target;
+  if (i >= 0) list[i] = merged; else list.push(merged);
+  await writeAccounts(raw, uid, id, list);
+  return merged;
+}
+
 /* Everything one account has connected, for deleting the account. */
 async function purgeUser(raw, uid) {
   let n = 0;
@@ -610,8 +720,13 @@ async function handle(req, res, ctx) {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
     const out = [];
     for (const pv of Object.values(PROVIDERS)) {
-      const rec = await readJSON(raw, KEY(me.id, pv.id), null);
+      const accounts = await readAccounts(raw, me.id, pv.id);
+      const rec = accounts[0] || null;
       out.push({
+        accounts: accounts.map((a) => ({
+          aid: a.aid, email: a.email || null, name: a.name || null, photo: a.photo || null,
+          since: a.since || null, broken: !!a.broken, target: (a.target && a.target.title) || null
+        })),
         id: pv.id, name: pv.name, blurb: pv.blurb, kind: kindOf(pv),
         keyLabel: pv.keyLabel || null, keyHelp: pv.keyHelp || null, keyUrl: pv.keyUrl || null,
         configured: configured(pv),
@@ -649,25 +764,57 @@ async function handle(req, res, ctx) {
       if (!(e instanceof Refused)) console.error('[connect/' + pv.id + '] ' + (e && e.message));
       return json(res, e instanceof Refused ? 400 : 502, { error: e instanceof Refused ? e.message : pv.name + ' could not be reached. Try again shortly.' }), true;
     }
-    await writeJSON(raw, KEY(me.id, pv.id), { key, email: who.email || '', name: who.name || '', since: new Date(now()).toISOString() });
+    /* A key is one account; which one is the person it belongs to, or, for
+       a workspace key, a fingerprint of the key itself. */
+    const fp = crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+    await upsertAccount(raw, me.id, pv.id, { aid: who.email || (who.name ? who.name + ' \u00b7 ' + fp : fp), key,
+      email: who.email || '', name: who.name || '', since: new Date(now()).toISOString() });
     json(res, 200, { ok: true });
     return true;
   }
 
   /* ---- what a connection is for, once it exists ---- */
+  /* Reading (events, starred mail, meetings) runs over every account and
+     merges, each item saying which account it came from; one account that
+     fails does not hide the others. Acting on one thing (Notion's page)
+     uses the account named by ?aid=, or the first. */
   if (pv.actions && pv.actions[step]) {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
-    const rec = await readJSON(raw, KEY(me.id, pv.id), null);
-    if (!rec) return json(res, 409, { error: pv.name + ' is not connected.' }), true;
-    const actx = { req, query: ctx.query, fetch: ctx.fetch, now: ctx.now, readBody: ctx.readBody,
-                   saveRec: (r) => writeJSON(raw, KEY(me.id, pv.id), r) };
-    try {
-      const out = await pv.actions[step](pv, rec, actx);
-      json(res, out.status, out.body);
-    } catch (e) {
-      if (!(e instanceof Refused)) console.error('[connect/' + pv.id + '/' + step + '] ' + (e && e.message));
-      json(res, e instanceof Refused ? 409 : 502, { error: e instanceof Refused ? e.message : pv.name + ' could not be reached. Try again shortly.' });
+    const all = await readAccounts(raw, me.id, pv.id);
+    if (!all.length) return json(res, 409, { error: pv.name + ' is not connected.' }), true;
+    const want = ctx.query.get('aid');
+    const one = (pv.oneAccount || []).indexOf(step) >= 0;
+    const picked = want ? all.filter((a) => a.aid === want) : (one ? all.slice(0, 1) : all);
+    if (!picked.length) return json(res, 404, { error: 'That account is not connected.' }), true;
+    const results = [], problems = [];
+    for (const rec of picked) {
+      const actx = { req, query: ctx.query, fetch: ctx.fetch, now: ctx.now, readBody: ctx.readBody,
+                     saveRec: (r) => upsertAccount(raw, me.id, pv.id, r) };
+      try {
+        const out = await pv.actions[step](pv, rec, actx);
+        if (out.status !== 200) { json(res, out.status, out.body); return true; }
+        results.push({ rec, body: out.body });
+      } catch (e) {
+        if (!(e instanceof Refused)) console.error('[connect/' + pv.id + '/' + step + '] ' + (e && e.message));
+        problems.push({ account: rec.email || rec.name || rec.aid,
+          error: e instanceof Refused ? e.message : pv.name + ' could not be reached. Try again shortly.', refused: e instanceof Refused });
+      }
     }
+    if (!results.length) {
+      json(res, problems[0].refused ? 409 : 502, { error: problems[0].error, problems });
+      return true;
+    }
+    const body = {};
+    for (const { rec, body: b } of results) {
+      for (const k of Object.keys(b)) {
+        if (Array.isArray(b[k])) {
+          body[k] = (body[k] || []).concat(b[k].map((x) => (x && typeof x === 'object' && !x.account)
+            ? Object.assign({ account: rec.email || rec.name || '' }, x) : x));
+        } else if (!(k in body)) body[k] = b[k];
+      }
+    }
+    if (problems.length) body.problems = problems;
+    json(res, 200, body);
     return true;
   }
   if (['start', 'callback', 'finish', 'disconnect'].indexOf(step) < 0) return json(res, 404, { error: 'No such step.' }), true;
@@ -702,7 +849,7 @@ async function handle(req, res, ctx) {
   const okPageFor = (P, profile) => donePage(P.name + ' connected',
     (profile.email ? '<p>' + esc(profile.email) + '</p>' : '') +
     '<p>You can close this and go back to The Flow.</p>', true);
-  const saveFor = (P, uid, profile) => writeJSON(raw, KEY(uid, P.id), Object.assign({
+  const saveFor = (P, uid, profile) => upsertAccount(raw, uid, P.id, Object.assign({
     account: profile.account, email: profile.email, name: profile.name,
     photo: profile.photo, since: new Date(now()).toISOString()
   }, profile.tok ? { tok: profile.tok } : {}));
@@ -778,16 +925,25 @@ async function handle(req, res, ctx) {
   if (step === 'disconnect') {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
     if (req.method !== 'POST') return json(res, 405, { error: 'POST' }), true;
-    const was = await readJSON(raw, KEY(me.id, pv.id), null);
-    await raw.set(KEY(me.id, pv.id), '');
-    /* Hand the access back too, not just forget it. Best effort: the local
-       record is gone either way. */
-    const t = was && was.tok && (was.tok.refresh || was.tok.access);
-    if (t) {
-      try { await (ctx.fetch || fetch)('https://oauth2.googleapis.com/revoke', { method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t }).toString() }); } catch (e) {}
+    let body = {};
+    try { body = JSON.parse((await ctx.readBody(req)) || '{}'); } catch (e) {}
+    const all = await readAccounts(raw, me.id, pv.id);
+    const aid = body && body.aid ? String(body.aid) : '';
+    const gone = aid ? all.filter((a) => a.aid === aid) : all;
+    await writeAccounts(raw, me.id, pv.id, aid ? all.filter((a) => a.aid !== aid) : []);
+    /* Hand Google access back too, not just forget it. Best effort: the
+       local record is gone either way. Microsoft has no equivalent call; its
+       refresh tokens die unused, and the person can remove the app from
+       their Microsoft account. */
+    if (pv.id === 'google' || pv.via === 'google') {
+      for (const was of gone) {
+        const t = was.tok && (was.tok.refresh || was.tok.access);
+        if (!t) continue;
+        try { await (ctx.fetch || fetch)('https://oauth2.googleapis.com/revoke', { method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t }).toString() }); } catch (e) {}
+      }
     }
-    json(res, 200, { ok: true });
+    json(res, 200, { ok: true, removed: gone.length });
     return true;
   }
 
@@ -798,6 +954,6 @@ module.exports = {
   handle,
   purgeUser,
   PROVIDERS,
-  _internals: { notionBlocks, Refused, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
+  _internals: { notionBlocks, Refused, readAccounts, upsertAccount, utc, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
                 resetKeys: () => { jwksCache = { at: 0, ttl: 0, keys: [] }; } }
 };

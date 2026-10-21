@@ -1814,3 +1814,10 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 @media (max-width:520px){.conn-acts,.conn-keyform{margin-left:0;}}
 .conn-keyform p,.conn-more,.conn-out{font-size:12px;color:var(--muted);line-height:1.45;}
 .conn-keyform p a{color:inherit;text-decoration:underline;}
+/* Several accounts on one connection: one line each, under the name. */
+.conn-accts{flex:1 0 100%;margin:2px 0 0 46px;display:flex;flex-direction:column;gap:6px;}
+.conn-acct{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);}
+.conn-acct:first-child{border-top:0;}
+.conn-who{flex:1;min-width:160px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;}
+.conn-who em{color:#f59e0b;font-style:normal;}
+@media (max-width:520px){.conn-accts{margin-left:0;}}

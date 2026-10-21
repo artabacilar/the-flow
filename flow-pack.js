@@ -7044,36 +7044,54 @@ const Connect = {
     const face = c.photo
       ? '<img class="conn-face" alt="" src="' + esc(c.photo) + '">'
       : '<span class="conn-face conn-mark">' + esc((c.name || '?')[0]) + '</span>';
-    let right, sub, below = '';
-    if (c.connected) {
-      sub = c.broken ? 'Needs reconnecting.' : esc(c.email || c.name_on_account || 'Connected');
-      right = '<button type="button" class="flow-btn sm ghost" data-conn-off="' + esc(c.id) + '">Disconnect</button>';
-      const act = {
-        fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Import meetings</button>',
-        gmail: '<button type="button" class="flow-btn sm" data-conn-act="gmail">Add starred emails as Big Rocks</button>',
-        notion: '<button type="button" class="flow-btn sm" data-conn-act="notion-pick">' +
-          (c.target ? 'Page: ' + esc(c.target) : 'Choose a page') + '</button> ' +
-          (c.target ? '<button type="button" class="flow-btn sm" data-conn-act="notion-send">Send this week</button>' : ''),
-        gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>'
-      }[c.id];
-      if (act && !c.broken) below = '<div class="conn-acts">' + act + '<span class="conn-out flow-sub"></span></div>';
-      if (c.broken && c.kind !== 'key') right = '<button type="button" class="flow-btn sm primary" data-conn-on="' + esc(c.id) + '">Reconnect</button>';
-    } else if (c.configured) {
-      sub = esc(c.blurb || '');
-      right = '<button type="button" class="flow-btn sm primary" data-conn-' + (c.kind === 'key' ? 'key' : 'on') + '="' + esc(c.id) + '">Connect</button>';
-      if (c.kind === 'key') {
-        below = '<form class="conn-keyform" data-conn-keyform="' + esc(c.id) + '" hidden>' +
-          '<p class="flow-sub">' + esc(c.keyHelp || '') +
-          (c.keyUrl ? ' <a href="' + esc(c.keyUrl) + '" target="_blank" rel="noopener">Open ' + esc(c.name) + ' ↗</a>' : '') + '</p>' +
-          '<div class="conn-keyrow"><input type="password" autocomplete="off" spellcheck="false" placeholder="' + esc(c.keyLabel || 'Key') + '">' +
-          '<button type="submit" class="flow-btn sm primary">Save</button></div></form>';
-      }
-    } else {
-      sub = 'Not set up on this server yet.';
-      right = '<button type="button" class="flow-btn sm" disabled>Connect</button>';
+    const accts = Array.isArray(c.accounts) && c.accounts.length ? c.accounts
+      : (c.connected ? [{ aid: '', email: c.email, name: c.name_on_account, broken: c.broken, target: c.target }] : []);
+    const isKey = c.kind === 'key';
+    const keyForm = () => '<form class="conn-keyform" data-conn-keyform="' + esc(c.id) + '" hidden>' +
+      '<p class="flow-sub">' + esc(c.keyHelp || '') +
+      (c.keyUrl ? ' <a href="' + esc(c.keyUrl) + '" target="_blank" rel="noopener">Open ' + esc(c.name) + ' ↗</a>' : '') + '</p>' +
+      '<div class="conn-keyrow"><input type="password" autocomplete="off" spellcheck="false" placeholder="' + esc(c.keyLabel || 'Key') + '">' +
+      '<button type="submit" class="flow-btn sm primary">Save</button></div></form>';
+    const addBtn = (label) => '<button type="button" class="flow-btn sm ' + (accts.length ? '' : 'primary') + '" data-conn-' +
+      (isKey ? 'key' : 'on') + '="' + esc(c.id) + '">' + label + '</button>';
+
+    if (!c.configured) {
+      return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
+        '<div class="conn-t"><b>' + esc(c.name) + '</b><span>Not set up on this server yet.</span></div>' +
+        '<button type="button" class="flow-btn sm" disabled>Connect</button></div>';
     }
+    if (!accts.length) {
+      return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
+        '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + esc(c.blurb || '') + '</span></div>' +
+        addBtn('Connect') + (isKey ? keyForm() : '') + '</div>';
+    }
+    /* Connected: one line per account, then what the connection does (for
+       every account at once), then a way to add another. */
+    const lines = accts.map((a) => {
+      const who = esc(a.email || a.name || 'Connected');
+      const fix = a.broken && !isKey
+        ? '<button type="button" class="flow-btn sm primary" data-conn-on="' + esc(c.id) + '">Reconnect</button>' : '';
+      const notion = c.id === 'notion'
+        ? '<button type="button" class="flow-btn sm" data-conn-act="notion-pick" data-aid="' + esc(a.aid) + '">' +
+          (a.target ? 'Page: ' + esc(a.target) : 'Choose a page') + '</button>' +
+          (a.target ? '<button type="button" class="flow-btn sm" data-conn-act="notion-send" data-aid="' + esc(a.aid) + '">Send this week</button>' : '')
+        : '';
+      return '<div class="conn-acct" data-aid="' + esc(a.aid) + '"><span class="conn-who">' + who +
+        (a.broken ? ' · <em>needs reconnecting</em>' : '') + '</span>' + notion + fix +
+        '<button type="button" class="flow-btn sm ghost" data-conn-off="' + esc(c.id) + '" data-aid="' + esc(a.aid) + '">Disconnect</button></div>';
+    }).join('');
+    const act = {
+      fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Import meetings</button>',
+      gmail: '<button type="button" class="flow-btn sm" data-conn-act="gmail">Add starred emails as Big Rocks</button>',
+      outlook: '<button type="button" class="flow-btn sm" data-conn-act="outlook">Add flagged emails as Big Rocks</button>',
+      gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>'
+    }[c.id] || '';
+    const many = c.id !== 'google';
     return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
-      '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + sub + '</span></div>' + right + below + '</div>';
+      '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + esc(accts.length > 1 ? accts.length + ' accounts' : (c.blurb || '')) + '</span></div>' +
+      '<div class="conn-accts">' + lines + '</div>' +
+      '<div class="conn-acts">' + act + (many ? addBtn('+ Add another account') : '') + '<span class="conn-out flow-sub"></span></div>' +
+      (isKey && many ? keyForm() : '') + '</div>';
   },
 
   async wire(section) {
@@ -7125,7 +7143,7 @@ const Connect = {
         const out = row && row.querySelector('.conn-out');
         act.disabled = true;
         try {
-          const msg = await ConnectApps.run(act.getAttribute('data-conn-act'), row);
+          const msg = await ConnectApps.run(act.getAttribute('data-conn-act'), row, act.getAttribute('data-aid') || '');
           if (out && msg) out.textContent = msg;
           if (act.getAttribute('data-conn-act') === 'notion-pick') await paint();
         } catch (e) {
@@ -7160,9 +7178,11 @@ const Connect = {
       }
       if (off) {
         const id = off.getAttribute('data-conn-off');
+        const aid = off.getAttribute('data-aid') || '';
         off.disabled = true;
         try {
-          const r = await fetch('/api/connect/' + id + '/disconnect', { method: 'POST', credentials: 'same-origin' });
+          const r = await fetch('/api/connect/' + id + '/disconnect', { method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(aid ? { aid } : {}) });
           if (!r.ok) throw new Error();
           toast('Disconnected.', null, 1600);
         } catch (e) { toast('Could not disconnect — try again.', 'err'); }
@@ -7256,18 +7276,24 @@ const ConnectApps = {
     addRock(String(title).slice(0, 200), '', t.day, '', t.wid, { note: note || '', prio: 'med' });
   },
 
-  async run(what, row) {
+  async run(what, row, aid) {
     if (what === 'fathom') return ConnectApps.fathom();
-    if (what === 'gmail') return ConnectApps.gmail();
-    if (what === 'notion-pick') return ConnectApps.notionPick(row);
-    if (what === 'notion-send') return ConnectApps.notionSend();
+    if (what === 'gmail') return ConnectApps.mail('gmail', 'starred', 'starred');
+    if (what === 'outlook') return ConnectApps.mail('outlook', 'flagged', 'flagged');
+    if (what === 'notion-pick') return ConnectApps.notionPick(row, aid);
+    if (what === 'notion-send') return ConnectApps.notionSend(aid);
     return '';
+  },
+  /* Something went wrong with one account but not the others: say which. */
+  partial(j) {
+    const p = (j && j.problems) || [];
+    return p.length ? ' (' + p.map((x) => x.account + ': ' + x.error).join('; ') + ')' : '';
   },
 
   async fathom() {
     const seen = ConnectApps.seen().fathom || [];
     const j = await ConnectApps.get('/api/connect/fathom/meetings');
-    const me = String(j.me || '').toLowerCase();
+    const meAll = String(j.me || '').toLowerCase();
     const fresh = (j.meetings || []).filter((m) => m.id && seen.indexOf(m.id) < 0)
       .sort((a, b) => String(a.at).localeCompare(String(b.at)));
     let rocks = 0;
@@ -7277,33 +7303,37 @@ const ConnectApps = {
         (m.summary ? '\n\n' + m.summary : '') + (m.url ? '\n\n' + m.url : '');
       if (typeof J === 'function') J('meeting', body);
       /* Your own action items, and anybody's that nobody owns. */
+      const me = String(m.me || meAll || '').toLowerCase();
       (m.actions || []).filter((a) => !a.email || !me || a.email.toLowerCase() === me).forEach((a) => {
         ConnectApps.rock(a.text, 'From Fathom: ' + m.title + (m.url ? ' — ' + m.url : ''));
         rocks++;
       });
     });
     ConnectApps.markSeen('fathom', fresh.map((m) => m.id));
-    if (!fresh.length) return 'Nothing new from the last two weeks.';
+    if (!fresh.length) return 'Nothing new from the last two weeks.' + ConnectApps.partial(j);
     return fresh.length + ' meeting' + (fresh.length === 1 ? '' : 's') + ' added to your Journal' +
       (rocks ? ', ' + rocks + ' action item' + (rocks === 1 ? '' : 's') + ' added as Big Rocks for today.' : '.');
   },
 
-  async gmail() {
-    const seen = ConnectApps.seen().gmail || [];
-    const j = await ConnectApps.get('/api/connect/gmail/starred');
+  async mail(id, step, word) {
+    const seen = ConnectApps.seen()[id] || [];
+    const j = await ConnectApps.get('/api/connect/' + id + '/' + step);
     const fresh = (j.messages || []).filter((m) => m.id && seen.indexOf(m.id) < 0);
-    fresh.forEach((m) => ConnectApps.rock('✉️ ' + m.subject, (m.from ? 'From ' + m.from + ' — ' : '') + m.link));
-    ConnectApps.markSeen('gmail', fresh.map((m) => m.id));
-    return fresh.length
-      ? fresh.length + ' starred email' + (fresh.length === 1 ? '' : 's') + ' added as Big Rocks for today.'
-      : 'No new starred emails.';
+    fresh.forEach((m) => ConnectApps.rock('\u2709\ufe0f ' + m.subject,
+      (m.from ? 'From ' + m.from + ' \u2014 ' : '') + (m.account ? m.account + ' \u2014 ' : '') + m.link));
+    ConnectApps.markSeen(id, fresh.map((m) => m.id));
+    return (fresh.length
+      ? fresh.length + ' ' + word + ' email' + (fresh.length === 1 ? '' : 's') + ' added as Big Rocks for today.'
+      : 'No new ' + word + ' emails.') + ConnectApps.partial(j);
   },
 
-  async notionPick(row) {
-    const j = await ConnectApps.get('/api/connect/notion/pages');
+
+  async notionPick(row, aid) {
+    const q = aid ? '?aid=' + encodeURIComponent(aid) : '';
+    const j = await ConnectApps.get('/api/connect/notion/pages' + q);
     const pages = j.pages || [];
     if (!pages.length) throw new Error('The Flow cannot see any pages yet. In Notion, open a page and add your integration under … → Connections.');
-    const acts = row.querySelector('.conn-acts');
+    const acts = (aid && [...row.querySelectorAll('.conn-acct')].find((x) => x.getAttribute('data-aid') === aid)) || row.querySelector('.conn-acts');
     const sel = document.createElement('select');
     sel.className = 'conn-pick';
     sel.innerHTML = '<option value="">Choose the page to send to…</option>' +
@@ -7313,7 +7343,7 @@ const ConnectApps = {
       sel.addEventListener('change', async () => {
         const pg = pages.find((x) => x.id === sel.value);
         if (!pg) return;
-        try { await ConnectApps.post('/api/connect/notion/target', { id: pg.id, title: pg.title }); resolve('Sending to ' + pg.title + '.'); }
+        try { await ConnectApps.post('/api/connect/notion/target' + q, { id: pg.id, title: pg.title }); resolve('Sending to ' + pg.title + '.'); }
         catch (e) { reject(e); }
       });
     });
@@ -7321,7 +7351,7 @@ const ConnectApps = {
 
   /* This week, as Notion blocks: the Big Rocks as to-dos, then what was
      written in the Journal since Monday. */
-  async notionSend() {
+  async notionSend(aid) {
     const t = ConnectApps.today();
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     let rocks = [];
@@ -7339,7 +7369,7 @@ const ConnectApps = {
       text: new Date(e.t).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) + ' · ' + String(e.txt || '') }));
     if (!entries.length) blocks.push({ type: 'p', text: 'Nothing written yet this week.' });
     const range = monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const j = await ConnectApps.post('/api/connect/notion/send',
+    const j = await ConnectApps.post('/api/connect/notion/send' + (aid ? '?aid=' + encodeURIComponent(aid) : ''),
       { title: 'The Flow — ' + t.wid.replace('-W', ' week ') + ' (from ' + range + ')', blocks });
     if (j.url) window.open(j.url, '_blank');
     return 'Sent to Notion ✓';
@@ -7347,15 +7377,27 @@ const ConnectApps = {
 
   /* ── Google Calendar on Today ── */
   cal: null,
+  /* Every calendar from every connected account, Google and Outlook, as one
+     day. The same meeting accepted in two calendars is shown once. */
   async calendarLoad() {
-    const c = Connect.list.find((x) => x.id === 'gcal');
-    if (!c || !c.connected || c.broken) { ConnectApps.cal = null; ConnectApps.calendarPaint(); return; }
+    const ids = ['gcal', 'outlook'].filter((id) => {
+      const c = Connect.list.find((x) => x.id === id);
+      return c && (c.accounts || []).some((a) => !a.broken);
+    });
+    if (!ids.length) { ConnectApps.cal = null; ConnectApps.calendarPaint(); return; }
     const from = new Date(); from.setHours(0, 0, 0, 0);
     const to = new Date(from); to.setDate(to.getDate() + 1);
-    try {
-      const j = await ConnectApps.get('/api/connect/gcal/events?' + new URLSearchParams({ from: from.toISOString(), to: to.toISOString() }));
-      ConnectApps.cal = j.events || [];
-    } catch (e) { ConnectApps.cal = null; }
+    const q = '?' + new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+    const got = await Promise.all(ids.map((id) => ConnectApps.get('/api/connect/' + id + '/events' + q)
+      .then((j) => j.events || []).catch(() => null)));
+    if (got.every((x) => x === null)) { ConnectApps.cal = null; ConnectApps.calendarPaint(); return; }
+    const seen = {};
+    ConnectApps.cal = [].concat.apply([], got.filter(Boolean)).filter((e) => {
+      const k = String(e.title).trim().toLowerCase() + '|' + (e.allDay ? String(e.start).slice(0, 10) : Date.parse(e.start));
+      if (seen[k]) return false;
+      seen[k] = 1; return true;
+    }).sort((a, b) => (b.allDay - a.allDay) || (Date.parse(a.start) - Date.parse(b.start)));
+    ConnectApps.many = ids.reduce((n, id) => n + ((Connect.list.find((x) => x.id === id) || {}).accounts || []).length, 0) > 1;
     ConnectApps.calendarPaint();
   },
   calendarHtml() {
@@ -7368,6 +7410,7 @@ const ConnectApps = {
       return '<div class="td-rock"><div class="dot med"></div><div class="rk-title">' +
         (go ? '<a href="' + esc(go) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a>' : esc(e.title)) +
         (e.location ? '<div class="td-rk-note">📍 ' + esc(e.location) + '</div>' : '') +
+        (ConnectApps.many && e.account ? '<div class="td-rk-note">' + esc(e.account) + '</div>' : '') +
         '</div><div class="rk-meta">' + esc(when) + '</div></div>';
     }).join('') : '<div class="td-rocks-empty">No meetings today.</div>';
     return '<div class="td-rocks" id="td-cal"><div class="td-rocks-head"><span class="lbl">Today · Calendar</span><span class="cnt">' +

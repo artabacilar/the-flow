@@ -481,7 +481,8 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>Recovery codes</b>, hashed the same way as the password.</li>
     <li><b>Session and access tokens</b>, so you stay signed in and so an assistant you have
         connected can read your day.</li>
-    <li><b>Apps you connect yourself</b>, and only if you do, each separately:
+    <li><b>Apps you connect yourself</b>, and only if you do, each separately (you can connect
+      more than one account of the same app, and each is kept and removed on its own):
       <ul>
         <li><b>Google</b> stores the name, email address and profile photo of the account you
             chose, so the app can show it as yours. No Google token is kept.</li>
@@ -490,6 +491,9 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
         <li><b>Gmail</b> keeps a read-only token. The Flow reads only the sender, subject and date
             of messages you have starred, and only when you press the button that turns them into
             Big Rocks. It never reads message bodies, never sends mail and never changes anything.</li>
+        <li><b>Outlook</b> keeps a read-only Microsoft token, to show today's events on Today and,
+            when you press the button, turn the sender and subject of flagged emails into Big Rocks.
+            It never reads message bodies, never sends mail and never changes anything.</li>
         <li><b>Fathom</b> keeps the API key you paste, to read your meetings' titles, summaries and
             action items when you press Import. What is imported becomes part of your Journal and
             Big Rocks.</li>
