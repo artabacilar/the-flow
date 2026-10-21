@@ -862,6 +862,128 @@ async function handleDirection(p, req, res, ctx) {
   return true;
 }
 
+/* ==========================================================================
+ * Planning the week — the Sunday session
+ * --------------------------------------------------------------------------
+ * The page brings what only it has in hand (last week's honest numbers, what
+ * the person just wrote about it, what they chose to carry over, next week's
+ * meetings); this adds their mission, roles and recent record, and asks for a
+ * short list of Big Rocks as JSON. Same three limits as the assistant: it
+ * writes nothing (the page adds only what the person ticks), it reads only
+ * this account, and it is capped per day.
+ * ========================================================================== */
+
+const PLAN_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_PLAN_DAILY_CAP || '6', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+})();
+const planCountKey = () => 'plan:' + new Date().toISOString().slice(0, 10);
+const PLAN_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+const PLAN_SYSTEM = [
+  'You help one person plan their coming week inside The Flow, a planner built on',
+  'Stephen Covey\'s weekly compass: a mission, a few roles, and three to seven Big Rocks',
+  '— the things they would regret reaching Sunday without.',
+  '',
+  'Rules:',
+  '· Propose 3 to 7 Big Rocks for the week named below. Fewer, better ones beat a long list.',
+  '· Spread them across the roles that matter; include at least one Q2 rock (important,',
+  '  not urgent: health, relationships, learning, planning) — that is the point of the method.',
+  '· Use what last week actually showed. If they finished little, propose less, not more.',
+  '· Carried-over items are already on the week; do not repeat them.',
+  '· Put each rock on a day that fits around the meetings listed; give a time only when one',
+  '  is obvious. Never put two timed rocks on top of each other or on top of a meeting.',
+  '· Titles are short and concrete, written the way the person writes (match their language).',
+  '· "why" is one plain sentence tying the rock to their mission, a role or last week.',
+  '',
+  'Answer with JSON only, no prose around it:',
+  '{"focus":"one sentence: what this week is for",',
+  ' "rocks":[{"title":"…","role":"one of their roles, or empty","day":"mon|tue|wed|thu|fri|sat|sun",',
+  '           "time":"HH:MM or empty","why":"…"}]}'
+].join('\n');
+
+/* Whatever the model wraps it in, take the JSON object and keep only what
+   the page can use, in the shape it expects. Pure, for the tests. */
+function parsePlan(text, roles) {
+  let obj = null;
+  const t = String(text || '');
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { obj = JSON.parse(t.slice(a, b + 1)); } catch (e) { obj = null; } }
+  if (!obj || !Array.isArray(obj.rocks)) return null;
+  const roleSet = (roles || []).map((r) => String(r).toLowerCase());
+  const rocks = obj.rocks.slice(0, 7).map((r) => {
+    const day = String((r && r.day) || '').toLowerCase().slice(0, 3);
+    const time = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String((r && r.time) || '')) ? String(r.time).padStart(5, '0') : '';
+    const role = String((r && r.role) || '').slice(0, 60);
+    return {
+      title: String((r && r.title) || '').trim().slice(0, 160),
+      role: roleSet.indexOf(role.toLowerCase()) >= 0 ? role : '',
+      day: PLAN_DAYS.indexOf(day) >= 0 ? day : 'mon',
+      time,
+      why: String((r && r.why) || '').trim().slice(0, 240)
+    };
+  }).filter((r) => r.title);
+  if (!rocks.length) return null;
+  return { focus: String(obj.focus || '').trim().slice(0, 240), rocks };
+}
+
+async function handlePlanWeek(p, req, res, ctx) {
+  if (p !== '/api/flow/plan-week' || req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+
+  const spent = (await ctx.counter.get(planCountKey())) || 0;
+  if (PLAN_DAILY_CAP > 0 && spent >= PLAN_DAILY_CAP) {
+    ctx.json(res, 429, { error: 'You have asked for ' + spent + ' plans today. It resets at midnight UTC.', used: spent, cap: PLAN_DAILY_CAP });
+    return true;
+  }
+
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const clip = (v, n) => JSON.stringify(v == null ? null : v).slice(0, n);
+
+  const pick = async (k) => { try { return await ctx.mine.get(k); } catch (e) { return null; } };
+  const compass = (await pick('ld_compass')) || {};
+  const roles = Array.isArray(compass.roles) ? compass.roles.map((r) => (r && (r.name || r.title || r.role)) || r).filter((r) => typeof r === 'string') : [];
+  const journal = await pick('ld_journal');
+  const written = await pick('flow:journal');
+
+  const brief = [
+    '# The week to plan: ' + String(body.week || '').slice(0, 10),
+    '# Mission\n' + clip(compass.mission || '', 1200),
+    '# Roles\n' + clip(roles, 800),
+    '# Last week, honestly (planned vs done)\n' + clip(body.scorecard, 3000),
+    '# What they wrote about last week\n' + clip(body.reflection, 2000),
+    '# Already carried over into this week\n' + clip(body.carried, 1500),
+    '# Meetings already in their calendars this week\n' + clip(body.calendar, 3000),
+    '# Recent activity (newest last)\n' + clip(Array.isArray(journal) ? journal.slice(-30) : [], 5000),
+    '# Recent journal writing (newest last)\n' + clip(Array.isArray(written) ? written.slice(-5) : [], 4000)
+  ].join('\n\n');
+
+  const r = await postJSON('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, {
+    model: CHAT_MODEL,
+    max_tokens: 1200,
+    system: PLAN_SYSTEM,
+    messages: [{ role: 'user', content: brief + '\n\nPropose the week.' }]
+  });
+  if (r.status === 401 || r.status === 403 || r.status === 404) {
+    logUpstream('plan', r.status);
+    ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true;
+  }
+  if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again shortly.' }); return true; }
+  if (r.status < 200 || r.status >= 300) { ctx.json(res, 502, { error: 'The plan could not be written just now (upstream ' + r.status + ').' }); return true; }
+
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const text = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+  const plan = parsePlan(text, roles);
+  await ctx.counter.set(planCountKey(), spent + 1);
+  if (!plan) { ctx.json(res, 502, { error: 'The suggestion came back in a shape the app could not read. Try again.' }); return true; }
+  ctx.json(res, 200, Object.assign({ ok: true, used: spent + 1, cap: PLAN_DAILY_CAP }, plan));
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -869,8 +991,11 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleChat(p, req, res, ctx)) return true;
   if (await handleChatStream(p, req, res, ctx)) return true;
   if (await handleDirection(p, req, res, ctx)) return true;
+  if (await handlePlanWeek(p, req, res, ctx)) return true;
   return false;
 };
+module.exports._internals.parsePlan = parsePlan;
+module.exports._internals.PLAN_SYSTEM = PLAN_SYSTEM;
 module.exports._internals.buildContext = buildContext;
 module.exports._internals.SYSTEM = SYSTEM;
 module.exports._internals.chatConfig = () => ({ model: CHAT_MODEL, cap: CHAT_DAILY_CAP, maxContext: CHAT_MAX_CONTEXT });

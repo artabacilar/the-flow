@@ -101,6 +101,7 @@ let connect = null;
 connect = loadModule('flow-connect', ['handle', 'purgeUser']);
 
 const USERS_KEY = '__auth:users';
+const FEEDBACK_KEY = '__feedback';
 const SESS = (t) => '__auth:sess:' + t;
 /* Bumped: the v1 prefix put adopted keys outside the store's `ld_*` pattern,
    so adoption has to run once more to place them where all() can see them. */
@@ -1737,6 +1738,13 @@ async function gate(req, res) {
       catch (e) { console.error('[delete] connections purge failed: ' + (e && e.message)); }
     }
     if (await raw.get('whoop:tok:' + uid)) { await raw.set('whoop:tok:' + uid, ''); gone.other++; }
+    /* Feedback they left carries their address; it goes with them. */
+    {
+      const fb = await getJSON(FEEDBACK_KEY, []);
+      if (Array.isArray(fb) && fb.some(x => x && x.uid === uid)) {
+        await setJSON(FEEDBACK_KEY, fb.filter(x => !x || x.uid !== uid)); gone.other++;
+      }
+    }
     /* The rate-limit counters are keyed by email address, so leaving them
        behind leaves the address behind. */
     const tries = await raw.keys('__auth:rctry:' + rec.email + ':*');
@@ -1854,6 +1862,31 @@ async function gate(req, res) {
   /* ---- everything else under /api needs a session ---- */
   const me = await currentUser(req);
   if (!me) { json(res, 401, { error: 'auth required' }); return true; }
+
+  /* ---- feedback, for the trial ----
+     Anyone signed in can leave a note; only the owner can read them. Kept
+     outside every account's data, newest last, at most 500. The page sends
+     where it was sent from, nothing else. */
+  if (p === '/api/feedback' && req.method === 'POST') {
+    let b = {};
+    try { b = JSON.parse((await readBody(req)) || '{}'); } catch (e) {}
+    const text = String(b.text || '').trim().slice(0, 4000);
+    if (!text) return json(res, 400, { error: 'Write something first.' }), true;
+    const list = await getJSON(FEEDBACK_KEY, []);
+    const arr = Array.isArray(list) ? list : [];
+    arr.push({ at: new Date().toISOString(), uid: me.id, email: me.email, name: me.name || '',
+               where: String(b.where || '').slice(0, 60), text });
+    await setJSON(FEEDBACK_KEY, arr.slice(-500));
+    return json(res, 200, { ok: true }), true;
+  }
+  if (p === '/api/feedback' && req.method === 'GET') {
+    if (!me.owner) return json(res, 403, { error: 'Not permitted.' }), true;
+    const list = await getJSON(FEEDBACK_KEY, []);
+    const users = await getJSON(USERS_KEY, {});
+    /* Who is in the trial and when they joined — no data of theirs. */
+    const people = Object.values(users).map(u => ({ email: u.email, name: u.name || '', created: u.created || null, owner: !!u.owner }));
+    return json(res, 200, { feedback: (Array.isArray(list) ? list : []).slice(-200).reverse(), people, maxAccounts: MAX_ACCOUNTS }), true;
+  }
 
   /* Hand the rest of the handler a request scoped to this user. Returning
      false lets the original routes run, now reading and writing only that

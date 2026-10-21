@@ -306,6 +306,7 @@ const SETTINGS_DEFAULTS = {
   bankProvider: 'none',
   statementDateFormat: 'auto',
   pushRemindRocks: true,         // reminders at a rock's own time
+  hiddenTabs: [],                // sections taken out of the menu (data kept)
   upgradeVisuals: true,
   breakdownForm: 'donut',
   categories: DEFAULT_CATEGORIES.slice(),
@@ -3619,6 +3620,8 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
 
     /* Push on iPhone, local reminders on the Mac — see Notify. */
     Notify.wire(section);
+    try { Sections.wire(section); } catch (e) { console.warn('[Flow] sections', e); }
+    try { Trial.wire(section); } catch (e) { console.warn('[Flow] trial', e); }
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -6972,6 +6975,497 @@ const Notify = {
   }
 };
 
+/* ── The weekly loop ─────────────────────────────────────────────────────
+ *
+ * The part of The Flow a chat assistant cannot be: a plan that persists, a
+ * record of what actually happened against it, and a ritual that turns one
+ * into the next. Three pieces:
+ *
+ *   WeekPlan  — the Sunday session: last week's honest scorecard, a few lines
+ *               about it, what carries over, then Big Rocks suggested from
+ *               all of that plus next week's meetings. Nothing is added
+ *               until it is ticked; the suggestion writes nothing itself.
+ *   TodayFix  — overdue rocks get "Today / Tomorrow / Done" right on Today,
+ *               so the screen stops filling with red and can be trusted.
+ *   Sections  — hide the parts of the app you do not use. Data stays; only
+ *               the navigation changes, and it can be undone at any time.
+ */
+const DAY3 = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAYNAME = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+const WeekLoop = {
+  wid(d) { return (typeof weekId === 'function') ? weekId(d) : Notify.weekId(d); },
+  dow(d) { return (d.getDay() + 6) % 7; },
+  monday(d) { const m = new Date(d.getFullYear(), d.getMonth(), d.getDate()); m.setDate(m.getDate() - WeekLoop.dow(m)); return m; },
+  iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
+  /* Saturday and Sunday plan the week ahead; Monday to Friday, this one. */
+  target(now) {
+    now = now || new Date();
+    const m = WeekLoop.monday(now);
+    if (WeekLoop.dow(now) >= 5) m.setDate(m.getDate() + 7);
+    return m;
+  },
+  rocksOf(wid) { try { return ((typeof cData !== 'undefined' && cData.rocks) || {})[wid] || []; } catch (e) { return []; } },
+
+  /* What a week actually was. Pure apart from reading the app's own data,
+     and every number says what it is out of. */
+  scorecard(monday) {
+    const wid = WeekLoop.wid(monday);
+    const rocks = WeekLoop.rocksOf(wid);
+    const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(d.getDate() + i); return WeekLoop.iso(d); });
+    const today = WeekLoop.iso(new Date());
+    const past = days.filter((d) => d <= today).length || 7;
+    const byRole = {};
+    rocks.forEach((r) => {
+      const k = r.role || 'No role';
+      byRole[k] = byRole[k] || { planned: 0, done: 0 };
+      byRole[k].planned++; if (r.done) byRole[k].done++;
+    });
+    let habits = null;
+    try {
+      const hb = (typeof hbData !== 'undefined') ? hbData : null;
+      if (hb && Array.isArray(hb.habits) && hb.habits.length) {
+        let done = 0;
+        hb.habits.forEach((h) => days.slice(0, past).forEach((d) => { if (hb.completions && hb.completions[h.id] && hb.completions[h.id][d]) done++; }));
+        habits = { done, possible: hb.habits.length * past };
+      }
+    } catch (e) {}
+    let training = null;
+    try {
+      if (typeof tData !== 'undefined' && typeof tTrackable === 'function') {
+        const keys = tTrackable(wid);
+        const wk = (tData.weeks || {})[wid] || { done: {} };
+        if (keys.length) training = { done: keys.filter((k) => wk.done && wk.done[k]).length, planned: keys.length };
+      }
+    } catch (e) {}
+    let journalDays = 0;
+    try {
+      const set = {};
+      (typeof jData !== 'undefined' ? jData : []).forEach((e) => { if (e && e.t) { const d = WeekLoop.iso(new Date(e.t)); if (days.indexOf(d) >= 0) set[d] = 1; } });
+      journalDays = Object.keys(set).length;
+    } catch (e) {}
+    let sleep = null;
+    try {
+      const sl = (typeof slData !== 'undefined' ? slData : []).filter((x) => x && days.indexOf(x.date) >= 0 && Number(x.hrs) > 0);
+      if (sl.length) sleep = { avg: Math.round(sl.reduce((a, x) => a + Number(x.hrs), 0) / sl.length * 10) / 10, nights: sl.length };
+    } catch (e) {}
+    return {
+      week: wid, from: days[0], to: days[6],
+      rocks: { planned: rocks.length, done: rocks.filter((r) => r.done).length, byRole,
+               unfinished: rocks.filter((r) => !r.done && !r.carried).map((r) => ({ id: r.id, title: r.title, role: r.role || '', day: r.day, time: r.time || '' })) },
+      habits, training, journalDays, sleep
+    };
+  },
+
+  pct(a, b) { return b ? Math.round(a / b * 100) + '%' : '—'; },
+  scoreHtml(sc) {
+    const line = (label, val, sub) => '<div class="wp-stat"><b>' + esc(val) + '</b><span>' + esc(label) + (sub ? ' · ' + esc(sub) : '') + '</span></div>';
+    let h = '<div class="wp-stats">' +
+      line('Big Rocks done', sc.rocks.done + ' / ' + sc.rocks.planned, WeekLoop.pct(sc.rocks.done, sc.rocks.planned)) +
+      (sc.habits ? line('Habit ticks', sc.habits.done + ' / ' + sc.habits.possible, WeekLoop.pct(sc.habits.done, sc.habits.possible)) : '') +
+      (sc.training ? line('Training sessions', sc.training.done + ' / ' + sc.training.planned) : '') +
+      line('Days you wrote something', sc.journalDays + ' / 7') +
+      (sc.sleep ? line('Average sleep', sc.sleep.avg + ' h', sc.sleep.nights + ' nights logged') : '') +
+      '</div>';
+    const roles = Object.keys(sc.rocks.byRole);
+    if (roles.length) {
+      h += '<div class="wp-roles">' + roles.map((r) => {
+        const x = sc.rocks.byRole[r];
+        return '<span class="wp-role">' + esc(r) + ' <b>' + x.done + '/' + x.planned + '</b></span>';
+      }).join('') + '</div>';
+    }
+    if (!sc.rocks.planned) h += '<p class="flow-sub">No Big Rocks were planned that week. That is the honest starting point — this session fixes it.</p>';
+    return h;
+  }
+};
+
+const WeekPlan = {
+  st: null,
+  open() {
+    const target = WeekLoop.target();
+    const review = new Date(target); review.setDate(review.getDate() - 7);
+    WeekPlan.st = {
+      step: 0, target, wid: WeekLoop.wid(target), review, rwid: WeekLoop.wid(review),
+      sc: WeekLoop.scorecard(review), refl: { well: '', blocked: '', change: '' },
+      carry: {}, plan: null, picks: {}, added: 0, carried: 0
+    };
+    WeekPlan.st.sc.rocks.unfinished.forEach((r) => { WeekPlan.st.carry[r.id] = true; });
+    let el = document.getElementById('wp-modal');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'wp-modal';
+      el.className = 'flow-x';
+      el.setAttribute('data-flow-no-chip', '1');
+      el.innerHTML = '<div class="wp-box" role="dialog" aria-modal="true"><button type="button" class="wp-x" aria-label="Close">×</button><div class="wp-body"></div></div>';
+      document.body.appendChild(el);
+      el.querySelector('.wp-x').addEventListener('click', WeekPlan.close);
+      el.addEventListener('click', (e) => { if (e.target === el) WeekPlan.close(); });
+    }
+    el.classList.add('on');
+    WeekPlan.paint();
+  },
+  close() { const el = document.getElementById('wp-modal'); if (el) el.classList.remove('on'); },
+
+  range(m) {
+    const e = new Date(m); e.setDate(e.getDate() + 6);
+    const f = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return f(m) + ' – ' + f(e);
+  },
+
+  paint() {
+    const st = WeekPlan.st, body = document.querySelector('#wp-modal .wp-body');
+    if (!st || !body) return;
+    const steps = ['Last week', 'Look back', 'Carry over', 'Plan', 'Done'];
+    const dots = '<div class="wp-steps">' + steps.map((s, i) => '<span class="' + (i === st.step ? 'on' : (i < st.step ? 'done' : '')) + '">' + esc(s) + '</span>').join('') + '</div>';
+    let h = dots;
+    if (st.step === 0) {
+      h += '<h2>How last week actually went</h2><p class="flow-sub">' + esc(WeekPlan.range(st.review)) + '. Planned against done, nothing rounded up.</p>' +
+        WeekLoop.scoreHtml(st.sc) +
+        '<div class="wp-nav"><span></span><button type="button" class="flow-btn primary" data-wp="next">Next</button></div>';
+    } else if (st.step === 1) {
+      const ta = (k, q) => '<label class="wp-q"><span>' + esc(q) + '</span><textarea data-refl="' + k + '" rows="2">' + esc(st.refl[k]) + '</textarea></label>';
+      h += '<h2>Two minutes on it</h2><p class="flow-sub">Short is fine. This is saved as the week’s review and helps the suggestions.</p>' +
+        ta('well', 'What went well?') + ta('blocked', 'What got in the way?') + ta('change', 'What will you do differently?') +
+        '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="back">Back</button><button type="button" class="flow-btn primary" data-wp="next">Next</button></div>';
+    } else if (st.step === 2) {
+      const un = st.sc.rocks.unfinished;
+      h += '<h2>What carries over?</h2><p class="flow-sub">Unfinished rocks from last week. Ticked ones go onto ' + esc(WeekPlan.range(st.target)) +
+        ', same weekday. Unticked ones stay where they were, unfinished — that is the honest record.</p>' +
+        (un.length ? '<div class="wp-list">' + un.map((r) => '<label class="wp-item"><input type="checkbox" data-carry="' + esc(r.id) + '"' + (st.carry[r.id] ? ' checked' : '') + '>' +
+          '<span><b>' + esc(r.title) + '</b><small>' + esc((r.role ? r.role + ' · ' : '') + DAYNAME[r.day] + (r.time ? ' ' + r.time : '')) + '</small></span></label>').join('') + '</div>'
+          : '<p>Nothing unfinished. Clean slate.</p>') +
+        '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="back">Back</button><button type="button" class="flow-btn primary" data-wp="next">Next</button></div>';
+    } else if (st.step === 3) {
+      h += '<h2>The week of ' + esc(WeekPlan.range(st.target)) + '</h2>';
+      const have = WeekLoop.rocksOf(st.wid);
+      if (have.length) h += '<p class="flow-sub">Already on it: ' + have.map((r) => esc(r.title)).join(' · ') + '</p>';
+      if (!st.plan) {
+        h += '<p class="flow-sub">Suggestions use your mission and roles, last week’s numbers and notes, what you carried over, and the meetings in your connected calendars. You choose what goes in.</p>' +
+          '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="back">Back</button><span>' +
+          '<button type="button" class="flow-btn ghost" data-wp="skip">I’ll plan it myself</button> ' +
+          '<button type="button" class="flow-btn primary" data-wp="suggest">Suggest my Big Rocks</button></span></div><p class="wp-err flow-sub"></p>';
+      } else {
+        const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
+        h += (st.plan.focus ? '<p class="wp-focus">' + esc(st.plan.focus) + '</p>' : '') +
+          '<div class="wp-list">' + st.plan.rocks.map((r, i) => '<div class="wp-item wp-rock"><input type="checkbox" data-pick="' + i + '"' + (st.picks[i] !== false ? ' checked' : '') + '>' +
+            '<div><input class="wp-title" data-rt="' + i + '" value="' + esc(r.title) + '">' +
+            '<div class="wp-meta"><select data-rd="' + i + '">' + DAY3.map((d, j) => '<option value="' + j + '"' + (d === r.day ? ' selected' : '') + '>' + DAYNAME[j] + '</option>').join('') + '</select>' +
+            '<input type="time" data-rtm="' + i + '" value="' + esc(r.time) + '">' +
+            '<select data-rr="' + i + '"><option value="">No role</option>' + roles.map((x) => '<option' + (x === r.role ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></div>' +
+            (r.why ? '<small>' + esc(r.why) + '</small>' : '') + '</div></div>').join('') + '</div>' +
+          '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="suggest">Suggest again</button>' +
+          '<button type="button" class="flow-btn primary" data-wp="add">Add ticked to my week</button></div><p class="wp-err flow-sub"></p>';
+      }
+    } else {
+      h += '<h2>Your week is set</h2><p>' + st.carried + ' carried over, ' + st.added + ' new Big Rock' + (st.added === 1 ? '' : 's') + ' added for ' + esc(WeekPlan.range(st.target)) + '.</p>' +
+        '<p class="flow-sub">They show on Today on their day, and remind you at their time if they have one.</p>' +
+        '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="close">Close</button><button type="button" class="flow-btn primary" data-wp="compass">Open the Week Compass</button></div>';
+    }
+    body.innerHTML = h;
+    body.onclick = WeekPlan.onClick;
+    body.oninput = WeekPlan.onInput;
+    body.onchange = WeekPlan.onInput;
+  },
+
+  onInput(e) {
+    const st = WeekPlan.st, t = e.target;
+    if (t.matches('[data-refl]')) st.refl[t.getAttribute('data-refl')] = t.value;
+    if (t.matches('[data-carry]')) st.carry[t.getAttribute('data-carry')] = t.checked;
+    if (t.matches('[data-pick]')) st.picks[+t.getAttribute('data-pick')] = t.checked;
+    if (t.matches('[data-rt]')) st.plan.rocks[+t.getAttribute('data-rt')].title = t.value;
+    if (t.matches('[data-rd]')) st.plan.rocks[+t.getAttribute('data-rd')].day = DAY3[+t.value];
+    if (t.matches('[data-rtm]')) st.plan.rocks[+t.getAttribute('data-rtm')].time = t.value;
+    if (t.matches('[data-rr]')) st.plan.rocks[+t.getAttribute('data-rr')].role = t.value;
+  },
+
+  async onClick(e) {
+    const b = e.target.closest('[data-wp]');
+    if (!b) return;
+    const st = WeekPlan.st, what = b.getAttribute('data-wp');
+    if (what === 'back') { st.step--; return WeekPlan.paint(); }
+    if (what === 'close') return WeekPlan.close();
+    if (what === 'compass') { WeekPlan.close(); try { Nav.go('compass'); } catch (x) {} return; }
+    if (what === 'next') {
+      if (st.step === 1) WeekPlan.saveReview();
+      if (st.step === 2) WeekPlan.doCarry();
+      st.step++; return WeekPlan.paint();
+    }
+    if (what === 'skip') { st.step = 4; return WeekPlan.paint(); }
+    if (what === 'suggest') {
+      b.disabled = true; b.textContent = 'Thinking…';
+      const err = document.querySelector('#wp-modal .wp-err');
+      try {
+        const cal = await WeekPlan.calendar();
+        const r = await fetch('/api/flow/plan-week', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ week: st.wid, scorecard: st.sc, reflection: st.refl,
+            carried: WeekLoop.rocksOf(st.wid).map((x) => ({ title: x.title, day: DAY3[x.day], time: x.time || '' })), calendar: cal }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'No suggestion this time.');
+        st.plan = { focus: j.focus || '', rocks: j.rocks || [] }; st.picks = {};
+        WeekPlan.paint();
+      } catch (x) {
+        b.disabled = false; b.textContent = 'Suggest my Big Rocks';
+        if (err) err.textContent = x.message || 'No suggestion this time.';
+      }
+      return;
+    }
+    if (what === 'add') {
+      const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
+      st.plan.rocks.forEach((r, i) => {
+        if (st.picks[i] === false || !String(r.title).trim()) return;
+        addRock(String(r.title).trim(), r.role || roles[0] || '', Math.max(0, DAY3.indexOf(r.day)), r.time || '', st.wid, { note: r.why || '', prio: 'med' });
+        st.added++;
+      });
+      if (st.plan.focus && typeof cData !== 'undefined') {
+        cData.plans = cData.plans || {};
+        if (!String(cData.plans[st.wid] || '').trim()) { cData.plans[st.wid] = st.plan.focus; cSave(); }
+      }
+      try { if (typeof renderToday === 'function') renderToday(); } catch (x) {}
+      st.step = 4; return WeekPlan.paint();
+    }
+  },
+
+  saveReview() {
+    const st = WeekPlan.st, r = st.refl;
+    const text = [r.well && ('Went well: ' + r.well), r.blocked && ('Got in the way: ' + r.blocked), r.change && ('Do differently: ' + r.change)].filter(Boolean).join('\n');
+    if (!text || typeof cData === 'undefined') return;
+    cData.reviews = cData.reviews || {};
+    cData.reviews[st.rwid] = text;
+    cSave();
+    if (typeof J === 'function') J('planning', '📝 Weekly review (' + st.rwid + '): ' + st.sc.rocks.done + '/' + st.sc.rocks.planned + ' rocks. ' + text.replace(/\n/g, ' · '));
+  },
+
+  doCarry() {
+    const st = WeekPlan.st;
+    if (st._carried || typeof cData === 'undefined') return;
+    st._carried = true;
+    const src = WeekLoop.rocksOf(st.rwid);
+    src.forEach((r) => {
+      if (!st.carry[r.id] || r.done || r.carried) return;
+      addRock(r.title, r.role || '', r.day, r.time || '', st.wid, { note: r.note || '', prio: r.prio || 'med', end: r.end || '' });
+      r.carried = st.wid;
+      st.carried++;
+    });
+    if (st.carried) cSave();
+  },
+
+  async calendar() {
+    const st = WeekPlan.st;
+    const from = new Date(st.target), to = new Date(st.target); to.setDate(to.getDate() + 7);
+    const q = '?' + new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+    const ids = ['gcal', 'outlook'].filter((id) => ((Connect.list.find((x) => x.id === id) || {}).accounts || []).length);
+    const got = await Promise.all(ids.map((id) => ConnectApps.get('/api/connect/' + id + '/events' + q).then((j) => j.events || []).catch(() => [])));
+    return [].concat.apply([], got).slice(0, 60).map((e) => ({
+      title: e.title, allDay: !!e.allDay,
+      day: e.allDay ? String(e.start).slice(0, 10) : new Date(e.start).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }),
+      from: e.allDay ? '' : new Date(e.start).toTimeString().slice(0, 5), to: e.allDay ? '' : new Date(e.end).toTimeString().slice(0, 5)
+    }));
+  },
+
+  /* The invitation on Today: the weekend, and Monday, while the week has
+     fewer than three Big Rocks. */
+  cardHtml() {
+    const now = new Date(), d = WeekLoop.dow(now);
+    if (!(d >= 5 || d === 0)) return '';
+    const t = WeekLoop.target(now);
+    if (WeekLoop.rocksOf(WeekLoop.wid(t)).length >= 3) return '';
+    return '<div class="td-plan wp-card flow-x" id="td-weekplan" data-flow-no-chip="1"><div class="td-plan-head"><span class="lbl">' +
+      (d >= 5 ? 'Next week' : 'This week') + ' · not planned yet</span></div>' +
+      '<div class="td-plan-body">Ten minutes: look at how last week went, carry over what matters, and set three to five Big Rocks.' +
+      ' <button type="button" class="flow-btn sm primary" data-weekplan="1">Plan my week</button></div></div>';
+  },
+  paintCard() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    const old = feed.querySelector('#td-weekplan');
+    const html = WeekPlan.cardHtml();
+    if (!html) { if (old) old.remove(); return; }
+    if (old) return;
+    const box = document.createElement('div'); box.innerHTML = html;
+    const head = feed.querySelector('.td-head');
+    if (head && head.nextSibling) feed.insertBefore(box.firstElementChild, head.nextSibling); else feed.insertBefore(box.firstElementChild, feed.firstChild);
+  },
+
+  /* In the Week Compass: the button, and this week's numbers so far. */
+  paintCompass() {
+    const sec = document.getElementById('tab-compass');
+    if (!sec) return;
+    let card = document.getElementById('wp-compass');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'wp-compass'; card.className = 'panel flow-x';
+      card.setAttribute('data-flow-no-chip', '1');
+      const sub = sec.querySelector('.section-sub');
+      if (sub && sub.nextSibling) sec.insertBefore(card, sub.nextSibling); else sec.appendChild(card);
+    }
+    const sc = WeekLoop.scorecard(WeekLoop.monday(new Date()));
+    card.innerHTML = '<div class="wp-ch"><h3>This week so far</h3><button type="button" class="flow-btn sm primary" data-weekplan="1">🗓 Plan the week with AI</button></div>' + WeekLoop.scoreHtml(sc);
+  },
+
+  boot() {
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('[data-weekplan]')) { e.preventDefault(); WeekPlan.open(); }
+    });
+    const feed = document.getElementById('today-feed');
+    if (feed && window.MutationObserver) {
+      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); })
+        .observe(feed, { childList: true });
+    }
+    WeekPlan.paintCard(); TodayFix.paint();
+    try { WeekPlan.paintCompass(); } catch (e) {}
+    try {
+      if (typeof S !== 'undefined' && S && !S.__flowWeek) {
+        const set = S.set.bind(S);
+        S.set = function (k, v) { const r = set(k, v); if (k === 'compass' || k === 'habits' || k === 'journal') { clearTimeout(WeekPlan._t); WeekPlan._t = setTimeout(() => { try { WeekPlan.paintCompass(); } catch (e) {} }, 400); } return r; };
+        S.__flowWeek = true;
+      }
+    } catch (e) {}
+  }
+};
+
+/* Overdue rocks on Today, fixed in one tap. */
+const TodayFix = {
+  find(id) {
+    const all = (typeof cData !== 'undefined' && cData.rocks) || {};
+    for (const w of Object.keys(all)) {
+      const r = (all[w] || []).find((x) => String(x.id) === String(id));
+      if (r) return { w, r };
+    }
+    return null;
+  },
+  move(id, date) {
+    const hit = TodayFix.find(id);
+    if (!hit) return;
+    const to = WeekLoop.wid(date), day = WeekLoop.dow(date);
+    if (to !== hit.w) {
+      cData.rocks[hit.w] = cData.rocks[hit.w].filter((x) => x !== hit.r);
+      if (!cData.rocks[hit.w].length) delete cData.rocks[hit.w];
+      (cData.rocks[to] = cData.rocks[to] || []).push(hit.r);
+    }
+    hit.r.day = day;
+    cSave();
+    if (typeof J === 'function') J('planning', '🪨 Big rock moved to ' + WeekLoop.iso(date) + ': ' + hit.r.title);
+    TodayFix.redraw();
+  },
+  done(id) {
+    const hit = TodayFix.find(id);
+    if (!hit) return;
+    hit.r.done = true; cSave();
+    if (typeof J === 'function') J('planning', '✅ Big rock done: ' + hit.r.title);
+    TodayFix.redraw();
+  },
+  redraw() {
+    try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+    try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
+  },
+  paint() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    feed.querySelectorAll('.td-rock[data-rockid]').forEach((row) => {
+      if (!row.querySelector('.rk-late') || row.querySelector('.td-fix')) return;
+      const box = document.createElement('div');
+      box.className = 'td-fix';
+      box.innerHTML = '<button type="button" data-fix="today">Today</button><button type="button" data-fix="tomorrow">Tomorrow</button><button type="button" data-fix="done">Done</button>';
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-fix]');
+        if (!b) return;
+        e.stopPropagation(); e.preventDefault();
+        const id = row.getAttribute('data-rockid');
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        if (b.getAttribute('data-fix') === 'tomorrow') d.setDate(d.getDate() + 1);
+        if (b.getAttribute('data-fix') === 'done') TodayFix.done(id); else TodayFix.move(id, d);
+      });
+      const t = row.querySelector('.rk-title') || row;
+      t.appendChild(box);
+    });
+  }
+};
+
+/* Hide what you do not use. */
+const Sections = {
+  FIXED: ['today', 'settings'],
+  hidden() { const v = Settings.get('hiddenTabs'); return Array.isArray(v) ? v : []; },
+  apply() {
+    let st = document.getElementById('fn-hide');
+    if (!st) { st = document.createElement('style'); st.id = 'fn-hide'; document.head.appendChild(st); }
+    st.textContent = Sections.hidden().filter((t) => /^[a-z0-9_-]+$/i.test(t))
+      .map((t) => '[data-fn-side="' + t + '"],[data-fn-seg="' + t + '"]{display:none!important}').join('\n');
+  },
+  wire(section) {
+    if (section.querySelector('#secCard')) return;
+    const anchor = section.querySelector('#connCard') || section.querySelector('.flow-card');
+    if (!anchor) return;
+    const tabs = Nav.allTabs().filter((t) => Sections.FIXED.indexOf(t) < 0 && Nav.pill(t));
+    const hid = Sections.hidden();
+    const card = document.createElement('div');
+    card.className = 'flow-card'; card.id = 'secCard';
+    card.innerHTML = '<h3>🧹 Sections</h3><p class="flow-sub">Untick what you don’t use. It disappears from the menu; nothing is deleted, and ticking it brings it back.</p>' +
+      '<div class="sec-grid">' + tabs.map((t) => '<label class="sec-it"><input type="checkbox" data-sec="' + esc(t) + '"' + (hid.indexOf(t) < 0 ? ' checked' : '') + '> ' + esc(Nav.label(t)) + '</label>').join('') + '</div>';
+    anchor.parentNode.insertBefore(card, anchor);
+    card.addEventListener('change', async (e) => {
+      const c = e.target.closest('[data-sec]');
+      if (!c) return;
+      const t = c.getAttribute('data-sec');
+      const now = Sections.hidden().filter((x) => x !== t);
+      if (!c.checked) now.push(t);
+      await Settings.set('hiddenTabs', now);
+      Sections.apply();
+      toast(c.checked ? 'Shown in the menu.' : 'Hidden from the menu.', null, 1400);
+    });
+  }
+};
+
+/* ── The trial: feedback in, and what the owner sees ─────────────────────
+ * Everyone gets a two-line box to say what is confusing or missing; the
+ * owner also gets who has joined and every note, newest first. Nothing about
+ * anybody's own data is shown — names, dates and what they wrote here. */
+const Trial = {
+  wire(section) {
+    if (section.querySelector('#fbCard')) return;
+    const anchor = section.querySelector('#secCard') || section.querySelector('#connCard') || section.querySelector('.flow-card');
+    if (!anchor) return;
+    const owner = !!(Auth.user && Auth.user.owner);
+    const card = document.createElement('div');
+    card.className = 'flow-card'; card.id = 'fbCard';
+    card.innerHTML = '<h3>💬 Feedback</h3><p class="flow-sub">What is confusing, missing or annoying? It goes straight to Artur.</p>' +
+      '<textarea id="fbText" rows="3" class="fb-ta" placeholder="Say it plainly — one thing is enough."></textarea>' +
+      '<div class="flow-row" style="margin-top:8px;gap:10px;align-items:center"><button type="button" class="flow-btn primary" id="fbSend">Send</button><span class="flow-sub" id="fbOut"></span></div>' +
+      (owner ? '<div id="fbOwner" class="fb-owner"><p class="flow-sub">Loading the trial…</p></div>' : '');
+    anchor.parentNode.insertBefore(card, anchor);
+    card.querySelector('#fbSend').addEventListener('click', async () => {
+      const ta = card.querySelector('#fbText'), out = card.querySelector('#fbOut');
+      const text = ta.value.trim();
+      if (!text) return;
+      try {
+        const r = await fetch('/api/feedback', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, where: 'settings' }) });
+        if (!r.ok) throw new Error();
+        ta.value = ''; out.textContent = 'Sent — thank you.';
+        if (owner) Trial.paintOwner(card);
+      } catch (e) { out.textContent = 'Could not send — try again.'; }
+    });
+    if (owner) Trial.paintOwner(card);
+  },
+  async paintOwner(card) {
+    const box = card.querySelector('#fbOwner');
+    if (!box) return;
+    try {
+      const r = await fetch('/api/feedback', { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error();
+      const people = (j.people || []).filter((x) => !x.owner);
+      const d = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+      box.innerHTML = '<h4>Trial · ' + people.length + ' of ' + (j.maxAccounts || 10) + ' places used</h4>' +
+        (people.length ? '<div class="fb-people">' + people.map((x) => '<span>' + esc(x.name || x.email) + ' <small>' + esc(d(x.created)) + '</small></span>').join('') + '</div>'
+          : '<p class="flow-sub">Nobody has joined yet. They sign up at theflow.today or in the iPhone and Mac apps.</p>') +
+        '<h4>Notes (' + (j.feedback || []).length + ')</h4>' +
+        ((j.feedback || []).length ? (j.feedback || []).map((f) => '<div class="fb-note"><b>' + esc(f.name || f.email) + '</b> <small>' + esc(d(f.at)) + '</small><p>' + esc(f.text) + '</p></div>').join('')
+          : '<p class="flow-sub">No notes yet.</p>');
+    } catch (e) { box.innerHTML = '<p class="flow-sub">The trial view could not load.</p>'; }
+  }
+};
+
 const Connect = {
   list: [],
   ready: {},          /* provider id → { url, expires } prepared for an in-app tap */
@@ -9881,6 +10375,8 @@ async function boot() {
   /* Not awaited: the photo arrives when it arrives, and nothing waits on it. */
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
   if (Auth.user && !Auth.user.guest) { try { Notify.boot(); } catch (e) { console.warn('[Flow] notify', e); } }
+  try { Sections.apply(); } catch (e) { console.warn('[Flow] sections', e); }
+  if (Auth.user && !Auth.user.guest) { try { WeekPlan.boot(); } catch (e) { console.warn('[Flow] week', e); } }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
