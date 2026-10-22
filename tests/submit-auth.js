@@ -12,7 +12,12 @@ module.exports = async function submitAuth(page, sel) {
   const codes = page.waitForSelector('#flow-codes', { timeout: 20000 }).catch(() => null);
   await page.click(sel || '#fa-go');
   await Promise.race([nav, codes]);
-  if (await page.$('#flow-codes')) {
+  /* The race can settle while the page is still mid-navigation; asking the
+     old document for an element then throws. Settle, then ask once more. */
+  let onCodes = false;
+  try { onCodes = !!(await page.$('#flow-codes')); }
+  catch (e) { await page.waitForTimeout(600); try { onCodes = !!(await page.$('#flow-codes')); } catch (e2) { onCodes = false; } }
+  if (onCodes) {
     await page.check('#fc-ack');
     const nav2 = page.waitForNavigation({ timeout: 20000 }).catch(() => null);
     await page.click('#fc-done');
