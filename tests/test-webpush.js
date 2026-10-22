@@ -212,6 +212,14 @@ function memStore() {
   ok('and always shows a notification for one', /showNotification\(/.test(sw));
   ok('tapping it opens or focuses the app', /addEventListener\('notificationclick'/.test(sw) && /openWindow\('\/'\)/.test(sw));
 
+  console.log('\n— deleting the account takes the devices with it —');
+  const authSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'flow-auth.js'), 'utf8');
+  ok('account deletion clears the device list and the sent-reminder record',
+     /'__push:dev:' \+ uid/.test(authSrc) && /'__push:sent:' \+ uid/.test(authSrc));
+  const srvSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'life-os-server.js'), 'utf8');
+  ok('the public page that says how to delete an account is served before the sign-in gate',
+     srvSrc.indexOf("p === '/delete-account'") > 0 && srvSrc.indexOf("p === '/delete-account'") < srvSrc.indexOf("p === '/support'") + 400);
+
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
