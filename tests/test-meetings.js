@@ -60,7 +60,9 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
   await raw.set('u:u1:ld_connSeen', JSON.stringify({ fathom: ['old-1'] }));
   const fathom = {
     items: [
-      { recording_id: 'old-1', title: 'Imported by hand already', recording_start_time: wed, default_summary: { markdown_formatted: 'x' }, action_items: [] },
+      { recording_id: 'old-1', title: 'Imported by hand already', recording_start_time: wed, share_url: 'https://fathom.video/share/old',
+        default_summary: { markdown_formatted: 'Notes of the old one' },
+        action_items: [{ description: 'Send ad creatives to Artur for review', assignee: { email: ME }, completed: false }] },
       { recording_id: 'm-1', title: 'Davines with Climboost', recording_start_time: wed, share_url: 'https://fathom.video/share/abc',
         calendar_invitees: [{ name: 'Artur', email: ME }, { name: 'Ozcan', email: 'ozcan@x.com', is_external: true }],
         default_summary: { markdown_formatted: '## Summary\n- Slow sellers to be discounted\n- **TikTok** next' },
@@ -85,10 +87,12 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
   const r1 = out.find((x) => x.uid === 'u1');
   ok('the person with Fathom was pulled, the one without was skipped', r1 && r1.added === 1 && out.find((x) => x.uid === 'u2').skipped === 'no fathom', out);
   const kept = JSON.parse(raw.m.get('u:u1:ld_meetings'));
-  ok('the meeting is kept in their own namespace, with summary and people', kept.length === 1 && kept[0].id === 'm-1' && /Slow sellers/.test(kept[0].summary) && kept[0].people.length === 2, kept.map((k) => k.id));
-  ok('one imported by hand before is not brought in again', !kept.some((k) => k.id === 'old-1'));
+  ok('the meeting is kept in their own namespace, with summary and people', kept.length === 2 && kept[1].id === 'm-1' && /Slow sellers/.test(kept[1].summary) && kept[1].people.length === 2, kept.map((k) => k.id));
+  const oldOne = kept.find((k) => k.id === 'old-1');
+  ok('one imported by hand before is on record, marked as such, so its notes can show', !!oldOne && oldOne.legacy === true && /old one/.test(oldOne.summary), oldOne);
+  ok('but it is not counted as new', r1.added === 1);
   ok('one whose summary is not written yet is left for the next tick', !kept.some((k) => k.id === 'm-2'));
-  const acts = kept[0].actions;
+  const acts = kept[1].actions;
   ok("the person's own item is marked mine, with its date read", acts[0].mine && acts[0].due === '2026-10-23', acts[0]);
   ok("somebody else's is kept but is not mine", !acts[1].mine && acts[1].who === 'Ozcan');
   const inbox = JSON.parse(raw.m.get('__share:inbox:u1'));
@@ -99,12 +103,13 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
 
   sent.length = 0; calls = 0;
   out = await M.tick(deps, Date.parse('2026-10-21T12:10:00Z'));
-  ok('the next tick asks Fathom again but files nothing twice', calls === 1 && out.find((x) => x.uid === 'u1').added === 0 && JSON.parse(raw.m.get('u:u1:ld_meetings')).length === 1 && sent.length === 0);
+  ok('the next tick asks Fathom again but files nothing twice', calls === 1 && out.find((x) => x.uid === 'u1').added === 0 && JSON.parse(raw.m.get('u:u1:ld_meetings')).length === 2 && sent.length === 0);
+  ok('and the first pass reached back a month, once', JSON.parse(raw.m.get('__meet:cursor:u1')).backfilled === true);
   ok('and the inbox did not grow', JSON.parse(raw.m.get('__share:inbox:u1')).length === 1);
 
   fathom.items[2].default_summary = { markdown_formatted: 'Now written' };
   out = await M.tick(deps, Date.parse('2026-10-21T12:20:00Z'));
-  ok('once the summary exists, that meeting comes in', out.find((x) => x.uid === 'u1').added === 1 && JSON.parse(raw.m.get('u:u1:ld_meetings')).length === 2);
+  ok('once the summary exists, that meeting comes in', out.find((x) => x.uid === 'u1').added === 1 && JSON.parse(raw.m.get('u:u1:ld_meetings')).length === 3);
 
   const bad = Object.assign({}, deps, { fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }) });
   out = await M.tick(bad, Date.parse('2026-10-21T12:30:00Z'));
@@ -136,25 +141,39 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
     await p.waitForTimeout(4200);
     await p.waitForFunction(() => typeof window.FlowMeetings !== 'undefined', null, { timeout: 15000 }).catch(() => {});
     const warn = []; p.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') warn.push(m.text()); });
-    const r = await p.evaluate((meeting) => {
-      Object.keys(cData.rocks || {}).forEach((k) => { delete cData.rocks[k]; }); cSave();
-      localStorage.setItem('ld_meetings', JSON.stringify([meeting]));
+    const stored = JSON.parse(raw.m.get('u:u1:ld_meetings'));
+    const r = await p.evaluate(([legacy, meeting]) => {
+      Object.keys(cData.rocks || {}).forEach((k) => { delete cData.rocks[k]; });
+      /* A rock the earlier, hand-run import left: the meeting only as a line of text. */
+      cData.rocks['2026-W43'] = [{ id: 'legacy1', title: 'Send ad creatives to Artur for review', role: '', day: 2, time: '', end: '', prio: 'med',
+        note: 'From Fathom: Imported by hand already — https://fathom.video/share/old', done: false }];
+      cSave();
+      localStorage.setItem('ld_meetings', JSON.stringify([legacy, meeting]));
       const filed = FlowMeetings.apply();
       const all = [].concat(...Object.values(cData.rocks || {}));
       const twice = FlowMeetings.apply();
-      return { filed, twice, rocks: all.map((x) => ({ title: x.title, day: x.day, src: x.src })), weeks: Object.keys(cData.rocks), journal: jData.slice(-1)[0] && jData.slice(-1)[0].cat };
-    }, Object.assign({ me: ME }, JSON.parse(raw.m.get('u:u1:ld_meetings'))[0]));
+      return { filed, twice, rocks: all.map((x) => ({ title: x.title, day: x.day, src: x.src })), weeks: Object.keys(cData.rocks), journal: jData.slice(-1)[0] && jData.slice(-1)[0].cat, applied: cData.meetApplied };
+    }, [Object.assign({ me: ME }, stored.find((m) => m.id === 'old-1')), Object.assign({ me: ME }, stored.find((m) => m.id === 'm-1'))]);
     ok('one meeting filed, one rock made', r.filed.meetings === 1 && r.filed.rocks === 1, r.filed);
-    ok('the rock is the item that was mine, on the day its wording named (Friday)', r.rocks.length === 1 && /Cancel 15%/.test(r.rocks[0].title) && r.rocks[0].day === 4, r.rocks);
-    ok('it remembers which meeting and item it came from', r.rocks[0].src && r.rocks[0].src.mid === 'm-1' && r.rocks[0].src.n === 0, r.rocks[0]);
+    const fresh = r.rocks.find((x) => /Cancel 15%/.test(x.title));
+    ok('the rock is the item that was mine, on the day its wording named (Friday)', r.rocks.length === 2 && fresh && fresh.day === 4, r.rocks);
+    ok('it remembers which meeting and item it came from', fresh.src && fresh.src.mid === 'm-1' && fresh.src.n === 0, fresh);
     ok('the summary went to the journal', r.journal === 'meeting');
+    const old = r.rocks.find((x) => /ad creatives/.test(x.title));
+    ok('the meeting on record made no new rock, even for an item that was mine', r.rocks.length === 2 && r.applied['old-1'] === true, r.rocks);
+    ok('and the rock filed by hand before now knows its meeting and its item', old && old.src && old.src.k === 'fathom' && old.src.mid === 'old-1' && old.src.n === 0, old);
     ok('filing again does nothing', r.twice.meetings === 0 && r.twice.rocks === 0, r.twice);
 
     /* Make it today's, so Today shows it, then look for the fold. */
-    await p.evaluate(() => { const all = [].concat(...Object.values(cData.rocks)); all[0].day = 2; cSave(); });
+    await p.evaluate(() => { const all = [].concat(...Object.values(cData.rocks)); all.forEach((x) => { x.day = 2; }); cSave(); });
     await p.click('[data-fn-side="today"]').catch(() => {}); await p.waitForTimeout(1200);
+    ok('the rock filed by hand shows its meeting too', await p.evaluate(() => {
+      const row = document.querySelector('#today-feed .td-rock[data-rockid="legacy1"]');
+      const meet = row && row.querySelector('.td-meet');
+      return !!meet && /Imported by hand already/.test(meet.textContent) && /Notes of the old one/.test(meet.innerHTML);
+    }));
     const ui = await p.evaluate(() => {
-      const row = document.querySelector('#today-feed .td-rock[data-rockid]');
+      const row = document.querySelector('#today-feed .td-rock[data-rockid]:not([data-rockid="legacy1"])');
       const meet = row && row.querySelector('.td-meet');
       const tg = meet && meet.querySelector('.td-meet-tg'); if (tg) tg.click();
       const body = meet && meet.querySelector('.td-meet-body');

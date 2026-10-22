@@ -148,8 +148,11 @@ ok('anything else riding along registers instead of growing a button', /window\.
 ok("the pack's separate export row is gone", !/flow-cal-tasks/.test(pack));
 ok('scheduled tasks are a line in the same list', /id="icsTasks"/.test(pack));
 ok('and they go in the same file', /window\.icsExtras\.push\(provider\)/.test(pack));
-ok('the one thing a file cannot do keeps its own button',
-   /Or write straight into Google Calendar/.test(pack));
+/* The direct Google write needed a pasted OAuth client ID that nobody but
+   the author could have; the Google connection in Settings → Connections is
+   the way in now, so the button and the card it depended on are gone. */
+ok('no button is left for the Google write that needed a pasted client ID',
+   !/Or write straight into Google Calendar/.test(pack) && !/<h3>📆 Google Calendar<\/h3>/.test(pack));
 ok('the count reads as words, not a tally', /nRocks===1\?' big rock':' big rocks'/.test(src));
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');

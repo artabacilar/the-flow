@@ -320,8 +320,8 @@ window.__fail = function (code) {
     card && /ask for the microphone/i.test(card.text), card && card.text.slice(0, 200));
   ok('and marks it ready rather than broken',
     card && /\bok\b/.test(card.dot || ''), card && card.dot);
-  ok('it mentions that Wispr Flow and the keyboard mic already work',
-    card && /Wispr Flow/.test(card.text));
+  ok('it says it listens in the language the app is set to',
+    card && /language the app is set to/.test(card.text));
 
   /* ------------------------------------------------------------------ *
    * A turn belongs to one field

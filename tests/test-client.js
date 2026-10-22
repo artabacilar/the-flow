@@ -84,6 +84,11 @@ const H = 'http://localhost:4222';
   await signUp(p1, 'prices@example.com', 'Pricer', 'letmein');
   await goto(p1, 'today');
   await p1.waitForTimeout(1500);
+  /* The strip is a widget now: nothing is drawn, and nothing is fetched,
+     until it is switched on in Settings. */
+  ok('nothing is on Today until the widget is switched on', await p1.evaluate(() => !document.getElementById('flow-markets')));
+  await p1.evaluate(async () => { await Flow.Settings.set('todayMarkets', true); await Flow.Markets.refresh(); });
+  await p1.waitForTimeout(800);
   const mkt = await p1.evaluate(() => {
     const el = document.getElementById('flow-markets');
     return el ? { text: el.innerText, tiles: [...el.querySelectorAll('.flow-mkt-tile .v')].map(n => n.textContent) } : null;
@@ -95,11 +100,15 @@ const H = 'http://localhost:4222';
   ok('gram gold is shown in lira', mkt && /6,?213/.test(mkt.tiles.join(' ')), mkt && mkt.tiles);
   ok('it says how old the numbers are', mkt && /ago|just now/.test(mkt.text), mkt && mkt.text);
   ok('and that gram gold is derived', mkt && /derived/.test(mkt.text), mkt && mkt.text);
+  await p1.evaluate(async () => { await Flow.Settings.set('todayMarkets', false); await Flow.Markets.refresh(); });
+  await p1.waitForTimeout(300);
+  ok('switching the widget off takes the strip away at once', await p1.evaluate(() => !document.getElementById('flow-markets')));
 
   console.log('\n— when the server has nothing to give —');
   const c3 = await b.newContext(); const p3 = await c3.newPage();
   await p3.route('**/api/flow/prices', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
   await signUp(p3, 'noprice@example.com', 'NoPrice', 'letmein');
+  await p3.evaluate(async () => { await Flow.Settings.set('todayMarkets', true); await Flow.Markets.refresh(); });
   await p3.waitForTimeout(1200);
   const none = await p3.evaluate(() => {
     const el = document.getElementById('flow-markets');
@@ -121,27 +130,36 @@ const H = 'http://localhost:4222';
     await Flow.Inbox.send('recip@example.com', { txt: 'Book the venue', note: 'before Friday', due: '2026-08-14', time: '10:00' });
   });
   await p2.reload({ waitUntil: 'load' }); await p2.waitForTimeout(3800);
-  await goto(p2, 'artur');
+  await goto(p2, 'today');
   await p2.waitForTimeout(1200);
+  /* It waits on Today — the screen that gets opened — not on a tab of its own. */
   const box = await p2.evaluate(() => {
-    const el = document.getElementById('flow-inbox');
+    const el = document.querySelector('#today-feed #td-inbox #flow-inbox');
     return el ? el.innerText : null;
   });
-  ok('the shared task appears in their inbox', box && /Book the venue/.test(box), box);
+  ok('the shared task appears on Today', box && /Book the venue/.test(box), box);
   ok('it names who sent it', box && /Pricer/.test(box), box);
-  ok('and it is not in their priorities yet', await p2.evaluate(() =>
-    !(typeof qData !== 'undefined' && JSON.stringify(qData.items || []).includes('Book the venue'))));
+  const rocksOf = () => JSON.stringify(typeof cData !== 'undefined' && cData ? cData.rocks : {});
+  ok('and it is not a Big Rock yet', await p2.evaluate(() =>
+    !JSON.stringify(typeof cData !== 'undefined' && cData ? cData.rocks : {}).includes('Book the venue')));
 
-  await p2.click('#flow-inbox [data-inbox="add"]');
+  await p2.click('#td-inbox [data-inbox="add"]');
   await p2.waitForTimeout(2000);
-  const filed = await p2.evaluate(() => ({
-    inQuad: typeof qData !== 'undefined' && JSON.stringify(qData.items || []).includes('Book the venue'),
-    creditsSender: typeof qData !== 'undefined' && JSON.stringify(qData.items || []).includes('Pricer'),
-    inboxNow: (document.getElementById('flow-inbox') || {}).innerText || ''
-  }));
-  ok('pressing Add files it into their own priorities', filed.inQuad, filed);
-  ok('and it says who it came from', filed.creditsSender, filed);
-  ok('the inbox empties', /Nothing waiting/.test(filed.inboxNow), filed.inboxNow);
+  const filed = await p2.evaluate(() => {
+    const all = []; Object.keys(cData.rocks || {}).forEach((w) => (cData.rocks[w] || []).forEach((r) => all.push(r)));
+    const r = all.find((x) => x.title === 'Book the venue');
+    return {
+      asRock: !!r, day: r && r.day, time: r && r.time, note: r && r.note, src: r && r.src, todayDow: (new Date().getDay() + 6) % 7,
+      inboxGone: !document.querySelector('#today-feed #td-inbox')
+    };
+  });
+  ok('pressing Add files it as a Big Rock', filed.asRock, filed);
+  /* The fixture's due date is behind us, so it lands on today rather than
+     on a day that has already gone — at the time it was given. */
+  ok('on today, since its due date has passed, at its time', filed.day === filed.todayDow && filed.time === '10:00', filed);
+  ok('and it says who it came from', /Pricer/.test(filed.note || ''), filed);
+  ok('and remembers where it came from', filed.src && filed.src.k === 'inbox', filed);
+  ok('the card leaves Today once nothing is waiting', filed.inboxGone, filed);
   ok('no page errors for the recipient', e2.length === 0, e2.slice(0, 2));
 
   console.log('\n— and the sender got none of their data —');

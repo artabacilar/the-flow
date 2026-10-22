@@ -31,32 +31,58 @@ const groupOf = (t) => nav.GROUPS.find(g => g.tabs.indexOf(t) >= 0);
 const sideOf = (t) => nav.SIDE.find(s => s.tabs.indexOf(t) >= 0);
 const allSide = nav.SIDE.reduce((a, s) => a.concat(s.tabs), []);
 
-console.log('\n— Brainstorm and Time are records, not steering —');
-ok('Brainstorm sits under Record in the sidebar', (sideOf('brainstorm') || {}).head === 'Record', sideOf('brainstorm'));
-ok('so does Time', (sideOf('time') || {}).head === 'Record', sideOf('time'));
-ok('neither is under Focus any more', !nav.SIDE.find(s => s.head === 'Focus').tabs.some(t => t === 'brainstorm' || t === 'time'),
-   nav.SIDE.find(s => s.head === 'Focus').tabs);
+console.log('\n— fewer sections: Brainstorm, Time and the planner tab are retired —');
+const removed = new Function('return {' + grab('REMOVED: [', ']') + ']}')().REMOVED;
+ok('Brainstorm is retired', removed.indexOf('brainstorm') >= 0, removed);
+ok('so is Time', removed.indexOf('time') >= 0, removed);
+ok('and the planner has stopped being a tab of its own', removed.indexOf('artur') >= 0, removed);
+ok('none of them is still listed in the sidebar', !allSide.some(t => removed.indexOf(t) >= 0), allSide);
+ok('nor given a phone slot', !nav.GROUPS.some(g => g.tabs.some(t => removed.indexOf(t) >= 0)));
 ok('Focus is left with the five things you actually steer by',
    nav.SIDE.find(s => s.head === 'Focus').tabs.join(',') === 'northstar,quad,compass,abko,dtc',
    nav.SIDE.find(s => s.head === 'Focus').tabs);
+ok('Record is Journal, Finances and Ask', nav.SIDE.find(s => s.head === 'Record').tabs.join(',') === 'journal,finance,ask');
+ok('the pills are taken off the page at install', /retire\(\) \{/.test(pack) && /Nav\.retire\(\)/.test(pack));
+ok('the sections stay, hidden, so the host can still render into them', /data-fn-retired/.test(pack) && /\[data-fn-retired\]\{display:none!important\}/.test(fs.readFileSync(path.join(__dirname, '..', 'flow-pack.css'), 'utf8')));
+ok('the planner is a fold on North Star', /Fold\.card\('planner'/.test(pack) && /Planner\.render\(pl\)/.test(pack));
+ok('and no tab is registered for it any more', !/Tabs\.add\('artur'/.test(pack));
 
 console.log('\n— the phone bar agrees with the sidebar —');
 ok('the fourth slot is Record, not Ask', nav.GROUPS[3].label === 'Record', nav.GROUPS[3]);
 ok('it still opens on Ask', nav.GROUPS[3].tabs[0] === 'ask', nav.GROUPS[3].tabs);
-ok('Brainstorm has a slot to belong to', (groupOf('brainstorm') || {}).id === 'record', groupOf('brainstorm'));
-ok('so does Time', (groupOf('time') || {}).id === 'record', groupOf('time'));
-ok('and so do Journal and Finances, which had none before',
+ok('Journal and Finances belong to it',
    (groupOf('journal') || {}).id === 'record' && (groupOf('finance') || {}).id === 'record');
 ok('nothing is listed in two slots at once', (() => {
   const seen = {}; let dup = false;
   nav.GROUPS.forEach(g => g.tabs.forEach(t => { if (seen[t]) dup = true; seen[t] = 1; }));
   return !dup;
 })());
-ok('the avatar menu no longer repeats what now has a slot',
-   /MENU: \['artur', 'settings'\]/.test(pack));
+ok('the avatar menu holds Settings alone', /MENU: \['settings'\]/.test(pack));
 ok('every sidebar entry belongs to a slot', allSide.every(t => !!groupOf(t)),
    allSide.filter(t => !groupOf(t)));
 ok('still exactly four slots for the bar to draw', nav.GROUPS.length === 4);
+
+console.log('\n— Diet is part of Body log now —');
+ok('Body has three entries: training, sleep (the body log) and habits', nav.SIDE.find(s => s.head === 'Body').tabs.join(',') === 'training,sleep,habits');
+ok('the diet elements are moved whole into the sleep section', /mergeBody\(\) \{/.test(pack) && /while \(diet\.firstChild\) block\.appendChild\(diet\.firstChild\)/.test(pack));
+ok('the pill is renamed to say what it now holds', /sp\.textContent = '🫀 Body log'/.test(pack));
+ok('opening it redraws the diet checklist, which lost its own pill', /renderDiet === 'function'\) renderDiet\(\)/.test(pack));
+ok('capture still offers a Meal, landing on the diet part of the page',
+   (nav.CAPTURE.find(c => c.id === 'diet') || {}).go === 'sleep' && /#fn-dietblock/.test((nav.CAPTURE.find(c => c.id === 'diet') || {}).at || ''));
+
+console.log('\n— fewer things on by default —');
+ok('Finances and Priorities start outside the menu', /hiddenTabs: \['finance', 'quad'\]/.test(pack));
+ok('an existing account loses only what it never used', /Sections = \{[\s\S]*?async migrate\(\)[\s\S]*?Finance\.items[\s\S]*?filter\(\(i\) => i && !i\.done\)/.test(pack));
+ok('and only once', /sectionsV/.test(pack));
+ok('prices on Today are a widget, off until asked for', /todayMarkets: false/.test(pack) && /enabled\(\) \{ return Settings\.get\('todayMarkets'\) === true; \}/.test(pack));
+ok('the strip is taken away when the widget is off', /if \(!Markets\.enabled\(\)\) \{\s*const old = feed && \$\('#flow-markets', feed\);\s*if \(old\) old\.remove\(\);/.test(pack));
+ok('a shared task becomes a Big Rock, not a Q1 priority', /src: \{ k: 'inbox', id: item\.id \}/.test(pack) && !/q: 1,\n\s*txt: item\.task\.txt/.test(pack));
+ok('the legacy Google Calendar card is gone', !/<h3>📆 Google Calendar<\/h3>/.test(pack));
+ok('so is the iOS Reminders card', !/<h3>🔔 iOS Reminders<\/h3>/.test(pack));
+ok('and the second Data card', !/<h3>💾 Data<\/h3>/.test(pack) && /<h3>💾 Your data<\/h3>/.test(pack));
+ok('one backup covers the app and the pack', /pack\[SETTINGS_KEY\] = Settings\.data/.test(pack) && /restorePack\(obj\)/.test(pack));
+ok('appearance, time chips, visuals and voice are one card', /id="lookCard"/.test(pack) && !/<h3>📊 Visuals<\/h3>/.test(pack) && !/<h3>🕘 Time chips<\/h3>/.test(pack) && !/<h3>🎤 Voice<\/h3>/.test(pack));
+ok('Work and Side Project are untouched', (groupOf('abko') || {}).id === 'focus' && (groupOf('dtc') || {}).id === 'focus');
 
 console.log('\n— Mood is part of Sleep now —');
 ok('the mood tab is gone from the host', !/id="tab-mood"/.test(src));
@@ -84,8 +110,8 @@ ok('no orphan hook is left looking for a mood tab', !/dataset\.tab==='mood'/.tes
 ok('mood is out of the Body slot', !groupOf('mood'), groupOf('mood'));
 ok('and out of the sidebar', !sideOf('mood'), sideOf('mood'));
 ok('the phone More grid does not offer a page that is gone', !/'mood','🧠'/.test(src));
-ok('the strip under the wordmark does not still list it',
-   /Sleep &amp; Mood · Habits · Money/.test(src) && !/Habits · Mood ·/.test(src));
+ok('the strip under the wordmark lists what is actually there',
+   /Today · North Star · Week · Training · Body log · Habits · Journal/.test(src) && !/Habits · Mood ·/.test(src) && !/Diet ·|· Time ·|Priorities ·/.test(src.slice(src.indexOf('class="sub">'), src.indexOf('class="sub">') + 120)));
 ok('capture offers one button for the one page',
    nav.CAPTURE.filter(c => c.id === 'sleep').length === 1 &&
    nav.CAPTURE.find(c => c.id === 'sleep').label === 'Sleep & mood',
