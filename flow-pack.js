@@ -7658,6 +7658,60 @@ const Refresh = {
   }
 };
 
+/* ── Apple Health, seen from a Mac ──────────────────────────────────────
+ * Health lives on the iPhone; a Mac has no Health app and no way to read
+ * one. The iPhone reads it and writes what it found into the account — the
+ * sleep log, HRV, resting heart rate — so the numbers are on the Mac
+ * already; what was missing was the card that says so. This shows it, as a
+ * record of what the iPhone read, with no buttons that could only fail. */
+const HealthMirror = {
+  native() { try { const p = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge; return !!(p && typeof p.healthRead === 'function'); } catch (e) { return false; } },
+  data() { try { const v = S.get('health', null); return v && Array.isArray(v.days) ? v : null; } catch (e) { return null; } },
+  paint() {
+    if (HealthMirror.native()) return;
+    const panel = document.getElementById('healthPanel');
+    if (!panel) return;
+    const h = HealthMirror.data();
+    if (!h || !h.days.length) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    panel.classList.add('health-mirror');
+    const st = document.getElementById('healthStatus');
+    if (st) { st.className = 'whoop-status live'; st.textContent = '🟢 Synced from your iPhone'; }
+    const allow = document.getElementById('hAllow'), sync = document.getElementById('hSync');
+    if (allow) allow.style.display = 'none';
+    if (sync) sync.style.display = 'none';
+    const desc = panel.querySelector('.whoop-top + div');
+    if (desc) desc.textContent = 'Your iPhone reads Health and keeps what it finds in your account, so it shows here too. A Mac cannot read Health itself — open The Flow on the iPhone to read again.';
+    const latest = [...h.days].reverse().find((d) => d && (d.hrv != null || d.rhr != null || d.hours != null));
+    const foot = document.getElementById('healthFoot');
+    if (foot) {
+      const bits = [];
+      if (latest) {
+        if (latest.hours != null) bits.push('sleep ' + Number(latest.hours).toFixed(1) + ' h');
+        if (latest.hrv != null) bits.push('HRV ' + latest.hrv + ' ms');
+        if (latest.rhr != null) bits.push('resting HR ' + latest.rhr);
+      }
+      foot.textContent = h.days.length + ' day' + (h.days.length === 1 ? '' : 's') + ' on record' +
+        (latest && latest.date ? ' · latest ' + latest.date : '') + (bits.length ? ' · ' + bits.join(' · ') : '') +
+        (h.updated ? ' · read ' + new Date(h.updated).toLocaleString('en-GB') : '');
+    }
+  },
+  boot() {
+    if (HealthMirror.native()) return;
+    /* The host hides the panel every time the Sleep tab is opened on a
+       device without Health; paint after it has done so. */
+    try {
+      const orig = window.syncHealth;
+      if (typeof orig === 'function' && !orig.__flowMirror) {
+        const wrapped = async function () { try { await orig.apply(this, arguments); } catch (e) {} HealthMirror.paint(); };
+        wrapped.__flowMirror = 1;
+        window.syncHealth = wrapped;
+      }
+    } catch (e) {}
+    HealthMirror.paint();
+  }
+};
+
 const TodayFix = {
   find(id) {
     const all = (typeof cData !== 'undefined' && cData.rocks) || {};
@@ -10978,6 +11032,7 @@ async function boot() {
   try { Sections.apply(); } catch (e) { console.warn('[Flow] sections', e); }
   if (Auth.user && !Auth.user.guest) Sections.migrate().catch((e) => console.warn('[Flow] sections', e));
   if (Auth.user && !Auth.user.guest) { try { WeekPlan.boot(); } catch (e) { console.warn('[Flow] week', e); } }
+  try { HealthMirror.boot(); } catch (e) { console.warn('[Flow] health mirror', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }

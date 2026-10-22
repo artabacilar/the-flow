@@ -1680,6 +1680,8 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "✓ Prices": "✓ Fiyatlar",
   "Prices added to Today.": "Fiyatlar Bugün'e eklendi.",
   "Prices removed from Today.": "Fiyatlar Bugün'den kaldırıldı.",
+  "🟢 Synced from your iPhone": "🟢 iPhone'undan eşitlendi",
+  "Your iPhone reads Health and keeps what it finds in your account, so it shows here too. A Mac cannot read Health itself — open The Flow on the iPhone to read again.": "iPhone'un Sağlık'ı okur ve bulduklarını hesabında tutar; o yüzden burada da görünür. Mac, Sağlık'ı kendisi okuyamaz — yeniden okumak için The Flow'u iPhone'da aç.",
 /* DICT-END */
 }, RULES);
 
