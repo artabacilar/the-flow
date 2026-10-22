@@ -84,6 +84,7 @@ ok('so is the iOS Reminders card', !/<h3>🔔 iOS Reminders<\/h3>/.test(pack));
 ok('and the second Data card', !/<h3>💾 Data<\/h3>/.test(pack) && /<h3>💾 Your data<\/h3>/.test(pack));
 ok('one backup covers the app and the pack', /pack\[SETTINGS_KEY\] = Settings\.data/.test(pack) && /restorePack\(obj\)/.test(pack));
 ok('appearance, time chips, visuals and voice are one card', /id="lookCard"/.test(pack) && !/<h3>📊 Visuals<\/h3>/.test(pack) && !/<h3>🕘 Time chips<\/h3>/.test(pack) && !/<h3>🎤 Voice<\/h3>/.test(pack));
+ok('a Mac shows the Apple Health card from what the iPhone read', /const HealthMirror = \{/.test(pack) && /window\.syncHealth = wrapped/.test(pack) && /Synced from your iPhone/.test(pack));
 ok('Work and Side Project are untouched', (groupOf('abko') || {}).id === 'focus' && (groupOf('dtc') || {}).id === 'focus');
 
 console.log('\n— Mood is part of Sleep now —');
