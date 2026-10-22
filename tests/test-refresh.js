@@ -218,6 +218,30 @@ const H = 'http://localhost:4222';
     await p.evaluate(() => (localStorage.getItem('ld_habits') || '')).catch(() => '')
       .then(v => /Changed while typing/.test(v)));
 
+  console.log('\n— and it never reloads forever —');
+  /* A loop: the same section "changes" to the same bytes on every open.
+     Pretend two such reloads just happened, then make the third diff look
+     identical; the breaker must hold it back — and a pull-to-refresh, which
+     is asked for by hand, must still get through. */
+  await p.waitForTimeout(1500);
+  const loopVal = JSON.stringify({ habits: [{ id: 'h1', name: 'Looping bytes', target: 5 }], completions: {} });
+  await p.evaluate(async (v) => {
+    await fetch('/api/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ key: 'ld_habits', value: v }) });
+    const sig = 'ld_habits:' + v.length;
+    sessionStorage.setItem('__flowReloadLog', JSON.stringify([{ t: Date.now() - 20000, sig }, { t: Date.now() - 10000, sig }]));
+    window.__probeAlive = true;
+    window.__flowSyncNow();
+  }, loopVal);
+  await p.waitForTimeout(3500);
+  const held = await p.evaluate(() => ({ alive: window.__probeAlive === true, state: window.__FLOW_SYNC.state, held: window.__FLOW_SYNC.held, local: /Looping bytes/.test(localStorage.getItem('ld_habits') || '') })).catch(() => ({ alive: false }));
+  ok('the third identical diff in two minutes does not reload', held.alive, held);
+  ok('and is not applied either, so what is on screen stays what is in memory', held.held && held.held[0] === 'ld_habits' && !held.local, held);
+  await p.evaluate(() => { window.__flowSyncNow(true); });
+  await p.waitForTimeout(6500);
+  await p.waitForLoadState('load').catch(() => {});
+  ok('a refresh asked for by hand goes through', await p.evaluate(() => window.__probeAlive === undefined).catch(() => true));
+  ok('and brings the change', await p.evaluate(() => /Looping bytes/.test(localStorage.getItem('ld_habits') || '')).catch(() => false));
+
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
