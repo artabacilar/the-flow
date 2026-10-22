@@ -1908,3 +1908,11 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .data-line{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px}
 .data-line .dbind{margin:0}
 .data-line .saveind{font-size:13px;color:var(--muted)}
+
+/* ── Fewer sections ───────────────────────────────────────────────────── */
+/* A retired section keeps its elements (the host still renders into them)
+   but is never shown. Diet's elements live inside Body log now. */
+.section[data-fn-retired]{display:none!important}
+.fn-dietblock{margin-top:30px;padding-top:18px;border-top:1px solid var(--f-line, rgba(127,127,127,.25))}
+#mktPick{margin-top:10px}
+#mktPick[hidden]{display:none!important}

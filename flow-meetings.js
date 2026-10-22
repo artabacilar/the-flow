@@ -176,10 +176,18 @@ async function pullUser(deps, uid, now) {
   try { seen = (((await readJSON(raw, pre + 'ld_connSeen', {})) || {}).fathom) || []; } catch (e) {}
   const seenIds = new Set(seen);
 
-  const sinceMs = cur.at ? Date.parse(cur.at) : (now - 3 * 86400000);
+  /* The first pass for a person reaches back a month, so the meetings behind
+     the rocks they already have (filed by hand, before this existed) are on
+     record too — the notes can then sit under those rocks like any other.
+     Everything that old is kept as a record only: no rock is made from a
+     three-week-old action item on the day this starts. */
+  const backfilled = !!cur.backfilled;
+  const sinceMs = (cur.at && backfilled) ? Date.parse(cur.at) : (now - 30 * 86400000);
   const since = new Date(Math.max(sinceMs - 5 * 60000, now - 30 * 86400000)).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const recentMs = cur.at ? Date.parse(cur.at) - 5 * 60000 : now - 3 * 86400000;
 
   const fresh = [];
+  const records = [];
   const problems = [];
   for (const acc of accounts) {
     let list = [];
@@ -188,23 +196,27 @@ async function pullUser(deps, uid, now) {
     for (const m of list) {
       const s = shape(m, acc.email);
       s.me = acc.email || '';
-      if (!s.id || haveIds.has(s.id) || seenIds.has(s.id)) continue;
+      if (!s.id || haveIds.has(s.id)) continue;
       /* Fathom lists a meeting before its summary is written. Wait for it:
          the next tick will see it finished. */
       if (!s.summary && !s.actions.length) continue;
       haveIds.add(s.id);
-      fresh.push(s);
+      const old = s.at && Date.parse(s.at) < recentMs;
+      if (seenIds.has(s.id) || (old && !backfilled)) { s.legacy = true; records.push(s); }
+      else fresh.push(s);
     }
   }
-  if (!fresh.length) {
-    if (!problems.length) await writeJSON(raw, CURSOR(uid), { at: new Date(now).toISOString() });
+  const stamp = { at: new Date(now).toISOString(), backfilled: true };
+  if (!fresh.length && !records.length) {
+    if (!problems.length) await writeJSON(raw, CURSOR(uid), stamp);
     return { uid, added: 0, problems };
   }
 
-  fresh.sort((a, b) => String(a.at).localeCompare(String(b.at)));
-  const next = have.concat(fresh).slice(-KEEP);
+  const all = records.concat(fresh).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const next = have.concat(all).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-KEEP);
   await writeJSON(raw, pre + 'ld_meetings', next);
-  await writeJSON(raw, CURSOR(uid), { at: new Date(now).toISOString() });
+  await writeJSON(raw, CURSOR(uid), stamp);
+  if (!fresh.length) return { uid, added: 0, recorded: records.length, problems };
 
   /* What nobody owns goes to the inbox: one tap from being yours. */
   let queued = 0;

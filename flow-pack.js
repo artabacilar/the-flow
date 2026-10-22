@@ -79,6 +79,11 @@ const hitLink = (e) => !!(e && e.target && e.target.closest && e.target.closest(
 function debounce(fn, ms) {
   let t; return function () { const a = arguments, c = this; clearTimeout(t); t = setTimeout(() => fn.apply(c, a), ms); };
 }
+/* The diet section's elements live inside Body log once the navigation is
+   installed; before that they are still in their own section. Either way,
+   this is the root to look under. */
+function dietRoot() { return document.getElementById('fn-dietblock') || document.getElementById('tab-diet') || document; }
+
 function download(filename, text, mime) {
   const blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -306,7 +311,9 @@ const SETTINGS_DEFAULTS = {
   bankProvider: 'none',
   statementDateFormat: 'auto',
   pushRemindRocks: true,         // reminders at a rock's own time
-  hiddenTabs: [],                // sections taken out of the menu (data kept)
+  hiddenTabs: ['finance', 'quad'], // sections out of the menu (data kept); fewer by default
+  sectionsV: 0,                  // which default-hiding pass has run on this account
+  todayMarkets: false,           // the price strip on Today is a widget: off until asked for
   upgradeVisuals: true,
   breakdownForm: 'donut',
   categories: DEFAULT_CATEGORIES.slice(),
@@ -1846,6 +1853,11 @@ const Markets = {
   data: null,
   watch: null,
 
+  /* A widget, not a fixture: nothing is drawn, and nothing is fetched, until
+     it is switched on in Settings. Most people never want prices on the
+     screen they plan their day from; the ones who do pick which. */
+  enabled() { return Settings.get('todayMarkets') === true; },
+
   async load() {
     if (Markets.watch === null) {
       const saved = await DB.get(Markets.KEY, null);
@@ -1854,8 +1866,18 @@ const Markets = {
     return Markets.watch;
   },
   async setWatch(list) {
-    Markets.watch = list.slice(0, 8);
+    Markets.watch = list.filter(s => Markets.LABEL[s]).slice(0, 8);
+    if (!Markets.watch.length) Markets.watch = Markets.DEFAULT.slice();
     await DB.set(Markets.KEY, Markets.watch);
+    Markets.paint();
+  },
+
+  /* Called when the switch in Settings moves. On: fetch and draw. Off: take
+     the strip away, now, without waiting for Today to redraw itself. */
+  async refresh() {
+    if (!Markets.enabled()) { Markets.paint(); return; }
+    await Markets.load();
+    await Markets.fetch();
     Markets.paint();
   },
 
@@ -1887,8 +1909,10 @@ const Markets = {
   },
 
   async mount() {
-    await Markets.load();
-    await Markets.fetch();
+    if (Markets.enabled()) {
+      await Markets.load();
+      await Markets.fetch();
+    }
     /* Today's render replaces the whole section, strip included, so put it
        back afterwards instead of relying on having painted last. Hook it
        before the first paint, so a paint that fails cannot skip the hook. */
@@ -1907,7 +1931,7 @@ const Markets = {
     /* Refresh while the tab is actually being looked at, not in the background. */
     if (!Markets._timer) {
       Markets._timer = setInterval(async () => {
-        if (document.hidden) return;
+        if (document.hidden || !Markets.enabled()) return;
         await Markets.fetch();
         Markets.paint();
       }, 120000);
@@ -1916,6 +1940,11 @@ const Markets = {
 
   paint() {
     const feed = $('#tab-today') || $('.section#tab-today');
+    if (!Markets.enabled()) {
+      const old = feed && $('#flow-markets', feed);
+      if (old) old.remove();
+      return;
+    }
     if (!feed) {
       /* Today is not on the page yet. Come back for it rather than
          dropping the paint, but give up after six seconds so a genuinely
@@ -1936,22 +1965,6 @@ const Markets = {
       const pulse = $('.flow-td-pulse', feed);
       if (pulse && pulse.parentNode) pulse.parentNode.insertBefore(strip, pulse.nextSibling);
       else feed.insertBefore(strip, feed.firstChild);
-    }
-    /* On the phone the database pill and the save line no longer live in the
-       header — the top of the screen belongs to Today, not to diagnostics.
-       They sit here instead, right under the market strip. The host's own
-       updateDbIndicator()/S.saved() write into these ids exactly as they do
-       the header pair, so there is one source of truth and two mounts. */
-    if (false && !$('#flow-dbline', feed)) {
-      const dbl = document.createElement('div');
-      dbl.id = 'flow-dbline';
-      dbl.className = 'flow-td flow-dbline';
-      dbl.innerHTML = '<span class="dbind" id="dbInd3"></span><span class="saveind" id="saveInd3"></span>';
-      strip.parentNode.insertBefore(dbl, strip.nextSibling);
-      /* The host may have painted its indicators before this node existed —
-         ask it to write them again now that there is somewhere to write. */
-      try { if (typeof updateDbIndicator === 'function') updateDbIndicator(); } catch (e) {}
-      try { if (typeof S !== 'undefined' && S && typeof S.saved === 'function') S.saved(); } catch (e) {}
     }
     const d = Markets.data;
     const q = (d && d.quotes) || {};
@@ -2020,27 +2033,43 @@ const Inbox = {
     return j.item;
   },
 
-  /** File an accepted task into this person's own Q1 priorities. */
+  /** File an accepted task as a Big Rock: on the day it is due, or today.
+      Big Rocks are what the week is planned from and what Today shows, so
+      an accepted task lands where it will actually be seen. */
   async file(item) {
-    const q = Profile.host('qData'), qSave = Profile.host('qSave');
-    if (!q || typeof qSave !== 'function') throw new Error('Could not reach your priorities.');
-    q.items = q.items || [];
-    q.items.push({
-      id: 'q' + Date.now().toString(36),
-      q: 1,
-      txt: item.task.txt + (item.from && item.from.via !== 'inbox' ? '  (from ' + item.from.name + ')' : ''),
-      done: false
+    if (typeof cData === 'undefined' || !cData || typeof cSave !== 'function') throw new Error('Could not reach your week.');
+    const todayD = new Date(); todayD.setHours(12, 0, 0, 0);
+    let d = todayD;
+    if (item.task.due) { const x = new Date(item.task.due + 'T12:00:00'); if (!isNaN(x) && x > todayD) d = x; }
+    const wid = WeekLoop.wid(d), day = WeekLoop.dow(d);
+    const who = item.from ? (item.from.via === 'inbox' ? 'via ' : 'from ') + item.from.name : '';
+    (cData.rocks[wid] = cData.rocks[wid] || []).push({
+      id: Date.now().toString(36) + Math.floor(Math.random() * 1e4), title: item.task.txt, role: '', day,
+      time: item.task.time || '', end: '', prio: 'med',
+      note: [who, item.task.note || ''].filter(Boolean).join(' — '), done: false,
+      src: { k: 'inbox', id: item.id }
     });
-    qSave();
-    if (item.task.due) {
-      try {
-        Schedule.put('quad::' + q.items[q.items.length - 1].id, {
-          date: item.task.due, time: item.task.time || '09:00', text: item.task.txt
-        });
-      } catch (e) { console.warn('[Flow] schedule shared task', e); }
-    }
-    if (typeof window.renderQuad === 'function') window.renderQuad();
+    cSave();
+    if (typeof window.renderCompass === 'function') window.renderCompass();
     if (typeof window.renderToday === 'function') window.renderToday();
+  },
+
+  /* The same card on Today, only while something is waiting. Today is the
+     screen that gets opened; a card nobody sees is the same as no card. */
+  paintToday() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    let wrap = feed.querySelector('#td-inbox');
+    if (!Inbox.items.length) { if (wrap) wrap.remove(); return; }
+    if (wrap && wrap.getAttribute('data-n') === String(Inbox.items.length)) return;
+    if (!wrap) {
+      wrap = document.createElement('div'); wrap.id = 'td-inbox';
+      const after = feed.querySelector('#td-weekplan');
+      if (after && after.nextSibling) feed.insertBefore(wrap, after.nextSibling); else feed.insertBefore(wrap, feed.firstChild);
+    }
+    wrap.setAttribute('data-n', String(Inbox.items.length));
+    wrap.innerHTML = '';
+    Inbox.render(wrap);
   },
 
   render(host) {
@@ -2057,7 +2086,7 @@ const Inbox = {
                 <div class="m">${it.from && it.from.via === 'inbox' ? 'via ' : 'from '}${esc(it.from ? it.from.name : 'someone')}${it.task.due ? ' · due ' + esc(it.task.due) + (it.task.time ? ' ' + esc(it.task.time) : '') : ''}</div>
                 ${it.task.note ? `<div class="n">${esc(it.task.note)}</div>` : ''}
                 <div class="a">
-                  <button class="flow-btn small primary" data-inbox="add">Add to my priorities</button>
+                  <button class="flow-btn small primary" data-inbox="add">Add as a Big Rock</button>
                   <button class="flow-btn small ghost" data-inbox="no">Dismiss</button>
                 </div>
               </div>`).join(''));
@@ -2076,7 +2105,8 @@ const Inbox = {
         await Inbox.load();
         const parent = box.parentElement;
         box.remove();
-        Inbox.render(parent);
+        if (parent && parent.id === 'td-inbox') { parent.removeAttribute('data-n'); Inbox.paintToday(); }
+        else Inbox.render(parent);
       } catch (err) {
         row.querySelector('.m').textContent = err.message;
         btn.disabled = false;
@@ -2479,8 +2509,16 @@ const Planner = {
     if (!raw) return 'Planner';
     return raw.split(/\s+/)[0].slice(0, 18);
   },
-  applyTabName() {
-    try { Tabs.relabel('artur', '👤 ' + Planner.who()); } catch (e) {}
+  /* The planner had its own tab once; it is a card on North Star now, so
+     there is no pill to rename. Kept as a no-op for the settings binder. */
+  applyTabName() {},
+
+  /* How many scheduled, undone items the fold's chip should show. */
+  chip() {
+    try {
+      const n = Schedule.scheduled().filter(r => !r.done && r.date <= today()).length;
+      return n ? n + ' due' : '';
+    } catch (e) { return ''; }
   },
 
   render(section) {
@@ -2498,40 +2536,12 @@ const Planner = {
     const todayItems = Schedule.onDate(today());
     const weekItems = Schedule.between(weekFrom, weekTo);
     const overdue = Schedule.scheduled().filter(r => !r.done && r.date < today());
-    const ym = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-    const monthSpend = Finance.inMonth(ym).reduce((a, x) => a + Math.abs(Number(x.amount) || 0), 0);
-    const cats = Finance.byCategory(Finance.inMonth(ym));
-    const rolls = Rollup.all();
-    const allChecks = rolls.reduce((a, r) => ({ total: a.total + r.checks.total, done: a.done + r.checks.done }), { total: 0, done: 0 });
-    const budget = Number(s.budgetMonthly) || 0;
 
     section.innerHTML = `
-      <div class="flow-row between" style="margin:6px 0 2px">
-        <div>
-          <div class="flow-label">${esc(DOW[now.getDay()])}, ${now.getDate()} ${esc(MON[now.getMonth()])} ${now.getFullYear()} · week ${wk.week}</div>
-          <div class="flow-hero">${esc(s.displayName || 'Your day')}</div>
-        </div>
-        <div class="flow-row">
-          <button class="flow-btn" data-a="refresh">↻ Refresh</button>
-          <button class="flow-btn primary" data-a="settings">⚙ Settings</button>
-        </div>
-      </div>
-
-      <div class="flow-grid c4" style="margin-top:16px">
-        <div class="flow-stat"><div class="v">${todayItems.filter(t => !t.done).length}</div><div class="l">Scheduled today</div>
-          <div class="d">${todayItems.length ? esc(todayItems.filter(t => t.done).length + ' already done') : 'nothing on the clock yet'}</div></div>
-        <div class="flow-stat"><div class="v">${weekItems.length}</div><div class="l">Scheduled this week</div>
-          <div class="d">${esc(prettyDate(weekFrom))} → ${esc(prettyDate(weekTo))}</div></div>
-        <div class="flow-stat"><div class="v" style="${overdue.length ? 'color:var(--f-critical)' : ''}">${overdue.length}</div><div class="l">Overdue</div>
-          <div class="d">${overdue.length ? '⚠ needs rescheduling' : 'all clear'}</div></div>
-        <div class="flow-stat"><div class="v">${allChecks.total ? Math.round(allChecks.done / allChecks.total * 100) : 0}%</div><div class="l">Checkboxes ticked</div>
-          <div class="d">${allChecks.done} of ${allChecks.total} across every tab</div></div>
-      </div>
-
       <div class="flow-grid c2">
         <div class="flow-card">
           <h3>⏱ Today</h3>
-          <p class="flow-sub">Everything you gave a time to, from any tab. Add times with the 🕘 chip that now sits on every task row.</p>
+          <p class="flow-sub">Everything you gave a time to, from any tab. Add times with the 🕘 chip that sits on every task row.</p>
           ${Planner.timeline(todayItems)}
           <div class="flow-row" style="margin-top:12px">
             <input class="flow-in grow" id="ar-new" placeholder="Add something to today…">
@@ -2563,7 +2573,7 @@ const Planner = {
 
       <div class="flow-card">
         <h3>📤 Send this to your calendar</h3>
-        <p class="flow-sub">Apple downloads a standard .ics you open on your Mac or iPhone. Google writes straight into your calendar and updates the same events on every later export instead of duplicating them.</p>
+        <p class="flow-sub">A standard .ics file that opens in Apple Calendar, Google Calendar or Outlook. The same task always maps to the same event, so importing again updates rather than duplicates.</p>
         <div class="flow-row">
           <span class="flow-label">Range</span>
           <select class="flow-in" id="ar-range">
@@ -2573,50 +2583,15 @@ const Planner = {
             <option value="12weeks">Next 12 weeks</option>
             <option value="all">Everything</option>
           </select>
-          <button class="flow-btn" data-a="ics"> Apple Calendar (.ics)</button>
-          <button class="flow-btn" data-a="gcal">📆 Google Calendar</button>
-          <button class="flow-btn" data-a="rem">🔔 iOS Reminders</button>
+          <button class="flow-btn" data-a="ics">📆 Calendar file (.ics)</button>
           <span class="flow-spacer"></span>
           <span class="flow-note-status" id="ar-calstatus"></span>
         </div>
       </div>
 
-      <div class="flow-grid c2">
-        <div class="flow-card">
-          <h3>💰 ${esc(MON[now.getMonth()])} spending</h3>
-          <p class="flow-sub">From receipts you photograph and statements you import, in the Finances tab.</p>
-          <div class="flow-hero" style="font-size:38px">${esc(money(monthSpend, s.currency))}</div>
-          ${budget ? Chart.meter(monthSpend, budget, { label: 'Monthly budget', format: v => money(v, s.currency) }) : '<p class="flow-empty">Set a monthly budget in Settings to track it here.</p>'}
-          ${cats.length ? `<div style="margin-top:16px">${Chart.bars(cats.slice(0, 6), { format: v => money(v, s.currency), labelWidth: 120, title: 'Spending by category' })}</div>` : '<p class="flow-empty">No expenses logged this month yet.</p>'}
-        </div>
-
-        <div class="flow-card">
-          <h3>📊 Live roll-up</h3>
-          <p class="flow-sub">Read straight off your existing tabs as they stand right now — no duplicate data entry.</p>
-          <div class="flow-scroll"><table class="flow-table">
-            <thead><tr><th>Tab</th><th class="num">Ticked</th><th>Headline</th></tr></thead>
-            <tbody>${rolls.map(r => `
-              <tr><td>${esc(r.label)}</td>
-                  <td class="num">${r.checks.total ? r.checks.done + '/' + r.checks.total : '—'}</td>
-                  <td>${r.stats.slice(0, 2).map(st => `<span class="flow-chip">${esc(st.value)} · ${esc(String(st.label).toLowerCase().slice(0, 26))}</span>`).join(' ') || '<span style="color:var(--f-muted)">—</span>'}</td></tr>`).join('')}
-            </tbody></table></div>
-        </div>
-      </div>
-
-      ${Journal.entries.some(e => e.date === today()) ? '' : `
-      <div class="flow-card" style="border-color:rgba(23,187,146,.3)">
-        <div class="flow-row between">
-          <div>
-            <h3 style="margin:0">📓 Today isn't written yet</h3>
-            <p class="flow-sub" style="margin:4px 0 0">${Journal.streak() ? Journal.streak() + ' day streak going. ' : ''}Two minutes now beats reconstructing the week on Sunday.</p>
-          </div>
-          <button class="flow-btn primary" data-a="journal">Write today's entry</button>
-        </div>
-      </div>`}
-
       <div class="flow-card" data-artur-notes></div>`;
 
-    // notes for the Planner tab itself
+    // notes for the planner itself (the notebook keeps its old key)
     const nb = section.querySelector('[data-artur-notes]');
     nb.innerHTML = Notes.renderBook('artur', 'Planner');
     /* Anything somebody has shared, waiting to be accepted. */
@@ -3244,7 +3219,6 @@ const Lang = {
 const SettingsUI = {
   render(section) {
     const s = Settings.data;
-    const shortcut = location.origin + '/api/flow/reminders.json';
 
     section.innerHTML = `
       <div style="margin:6px 0 2px">
@@ -3252,7 +3226,7 @@ const SettingsUI = {
         <div class="flow-hero" style="font-size:38px">Settings</div>
       </div>
 
-      <div class="flow-card">
+      <div class="flow-card" id="lookCard">
         <h3>🎨 Appearance</h3>
         <p class="flow-sub">Pick a colour theme. It applies the instant you tap it — no reload — and is saved to your account (or kept on this device while you're just looking around).</p>
         <div class="theme-grid">
@@ -3260,6 +3234,26 @@ const SettingsUI = {
             <span class="sw-dot" style="--d:${t.dot}"></span>
             <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
           </button>`).join('')}
+        </div>
+        <div class="flow-switch" style="margin-top:14px"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
+          <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
+        <div class="flow-switch"><div class="t"><b>Sharper breakdown charts</b><span>Cards headed “Visual breakdown” are redrawn as a crisp ring or bars. The original widget is hidden, never deleted.</span></div>
+          <input type="checkbox" data-s="upgradeVisuals" data-type="bool" ${s.upgradeVisuals !== false ? 'checked' : ''}></div>
+        <div class="flow-row" style="margin-top:6px">
+          <span class="flow-label">Chart shape</span>
+          <span class="flow-seg">
+            <button class="${s.breakdownForm !== 'bars' ? 'on' : ''}" data-act2="formDonut">Ring</button>
+            <button class="${s.breakdownForm === 'bars' ? 'on' : ''}" data-act2="formBars">Bars</button>
+          </span>
+        </div>
+        <div id="voice-card" style="margin-top:14px">
+          <div class="flow-label">Voice</div>
+          <p class="flow-sub">A microphone appears in the corner of whatever you are writing in. Tap it, talk, tap it again — the words land where your cursor was. It listens in the language the app is set to.</p>
+          <div class="vc-state" id="vc-state"><span class="vc-dot"></span><span class="vc-txt">Checking…</span></div>
+          <p class="flow-sub" id="vc-note" style="margin-top:8px"></p>
+          <div class="flow-row" style="margin-top:10px">
+            <button type="button" class="flow-btn sm" data-voice-act="ask" hidden>Allow the microphone</button>
+          </div>
         </div>
       </div>
 
@@ -3274,8 +3268,8 @@ const SettingsUI = {
         </div>
       </div>
 
-      <div class="flow-card">
-        <h3>✍️ The line under Today</h3>
+      <div class="flow-card" id="todayCard">
+        <h3>📅 Today</h3>
         <p class="flow-sub">The words beside the date on your Today screen. Make them yours — something you are working towards, a line from someone you trust, or your own. Leave it blank for no line at all. It is saved to your account and never translated.</p>
         <div class="flow-field"><label class="flow-label">The line</label>
           <input class="flow-in" data-s="todayQuote" maxlength="200" placeholder="Leave blank for no line" value="${esc(s.todayQuote)}"></div>
@@ -3284,62 +3278,28 @@ const SettingsUI = {
         <div class="flow-row" style="margin-top:10px">
           <button type="button" class="flow-btn sm ghost" id="quote-default">Put the original back</button>
         </div>
-      </div>
-
-      <div class="flow-card" id="voice-card">
-        <h3>🎤 Voice</h3>
-        <p class="flow-sub">A microphone appears in the corner of whatever you are writing in. Tap it, talk, tap it again — the words land where your cursor was. It listens in the language the app is set to, so switching to Turkish switches the dictation too.</p>
-        <div class="vc-state" id="vc-state"><span class="vc-dot"></span><span class="vc-txt">Checking…</span></div>
-        <p class="flow-sub" id="vc-note" style="margin-top:8px"></p>
-        <div class="flow-row" style="margin-top:10px">
-          <button type="button" class="flow-btn sm" data-voice-act="ask" hidden>Allow the microphone</button>
-        </div>
-        <p class="flow-sub" style="margin-top:12px">Your phone's own keyboard mic and tools like Wispr Flow type straight into these fields and work here too — nothing needs turning on for those.</p>
-      </div>
-
-      <div class="flow-grid c2">
-        <div class="flow-card">
-          <h3>👤 You</h3>
-          <div class="flow-grid c2" style="gap:10px">
-            <div class="flow-field"><label class="flow-label">Display name</label><input class="flow-in" data-s="displayName" value="${esc(s.displayName)}"></div>
-            <div class="flow-field"><label class="flow-label">Currency</label><input class="flow-in" data-s="currency" value="${esc(s.currency)}"></div>
-            <div class="flow-field"><label class="flow-label">Time zone</label><input class="flow-in" data-s="timezone" value="${esc(s.timezone)}"></div>
-            <div class="flow-field"><label class="flow-label">Week starts</label>
-              <select class="flow-in" data-s="weekStart" data-type="num">
-                <option value="1"${s.weekStart == 1 ? ' selected' : ''}>Monday</option>
-                <option value="0"${s.weekStart == 0 ? ' selected' : ''}>Sunday</option>
-              </select></div>
-            <div class="flow-field"><label class="flow-label">Default duration (min)</label><input class="flow-in" type="number" min="5" step="5" data-s="defaultDurationMin" data-type="num" value="${esc(s.defaultDurationMin)}"></div>
-            <div class="flow-field"><label class="flow-label">Monthly budget</label><input class="flow-in" type="number" step="100" data-s="budgetMonthly" data-type="num" value="${esc(s.budgetMonthly)}"></div>
-          </div>
-        </div>
-
-        <div class="flow-card">
-          <h3>🕘 Time chips</h3>
-          <p class="flow-sub">The 🕘 chip is what puts a date, time, duration and alert on tasks that never had one — it is added to every checkbox row across every tab.</p>
-          <div class="flow-switch"><div class="t"><b>Show time chips on task rows</b><span>Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
-            <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
-          <div class="flow-field" style="margin-top:12px"><label class="flow-label">Limit to these tabs (blank = all)</label>
-            <input class="flow-in" data-s="chipTabs" value="${esc(s.chipTabs)}" placeholder="e.g. compass, quad, training"></div>
-          <p class="flow-sub" style="margin-top:10px">Tab names available: ${Rollup.sections().map(x => `<code>${esc(x.id.slice(4))}</code>`).join(', ') || '—'}</p>
+        <div class="flow-label" style="margin-top:18px">Widgets</div>
+        <div class="flow-switch"><div class="t"><b>Prices on Today</b><span>A small strip of exchange rates, gold and Bitcoin under the morning pulse. Off unless you want it.</span></div>
+          <input type="checkbox" data-s="todayMarkets" data-type="bool" ${s.todayMarkets ? 'checked' : ''}></div>
+        <div class="sec-grid" id="mktPick"${s.todayMarkets ? '' : ' hidden'}>
+          ${Object.keys(Markets.LABEL).map(sym => `<label class="sec-it"><input type="checkbox" data-mkt="${sym}"${(Markets.watch || Markets.DEFAULT).indexOf(sym) >= 0 ? ' checked' : ''}> <span data-i18n="off">${esc(Markets.LABEL[sym][0])} · ${esc(Markets.LABEL[sym][1])}</span></label>`).join('')}
         </div>
       </div>
 
       <div class="flow-card">
-        <h3>📊 Visuals</h3>
-        <p class="flow-sub">Any card in the app headed “Visual breakdown” (or Breakdown / Distribution) is re-rendered with a square-by-construction ring, so it can never be squashed into an ellipse or render blurry text again. The original widget is hidden, never deleted.</p>
-        <div class="flow-switch"><div class="t"><b>Re-render breakdown widgets</b><span>Currently upgraded: ${Visuals.upgraded} card${Visuals.upgraded === 1 ? '' : 's'} on this page.</span></div>
-          <input type="checkbox" data-s="upgradeVisuals" data-type="bool" ${s.upgradeVisuals !== false ? 'checked' : ''}></div>
-        <div class="flow-row" style="margin-top:12px">
-          <span class="flow-label">Default shape</span>
-          <span class="flow-seg">
-            <button class="${s.breakdownForm !== 'bars' ? 'on' : ''}" data-act2="formDonut">Ring</button>
-            <button class="${s.breakdownForm === 'bars' ? 'on' : ''}" data-act2="formBars">Bars</button>
-          </span>
-          <span class="flow-spacer"></span>
-          <button class="flow-btn sm ghost" data-act2="restoreViz">Restore the originals</button>
+        <h3>👤 You</h3>
+        <div class="flow-grid c2" style="gap:10px">
+          <div class="flow-field"><label class="flow-label">Display name</label><input class="flow-in" data-s="displayName" value="${esc(s.displayName)}"></div>
+          <div class="flow-field"><label class="flow-label">Currency</label><input class="flow-in" data-s="currency" value="${esc(s.currency)}"></div>
+          <div class="flow-field"><label class="flow-label">Time zone</label><input class="flow-in" data-s="timezone" value="${esc(s.timezone)}"></div>
+          <div class="flow-field"><label class="flow-label">Week starts</label>
+            <select class="flow-in" data-s="weekStart" data-type="num">
+              <option value="1"${s.weekStart == 1 ? ' selected' : ''}>Monday</option>
+              <option value="0"${s.weekStart == 0 ? ' selected' : ''}>Sunday</option>
+            </select></div>
+          <div class="flow-field"><label class="flow-label">Default duration (min)</label><input class="flow-in" type="number" min="5" step="5" data-s="defaultDurationMin" data-type="num" value="${esc(s.defaultDurationMin)}"></div>
+          <div class="flow-field"><label class="flow-label">Monthly budget</label><input class="flow-in" type="number" step="100" data-s="budgetMonthly" data-type="num" value="${esc(s.budgetMonthly)}"></div>
         </div>
-        <p class="flow-sub" style="margin-top:10px">Bars are easier to read once there are more than about four categories, because length beats angle for comparing magnitudes. The ring caps at five slices and folds the rest into “Other” — past five, no single-hue scale keeps its steps distinguishable.</p>
       </div>
 
       <div class="flow-card" id="connCard">
@@ -3373,23 +3333,6 @@ const SettingsUI = {
         <p class="flow-sub">A token is as good as your password for reading and adding — treat it like one. If you no longer recognise a token in the list, revoke it; anything using it stops working immediately and nothing you have saved is touched.</p>
       </div>
 
-      <div class="flow-card">
-        <h3>📆 Google Calendar</h3>
-        <p class="flow-sub">Exports write directly into your Google calendar and are idempotent: the same task always maps to the same event, so re-exporting updates it instead of creating a duplicate.</p>
-        <div class="flow-grid c2" style="gap:10px">
-          <div class="flow-field"><label class="flow-label">OAuth Client ID</label><input class="flow-in" data-s="gcalClientId" value="${esc(s.gcalClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
-          <div class="flow-field"><label class="flow-label">Calendar ID</label><input class="flow-in" data-s="gcalCalendarId" value="${esc(s.gcalCalendarId)}" placeholder="primary"></div>
-        </div>
-        <ol class="flow-ol">
-          <li>Open <b>console.cloud.google.com</b> → create a project → APIs &amp; Services.</li>
-          <li>Enable the <b>Google Calendar API</b>.</li>
-          <li>OAuth consent screen → External → add yourself as a test user.</li>
-          <li>Credentials → Create → <b>OAuth client ID</b> → Web application.</li>
-          <li>Authorised JavaScript origins: <code>${esc(location.origin)}</code></li>
-          <li>Paste the client ID above. No client secret is needed — the token never leaves your browser.</li>
-        </ol>
-      </div>
-
       <div class="flow-card" id="pushCard">
         <h3>📣 Notifications</h3>
         <p class="flow-sub">Reminders that arrive whether or not the app is open — on iPhone, Mac, Android, and in Chrome, Edge or Firefox on a computer.</p>
@@ -3399,45 +3342,6 @@ const SettingsUI = {
           <input type="checkbox" data-s="pushRemindRocks" data-type="bool" ${s.pushRemindRocks !== false ? 'checked' : ''}></div>
         <div style="margin-top:10px"><button class="flow-btn" id="pushTestBtn" disabled>Send me a test notification</button>
           <span class="flow-sub" id="pushTestOut" style="margin-left:10px"></span></div>
-      </div>
-
-      <div class="flow-card">
-        <h3>🔔 iOS Reminders</h3>
-        <p class="flow-sub">Apple gives no public web API for Reminders, so there are three real routes. The first works immediately; the second is the one worth setting up once.</p>
-        <div class="flow-switch"><div class="t"><b>Enable Reminders export</b><span>Adds the Reminders buttons to the Planner tab and note sections.</span></div>
-          <input type="checkbox" data-s="remindersEnabled" data-type="bool" ${s.remindersEnabled ? 'checked' : ''}></div>
-        <div class="flow-field" style="margin:12px 0"><label class="flow-label">Reminders list name</label>
-          <input class="flow-in" data-s="remindersListName" value="${esc(s.remindersListName)}"></div>
-
-        <div class="flow-grid c3" style="margin-top:6px">
-          <div>
-            <div class="flow-label" style="margin-bottom:6px">1 · .ics file — works now</div>
-            <p class="flow-sub">Export, AirDrop or email the file to yourself, open it on the iPhone and choose Reminders. Each task carries its due date and alert.</p>
-            <button class="flow-btn" data-act2="remIcs">Export reminders now</button>
-          </div>
-          <div>
-            <div class="flow-label" style="margin-bottom:6px">2 · Apple Shortcut — automatic</div>
-            <p class="flow-sub">Build this once, then run it from the Home Screen or on a schedule:</p>
-            <ol class="flow-ol">
-              <li>Shortcuts → new shortcut → <b>Get Contents of URL</b></li>
-              <li>URL: <code>${esc(shortcut)}</code></li>
-              <li><b>Get Dictionary Value</b> → <code>items</code></li>
-              <li><b>Repeat with Each</b> → <b>Add New Reminder</b>, title = <code>title</code>, notes = <code>notes</code>, due = <code>dueDate</code>, list = <code>${esc(s.remindersListName)}</code></li>
-              <li>Automation → run daily at 06:00</li>
-            </ol>
-            <button class="flow-btn" data-act2="remPublish">Publish outbox now</button>
-          </div>
-          <div>
-            <div class="flow-label" style="margin-bottom:6px">3 · CalDAV to iCloud — hands-off</div>
-            <p class="flow-sub">The server pushes straight into an iCloud Reminders list. Credentials live in Render environment variables and never touch the browser:</p>
-            <pre class="flow-code">ICLOUD_USER=you@icloud.com
-ICLOUD_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
-ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
-            <p class="flow-sub">Generate the app-specific password at appleid.apple.com → Sign-In and Security. Never put your real Apple password there.</p>
-            <button class="flow-btn" data-act2="remCaldav">Test CalDAV push</button>
-          </div>
-        </div>
-        <div class="flow-note-status" id="set-remstatus" style="margin-top:10px"></div>
       </div>
 
       <div class="flow-card">
@@ -3526,19 +3430,6 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
           <span class="flow-spacer"></span>
           <button class="flow-btn danger" data-act2="profreset">Reset to the blank template</button>
         </div>
-      </div>
-
-      <div class="flow-card">
-        <h3>💾 Data</h3>
-        <p class="flow-sub">Everything the upgrade pack stores lives under <code>flow:*</code> keys in the same database as the rest of the app, and is mirrored to this browser so it survives going offline.</p>
-        <div class="flow-row">
-          <button class="flow-btn" data-act2="backup">↓ Download full backup</button>
-          <button class="flow-btn" data-act2="restore">↑ Restore from backup</button>
-          <input type="file" accept="application/json,.json" id="set-restore" style="display:none">
-          <span class="flow-spacer"></span>
-          <button class="flow-btn danger" data-act2="wipe">Erase upgrade-pack data</button>
-        </div>
-        <p class="flow-sub" style="margin-top:10px">Stored right now: ${Schedule.all().length} scheduled items · ${Finance.items.length} expenses · ${Object.keys(Notes.book).length} notebooks · ${Queue.list().length} unsynced change${Queue.list().length === 1 ? '' : 's'}</p>
       </div>`;
 
     /* --- persist any field with a data-s attribute --- */
@@ -3568,6 +3459,11 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         await Settings.set(key, v);
         if (key === 'upgradeVisuals') { if (v) Visuals.upgradeAll(); else Visuals.restoreAll(); }
         if (key === 'pushRemindRocks') Notify.syncMac();
+        if (key === 'todayMarkets') {
+          const pick = section.querySelector('#mktPick');
+          if (pick) pick.hidden = !v;
+          Markets.refresh().catch(() => {});
+        }
         if (key === 'showTimeChips') {
           if (v) {
             TimeChips.scan(document);
@@ -3580,6 +3476,14 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         toast('Saved ✓', null, 1200);
       };
       el.addEventListener('change', commit);
+    });
+
+    /* Which prices the Today widget shows, when it is on at all. */
+    const mktPick = section.querySelector('#mktPick');
+    if (mktPick) mktPick.addEventListener('change', async () => {
+      const list = Array.from(mktPick.querySelectorAll('[data-mkt]:checked')).map(c => c.getAttribute('data-mkt'));
+      await Markets.setWatch(list);
+      toast('Saved ✓', null, 1200);
     });
 
     /* ---- Connect to Claude ---- */
@@ -3719,66 +3623,14 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
         catch (e) { toast(e.message, 'err', 5000); }
         return;
       }
-        const st = section.querySelector('#set-remstatus');
-        if (a === 'remIcs') Reminders.exportICS();
-        else if (a === 'remPublish') {
-          const r = await Reminders.publishForShortcut();
-          st.textContent = `Outbox published — ${r.length} item${r.length === 1 ? '' : 's'} ready at ${shortcut}`;
-          st.className = 'flow-note-status ok';
-        }
-        else if (a === 'remCaldav') {
-          st.textContent = 'Pushing…'; st.className = 'flow-note-status pending';
-          try {
-            const r = await Reminders.caldavPush();
-            st.textContent = `CalDAV: ${r.pushed || 0} pushed, ${r.failed || 0} failed`;
-            st.className = 'flow-note-status ok';
-          } catch (e) {
-            st.textContent = e.message + ' — is the server add-on installed and are the iCloud env vars set?';
-            st.className = 'flow-note-status pending';
-          }
-        }
-        else if (a === 'formDonut' || a === 'formBars') {
+        if (a === 'formDonut' || a === 'formBars') {
           await Settings.set('breakdownForm', a === 'formBars' ? 'bars' : 'donut');
           Settings.reflect();
           $$('[data-flow-viz] .flow-viz').forEach(m => { if (m.__repaint) m.__repaint(); });
           SettingsUI.render(section);
         }
-        else if (a === 'restoreViz') { Visuals.restoreAll(); toast('Original widgets restored'); SettingsUI.render(section); }
         else if (a === 'forget') { await Settings.set('merchantMemory', {}); toast('Merchant memory cleared'); SettingsUI.render(section); }
-        else if (a === 'backup') {
-          const dump = {
-            exportedAt: new Date().toISOString(), version: window.__FLOW_UPGRADE__,
-            settings: Settings.data, schedule: Schedule.map, expenses: Finance.items, notes: Notes.book
-          };
-          download(`the-flow-upgrade-backup-${today()}.json`, JSON.stringify(dump, null, 2), 'application/json');
-        }
-        else if (a === 'restore') section.querySelector('#set-restore').click();
-        else if (a === 'wipe') {
-          if (!confirm('Erase everything the upgrade pack stores — schedules, expenses, receipts and notes?\n\nYour original Flow data is not touched.')) return;
-          if (!confirm('Really erase? This cannot be undone.')) return;
-          await DB.set(SCHEDULE_KEY, {}); await DB.set(EXPENSE_KEY, []); await DB.set(NOTES_KEY, {});
-          Schedule.map = {}; Finance.items = []; Notes.book = {};
-          DB._mem.clear();
-          toast('Upgrade-pack data erased'); SettingsUI.render(section);
-        }
       });
-    });
-
-    const rf = section.querySelector('#set-restore');
-    if (rf) rf.addEventListener('change', () => {
-      const f = rf.files && rf.files[0]; if (!f) return;
-      const fr = new FileReader();
-      fr.onload = async () => {
-        try {
-          const d = JSON.parse(String(fr.result));
-          if (d.settings) { Settings.data = Object.assign({}, SETTINGS_DEFAULTS, d.settings); await Settings.save(); }
-          if (d.schedule) { Schedule.map = d.schedule; await Schedule.saveNow(); }
-          if (d.expenses) { Finance.items = d.expenses; await Finance.save(); }
-          if (d.notes) { Notes.book = d.notes; await DB.set(NOTES_KEY, Notes.book); }
-          toast('Backup restored ✓'); SettingsUI.render(section); TimeChips.repaintAll();
-        } catch (e) { toast('That file could not be read: ' + e.message, 'err', 5000); }
-      };
-      fr.readAsText(f);
     });
   },
 
@@ -5580,22 +5432,6 @@ const CompassPlus = {
     window.icsExtras = window.icsExtras || [];
     window.icsExtras.push(provider);
 
-    /* Pushing over the Google API is a different thing from downloading a
-       file — it writes into the calendar directly — so it stays its own
-       control, secondary, and says what it does. */
-    const more = document.getElementById('icsMore');
-    if (more && !more.querySelector('[data-flowcal]')) {
-      const b = document.createElement('button');
-      b.className = 'btn btn-ghost';
-      b.setAttribute('data-flowcal', 'google');
-      b.textContent = '📆 Or write straight into Google Calendar';
-      b.title = 'Skips the file — signs you in and adds your scheduled tasks to Google directly';
-      more.appendChild(b);
-      b.addEventListener('click', () => {
-        try { Calendar.exportGoogle(CompassPlus.range(), document.getElementById('icsStatus')); }
-        catch (err) { try { toast('Could not reach Google just now.', 'err'); } catch (e2) {} }
-      });
-    }
   },
 
   install() {
@@ -5630,7 +5466,7 @@ const DietPlan = {
   editing: false,
 
   async mount() {
-    const host = document.querySelector('#tab-diet .mealcards');
+    const host = $('.mealcards', dietRoot());
     if (!host || host.__flowDietMounted) return;
     host.__flowDietMounted = 1;
     try {
@@ -6422,7 +6258,7 @@ const Profile = {
 
   /** Prose that lives in the markup rather than in a constant. */
   captureCopy() {
-    const sec = document.getElementById('tab-diet');
+    const sec = dietRoot();
     const pick = (sel, root) => { const n = $(sel, root || document); return n ? n.textContent.trim() : ''; };
     const cards = sec ? $('.mealcards', sec) : null;
     let trainNote = '';
@@ -6439,7 +6275,7 @@ const Profile = {
   applyCopy() {
     const c = (Profile.data && Profile.data.copy) || null;
     if (!c) return;
-    const sec = document.getElementById('tab-diet');
+    const sec = dietRoot();
     if (sec) {
       const h = $('.section-header', sec), sub = $('.section-sub', sec);
       if (h && c.dietHeader) h.textContent = c.dietHeader;
@@ -6588,7 +6424,7 @@ const Profile = {
      swapping the arrays. */
   paintDietCopy() {
     if (!Profile.isNew) return;
-    const sec = document.getElementById('tab-diet');
+    const sec = dietRoot();
     if (!sec || sec.__flowDietCopy) return;
     sec.__flowDietCopy = 1;
 
@@ -7379,7 +7215,7 @@ const WeekPlan = {
     });
     const feed = document.getElementById('today-feed');
     if (feed && window.MutationObserver) {
-      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} })
+      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} try { Inbox.paintToday(); } catch (e) {} })
         .observe(feed, { childList: true });
     }
     WeekPlan.paintCard(); TodayFix.paint();
@@ -7437,6 +7273,10 @@ const Meetings = {
     const titles = [];
     Meetings.all().forEach((m) => {
       if (!m || !m.id || done[m.id]) return;
+      /* On record only: a meeting that was filed by hand before this
+         existed, or one older than the day the filing started. Its notes
+         sit under the rocks it already has; nothing new is made from it. */
+      if (m.legacy) { done[m.id] = true; touched = true; return; }
       meetings++; titles.push(m.title);
       const when = Meetings.when(m);
       try {
@@ -7456,6 +7296,7 @@ const Meetings = {
       });
       done[m.id] = true; touched = true;
     });
+    if (Meetings.adopt()) touched = true;
     if (touched) {
       cSave();
       try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
@@ -7463,6 +7304,29 @@ const Meetings = {
     }
     if (meetings) Meetings.toast(meetings === 1 ? titles[0] : meetings + ' meetings', rocks);
     return { meetings, rocks };
+  },
+  /* Rocks filed from Fathom by the earlier, hand-run import carry the
+     meeting only as a line of text: "From Fathom: <title> — <url>". Once
+     that meeting is on record, give them the same link a filed rock has,
+     so the notes fold under them too. Matched on the recording's URL, or
+     failing that its title; the action by its wording. */
+  adopt() {
+    if (typeof cData === 'undefined' || !cData || !cData.rocks) return false;
+    const all = Meetings.all();
+    if (!all.length) return false;
+    let changed = false;
+    Object.keys(cData.rocks).forEach((w) => (cData.rocks[w] || []).forEach((r) => {
+      if (!r || r.src || !/^From Fathom: /.test(r.note || '')) return;
+      const note = r.note.slice(13);
+      const m = all.find((x) => x && x.url && note.indexOf(x.url) >= 0) ||
+                all.find((x) => x && x.title && note.indexOf(x.title) === 0);
+      if (!m) return;
+      const t = String(r.title || '').trim().toLowerCase();
+      const a = (m.actions || []).find((x) => String(x.text || '').trim().toLowerCase() === t);
+      r.src = { k: 'fathom', mid: m.id, n: a ? a.n : -1 };
+      changed = true;
+    }));
+    return changed;
   },
   toast(what, rocks) {
     let el = document.getElementById('flow-toast');
@@ -7476,7 +7340,7 @@ const Meetings = {
     const r = await fetch('/api/meetings/pull', { method: 'POST', credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Could not reach the meetings.');
-    if (j.added) {
+    if (j.added || j.recorded) {
       /* The server wrote the section; bring this device's copy up to it. */
       try {
         const r2 = await fetch('/api/get?key=ld_meetings', { credentials: 'same-origin', cache: 'no-store' });
@@ -7498,16 +7362,36 @@ const Meetings = {
     }).join('').replace(/(<li>.*?<\/li>)+/g, (m) => '<ul>' + m + '</ul>');
   },
   inline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); },
+  /* The meetings live in the account; a rock filed from one on another
+     device can reach this one before the meeting itself has. Fetch the
+     section once when that happens, then paint again. Throttled, so a
+     meeting that is genuinely gone cannot turn every paint into a request. */
+  async refetch() {
+    const now = Date.now();
+    if (Meetings._fetching || (Meetings._fetchedAt && now - Meetings._fetchedAt < 5 * 60 * 1000)) return false;
+    Meetings._fetching = true; Meetings._fetchedAt = now;
+    try {
+      const r = await fetch('/api/get?key=ld_meetings', { credentials: 'same-origin', cache: 'no-store' });
+      const g = await r.json();
+      if (g && g.value != null) {
+        const v = typeof g.value === 'string' ? JSON.parse(g.value) : g.value;
+        if (Array.isArray(v)) { try { localStorage.setItem('ld_meetings', JSON.stringify(v)); } catch (e) {} try { Meetings.apply(); } catch (e) {} Meetings.paint(); return true; }
+      }
+    } catch (e) {}
+    finally { Meetings._fetching = false; }
+    return false;
+  },
   /* The meeting behind a rock, folded under it on Today. */
   paint() {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
+    let missing = false;
     feed.querySelectorAll('.td-rock[data-rockid]').forEach((row) => {
       if (row.querySelector('.td-meet')) return;
       const hit = TodayFix.find(row.getAttribute('data-rockid'));
       if (!hit || !hit.r.src || hit.r.src.k !== 'fathom') return;
       const m = Meetings.find(hit.r.src.mid);
-      if (!m) return;
+      if (!m) { missing = true; return; }
       const note = row.querySelector('.td-rk-note');
       const box = document.createElement('div');
       box.className = 'td-meet';
@@ -7531,6 +7415,7 @@ const Meetings = {
       });
       if (note) note.replaceWith(box); else (row.querySelector('.rk-title') || row).appendChild(box);
     });
+    if (missing) Meetings.refetch().catch(() => {});
   }
 };
 
@@ -7554,6 +7439,7 @@ const Refresh = {
         try { const r = await Meetings.pull(); if (r.added) msg = r.added + ' new meeting' + (r.added === 1 ? '' : 's') + '. '; } catch (e) {}
       }
       try { if (window.__flowSyncNow) { window.__FLOW_SYNC_GAP_MS = 0; window.__flowSyncNow(); } } catch (e) {}
+      try { await Inbox.load(); Inbox.paintToday(); } catch (e) {}
       await new Promise((r) => setTimeout(r, 900));
       if (manual) Refresh.say(msg + 'Up to date.');
     } finally {
@@ -7648,6 +7534,28 @@ const TodayFix = {
 const Sections = {
   FIXED: ['today', 'settings'],
   hidden() { const v = Settings.get('hiddenTabs'); return Array.isArray(v) ? v : []; },
+
+  /* Fewer sections by default. A new account starts without Finances and
+     Priorities in the menu; an account that already exists loses only the
+     ones it has never put anything in — somebody with expenses logged keeps
+     Finances exactly where it was. Runs once, and says what it did. */
+  async migrate() {
+    if ((Settings.get('sectionsV') || 0) >= 1) return;
+    const hid = Sections.hidden().slice();
+    const quiet = [];
+    try { if (!(Finance.items || []).length && hid.indexOf('finance') < 0) { hid.push('finance'); quiet.push('Finances'); } } catch (e) {}
+    try {
+      const q = (typeof qData !== 'undefined' && qData) || null;
+      const open = q && Array.isArray(q.items) ? q.items.filter((i) => i && !i.done).length : 0;
+      if (!open && hid.indexOf('quad') < 0) { hid.push('quad'); quiet.push('Priorities'); }
+    } catch (e) {}
+    await Settings.set('hiddenTabs', hid);
+    await Settings.set('sectionsV', 1);
+    if (quiet.length) {
+      Sections.apply();
+      try { toast(quiet.join(' and ') + (quiet.length === 1 ? ' is' : ' are') + ' out of the menu — empty, so out of the way. Settings → Sections brings them back.', null, 6000); } catch (e) {}
+    }
+  },
   apply() {
     let st = document.getElementById('fn-hide');
     if (!st) { st = document.createElement('style'); st.id = 'fn-hide'; document.head.appendChild(st); }
@@ -7742,6 +7650,41 @@ const Trial = {
  * They live here now, together, and the host's updateDbIndicator() and
  * S.saved() write into these ids exactly as they did the old ones. */
 const DataCard = {
+  /* One file for everything: the app's own sections (every ld_* key) and
+     what this pack keeps beside them (settings, schedules, expenses, notes,
+     the North Star, the scoreboard — every flow:* key this device has
+     seen). There used to be two backups that each left half out. */
+  dump() {
+    const data = {}, pack = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf('ld_') === 0) data[k] = localStorage.getItem(k);
+        else if (k.indexOf('flowpack:') === 0) { try { pack[k.slice(9)] = JSON.parse(localStorage.getItem(k)); } catch (e) {} }
+      }
+    } catch (e) {}
+    /* What is in memory is newer than any mirror, and never too big. */
+    try { pack[SETTINGS_KEY] = Settings.data; pack[SCHEDULE_KEY] = Schedule.map; pack[EXPENSE_KEY] = Finance.items; pack[NOTES_KEY] = Notes.book; } catch (e) {}
+    return { exported: new Date().toISOString(), app: 'the-flow-dashboard-v2', version: window.__FLOW_UPGRADE__, data, pack };
+  },
+  backup() {
+    const d = DataCard.dump();
+    download('the-flow-backup-' + today() + '.json', JSON.stringify(d, null, 1), 'application/json');
+    try { if (typeof J === 'function') J('planning', '💾 Backup exported (' + Object.keys(d.data).length + ' sections, ' + Object.keys(d.pack).length + ' pack keys)'); } catch (e) {}
+  },
+  /* The host's own restore handles the ld_* half of the same file (and the
+     cloud save and the reload). This puts the pack half back first. */
+  async restorePack(obj) {
+    const pack = obj && obj.pack;
+    if (!pack || typeof pack !== 'object') return 0;
+    let n = 0;
+    for (const k of Object.keys(pack)) {
+      if (!/^flow:/.test(k)) continue;
+      try { await DB.set(k, pack[k]); n++; } catch (e) {}
+    }
+    return n;
+  },
   wire(section) {
     if (section.querySelector('#dataCard')) return;
     const anchor = section.querySelector('#ibCard') || section.querySelector('#fbCard') || section.querySelector('#secCard') || section.querySelector('.flow-card');
@@ -7755,9 +7698,19 @@ const DataCard = {
         '<button type="button" class="flow-btn" id="dataBackup">💾 Backup</button>' +
         '<label class="flow-btn ghost" for="jnImportFile" style="cursor:pointer">📥 Restore</label>' +
       '</div>' +
-      '<p class="flow-sub" style="margin-top:8px">Backup downloads everything as one JSON file. Restore reads one back in and replaces what is here.</p>';
+      '<p class="flow-sub" style="margin-top:8px">Backup downloads everything — every section, your settings, notes and scores — as one JSON file. Restore reads one back in and replaces what is here.</p>';
     anchor.parentNode.insertBefore(card, anchor);
-    card.querySelector('#dataBackup').addEventListener('click', () => { try { if (typeof exportBackup === 'function') exportBackup(); } catch (e) {} });
+    card.querySelector('#dataBackup').addEventListener('click', () => DataCard.backup());
+    const rf = document.getElementById('jnImportFile');
+    if (rf && !rf.__flowPack) {
+      rf.__flowPack = 1;
+      rf.addEventListener('change', () => {
+        const f = rf.files && rf.files[0]; if (!f) return;
+        const fr = new FileReader();
+        fr.onload = () => { try { DataCard.restorePack(JSON.parse(String(fr.result))).catch(() => {}); } catch (e) {} };
+        fr.readAsText(f);
+      }, true);
+    }
     try { if (typeof updateDbIndicator === 'function') updateDbIndicator(); } catch (e) {}
     try { if (typeof S !== 'undefined' && S && typeof S.saved === 'function') S.saved(); } catch (e) {}
   }
@@ -8299,43 +8252,53 @@ const Nav = {
        same morning question, and asking it twice in two places got it
        answered in neither. */
     { id: 'body',  label: 'Body',  icon: 'dumbbell',
-      tabs: ['training', 'diet', 'sleep', 'habits'] },
+      tabs: ['training', 'sleep', 'habits'] },
     { id: 'record', label: 'Record', icon: 'note',
-      tabs: ['ask', 'journal', 'finance', 'brainstorm', 'time'] }
+      tabs: ['ask', 'journal', 'finance'] }
   ],
 
+  /* Sections the app no longer shows. Their data is left exactly where it
+     was — in the account, in every backup — so a change of mind costs
+     nothing; only the pill and the slot go. Brainstorm was a questionnaire
+     answered once; Time counted hours that the Journal already records; the
+     planner now lives inside North Star. */
+  REMOVED: ['brainstorm', 'time', 'artur'],
+
   /* Reachable from the avatar and from the palette, but not worth a slot. */
-  MENU: ['artur', 'settings'],
+  MENU: ['settings'],
 
   ICON: {
     today: 'today', northstar: 'star', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
-    brainstorm: 'bulb', time: 'clock', training: 'dumbbell', diet: 'food',
+    training: 'dumbbell', diet: 'food',
     sleep: 'moon', habits: 'check', mood: 'heart', journal: 'note',
-    finance: 'money', ask: 'chat', artur: 'user', settings: 'gear'
+    finance: 'money', ask: 'chat', settings: 'gear'
   },
 
   /* Sidebar order and headings. */
   SIDE: [
     { head: '',       tabs: ['today'] },
     { head: 'Focus',  tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
-    { head: 'Body',   tabs: ['training', 'diet', 'sleep', 'habits'] },
-    { head: 'Record', tabs: ['journal', 'brainstorm', 'time', 'finance', 'ask'] }
+    { head: 'Body',   tabs: ['training', 'sleep', 'habits'] },
+    { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
   ],
-  SIDE_FOOT: ['artur', 'settings'],
+  SIDE_FOOT: ['settings'],
 
   CAPTURE: [
     { id: 'note',    label: 'Note',    icon: 'note'     },
-    { id: 'quad',    label: 'Task',    icon: 'target'   },
+    /* A task is a Big Rock on a day of the week — that is where Today and
+       the weekly plan read from. */
+    { id: 'quad',    label: 'Task',    icon: 'target', go: 'compass' },
     { id: 'finance', label: 'Expense', icon: 'money'    },
     { id: 'training',label: 'Set',     icon: 'dumbbell' },
     { id: 'habits',  label: 'Habit',   icon: 'check'    },
-    { id: 'diet',    label: 'Meal',    icon: 'food'     },
-    /* One button, because it is now one page: mood is logged next to sleep. */
-    { id: 'sleep',   label: 'Sleep & mood', icon: 'moon' },
-    { id: 'time',    label: 'Time',    icon: 'clock'    }
+    /* One page for the body's log: sleep, mood and meals are the same
+       morning-and-evening question, and asking it in two places got it
+       answered in neither. The Meal button lands on the diet part of it. */
+    { id: 'diet',    label: 'Meal',    icon: 'food', go: 'sleep', at: '#fn-dietblock' },
+    { id: 'sleep',   label: 'Sleep & mood', icon: 'moon' }
   ],
 
-  last: { focus: 'quad', body: 'training' },
+  last: { focus: 'northstar', body: 'training' },
 
   /* ---- primitives ------------------------------------------------------ */
 
@@ -8412,9 +8375,13 @@ const Nav = {
       b.addEventListener('click', () => {
         const g = Nav.GROUPS.find(x => x.id === b.getAttribute('data-fn-group'));
         if (!g) return;
-        /* Returning to a group lands you where you left it. */
-        const want = (g.tabs.length > 1 && Nav.last[g.id]) ? Nav.last[g.id] : g.tabs[0];
-        Nav.go(Nav.pill(want) ? want : g.tabs[0]);
+        /* Returning to a group lands you where you left it — never on a
+           section that has been hidden from the menu. */
+        let hid = []; try { hid = Sections.hidden(); } catch (e) {}
+        const ok = (t) => !!Nav.pill(t) && hid.indexOf(t) < 0;
+        let want = g.tabs.length > 1 ? Nav.last[g.id] : g.tabs[0];
+        if (!ok(want)) want = g.tabs.find(ok) || g.tabs[0];
+        Nav.go(want);
       });
     });
     document.getElementById('fn-capbtn').addEventListener('click', () => Nav.openCapture());
@@ -8543,11 +8510,7 @@ const Nav = {
         '<div class="fn-grab" data-fn-close="1"></div>' +
         '<h4>Capture</h4>' +
         '<div class="fn-sub">A note is saved without leaving this screen.</div>' +
-        '<div class="fn-grid">' +
-          Nav.CAPTURE.filter(c => c.id === 'note' || Nav.pill(c.id)).map(c =>
-            '<button type="button" data-fn-cap="' + c.id + '">' + Nav.svg(c.icon) +
-            '<span>' + esc(c.label) + '</span></button>').join('') +
-        '</div>' +
+        '<div class="fn-grid" id="fn-capgrid"></div>' +
         '<div class="fn-note">' +
           '<textarea id="fn-noteinput" placeholder="What happened?" rows="4"></textarea>' +
           '<div class="fn-acts">' +
@@ -8562,7 +8525,10 @@ const Nav = {
     wrap.querySelectorAll('[data-fn-close]').forEach(e =>
       e.addEventListener('click', () => Nav.closeCapture()));
 
-    wrap.querySelectorAll('[data-fn-cap]').forEach(b => b.addEventListener('click', () => {
+    Nav.paintCapture();
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-fn-cap]');
+      if (!b) return;
       const id = b.getAttribute('data-fn-cap');
       if (id === 'note') {
         wrap.classList.add('note');
@@ -8575,8 +8541,10 @@ const Nav = {
          them in place needs each section's own write path; the journal is the
          one the pack already owns end to end. */
       Nav.closeCapture();
-      Nav.go(id);
-    }));
+      const c = Nav.CAPTURE.find(x => x.id === id) || {};
+      Nav.go(c.go || id);
+      if (c.at) setTimeout(() => { const el = document.querySelector(c.at); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 260);
+    });
 
     document.getElementById('fn-notecancel').addEventListener('click', () => wrap.classList.remove('note'));
     document.getElementById('fn-notesave').addEventListener('click', () => Nav.saveNote());
@@ -8585,7 +8553,17 @@ const Nav = {
     });
   },
 
-  openCapture() { Nav.capEl.classList.remove('note'); Nav.capEl.classList.add('on'); },
+  /* Drawn each time it opens: a section hidden from the menu is not offered
+     a capture button either — the buttons follow the menu. */
+  paintCapture() {
+    const grid = document.getElementById('fn-capgrid');
+    if (!grid) return;
+    let hid = []; try { hid = Sections.hidden(); } catch (e) {}
+    grid.innerHTML = Nav.CAPTURE.filter(c => c.id === 'note' || (Nav.pill(c.go || c.id) && hid.indexOf(c.go || c.id) < 0)).map(c =>
+      '<button type="button" data-fn-cap="' + c.id + '">' + Nav.svg(c.icon) +
+      '<span>' + esc(c.label) + '</span></button>').join('');
+  },
+  openCapture() { Nav.paintCapture(); Nav.capEl.classList.remove('note'); Nav.capEl.classList.add('on'); },
   closeCapture() { Nav.capEl.classList.remove('on'); Nav.capEl.classList.remove('note'); },
 
   /* A real write, not a redirect: the entry lands in the journal and the
@@ -8791,10 +8769,52 @@ const Nav = {
     Nav.paintSeg(cur);
   },
 
+  /* Take the retired sections out of the page: the pill goes, so nothing
+     here or in the host can route to it, and the section is hidden rather
+     than removed, so the host's own render code still finds its elements.
+     Somebody who had one of them open lands on Today. */
+  retire() {
+    let moved = false;
+    Nav.REMOVED.forEach((t) => {
+      const p = Nav.pill(t);
+      if (p) { if (p.classList.contains('active')) moved = true; p.remove(); }
+      const sec = document.getElementById('tab-' + t);
+      if (sec) { sec.classList.remove('active'); sec.setAttribute('data-fn-retired', '1'); }
+    });
+    if (moved && Nav.pill('today')) Nav.pill('today').click();
+    try { Nav.mergeBody(); } catch (e) { console.warn('[Flow] body log', e); }
+  },
+
+  /* Diet joins Sleep & Mood on one page, "Body log". The diet section's
+     own elements move across whole — same ids, same listeners — so the
+     host's renderDiet() keeps finding them; only the pill goes. */
+  mergeBody() {
+    const diet = document.getElementById('tab-diet'), sleep = document.getElementById('tab-sleep');
+    if (!diet || !sleep || document.getElementById('fn-dietblock')) return;
+    const block = document.createElement('div');
+    block.id = 'fn-dietblock';
+    block.className = 'fn-dietblock';
+    while (diet.firstChild) block.appendChild(diet.firstChild);
+    sleep.appendChild(block);
+    diet.setAttribute('data-fn-retired', '1');
+    const dp = Nav.pill('diet');
+    const wasDiet = dp && dp.classList.contains('active');
+    if (dp) dp.remove();
+    const sp = Nav.pill('sleep');
+    if (sp) {
+      sp.textContent = '🫀 Body log';
+      /* The host redraws the diet checklist when its own pill is tapped;
+         that pill is gone, so do it when this one is. */
+      sp.addEventListener('click', () => { try { if (typeof renderDiet === 'function') renderDiet(); } catch (e) {} });
+      if (wasDiet) sp.click();
+    }
+  },
+
   install() {
     if (Nav.installed) return;
     Nav.installed = true;
 
+    try { Nav.retire(); } catch (e) { console.warn('[Flow] retire', e); }
     Nav.buildSeg();
     Nav.buildTabbar();
     Nav.buildSide();
@@ -8953,7 +8973,11 @@ const NorthStar = {
       Friends.card() +
       Audit.card() +
       NorthStar.goalsCard(avg) +
-      NorthStar.tenetsCard();
+      NorthStar.tenetsCard() +
+      /* The planner — timed items, the week ahead, shared tasks, the
+         calendar file. It was a tab of its own; a direction and the plan
+         that serves it belong on one screen. */
+      Fold.card('planner', Fold.head('planner', '🗓 Planner', Planner.chip()) + Fold.body('<div id="ns-planner"></div>'));
 
     NorthStar.wire();
     Score.wire(sec);
@@ -8961,6 +8985,7 @@ const NorthStar = {
     Friends.wire(sec);
     Audit.wire(sec);
     Fold.wire(sec);
+    try { const pl = $('#ns-planner', sec); if (pl) Planner.render(pl); } catch (e) { console.warn('[Flow] planner', e); }
     /* A tap on the scoreboard changes what a friend is looking at, so the
        card follows the paint. It sends only when something actually moved. */
     Friends.publish();
@@ -10708,12 +10733,8 @@ async function boot() {
 
   Tabs.init();
   Tabs.add('northstar', '⭐ North Star', (sec) => NorthStar.render(sec));
-  Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
   Tabs.add('ask', '💬 Ask', (sec) => Ask.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
-  /* Settings and the account are both loaded by now, so the planner tab can
-     take the signed-in person's name. */
-  Planner.applyTabName();
   /* Prices and the shared-task inbox. Both are additive and both fail quietly:
      no server module, no strip, no inbox, and the rest of the app is unchanged. */
   /* Navigation first. It needs the pills, which exist by now, and nothing
@@ -10723,6 +10744,7 @@ async function boot() {
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
   if (Auth.user && !Auth.user.guest) { try { Notify.boot(); } catch (e) { console.warn('[Flow] notify', e); } }
   try { Sections.apply(); } catch (e) { console.warn('[Flow] sections', e); }
+  if (Auth.user && !Auth.user.guest) Sections.migrate().catch((e) => console.warn('[Flow] sections', e));
   if (Auth.user && !Auth.user.guest) { try { WeekPlan.boot(); } catch (e) { console.warn('[Flow] week', e); } }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
@@ -10739,7 +10761,7 @@ async function boot() {
      job is to appear on Today when it comes due, and it cannot do that from
      a tab nobody has visited since March. Two small reads. */
   Audit.load().then(() => { try { AuditNudge.apply(); } catch (e) {} }).catch(() => {});
-  Inbox.load().catch(() => {});
+  Inbox.load().then(() => { try { Inbox.paintToday(); } catch (e) {} }).catch(() => {});
   Markets.mount().catch(() => {});
 
   // time chips everywhere
@@ -10760,9 +10782,14 @@ async function boot() {
     if (sec) await Journal.mount(sec);
   }
 
-  // notes drawer at the bottom of every existing tab
+  // notes drawer at the bottom of every existing tab — not under a retired
+  // section nobody can open; the diet notebook goes with the diet block.
   Rollup.sections().forEach(sec => {
     const name = sec.id.slice(4);
+    if (sec.hasAttribute('data-fn-retired')) {
+      if (name === 'diet') { const host = document.getElementById('fn-dietblock'); if (host) Notes.mountInline(host, name, 'diet'); }
+      return;
+    }
     Notes.mountInline(sec, name, Rollup.labelFor(name).replace(/^[^\w]+/, '') || name);
   });
 
@@ -10774,7 +10801,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
-    Markets, Inbox, Ask, Planner, Nav, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
+    Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
