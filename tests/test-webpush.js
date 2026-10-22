@@ -166,6 +166,26 @@ function memStore() {
      !r.ok && JSON.parse(raw.m.get('__push:dev:' + uid)).length === 2, r);
   wp._internals.setSender(null);
 
+  console.log('\n— the reminder tick only visits accounts it can reach —');
+  {
+    const r2 = memStore();
+    const I = push._internals;
+    await r2.set('__push:dev:old', JSON.stringify([{ token: 'd'.repeat(64) }]));
+    let reads = 0; const get0 = r2.get; r2.get = async (k) => { reads++; return get0(k); };
+    const first = await push.reachableUsers(r2, ['old', 'none1', 'none2']);
+    ok('with no index yet, it is built once by asking every account', first.join() === 'old' && reads >= 3, first);
+    reads = 0;
+    const second = await push.reachableUsers(r2, ['old', 'none1', 'none2']);
+    ok('after that it is one read, not one per account', second.join() === 'old' && reads === 1, reads);
+    await I.writeDevices(r2, 'new', [Object.assign({ kind: 'web' }, A.sub)]);
+    ok('a new device adds its account', (await push.reachableUsers(r2, ['old', 'new'])).sort().join() === 'new,old');
+    await I.writeDevices(r2, 'old', []);
+    ok('removing the last device removes the account', (await push.reachableUsers(r2, ['old', 'new'])).join() === 'new');
+    ok('an account that no longer exists is not visited', (await push.reachableUsers(r2, ['old'])).length === 0);
+  }
+  const capSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'flow-auth.js'), 'utf8');
+  ok('room for a thousand accounts unless told otherwise', /FLOW_MAX_ACCOUNTS \|\| '1000'/.test(capSrc));
+
   console.log('\n— against the server —');
   ok('the key needs a session', (await rq('/api/push/vapid')).status === 401);
   const su = await post('artur', '/api/auth/signup', { email: 'artur.abacilar@abko.com.tr', name: 'artur', password: 'a properly long password', invite: 'letmein' });
