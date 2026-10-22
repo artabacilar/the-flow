@@ -92,6 +92,16 @@ var RULES = [
 
 FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
 /* DICT-START */
+  "Plan today": "Bugünü planla",
+  "Quick add": "Hızlı ekle",
+  "Review week": "Haftayı değerlendir",
+  "Add a priority": "Öncelik ekle",
+  "Add your first Big Rock": "İlk önemli hedefini ekle",
+  "Complete priority: {}": "Önceliği tamamla: {}",
+  "Complete habit: {}": "Alışkanlığı tamamla: {}",
+  "Uncheck habit: {}": "Alışkanlığın tamamlandı işaretini kaldır: {}",
+  "Week calendar": "Hafta takvimi",
+  "Scroll to see all seven days.": "Yedi günün tamamını görmek için kaydır.",
   "— · 7-day average": "— · 7 günlük ortalama",
   "— · avg hours (7d)": "— · ort. saat (7g)",
   "— · best night": "— · en iyi gece",
