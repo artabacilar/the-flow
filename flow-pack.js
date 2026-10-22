@@ -7688,7 +7688,7 @@ const Sections = {
      Finances exactly where it was. Runs once, and says what it did. */
   async migrate() {
     const v = Settings.get('sectionsV') || 0;
-    if (v >= 3) return;
+    if (v >= 4) return;
     /* Finances and Priorities were taken out of the menu for a day. They
        are back for everyone; hiding is something a person does themselves. */
     if (v >= 1 && v < 3) {
@@ -7698,17 +7698,19 @@ const Sections = {
     /* The price strip became a widget, off for new accounts. An account
        that was already using the app keeps it exactly where it was — a
        thing being optional is not a reason to take it off anyone's screen. */
-    if (v < 2) {
-      /* "Already using the app" = the account is older than the change. */
+    if (v < 4) {
+      /* "Already using the app" = the account is older than the change. An
+         account with no creation time on record is older than the field
+         itself, which makes it the oldest kind there is. */
       const WIDGET_DAY = Date.parse('2026-10-22T13:40:00Z');
       let existed = false;
-      try { const c = Auth.user && Auth.user.created; existed = !!c && Date.parse(c) < WIDGET_DAY; } catch (e) {}
+      try { const c = Auth.user && Auth.user.created; existed = !c || Date.parse(c) < WIDGET_DAY; } catch (e) {}
       if (existed && Settings.get('todayMarkets') !== true) {
         await Settings.set('todayMarkets', true);
         Markets.refresh().catch(() => {});
       }
     }
-    await Settings.set('sectionsV', 3);
+    await Settings.set('sectionsV', 4);
   },
   apply() {
     let st = document.getElementById('fn-hide');
