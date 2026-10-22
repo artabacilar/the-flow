@@ -136,8 +136,12 @@ ok('the sign-in gate is never served from the device', /u\.pathname==='\/login'/
 ok('each one returns before anything can answer for it',
    !/respondWith/.test(bypass) && (bypass.match(/return;/g) || []).length >= 3);
 ok('the API stays exempt too, as it always was', /startsWith\('\/api'\)/.test(bypass));
+/* The manifest and icons are cache-first, so a change to either reaches an
+   installed copy only when the worker itself changes. Bumping the name is
+   how a new manifest (screenshots, the Play listing) and the push handler
+   get onto every device that already has The Flow installed. */
 ok('the cache name moved on, so the old worker is replaced',
-   /const CACHE='life-os-v6';/.test(sw));
+   /const CACHE='life-os-v7';/.test(sw));
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);
