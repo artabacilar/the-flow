@@ -1941,6 +1941,28 @@ function syncPaint(){
     /* Everything written while we were cut off. These are the newest copy of
        that section anywhere, so they go up — they are never pulled down over. */
     const dirty=dirtyRead();
+    /* ── What the app itself rewrote at start-up ─────────────────────────
+       A section this device already held, and whose bytes changed between
+       the paint and now, was changed by the app's own start-up — a day
+       rolling over (the nutrition counter resets each morning), a shape
+       migration — not seeded from nothing. Those writes fall inside the
+       seeding gate and so were never queued; the server kept the old copy,
+       this device kept re-deriving the new one, and every open "found a
+       change", applied the old copy and reloaded. Forever. A change the app
+       derived from real local data is newer than the server's copy: it goes
+       up, like an edit. (A section seeded from nothing is still handled
+       below: `painted` has no entry for it.) */
+    serverKeys.forEach(k=>{
+      if(dirty[k]) return;
+      if(painted[k]==null) return;
+      /* Only when what was painted IS the server's current copy: then the
+         start-up write derives from the newest record there is. A device
+         that was painted from a stale copy still takes the server's version
+         (and reloads); its next start-up derives from that, and goes up. */
+      if(painted[k]!==all[k]) return;
+      const nowV=lsGet(k);
+      if(nowV!=null && nowV!==painted[k]) dirty[k]=Date.now();
+    });
     const dirtyKeys=Object.keys(dirty);
     const push={};
     dirtyKeys.forEach(k=>{

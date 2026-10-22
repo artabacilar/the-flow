@@ -5330,12 +5330,18 @@ const TodayPlus = {
   /* Today's calendar, as the tile reads it: how many, and the next one. */
   meetingsTile() {
     const ev = (typeof ConnectApps !== 'undefined' && ConnectApps.cal) || null;
-    if (!ev) return { v: '—', sub: 'connect a calendar' };
-    if (!ev.length) return { v: '0', sub: 'none today' };
+    let mine = []; try { mine = ConnectApps.planned(); } catch (e) {}
+    if (!ev && !mine.length) return { v: '—', sub: 'none today' };
     const now = Date.now();
-    const next = ev.filter((e) => !e.allDay && Date.parse(e.end || e.start) > now).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];
     const hm = (x) => new Date(x).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    return { v: String(ev.length), sub: next ? (Date.parse(next.start) <= now ? 'now · ' : 'next ') + hm(next.start) + ' ' + String(next.title || '').slice(0, 22) : 'all done for today' };
+    const upcoming = [].concat(
+      (ev || []).filter((e) => !e.allDay && Date.parse(e.end || e.start) > now).map((e) => ({ t: Date.parse(e.start), title: e.title })),
+      mine.filter((r) => !r.done && r.time).map((r) => ({ t: Date.parse(today() + 'T' + r.time + ':00'), title: r.text })).filter((x) => x.t > now - 30 * 60000)
+    ).sort((a, b) => a.t - b.t);
+    const total = (ev || []).length + mine.length;
+    if (!total) return { v: '0', sub: 'none today' };
+    const next = upcoming[0];
+    return { v: String(total), sub: next ? (next.t <= now ? 'now · ' : 'next ') + hm(next.t) : 'done today', tone: next && next.t <= now ? ' warn' : '' };
   },
 
   /* Today's Big Rocks: the ones planned for this day of this week. */
@@ -5406,34 +5412,33 @@ const TodayPlus = {
           '<div class="fn-grab" data-pl-close="1"></div>' +
           '<button type="button" class="fn-capture-close" data-pl-close="1" aria-label="Close">×</button>' +
           '<h4>Plan today</h4>' +
-          '<div class="fn-sub">One thing that has to happen today. It becomes a Big Rock on today.</div>' +
+          '<div class="fn-sub">One thing that has to happen today, with its time. It goes on today\'s calendar.</div>' +
           '<input class="flow-in" id="pl-title" placeholder="What has to happen today?" maxlength="200" autocomplete="off">' +
           '<div class="pl-row"><input class="flow-in" type="time" id="pl-time"><select class="flow-in" id="pl-prio"><option value="high">Must</option><option value="med" selected>Should</option><option value="low">Could</option></select></div>' +
           '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn ghost" data-pl="week">Open the week instead</button></div>' +
           '<div class="pl-list" id="pl-list"></div>' +
         '</div>';
       document.body.appendChild(wrap);
+      /* A thing for today, with a time: it goes on today's calendar — the
+         same list the meetings are on — not into the week's Big Rocks. */
       const add = async () => {
         const inp = wrap.querySelector('#pl-title');
         const title = String(inp.value || '').trim();
         if (!title) { inp.focus(); return; }
-        if (typeof cData === 'undefined' || !cData || typeof cSave !== 'function') { toast('Could not reach your week.', 'err'); return; }
-        const d = new Date(); d.setHours(12, 0, 0, 0);
-        const wid = WeekLoop.wid(d), day = WeekLoop.dow(d);
-        (cData.rocks[wid] = cData.rocks[wid] || []).push({
-          id: Date.now().toString(36) + Math.floor(Math.random() * 1e4), title, role: '', day,
-          time: wrap.querySelector('#pl-time').value || '', end: '', prio: wrap.querySelector('#pl-prio').value || 'med', note: '', done: false
-        });
-        cSave();
-        try { if (typeof J === 'function') J('planning', '🪨 Big rock for today: ' + title); } catch (e) {}
+        const key = 'today::' + uid('t');
+        Schedule.put(key, { text: title, tab: 'today', date: today(), time: wrap.querySelector('#pl-time').value || '', dur: Settings.get('defaultDurationMin'), done: false, source: 'today', priority: wrap.querySelector('#pl-prio').value || 'med' });
+        try { await Schedule.saveNow(); } catch (e) {}
+        try { if (typeof J === 'function') J('planning', '📅 On today: ' + title); } catch (e) {}
         inp.value = ''; wrap.querySelector('#pl-time').value = '';
-        TodayFix.redraw();
+        try { ConnectApps.calendarPaint(); } catch (e) {}
         TodayPlus.planList();
         toast('On today ✓', null, 1400);
         inp.focus();
       };
-      wrap.addEventListener('click', (e) => {
+      wrap.addEventListener('click', async (e) => {
         if (e.target.closest('[data-pl-close]')) { wrap.classList.remove('on'); return; }
+        const rm = e.target.closest('[data-pl-rm]');
+        if (rm) { try { Schedule.remove(rm.getAttribute('data-pl-rm')); await Schedule.saveNow(); } catch (e2) {} try { ConnectApps.calendarPaint(); } catch (e2) {} TodayPlus.planList(); return; }
         const b = e.target.closest('[data-pl]');
         if (!b) return;
         if (b.getAttribute('data-pl') === 'add') add();
@@ -5449,10 +5454,10 @@ const TodayPlus = {
   planList() {
     const box = document.getElementById('pl-list');
     if (!box) return;
-    let rocks = [];
-    try { const d = new Date(); d.setHours(12, 0, 0, 0); const wid = WeekLoop.wid(d), dow = WeekLoop.dow(d); rocks = ((cData.rocks && cData.rocks[wid]) || []).filter((r) => r && r.day === dow); } catch (e) {}
-    box.innerHTML = '<div class="flow-label">Already on today · ' + rocks.length + '</div>' +
-      (rocks.length ? rocks.map((r) => '<div class="pl-item' + (r.done ? ' done' : '') + '"><span data-i18n="off">' + esc(r.title) + '</span>' + (r.time ? '<small>' + esc(r.time) + '</small>' : '') + '</div>').join('') : '<p class="flow-sub">Nothing yet.</p>');
+    let items = [];
+    try { items = Schedule.onDate(today()).filter((r) => r && r.source === 'today'); } catch (e) {}
+    box.innerHTML = '<div class="flow-label">Already on today · ' + items.length + '</div>' +
+      (items.length ? items.map((r) => '<div class="pl-item' + (r.done ? ' done' : '') + '"><span data-i18n="off">' + esc(r.text) + '</span>' + (r.time ? '<small>' + esc(r.time) + '</small>' : '') + '<button type="button" class="pl-rm" data-pl-rm="' + esc(r.key) + '" aria-label="Remove">×</button></div>').join('') : '<p class="flow-sub">Nothing yet.</p>');
   },
 
   /* Review week: the scorecard, what slipped, and the two ways forward. */
@@ -5577,23 +5582,24 @@ const TodayPlus = {
     const hab = TodayPlus.habits();
     const sp = TodayPlus.spend();
 
-    /* — pulse strip —
-       Four things worth a glance: how you slept, in hours; how today's
-       Big Rocks are going; the focus time you have logged; what you spent.
-       Each one opens the place it comes from, or offers the first entry. */
-    const prog = TodayPlus.progress();
-    let fmin = 0, frun = false; try { fmin = Focus.todayMin(); frun = Focus.running(); } catch (e) {}
-    const sleepTxt = rec.hrs != null ? Focus.fmt(Math.round(rec.hrs * 60)) : '—';
-    const sleepSub = rec.hrs != null ? (rec.isToday ? 'last night' : 'last logged' + (rec.last ? ' ' + rec.last.slice(5) : '')) : 'Log sleep';
-    const sleepTone = rec.hrs == null ? '' : (rec.hrs >= 7 ? ' good' : rec.hrs >= 6 ? ' warn' : ' bad');
+    /* — pulse strip — the four tiles, as they have always read. */
+    const recTxt = rec.recovery != null ? rec.recovery + '%' : (rec.hrs != null ? rec.hrs.toFixed(1) + 'h' : '—');
+    const recSub = rec.recovery != null
+      ? (rec.hrs != null ? rec.hrs.toFixed(1) + 'h sleep' : 'recovery')
+      : (rec.hrs != null ? (rec.isToday ? 'last night' : 'last logged') : 'nothing logged');
+    const recTone = rec.recovery == null ? '' : (rec.recovery >= 67 ? ' good' : rec.recovery >= 34 ? ' warn' : ' bad');
 
     const strip = document.createElement('div');
     strip.className = 'flow-td flow-td-pulse flow-x';
+    /* Same four places, same type, same colours; two of the names changed:
+       Meetings where Priorities was, Focus where Habits was. */
+    const mt = TodayPlus.meetingsTile();
+    let fmin = 0, frun = false; try { fmin = Focus.todayMin(); frun = Focus.running(); } catch (e) {}
     strip.innerHTML = [
-      ['sleep', 'Sleep', sleepTxt, sleepSub, sleepTone],
-      ['progress', "Today's progress", prog.total ? prog.done + ' of ' + prog.total : '—', prog.total ? (prog.done === prog.total ? 'all Big Rocks done' : 'Big Rocks done') : 'Plan today', prog.total && prog.done === prog.total ? ' good' : (prog.total ? ' warn' : '')],
-      ['focus', 'Focus time', fmin ? Focus.fmt(fmin) : '—', frun ? '● running' : (fmin ? 'logged today' : 'Start focus'), frun ? ' good' : ''],
-      ['meetings', 'Meetings', TodayPlus.meetingsTile().v, TodayPlus.meetingsTile().sub, '']
+      ['recovery', 'Recovery', recTxt, recSub, recTone],
+      ['meetings', 'Meetings', mt.v, mt.sub, mt.tone || ''],
+      ['focus', 'Focus', fmin ? Focus.fmt(fmin) : '—', frun ? '● running' : (fmin ? 'logged today' : 'none logged'), frun ? ' good' : ''],
+      ['spend', 'Spend', sp ? TodayPlus.money(sp.today) : '—', sp ? TodayPlus.money(sp.mtd) + ' this month' : 'nothing logged', '']
     ].map(([k, lbl, v, sub, tone]) =>
       `<button class="flow-td-tile${tone}" data-jump="${k}">
          <span class="l">${lbl}</span><span class="v">${esc(v)}</span><span class="s">${esc(sub)}</span>
@@ -8112,7 +8118,7 @@ const TodayFix = {
     /* One tap for the pile, at the top of the section, only while there is a pile. */
     try {
       const late = feed.querySelectorAll('.td-rock[data-rockid] .rk-late').length;
-      const head = feed.querySelector('.td-rocks .td-rocks-head');
+      const head = feed.querySelector('.td-rocks:not(#td-cal) .td-rocks-head');
       let b = head && head.querySelector('.td-dropall');
       if (head && late >= 2 && !b) {
         b = document.createElement('button'); b.type = 'button'; b.className = 'td-dropall';
@@ -8819,11 +8825,26 @@ const ConnectApps = {
     ConnectApps.many = ids.reduce((n, id) => n + ((Connect.list.find((x) => x.id === id) || {}).accounts || []).length, 0) > 1;
     ConnectApps.calendarPaint();
   },
+  /* What "Plan today" put on the day: timed items of your own, shown on the
+     same list as the meetings, in time order. */
+  planned() {
+    try { return Schedule.onDate(today()).filter((r) => r && r.source === 'today'); } catch (e) { return []; }
+  },
   calendarHtml() {
     const ev = ConnectApps.cal;
-    if (!ev) return '';
+    const mine = ConnectApps.planned();
+    if (!ev && !mine.length) return '';
     const hm = (s) => new Date(s).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const rows = ev.length ? ev.map((e) => {
+    const t0 = (x) => x.allDay ? -1 : (x.start ? Date.parse(x.start) : (x.time ? Date.parse(today() + 'T' + x.time + ':00') : 9e15));
+    const all = [].concat((ev || []).map((e) => ({ kind: 'ev', e })), mine.map((r) => ({ kind: 'me', r }))).sort((a, b) => t0(a.e || a.r) - t0(b.e || b.r));
+    const rows = all.length ? all.map((x) => {
+      if (x.kind === 'me') {
+        const r = x.r;
+        return '<div class="td-rock td-plan' + (r.done ? ' done' : '') + '" data-plankey="' + esc(r.key) + '"><div class="dot ' + (r.priority === 'high' ? 'high' : r.priority === 'low' ? 'low' : 'med') + '"></div><div class="rk-title"><span data-i18n="off">' + esc(r.text) + '</span>' +
+          '<div class="td-fix"><button type="button" data-plan="done">' + (r.done ? 'Undo' : 'Done') + '</button><button type="button" data-plan="drop" class="ghost">Remove</button></div></div>' +
+          '<div class="rk-meta">' + (r.time ? esc(r.time) : 'today') + '</div></div>';
+      }
+      const e = x.e;
       const when = e.allDay ? 'All day' : hm(e.start) + '–' + hm(e.end);
       const go = e.video || e.link;
       return '<div class="td-rock"><div class="dot med"></div><div class="rk-title">' +
@@ -8833,7 +8854,7 @@ const ConnectApps = {
         '</div><div class="rk-meta">' + esc(when) + '</div></div>';
     }).join('') : '<div class="td-rocks-empty">No meetings today.</div>';
     return '<div class="td-rocks" id="td-cal"><div class="td-rocks-head"><span class="lbl">Today · Calendar</span><span class="cnt">' +
-      ev.length + '</span></div>' + rows + '</div>';
+      all.length + '</span></div>' + rows + '</div>';
   },
   calendarPaint() {
     const feed = document.getElementById('today-feed');
@@ -8848,6 +8869,18 @@ const ConnectApps = {
     const box = document.createElement('div');
     box.innerHTML = html;
     const card = box.firstElementChild;
+    card.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-plan]');
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      const key = b.closest('[data-plankey]').getAttribute('data-plankey');
+      const rec = Schedule.map[key];
+      if (!rec) return;
+      if (b.getAttribute('data-plan') === 'done') { rec.done = !rec.done; try { if (rec.done && typeof J === 'function') J('planning', '✅ Done today: ' + rec.text); } catch (e2) {} }
+      else Schedule.remove(key);
+      try { await Schedule.saveNow(); } catch (e2) {}
+      ConnectApps.calendarPaint();
+    });
     if (old) { old.replaceWith(card); return; }
     const rocks = feed.querySelector('.td-rocks');
     if (rocks) rocks.parentNode.insertBefore(card, rocks); else feed.appendChild(card);
@@ -8858,7 +8891,7 @@ const ConnectApps = {
     const feed = document.getElementById('today-feed');
     /* Today is redrawn wholesale; put the card back each time it is. */
     if (feed && window.MutationObserver) {
-      new MutationObserver(() => { if (ConnectApps.cal && !feed.querySelector('#td-cal')) ConnectApps.calendarPaint(); })
+      new MutationObserver(() => { if ((ConnectApps.cal || ConnectApps.planned().length) && !feed.querySelector('#td-cal')) ConnectApps.calendarPaint(); })
         .observe(feed, { childList: true });
     }
     ConnectApps.calendarLoad();

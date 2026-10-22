@@ -1700,7 +1700,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Meetings": "Toplantılar",
   "connect a calendar": "bir takvim bağla",
   "none today": "bugün yok",
-  "all done for today": "bugünlük bitti",
+  "done today": "bugünlük bitti",
   "One thing that has to happen today. It becomes a Big Rock on today.": "Bugün olması gereken tek şey. Bugünün Büyük Taşı olur.",
   "What has to happen today?": "Bugün ne olmak zorunda?",
   "Must": "Şart",
@@ -1719,6 +1719,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Notes ▾": "Notlar ▾",
   "Notes ▴": "Notlar ▴",
   "Drop all overdue ({})": "Geciken hepsini bırak ({})",
+  "none logged": "kayıt yok",
 /* DICT-END */
 }, RULES);
 

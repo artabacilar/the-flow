@@ -465,7 +465,7 @@ async function currentUser(req) {
   if (s.expires && Date.now() > s.expires) { await raw.set(SESS(token), ''); return null; }
   const users = await getJSON(USERS_KEY, {});
   const u = Object.values(users).find(x => x.id === s.uid);
-  return u ? { id: u.id, email: u.email, name: u.name, owner: !!u.owner, token } : null;
+  return u ? { id: u.id, email: u.email, name: u.name, owner: !!u.owner, created: u.created || null, token } : null;
 }
 
 /* ---------- one-time migration of today's data --------------------------- */
