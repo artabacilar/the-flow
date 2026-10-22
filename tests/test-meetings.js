@@ -181,8 +181,27 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
     });
     ok('Today shows the meeting under the rock', ui.line && /Davines with Climboost/.test(ui.line) && /Open recording/.test(ui.line), ui.line);
     ok('and the notes unfold: who was there, the summary, the other items', ui.open && /Ozcan/.test(ui.html) && /Slow sellers/.test(ui.html) && /Send slow-sellers list/.test(ui.html) && /<b>TikTok<\/b>/.test(ui.html), ui.html);
-    const btn = await p.evaluate(() => ({ refresh: !!document.getElementById('fn-refresh'), drop: !!document.querySelector('.td-fix [data-fix="drop"]') || true }));
-    ok('there is a refresh button in the header', btn.refresh);
+    /* Nothing refreshes by itself: no timer, no button. A pull from the top
+       is the only way to ask, and coming back after a short time away is
+       not treated as asking. */
+    const rf = await p.evaluate(() => ({ button: !!document.getElementById('fn-refresh'), timer: typeof FlowRefresh.EVERY_MS, gap: window.__FLOW_SYNC_GAP_MS, ptr: !!document.getElementById('flow-ptr') }));
+    ok('there is no refresh button in the header', !rf.button);
+    ok('and no refresh timer', rf.timer === 'undefined', rf.timer);
+    ok('a short time away does not sync-and-reload on return', rf.gap >= 5 * 60 * 1000, rf.gap);
+    ok('the pull indicator is on the page', rf.ptr);
+    await p.setViewportSize({ width: 390, height: 844 });
+    const ran = await p.evaluate(async () => {
+      let called = 0; const orig = window.__flowSyncNow; window.__flowSyncNow = () => { called++; };
+      window.scrollTo(0, 0);
+      const t = (type, y) => { const touch = new Touch({ identifier: 1, target: document.body, clientX: 180, clientY: y }); document.body.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [touch], changedTouches: [touch], targetTouches: type === 'touchend' ? [] : [touch] })); };
+      t('touchstart', 200); t('touchmove', 260); t('touchmove', 330);
+      const ready = document.getElementById('flow-ptr').classList.contains('ready');
+      t('touchend', 330);
+      await new Promise((r) => setTimeout(r, 1300));
+      window.__flowSyncNow = orig;
+      return { ready, called };
+    });
+    ok('a pull from the top asks for a sync', ran.ready && ran.called === 1, ran);
     ok('no page errors', errs.length === 0, errs.concat(warn));
     await ctx.close();
   } finally { await b.close(); }
