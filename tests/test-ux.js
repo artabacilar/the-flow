@@ -140,8 +140,11 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     /* Prices are a widget, off until asked for; switch them on to check their place. */
     await p.evaluate(async () => { await Flow.Settings.set('todayMarkets', true); await Flow.Markets.refresh(); });
     await p.locator('#flow-markets').waitFor({ state: 'attached' });
-    ok('daily commitments come before secondary market information', await p.evaluate(() =>
-      !!(document.querySelector('#today-feed .td-rocks').compareDocumentPosition(document.getElementById('flow-markets')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    /* The widget sits under the pulse tiles, where the switch says it will
+       be; at the foot of the page it was correctly placed and never seen. */
+    ok('the price widget sits under the pulse, not at the foot of the page', await p.evaluate(() =>
+      !!(document.querySelector('.flow-td-pulse').compareDocumentPosition(document.getElementById('flow-markets')) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+      !!(document.getElementById('flow-markets').compareDocumentPosition(document.querySelector('#today-feed .td-rocks')) & Node.DOCUMENT_POSITION_FOLLOWING)));
     await go('compass');
     await p.locator('#wkNext').click();
     await p.locator('#wkNext').click();
