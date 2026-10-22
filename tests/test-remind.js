@@ -185,8 +185,9 @@ const account = (tz, rocks, extra) => Object.assign({
      an absent sender every minute is just an error loop. */
   ok('only when the sender exists too', /if \(remind && push\)/.test(srv));
   /* ready, not configured: three non-empty variables holding a broken key is
-     not a sender, and the tick should not wake every minute for one. */
-  ok('and hands it the question that means "a send could work"', /canSend:\s*push\.ready\b/.test(srv));
+     not a sender, and the tick should not wake every minute for one. canSend
+     is that, or a VAPID key for the browsers and Android. */
+  ok('and hands it the question that means "a send could work"', /canSend:\s*push\.canSend\s*\|\|\s*push\.ready\b/.test(srv));
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
