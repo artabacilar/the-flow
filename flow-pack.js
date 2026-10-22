@@ -7361,7 +7361,13 @@ const Meetings = {
       return '<p>' + Meetings.inline(l) + '</p>';
     }).join('').replace(/(<li>.*?<\/li>)+/g, (m) => '<ul>' + m + '</ul>');
   },
-  inline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); },
+  /* Bold, and Fathom's [moment](url?timestamp=59.0) links, which open the
+     recording at that second — the one part of the summary worth a tap. */
+  inline(t) {
+    return esc(t)
+      .replace(/\[([^\]]{1,200})\]\((https?:\/\/[^)\s]+)\)/g, (m, txt, url) => /^https:\/\/(www\.)?fathom\.video\//.test(url) ? '<a class="flow-link" href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>' : txt)
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  },
   /* The meetings live in the account; a rock filed from one on another
      device can reach this one before the meeting itself has. Fetch the
      section once when that happens, then paint again. Throttled, so a
@@ -7399,7 +7405,7 @@ const Meetings = {
       const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
       box.innerHTML =
         '<div class="td-meet-line">🎙️ ' + esc(m.title) + (m.at ? ' · ' + esc(Meetings.when(m)) : '') +
-          (people.length ? ' · ' + people.length + ' people' : '') +
+          (people.length ? ' · ' + people.length + (people.length === 1 ? ' person' : ' people') : '') +
           (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') +
           ' · <button type="button" class="td-meet-tg">Meeting notes ▾</button></div>' +
         '<div class="td-meet-body" hidden>' +
