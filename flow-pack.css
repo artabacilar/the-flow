@@ -914,8 +914,8 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
 .fn-sheetwrap .fn-grid button:active{transform:scale(.96);}
 
 /* A visible dismissal target on both the phone sheet and desktop dialog. */
-#flow-capture .fn-sheet > h4, #flow-capture .fn-sheet > .fn-sub { padding-right: 56px; }
-#flow-capture .fn-capture-close {
+#flow-capture .fn-sheet > h4, #flow-capture .fn-sheet > .fn-sub, #flow-focus .fn-sheet > h4, #flow-focus .fn-sheet > .fn-sub, #flow-plan .fn-sheet > h4, #flow-plan .fn-sheet > .fn-sub, #flow-review .fn-sheet > h4, #flow-review .fn-sheet > .fn-sub { padding-right: 56px; }
+#flow-capture .fn-capture-close, #flow-focus .fn-capture-close, #flow-plan .fn-capture-close, #flow-review .fn-capture-close {
   position: absolute; top: 18px; right: 14px; width: 44px; height: 44px;
   display: grid; place-items: center; padding: 0;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -2094,3 +2094,33 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
   body.fn-on .td-fix{gap:5px}
   body.fn-on .td-fix button{font-size:11.5px;padding:3px 8px}
 }
+
+/* ── Focus time ───────────────────────────────────────────────────────── */
+#flow-focus .fc-clock{font-size:44px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;text-align:center;margin:14px 0 10px}
+#flow-focus .fc-acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:14px}
+#flow-focus .fc-acts button{min-width:110px;min-height:44px;font:inherit;font-size:14px;font-weight:700;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;padding:10px 16px}
+#flow-focus .fc-acts button[data-fc="start"]{background:var(--accent);border-color:var(--accent);color:#06131c}
+#flow-focus .fc-acts button[hidden]{display:none}
+#flow-focus .fc-manual button{font:inherit;font-size:12.5px;font-weight:600;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text);padding:6px 12px;cursor:pointer}
+#flow-focus .fc-manual{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
+#flow-focus .fc-today{margin-top:14px}
+#flow-focus .fc-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+#flow-focus .fc-row small{color:var(--muted);flex:1}
+#flow-focus .fc-row button{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer;width:36px;height:36px;border-radius:8px}
+#flow-focus .fc-row button:hover{color:var(--text);background:var(--card2)}
+
+/* ── Plan today / Review week sheets ─────────────────────────────────── */
+#flow-plan .flow-in,#flow-review .flow-in{width:100%;box-sizing:border-box;margin-top:10px;min-height:44px;font-size:16px}
+#flow-plan .pl-row{display:flex;gap:8px}
+#flow-plan .pl-row .flow-in{flex:1}
+.pl-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pl-acts .flow-btn{min-height:44px;font:inherit;font-size:14px;font-weight:700;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;padding:10px 16px}
+.pl-acts .flow-btn.primary{background:var(--accent);border-color:var(--accent);color:#06131c}
+.pl-acts .flow-btn.ghost{background:transparent;color:var(--muted)}
+.pl-list{margin-top:14px}
+.pl-item{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+.pl-item.done{opacity:.5;text-decoration:line-through}
+.pl-item small{color:var(--muted)}
+#rv-score{margin-top:10px}
+.td-dropall{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;margin-left:auto;margin-right:12px}
+.td-dropall:hover{color:var(--text);border-color:currentColor}

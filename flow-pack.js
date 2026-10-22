@@ -5118,6 +5118,178 @@ const TodayGroups = {
  * rocks, training, diet and Sharpen-the-Saw keep their original behaviour.
  * Ticking anything here writes through the app's own stores and re-renders.
  * ====================================================================== */
+/* ── Focus time ──────────────────────────────────────────────────────────
+ * A timer, not a monitor: start it when you sit down to one thing, pause
+ * for the interruption, finish when it is done. Breaks are not counted.
+ * A session you forgot to time can be added by hand. The total for today
+ * is the third tile on Today; it says nothing about attention, only about
+ * time you chose to log. Kept in the account, so the Mac and the phone
+ * show the same number.
+ * ====================================================================== */
+const Focus = {
+  KEY: 'flow:focus',
+  data: null,     /* { sessions: [{ d, min, at }], run: { startedAt, accum, paused } | null } */
+  _timer: null,
+
+  async load() {
+    if (Focus.data) return Focus.data;
+    const v = await DB.get(Focus.KEY, null);
+    Focus.data = (v && typeof v === 'object') ? v : { sessions: [], run: null };
+    if (!Array.isArray(Focus.data.sessions)) Focus.data.sessions = [];
+    Focus.tick();
+    return Focus.data;
+  },
+  async save() { try { await DB.set(Focus.KEY, Focus.data); } catch (e) {} },
+
+  /* Minutes logged today, finished sessions plus the one running. */
+  todayMin() {
+    const d = Focus.data || { sessions: [], run: null };
+    const t = today();
+    let min = d.sessions.filter((x) => x && x.d === t).reduce((a, x) => a + (Number(x.min) || 0), 0);
+    min += Math.floor(Focus.runMs() / 60000);
+    return min;
+  },
+  runMs() {
+    const r = Focus.data && Focus.data.run;
+    if (!r) return 0;
+    return (r.accum || 0) + (r.paused || !r.startedAt ? 0 : Date.now() - r.startedAt);
+  },
+  running() { const r = Focus.data && Focus.data.run; return !!(r && !r.paused); },
+  fmt(min) {
+    min = Math.max(0, Math.round(min));
+    const h = Math.floor(min / 60), m = min % 60;
+    return h ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm';
+  },
+  fmtMs(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor((s % 3600) / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  },
+
+  async start() {
+    await Focus.load();
+    const r = Focus.data.run;
+    if (r && r.paused) { r.paused = false; r.startedAt = Date.now(); }
+    else if (!r) Focus.data.run = { startedAt: Date.now(), accum: 0, paused: false };
+    await Focus.save(); Focus.tick(); Focus.paint();
+  },
+  async pause() {
+    await Focus.load();
+    const r = Focus.data.run;
+    if (!r || r.paused) return;
+    r.accum = (r.accum || 0) + (Date.now() - r.startedAt); r.paused = true; r.startedAt = null;
+    await Focus.save(); Focus.tick(); Focus.paint();
+  },
+  async finish() {
+    await Focus.load();
+    const ms = Focus.runMs();
+    Focus.data.run = null;
+    const min = Math.round(ms / 60000);
+    if (min >= 1) await Focus.add(min, 'timer');
+    else { await Focus.save(); Focus.tick(); Focus.paint(); }
+  },
+  async add(min, how) {
+    await Focus.load();
+    min = Math.round(Number(min) || 0);
+    if (min < 1) return;
+    Focus.data.sessions.push({ d: today(), min, at: new Date().toISOString(), how: how || 'manual' });
+    Focus.data.sessions = Focus.data.sessions.slice(-400);
+    await Focus.save();
+    try { if (typeof J === 'function') J('focus', '⏱ Focus ' + Focus.fmt(min) + (how === 'manual' ? ' (added by hand)' : '')); } catch (e) {}
+    Focus.tick(); Focus.paint();
+    try { toast('Focus logged: ' + Focus.fmt(min), null, 1600); } catch (e) {}
+  },
+  async remove(i) {
+    await Focus.load();
+    const mine = Focus.data.sessions.map((x, idx) => ({ x, idx })).filter((o) => o.x && o.x.d === today());
+    const hit = mine[i];
+    if (!hit) return;
+    Focus.data.sessions.splice(hit.idx, 1);
+    await Focus.save(); Focus.tick(); Focus.paint();
+  },
+
+  /* The tile on Today, and the clock in the sheet, kept current. */
+  tick() {
+    clearInterval(Focus._timer); Focus._timer = null;
+    Focus.paintTile();
+    if (Focus.running()) Focus._timer = setInterval(() => { Focus.paintTile(); Focus.paintClock(); }, 1000);
+  },
+  paintTile() {
+    const tile = document.querySelector('.flow-td-pulse [data-jump="focus"]');
+    if (!tile) return;
+    const min = Focus.todayMin();
+    const v = tile.querySelector('.v'), sub = tile.querySelector('.s');
+    if (v) v.textContent = min ? Focus.fmt(min) : '—';
+    if (sub) sub.textContent = Focus.running() ? '● running' : (min ? 'logged today' : 'Start focus');
+    tile.classList.toggle('good', Focus.running());
+  },
+  paintClock() {
+    const c = document.getElementById('fc-clock');
+    if (c) c.textContent = Focus.fmtMs(Focus.runMs());
+  },
+
+  /* The sheet. */
+  el: null,
+  open() {
+    Focus.load().then(() => {
+      if (!Focus.el) Focus.build();
+      Focus.paint();
+      Focus.el.classList.add('on');
+    });
+  },
+  close() { if (Focus.el) Focus.el.classList.remove('on'); },
+  build() {
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-focus'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-fc-close="1"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-label="Focus time" aria-modal="true">' +
+        '<div class="fn-grab" data-fc-close="1"></div>' +
+        '<button type="button" class="fn-capture-close" data-fc-close="1" aria-label="Close">×</button>' +
+        '<h4>Focus time</h4>' +
+        '<div class="fn-sub">Time you chose to give one thing. Breaks are not counted.</div>' +
+        '<div class="fc-clock" id="fc-clock">00:00:00</div>' +
+        '<div class="fc-acts">' +
+          '<button type="button" class="flow-btn primary" data-fc="start">Start</button>' +
+          '<button type="button" class="flow-btn" data-fc="pause">Pause</button>' +
+          '<button type="button" class="flow-btn" data-fc="finish">Finish</button>' +
+        '</div>' +
+        '<div class="fc-manual"><span class="flow-label">Add by hand</span>' +
+          '<button type="button" class="flow-btn sm" data-fc-add="25">+25 min</button>' +
+          '<button type="button" class="flow-btn sm" data-fc-add="50">+50 min</button>' +
+          '<button type="button" class="flow-btn sm" data-fc-add="90">+90 min</button>' +
+        '</div>' +
+        '<div class="fc-today" id="fc-today"></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    Focus.el = wrap;
+    wrap.addEventListener('click', (e) => {
+      if (e.target.closest('[data-fc-close]')) { Focus.close(); return; }
+      const b = e.target.closest('[data-fc]');
+      if (b) { const a = b.getAttribute('data-fc'); if (a === 'start') Focus.start(); else if (a === 'pause') Focus.pause(); else if (a === 'finish') Focus.finish(); return; }
+      const add = e.target.closest('[data-fc-add]');
+      if (add) { Focus.add(Number(add.getAttribute('data-fc-add')), 'manual'); return; }
+      const rm = e.target.closest('[data-fc-rm]');
+      if (rm) { Focus.remove(Number(rm.getAttribute('data-fc-rm'))); }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Focus.close(); });
+  },
+  paint() {
+    if (!Focus.el) return;
+    const r = Focus.data && Focus.data.run;
+    const running = Focus.running();
+    Focus.paintClock();
+    const st = Focus.el.querySelector('[data-fc="start"]'), pa = Focus.el.querySelector('[data-fc="pause"]'), fi = Focus.el.querySelector('[data-fc="finish"]');
+    if (st) { st.textContent = r && r.paused ? 'Resume' : 'Start'; st.hidden = running; }
+    if (pa) pa.hidden = !running;
+    if (fi) fi.hidden = !r;
+    const mine = (Focus.data.sessions || []).filter((x) => x && x.d === today());
+    const box = Focus.el.querySelector('#fc-today');
+    if (box) box.innerHTML = '<div class="flow-label">Today · ' + Focus.fmt(Focus.todayMin()) + '</div>' +
+      (mine.length ? mine.map((x, i) => '<div class="fc-row"><span>' + Focus.fmt(x.min) + '</span><small>' + esc(new Date(x.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) + (x.how === 'manual' ? ' · by hand' : '') + '</small><button type="button" data-fc-rm="' + i + '" aria-label="Remove">×</button></div>').join('')
+        : '<p class="flow-sub">No sessions yet today.</p>');
+  }
+};
+
 const TodayPlus = {
   host(name) { try { return eval(name); } catch (e) { return undefined; } },
 
@@ -5153,6 +5325,27 @@ const TodayPlus = {
       flagged = sched.filter(r => r.priority && r.date >= today());
     } catch (e) { overdue = []; flagged = []; }
     return { q1, q2, overdue, flagged, count: q1.length + overdue.length + flagged.length };
+  },
+
+  /* Today's calendar, as the tile reads it: how many, and the next one. */
+  meetingsTile() {
+    const ev = (typeof ConnectApps !== 'undefined' && ConnectApps.cal) || null;
+    if (!ev) return { v: '—', sub: 'connect a calendar' };
+    if (!ev.length) return { v: '0', sub: 'none today' };
+    const now = Date.now();
+    const next = ev.filter((e) => !e.allDay && Date.parse(e.end || e.start) > now).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];
+    const hm = (x) => new Date(x).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return { v: String(ev.length), sub: next ? (Date.parse(next.start) <= now ? 'now · ' : 'next ') + hm(next.start) + ' ' + String(next.title || '').slice(0, 22) : 'all done for today' };
+  },
+
+  /* Today's Big Rocks: the ones planned for this day of this week. */
+  progress() {
+    try {
+      const d = new Date(); d.setHours(12, 0, 0, 0);
+      const wid = WeekLoop.wid(d), dow = WeekLoop.dow(d);
+      const rocks = ((typeof cData !== 'undefined' && cData && cData.rocks && cData.rocks[wid]) || []).filter((r) => r && r.day === dow);
+      return { total: rocks.length, done: rocks.filter((r) => r.done).length };
+    } catch (e) { return { total: 0, done: 0 }; }
   },
 
   habits() {
@@ -5199,6 +5392,114 @@ const TodayPlus = {
     field.focus({ preventScroll: true });
     field.scrollIntoView({ block: 'center', behavior:
       window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  },
+
+  /* Plan today: a rock for today, written here, without leaving Today. */
+  planSheet() {
+    let wrap = document.getElementById('flow-plan');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'flow-plan'; wrap.className = 'fn-sheetwrap';
+      wrap.innerHTML =
+        '<div class="fn-scrim" data-pl-close="1"></div>' +
+        '<div class="fn-sheet" role="dialog" aria-label="Plan today" aria-modal="true">' +
+          '<div class="fn-grab" data-pl-close="1"></div>' +
+          '<button type="button" class="fn-capture-close" data-pl-close="1" aria-label="Close">×</button>' +
+          '<h4>Plan today</h4>' +
+          '<div class="fn-sub">One thing that has to happen today. It becomes a Big Rock on today.</div>' +
+          '<input class="flow-in" id="pl-title" placeholder="What has to happen today?" maxlength="200" autocomplete="off">' +
+          '<div class="pl-row"><input class="flow-in" type="time" id="pl-time"><select class="flow-in" id="pl-prio"><option value="high">Must</option><option value="med" selected>Should</option><option value="low">Could</option></select></div>' +
+          '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn ghost" data-pl="week">Open the week instead</button></div>' +
+          '<div class="pl-list" id="pl-list"></div>' +
+        '</div>';
+      document.body.appendChild(wrap);
+      const add = async () => {
+        const inp = wrap.querySelector('#pl-title');
+        const title = String(inp.value || '').trim();
+        if (!title) { inp.focus(); return; }
+        if (typeof cData === 'undefined' || !cData || typeof cSave !== 'function') { toast('Could not reach your week.', 'err'); return; }
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        const wid = WeekLoop.wid(d), day = WeekLoop.dow(d);
+        (cData.rocks[wid] = cData.rocks[wid] || []).push({
+          id: Date.now().toString(36) + Math.floor(Math.random() * 1e4), title, role: '', day,
+          time: wrap.querySelector('#pl-time').value || '', end: '', prio: wrap.querySelector('#pl-prio').value || 'med', note: '', done: false
+        });
+        cSave();
+        try { if (typeof J === 'function') J('planning', '🪨 Big rock for today: ' + title); } catch (e) {}
+        inp.value = ''; wrap.querySelector('#pl-time').value = '';
+        TodayFix.redraw();
+        TodayPlus.planList();
+        toast('On today ✓', null, 1400);
+        inp.focus();
+      };
+      wrap.addEventListener('click', (e) => {
+        if (e.target.closest('[data-pl-close]')) { wrap.classList.remove('on'); return; }
+        const b = e.target.closest('[data-pl]');
+        if (!b) return;
+        if (b.getAttribute('data-pl') === 'add') add();
+        else if (b.getAttribute('data-pl') === 'week') { wrap.classList.remove('on'); TodayPlus.openPlan(false); }
+      });
+      wrap.querySelector('#pl-title').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) wrap.classList.remove('on'); });
+    }
+    TodayPlus.planList();
+    wrap.classList.add('on');
+    setTimeout(() => { try { wrap.querySelector('#pl-title').focus(); } catch (e) {} }, 80);
+  },
+  planList() {
+    const box = document.getElementById('pl-list');
+    if (!box) return;
+    let rocks = [];
+    try { const d = new Date(); d.setHours(12, 0, 0, 0); const wid = WeekLoop.wid(d), dow = WeekLoop.dow(d); rocks = ((cData.rocks && cData.rocks[wid]) || []).filter((r) => r && r.day === dow); } catch (e) {}
+    box.innerHTML = '<div class="flow-label">Already on today · ' + rocks.length + '</div>' +
+      (rocks.length ? rocks.map((r) => '<div class="pl-item' + (r.done ? ' done' : '') + '"><span data-i18n="off">' + esc(r.title) + '</span>' + (r.time ? '<small>' + esc(r.time) + '</small>' : '') + '</div>').join('') : '<p class="flow-sub">Nothing yet.</p>');
+  },
+
+  /* Review week: the scorecard, what slipped, and the two ways forward. */
+  reviewSheet() {
+    let wrap = document.getElementById('flow-review');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'flow-review'; wrap.className = 'fn-sheetwrap';
+      wrap.innerHTML =
+        '<div class="fn-scrim" data-rv-close="1"></div>' +
+        '<div class="fn-sheet" role="dialog" aria-label="Review week" aria-modal="true">' +
+          '<div class="fn-grab" data-rv-close="1"></div>' +
+          '<button type="button" class="fn-capture-close" data-rv-close="1" aria-label="Close">×</button>' +
+          '<h4>Review week</h4>' +
+          '<div class="fn-sub">What happened this week, and what slipped.</div>' +
+          '<div id="rv-score"></div>' +
+          '<div id="rv-slipped"></div>' +
+          '<div class="pl-acts"><button type="button" class="flow-btn primary" data-rv="ai">🗓 Plan next week with AI</button><button type="button" class="flow-btn ghost" data-rv="week">Open Week Compass</button></div>' +
+        '</div>';
+      document.body.appendChild(wrap);
+      wrap.addEventListener('click', (e) => {
+        if (e.target.closest('[data-rv-close]')) { wrap.classList.remove('on'); return; }
+        const b = e.target.closest('[data-rv]');
+        if (!b) return;
+        wrap.classList.remove('on');
+        if (b.getAttribute('data-rv') === 'ai') { try { WeekPlan.open(); } catch (e2) { TodayPlus.openPlan(true); } }
+        else TodayPlus.openPlan(true);
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) wrap.classList.remove('on'); });
+    }
+    try {
+      const sc = WeekLoop.scorecard(WeekLoop.monday(new Date()));
+      wrap.querySelector('#rv-score').innerHTML = WeekLoop.scoreHtml(sc);
+    } catch (e) { wrap.querySelector('#rv-score').innerHTML = ''; }
+    let slipped = [];
+    try {
+      const now = new Date(); now.setHours(12, 0, 0, 0);
+      const dow = WeekLoop.dow(now), wid = WeekLoop.wid(now);
+      Object.keys(cData.rocks || {}).forEach((w) => (cData.rocks[w] || []).forEach((r) => {
+        if (!r || r.done) return;
+        if (w < wid || (w === wid && r.day < dow)) slipped.push(r);
+      }));
+    } catch (e) {}
+    wrap.querySelector('#rv-slipped').innerHTML = '<div class="flow-label" style="margin-top:12px">Slipped · ' + slipped.length + '</div>' +
+      (slipped.length ? slipped.slice(0, 12).map((r) => '<div class="pl-item"><span data-i18n="off">' + esc(r.title) + '</span></div>').join('') + (slipped.length > 12 ? '<p class="flow-sub">and ' + (slipped.length - 12) + ' more</p>' : '')
+        : '<p class="flow-sub">Nothing slipped. Good week.</p>');
+    wrap.classList.add('on');
   },
 
   openPlan(review) {
@@ -5276,20 +5577,23 @@ const TodayPlus = {
     const hab = TodayPlus.habits();
     const sp = TodayPlus.spend();
 
-    /* — pulse strip — */
-    const recTxt = rec.recovery != null ? rec.recovery + '%' : (rec.hrs != null ? rec.hrs.toFixed(1) + 'h' : '—');
-    const recSub = rec.recovery != null
-      ? (rec.hrs != null ? rec.hrs.toFixed(1) + 'h sleep' : 'recovery')
-      : (rec.hrs != null ? (rec.isToday ? 'last night' : 'last logged') : 'nothing logged');
-    const recTone = rec.recovery == null ? '' : (rec.recovery >= 67 ? ' good' : rec.recovery >= 34 ? ' warn' : ' bad');
+    /* — pulse strip —
+       Four things worth a glance: how you slept, in hours; how today's
+       Big Rocks are going; the focus time you have logged; what you spent.
+       Each one opens the place it comes from, or offers the first entry. */
+    const prog = TodayPlus.progress();
+    let fmin = 0, frun = false; try { fmin = Focus.todayMin(); frun = Focus.running(); } catch (e) {}
+    const sleepTxt = rec.hrs != null ? Focus.fmt(Math.round(rec.hrs * 60)) : '—';
+    const sleepSub = rec.hrs != null ? (rec.isToday ? 'last night' : 'last logged' + (rec.last ? ' ' + rec.last.slice(5) : '')) : 'Log sleep';
+    const sleepTone = rec.hrs == null ? '' : (rec.hrs >= 7 ? ' good' : rec.hrs >= 6 ? ' warn' : ' bad');
 
     const strip = document.createElement('div');
     strip.className = 'flow-td flow-td-pulse flow-x';
     strip.innerHTML = [
-      ['recovery', 'Recovery', recTxt, recSub, recTone],
-      ['priorities', 'Priorities', String(pri.count), pri.overdue.length ? pri.overdue.length + ' overdue' : (pri.q1.length ? 'urgent open' : 'nothing urgent'), pri.overdue.length ? ' bad' : (pri.q1.length ? ' warn' : ' good')],
-      ['habits', 'Habits', hab.total ? hab.done + '/' + hab.total : '—', hab.total ? (hab.done === hab.total ? 'all done' : 'to tick') : 'none set', hab.total && hab.done === hab.total ? ' good' : ''],
-      ['spend', 'Spend', sp ? TodayPlus.money(sp.today) : '—', sp ? TodayPlus.money(sp.mtd) + ' this month' : 'nothing logged', '']
+      ['sleep', 'Sleep', sleepTxt, sleepSub, sleepTone],
+      ['progress', "Today's progress", prog.total ? prog.done + ' of ' + prog.total : '—', prog.total ? (prog.done === prog.total ? 'all Big Rocks done' : 'Big Rocks done') : 'Plan today', prog.total && prog.done === prog.total ? ' good' : (prog.total ? ' warn' : '')],
+      ['focus', 'Focus time', fmin ? Focus.fmt(fmin) : '—', frun ? '● running' : (fmin ? 'logged today' : 'Start focus'), frun ? ' good' : ''],
+      ['meetings', 'Meetings', TodayPlus.meetingsTile().v, TodayPlus.meetingsTile().sub, '']
     ].map(([k, lbl, v, sub, tone]) =>
       `<button class="flow-td-tile${tone}" data-jump="${k}">
          <span class="l">${lbl}</span><span class="v">${esc(v)}</span><span class="s">${esc(sub)}</span>
@@ -5383,7 +5687,8 @@ const TodayPlus = {
       const action = e.target.closest('[data-flow-today-action]');
       if (action) {
         const kind = action.getAttribute('data-flow-today-action');
-        if (kind === 'plan' || kind === 'review') TodayPlus.openPlan(kind === 'review');
+        if (kind === 'plan') TodayPlus.planSheet();
+        else if (kind === 'review') TodayPlus.reviewSheet();
         else if (kind === 'capture') Nav.openCapture();
         else if (kind === 'priority' && Nav.go('quad')) TodayPlus.focusField('qin2');
         return;
@@ -5391,7 +5696,20 @@ const TodayPlus = {
       const jump = e.target.closest('[data-jump]');
       if (jump) {
         const destination = jump.getAttribute('data-jump');
-        if (destination === 'recovery') { Nav.go('sleep'); return; }
+        if (destination === 'recovery' || destination === 'sleep') { Nav.go('sleep'); return; }
+        if (destination === 'focus') { Focus.open(); return; }
+        if (destination === 'meetings') {
+          const cal = feed.querySelector('#td-cal');
+          if (cal) cal.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+          else Nav.go('settings');
+          return;
+        }
+        if (destination === 'progress') {
+          const rocks = feed.querySelector('.td-rocks');
+          if (!TodayPlus.progress().total) { TodayPlus.planSheet(); return; }
+          if (rocks) rocks.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+          return;
+        }
         const id = { priorities: 'flow-td-priorities', habits: 'flow-td-habits', spend: 'flow-td-spend' }[destination];
         const el = id && document.getElementById(id);
         if (el) el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
@@ -7546,12 +7864,11 @@ const Meetings = {
       const others = (m.actions || []).filter((a) => a.n !== hit.r.src.n);
       const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
       box.innerHTML =
-        '<div class="td-meet-line">🎙️ ' + esc(m.title) + (m.at ? ' · ' + esc(Meetings.when(m)) : '') +
-          (people.length ? ' · ' + people.length + (people.length === 1 ? ' person' : ' people') : '') +
-          (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') +
-          ' · <button type="button" class="td-meet-tg">Meeting notes ▾</button></div>' +
+        '<div class="td-meet-line">🎙️ <span data-i18n="off">' + esc(m.title) + '</span>' +
+          ' · <button type="button" class="td-meet-tg">Notes ▾</button></div>' +
         '<div class="td-meet-body" hidden>' +
-          (people.length ? '<p class="td-meet-people"><b>Who:</b> ' + esc(people.join(', ')) + '</p>' : '') +
+          '<p class="td-meet-people">' + (m.at ? esc(Meetings.when(m)) : '') + (people.length ? ' · ' + esc(people.join(', ')) : '') +
+            (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') + '</p>' +
           (m.summary ? '<div class="td-meet-sum">' + Meetings.md(m.summary) + '</div>' : '<p class="flow-sub">No summary yet.</p>') +
           (others.length ? '<p><b>Other action items</b></p><ul class="td-meet-acts">' + others.map((a) =>
             '<li' + (a.done ? ' class="done"' : '') + '>' + esc(a.text) + ' <small>' + (a.mine ? 'you' : (a.who || 'unassigned')) + (a.due ? ' · ' + esc(a.due) : '') + '</small></li>').join('') + '</ul>' : '') +
@@ -7559,7 +7876,7 @@ const Meetings = {
       box.querySelector('.td-meet-tg').addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
         const b = box.querySelector('.td-meet-body'); b.hidden = !b.hidden;
-        e.target.textContent = b.hidden ? 'Meeting notes ▾' : 'Meeting notes ▴';
+        e.target.textContent = b.hidden ? 'Notes ▾' : 'Notes ▴';
       });
       if (note) note.replaceWith(box); else (row.querySelector('.rk-title') || row).appendChild(box);
     });
@@ -7773,9 +8090,37 @@ const TodayFix = {
     try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
     try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
   },
+  /* Every overdue rock at once. The journal keeps each line. */
+  dropAllOverdue() {
+    const ids = Array.from(document.querySelectorAll('#today-feed .td-rock[data-rockid]')).filter((r) => r.querySelector('.rk-late')).map((r) => r.getAttribute('data-rockid'));
+    if (!ids.length) return;
+    if (!confirm('Drop all ' + ids.length + ' overdue Big Rocks? They are not marked done; the journal keeps a line for each.')) return;
+    ids.forEach((id) => {
+      const hit = TodayFix.find(id);
+      if (!hit) return;
+      cData.rocks[hit.w] = cData.rocks[hit.w].filter((x) => x !== hit.r);
+      if (!cData.rocks[hit.w].length) delete cData.rocks[hit.w];
+      if (typeof J === 'function') J('planning', '🗑️ Big rock dropped: ' + hit.r.title);
+    });
+    cSave();
+    TodayFix.redraw();
+    toast(ids.length + ' overdue rocks dropped.', null, 2000);
+  },
   paint() {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
+    /* One tap for the pile, at the top of the section, only while there is a pile. */
+    try {
+      const late = feed.querySelectorAll('.td-rock[data-rockid] .rk-late').length;
+      const head = feed.querySelector('.td-rocks .td-rocks-head');
+      let b = head && head.querySelector('.td-dropall');
+      if (head && late >= 2 && !b) {
+        b = document.createElement('button'); b.type = 'button'; b.className = 'td-dropall';
+        b.addEventListener('click', (e) => { e.preventDefault(); TodayFix.dropAllOverdue(); });
+        head.insertBefore(b, head.querySelector('.cnt'));
+      }
+      if (b) { if (late >= 2) b.textContent = 'Drop all overdue (' + late + ')'; else b.remove(); }
+    } catch (e) {}
     feed.querySelectorAll('.td-rock[data-rockid]').forEach((row) => {
       if (!row.querySelector('.rk-late') || row.querySelector('.td-fix')) return;
       const box = document.createElement('div');
@@ -7825,8 +8170,12 @@ const Sections = {
          account with no creation time on record is older than the field
          itself, which makes it the oldest kind there is. */
       const WIDGET_DAY = Date.parse('2026-10-22T13:40:00Z');
+      /* The server answers `created: null` for an account older than the
+         field; a user object without the field at all is one painted from
+         cache before the server answered — decide next time, not now. */
+      if (!Auth.user || !('created' in Auth.user)) return;
       let existed = false;
-      try { const c = Auth.user && Auth.user.created; existed = !c || Date.parse(c) < WIDGET_DAY; } catch (e) {}
+      try { const c = Auth.user.created; existed = c === null || (!!c && Date.parse(c) < WIDGET_DAY); } catch (e) {}
       if (existed && Settings.get('todayMarkets') !== true) {
         await Settings.set('todayMarkets', true);
         Markets.refresh().catch(() => {});
@@ -8489,6 +8838,10 @@ const ConnectApps = {
   calendarPaint() {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
+    try {
+      const tile = feed.querySelector('.flow-td-pulse [data-jump="meetings"]');
+      if (tile) { const t = TodayPlus.meetingsTile(); tile.querySelector('.v').textContent = t.v; tile.querySelector('.s').textContent = t.sub; }
+    } catch (e) {}
     const old = feed.querySelector('#td-cal');
     const html = ConnectApps.calendarHtml();
     if (!html) { if (old) old.remove(); return; }
@@ -11028,6 +11381,7 @@ async function boot() {
   try {
     await Settings.load();
     await Promise.all([Schedule.load(), Finance.load(), Notes.load(), Journal.load()]);
+    Focus.load().then(() => { try { Focus.paintTile(); } catch (e) {} }).catch(() => {});
   } catch (e) { console.error('[Flow] load failed', e); }
 
   Tabs.init();
@@ -11105,7 +11459,7 @@ async function boot() {
   window.Flow = {
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
-    Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
+    Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, Focus, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
     toast,
     refresh: () => { TimeChips.scan(document); TimeChips.repaintAll(); Visuals.upgradeAll(); Journal.rerender(); }
   };
