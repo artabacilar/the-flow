@@ -1806,6 +1806,9 @@ async function gate(req, res) {
     for (const k of [SEED(uid), PACK_CLAIMED(uid), INBOX(uid)]) {
       await raw.set(k, ''); gone.other++;
     }
+    /* Where the meeting tick had got to. The meetings themselves are in the
+       data namespace and went with step 1. */
+    if (await raw.get('__meet:cursor:' + uid)) { await raw.set('__meet:cursor:' + uid, ''); gone.other++; }
     /* The inbox URL is a secret that reaches this person; both halves go. */
     {
       const k = await raw.get(INBOX_KEY(uid));

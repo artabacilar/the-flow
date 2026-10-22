@@ -454,6 +454,11 @@ try { push = require('./flow-push'); } catch (e) { push = null; }
    somebody planned, and only the second needs to understand weeks. */
 let remind = null;
 try { remind = require('./flow-remind'); } catch (e) { remind = null; }
+/* Meetings brought in on their own — see flow-meetings.js. */
+let meetings = null;
+try { meetings = require('./flow-meetings'); } catch (e) { meetings = null; }
+let connectMod = null;
+try { connectMod = require('./flow-connect'); } catch (e) { connectMod = null; }
 // -------------------------------------------------------------------------
 /* ---------- the two pages the App Store asks for --------------------------
  *
@@ -797,6 +802,12 @@ const server = http.createServer(async (req, res) => {
        token is the means of reaching somebody, not a fact about them, so it
        goes in the raw store where /api/all can never mirror it into a
        browser. */
+    if (p === '/api/meetings/pull') {
+      if (!meetings || !connectMod) return json(res, 503, { error: 'This build has no meetings module.' });
+      const done = await meetings.handle(req, res, { path: p, uid: req.__flowUid || null, json, deps: MEETING_DEPS() });
+      if (done) return;
+    }
+
     if (p.indexOf('/api/push/') === 0) {
       if (!push) return json(res, 503, { error: 'This build has no notifications module.' });
       const done = await push.handle(req, res, {
@@ -929,6 +940,21 @@ PACK_V = packVersion();
    there is no signed-in request to scope it to — this is the one thing in the
    server that acts for everybody rather than for a caller. */
 if (push && push.init) push.init(rawStore);
+/* Everything the meeting tick needs; built once the store and auth exist. */
+const MEETING_DEPS = () => ({
+  raw: rawStore,
+  users: async () => {
+    const v = await rawStore.get(flowAuth.USERS_KEY);
+    const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
+    return Object.values(users).map((u) => u && u.id).filter(Boolean);
+  },
+  connect: connectMod && connectMod._internals,
+  nsPrefix: flowAuth.nsPrefix,
+  fetch: (...a) => fetch(...a),
+  sendToUser: push ? push.sendToUser : null,
+  log: (m) => console.error(m)
+});
+if (meetings && connectMod) meetings.start(MEETING_DEPS());
 if (remind && push) {
   remind.start({
     raw: rawStore,

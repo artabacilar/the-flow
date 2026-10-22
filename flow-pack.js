@@ -6689,6 +6689,7 @@ const NAV_ICONS = {
   gear:     '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/>',
   plus:     '<path d="M12 5v14M5 12h14"/>',
   search:   '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  refresh:  '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
   scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>',
   star:     '<path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.5-4.2 6.1-.8z"/>'
 };
@@ -7377,10 +7378,13 @@ const WeekPlan = {
     });
     const feed = document.getElementById('today-feed');
     if (feed && window.MutationObserver) {
-      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); })
+      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} })
         .observe(feed, { childList: true });
     }
     WeekPlan.paintCard(); TodayFix.paint();
+    /* Reachable from outside the pack: the native shells and the tests. */
+    try { window.FlowMeetings = Meetings; window.FlowRefresh = Refresh; } catch (e) {}
+    try { Meetings.apply(); Meetings.paint(); } catch (e) { console.warn('[Flow] meetings', e); }
     try { WeekPlan.paintCompass(); } catch (e) {}
     try {
       if (typeof S !== 'undefined' && S && !S.__flowWeek) {
@@ -7393,6 +7397,182 @@ const WeekPlan = {
 };
 
 /* Overdue rocks on Today, fixed in one tap. */
+/* ── Meetings, filed on their own ────────────────────────────────────────
+ *
+ * The server brings every new Fathom meeting into `ld_meetings` (summary,
+ * people, every action item, which ones are yours). This takes what has not
+ * been filed yet and files it: the summary into the Journal, your action
+ * items as Big Rocks on the day their wording names, or today. It runs on
+ * every open and every refresh, so "immediately" means the next time the
+ * app is looked at — and the notification the server sends is what makes
+ * that soon.
+ *
+ * Each rock remembers which meeting and which item it came from, so Today
+ * can show the whole meeting behind it, and nothing is ever filed twice.
+ */
+const Meetings = {
+  all() { try { const v = S.get('meetings', []); return Array.isArray(v) ? v : []; } catch (e) { return []; } },
+  find(mid) { return Meetings.all().find((m) => m && m.id === mid) || null; },
+  applied() {
+    if (typeof cData === 'undefined' || !cData) return {};
+    if (!cData.meetApplied || typeof cData.meetApplied !== 'object') cData.meetApplied = {};
+    return cData.meetApplied;
+  },
+  hasRock(mid, n) {
+    const all = (typeof cData !== 'undefined' && cData.rocks) || {};
+    return Object.keys(all).some((w) => (all[w] || []).some((r) => r && r.src && r.src.k === 'fathom' && r.src.mid === mid && r.src.n === n));
+  },
+  when(m) {
+    if (!m.at) return '';
+    const d = new Date(m.at);
+    return isNaN(d) ? '' : d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  },
+  /* Everything not yet filed. Returns what it did, for the toast and tests. */
+  apply() {
+    if (typeof cData === 'undefined' || !cData || typeof cSave !== 'function') return { meetings: 0, rocks: 0 };
+    const done = Meetings.applied();
+    const todayD = new Date(); todayD.setHours(12, 0, 0, 0);
+    let meetings = 0, rocks = 0, touched = false;
+    const titles = [];
+    Meetings.all().forEach((m) => {
+      if (!m || !m.id || done[m.id]) return;
+      meetings++; titles.push(m.title);
+      const when = Meetings.when(m);
+      try {
+        if (typeof J === 'function') J('meeting', '🎙️ ' + m.title + (when ? ' · ' + when : '') + (m.summary ? '\n\n' + m.summary : '') + (m.url ? '\n\n' + m.url : ''));
+      } catch (e) {}
+      (m.actions || []).forEach((a) => {
+        if (!a || a.done || !a.mine || Meetings.hasRock(m.id, a.n)) return;
+        let d = todayD;
+        if (a.due) { const x = new Date(a.due + 'T12:00:00'); if (!isNaN(x) && x > todayD) d = x; }
+        const wid = WeekLoop.wid(d), day = WeekLoop.dow(d);
+        (cData.rocks[wid] = cData.rocks[wid] || []).push({
+          id: Date.now().toString(36) + Math.floor(Math.random() * 1e4), title: a.text, role: '', day, time: '', end: '', prio: 'med',
+          note: 'From Fathom: ' + m.title + (m.url ? ' — ' + m.url : ''), done: false,
+          src: { k: 'fathom', mid: m.id, n: a.n }
+        });
+        rocks++; touched = true;
+      });
+      done[m.id] = true; touched = true;
+    });
+    if (touched) {
+      cSave();
+      try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
+      try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+    }
+    if (meetings) Meetings.toast(meetings === 1 ? titles[0] : meetings + ' meetings', rocks);
+    return { meetings, rocks };
+  },
+  toast(what, rocks) {
+    let el = document.getElementById('flow-toast');
+    if (!el) { el = document.createElement('div'); el.id = 'flow-toast'; document.body.appendChild(el); }
+    el.textContent = '🎙️ ' + what + ' filed' + (rocks ? ' · ' + rocks + ' action item' + (rocks === 1 ? '' : 's') + ' added as Big Rocks' : '') + '.';
+    el.classList.add('on');
+    clearTimeout(Meetings._t); Meetings._t = setTimeout(() => el.classList.remove('on'), 6000);
+  },
+  /* Ask the server to look at Fathom now, then file whatever came. */
+  async pull() {
+    const r = await fetch('/api/meetings/pull', { method: 'POST', credentials: 'same-origin' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Could not reach the meetings.');
+    if (j.added) {
+      /* The server wrote the section; bring this device's copy up to it. */
+      try {
+        const r2 = await fetch('/api/get?key=ld_meetings', { credentials: 'same-origin', cache: 'no-store' });
+        const g = await r2.json();
+        if (g && g.value != null) { const v = typeof g.value === 'string' ? JSON.parse(g.value) : g.value; try { localStorage.setItem('ld_meetings', JSON.stringify(v)); } catch (e) {} }
+      } catch (e) {}
+    }
+    const filed = Meetings.apply();
+    return Object.assign({}, j, { filed });
+  },
+  /* Light markdown: headings, bullets, bold. Enough for a Fathom summary. */
+  md(text) {
+    return String(text || '').split('\n').map((line) => {
+      const l = line.replace(/\s+$/, '');
+      if (!l.trim()) return '';
+      const h = /^#{1,6}\s+(.*)$/.exec(l); if (h) return '<h5>' + Meetings.inline(h[1]) + '</h5>';
+      const b = /^\s*[-*•]\s+(.*)$/.exec(l); if (b) return '<li>' + Meetings.inline(b[1]) + '</li>';
+      return '<p>' + Meetings.inline(l) + '</p>';
+    }).join('').replace(/(<li>.*?<\/li>)+/g, (m) => '<ul>' + m + '</ul>');
+  },
+  inline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); },
+  /* The meeting behind a rock, folded under it on Today. */
+  paint() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    feed.querySelectorAll('.td-rock[data-rockid]').forEach((row) => {
+      if (row.querySelector('.td-meet')) return;
+      const hit = TodayFix.find(row.getAttribute('data-rockid'));
+      if (!hit || !hit.r.src || hit.r.src.k !== 'fathom') return;
+      const m = Meetings.find(hit.r.src.mid);
+      if (!m) return;
+      const note = row.querySelector('.td-rk-note');
+      const box = document.createElement('div');
+      box.className = 'td-meet';
+      const others = (m.actions || []).filter((a) => a.n !== hit.r.src.n);
+      const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
+      box.innerHTML =
+        '<div class="td-meet-line">🎙️ ' + esc(m.title) + (m.at ? ' · ' + esc(Meetings.when(m)) : '') +
+          (people.length ? ' · ' + people.length + ' people' : '') +
+          (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') +
+          ' · <button type="button" class="td-meet-tg">Meeting notes ▾</button></div>' +
+        '<div class="td-meet-body" hidden>' +
+          (people.length ? '<p class="td-meet-people"><b>Who:</b> ' + esc(people.join(', ')) + '</p>' : '') +
+          (m.summary ? '<div class="td-meet-sum">' + Meetings.md(m.summary) + '</div>' : '<p class="flow-sub">No summary yet.</p>') +
+          (others.length ? '<p><b>Other action items</b></p><ul class="td-meet-acts">' + others.map((a) =>
+            '<li' + (a.done ? ' class="done"' : '') + '>' + esc(a.text) + ' <small>' + (a.mine ? 'you' : (a.who || 'unassigned')) + (a.due ? ' · ' + esc(a.due) : '') + '</small></li>').join('') + '</ul>' : '') +
+        '</div>';
+      box.querySelector('.td-meet-tg').addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const b = box.querySelector('.td-meet-body'); b.hidden = !b.hidden;
+        e.target.textContent = b.hidden ? 'Meeting notes ▾' : 'Meeting notes ▴';
+      });
+      if (note) note.replaceWith(box); else (row.querySelector('.rk-title') || row).appendChild(box);
+    });
+  }
+};
+
+/* ── Refresh ─────────────────────────────────────────────────────────────
+ * The app syncs when a tab comes back; this adds a button for when you
+ * want it now, and a quiet check every few minutes while it stays open,
+ * so a rock added on the phone or a meeting the server filed shows up
+ * without anyone pressing anything. A change found is applied by the
+ * existing reconcile, which reloads the page once it is safe to. */
+const Refresh = {
+  EVERY_MS: 3 * 60 * 1000,
+  busy: false,
+  async now(manual) {
+    if (Refresh.busy) return;
+    Refresh.busy = true;
+    const btn = document.getElementById('fn-refresh');
+    if (btn) btn.classList.add('spin');
+    try {
+      let msg = '';
+      if (manual && Connect.list.some((c) => c.id === 'fathom' && c.connected)) {
+        try { const r = await Meetings.pull(); if (r.added) msg = r.added + ' new meeting' + (r.added === 1 ? '' : 's') + '. '; } catch (e) {}
+      }
+      try { if (window.__flowSyncNow) { window.__FLOW_SYNC_GAP_MS = 0; window.__flowSyncNow(); } } catch (e) {}
+      await new Promise((r) => setTimeout(r, 900));
+      if (manual) Refresh.say(msg + 'Up to date.');
+    } finally {
+      Refresh.busy = false;
+      if (btn) btn.classList.remove('spin');
+    }
+  },
+  say(text) {
+    let el = document.getElementById('flow-toast');
+    if (!el) { el = document.createElement('div'); el.id = 'flow-toast'; document.body.appendChild(el); }
+    el.textContent = text; el.classList.add('on');
+    clearTimeout(Refresh._t); Refresh._t = setTimeout(() => el.classList.remove('on'), 2500);
+  },
+  boot() {
+    setInterval(() => { if (!document.hidden) Refresh.now(false); }, Refresh.EVERY_MS);
+    const b = document.getElementById('fn-refresh');
+    if (b) b.addEventListener('click', () => Refresh.now(true));
+  }
+};
+
 const TodayFix = {
   find(id) {
     const all = (typeof cData !== 'undefined' && cData.rocks) || {};
@@ -7423,6 +7603,16 @@ const TodayFix = {
     if (typeof J === 'function') J('planning', '✅ Big rock done: ' + hit.r.title);
     TodayFix.redraw();
   },
+  /* Let it go, without pretending it was done. The journal keeps the line. */
+  drop(id) {
+    const hit = TodayFix.find(id);
+    if (!hit) return;
+    cData.rocks[hit.w] = cData.rocks[hit.w].filter((x) => x !== hit.r);
+    if (!cData.rocks[hit.w].length) delete cData.rocks[hit.w];
+    cSave();
+    if (typeof J === 'function') J('planning', '🗑️ Big rock dropped: ' + hit.r.title);
+    TodayFix.redraw();
+  },
   redraw() {
     try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
     try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
@@ -7434,7 +7624,7 @@ const TodayFix = {
       if (!row.querySelector('.rk-late') || row.querySelector('.td-fix')) return;
       const box = document.createElement('div');
       box.className = 'td-fix';
-      box.innerHTML = '<button type="button" data-fix="today">Today</button><button type="button" data-fix="tomorrow">Tomorrow</button><button type="button" data-fix="done">Done</button>';
+      box.innerHTML = '<button type="button" data-fix="today">Today</button><button type="button" data-fix="tomorrow">Tomorrow</button><button type="button" data-fix="done">Done</button><button type="button" data-fix="drop" class="ghost">Drop</button>';
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-fix]');
         if (!b) return;
@@ -7442,7 +7632,10 @@ const TodayFix = {
         const id = row.getAttribute('data-rockid');
         const d = new Date(); d.setHours(12, 0, 0, 0);
         if (b.getAttribute('data-fix') === 'tomorrow') d.setDate(d.getDate() + 1);
-        if (b.getAttribute('data-fix') === 'done') TodayFix.done(id); else TodayFix.move(id, d);
+        const what = b.getAttribute('data-fix');
+        if (what === 'done') TodayFix.done(id);
+        else if (what === 'drop') TodayFix.drop(id);
+        else TodayFix.move(id, d);
       });
       const t = row.querySelector('.rk-title') || row;
       t.appendChild(box);
@@ -7690,7 +7883,7 @@ const Connect = {
         '<button type="button" class="flow-btn sm ghost" data-conn-off="' + esc(c.id) + '" data-aid="' + esc(a.aid) + '">Disconnect</button></div>';
     }).join('');
     const act = {
-      fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Import meetings</button>',
+      fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Check for meetings now</button>',
       gmail: '<button type="button" class="flow-btn sm" data-conn-act="gmail">Add starred emails as Big Rocks</button>',
       outlook: '<button type="button" class="flow-btn sm" data-conn-act="outlook">Add flagged emails as Big Rocks</button>',
       gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>'
@@ -7900,6 +8093,15 @@ const ConnectApps = {
   },
 
   async fathom() {
+    const r = await Meetings.pull();
+    const f = r.filed || {};
+    if (!r.added && !f.meetings) return 'Nothing new. Meetings are brought in on their own every few minutes.' + ConnectApps.partial(r);
+    const n = f.meetings || r.added;
+    return n + ' meeting' + (n === 1 ? '' : 's') + ' filed' +
+      (f.rocks ? ', ' + f.rocks + ' action item' + (f.rocks === 1 ? '' : 's') + ' added as Big Rocks' : '') +
+      (r.queued ? ', ' + r.queued + ' unassigned in Shared with you' : '') + '.' + ConnectApps.partial(r);
+  },
+  async fathomLegacy() {
     const seen = ConnectApps.seen().fathom || [];
     const j = await ConnectApps.get('/api/connect/fathom/meetings');
     const meAll = String(j.me || '').toLowerCase();
@@ -8254,9 +8456,11 @@ const Nav = {
     const wrap = document.createElement('div');
     wrap.id = 'flow-headtools';
     wrap.innerHTML =
+      '<button type="button" class="fn-icobtn" id="fn-refresh" aria-label="Refresh" title="Refresh">' + Nav.svg('refresh') + '</button>' +
       '<button type="button" class="fn-icobtn" id="fn-search" aria-label="Search">' + Nav.svg('search') + '</button>' +
       '<button type="button" class="fn-avatar" id="fn-avatar" aria-label="You">' + esc(Nav.initial()) + '</button>';
     host.appendChild(wrap);
+    try { Refresh.boot(); } catch (e) {}
     document.getElementById('fn-search').addEventListener('click', () => Nav.openPalette());
     document.getElementById('fn-avatar').addEventListener('click', () => Nav.openMenu());
   },
