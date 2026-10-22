@@ -70,9 +70,9 @@ ok('capture still offers a Meal, landing on the diet part of the page',
 
 console.log('\n— fewer things on by default —');
 ok('nothing is hidden from the menu by default', /hiddenTabs: \[\],/.test(pack));
-ok('the day Finances and Priorities were hidden is undone for everyone', /filter\(\(t\) => t !== 'finance' && t !== 'quad'\)/.test(pack) && /sectionsV', 3\)/.test(pack));
+ok('the day Finances and Priorities were hidden is undone for everyone', /filter\(\(t\) => t !== 'finance' && t !== 'quad'\)/.test(pack) && /sectionsV', 4\)/.test(pack));
 ok('prices on Today are a widget, off until asked for', /todayMarkets: false/.test(pack) && /enabled\(\) \{ return Settings\.get\('todayMarkets'\) === true; \}/.test(pack));
-ok('an account older than the change keeps the strip it had', /WIDGET_DAY = Date\.parse\('2026-10-22T13:40:00Z'\)/.test(pack) && /Date\.parse\(c\) < WIDGET_DAY/.test(pack));
+ok('an account older than the change keeps the strip it had', /WIDGET_DAY = Date\.parse\('2026-10-22T13:40:00Z'\)/.test(pack) && /existed = !c \|\| Date\.parse\(c\) < WIDGET_DAY/.test(pack));
 ok('and the account carries its creation time for that', /created: me\.created \|\| null/.test(fs.readFileSync(path.join(__dirname, '..', 'flow-auth.js'), 'utf8')));
 ok('widgets are added and removed on Today itself', /widgetRow\(\) \{/.test(pack) && /data-widget="markets"/.test(pack) && /data-mkt-chip=/.test(pack));
 ok('the person is in the sidebar, with the photo once Google is connected', /SIDE_FOOT: \['artur', 'settings'\]/.test(pack) && /querySelector\('\[data-fn-side="artur"\]'\)/.test(pack));
