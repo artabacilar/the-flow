@@ -7567,31 +7567,36 @@ const Meetings = {
 };
 
 /* ── Refresh ─────────────────────────────────────────────────────────────
- * The app syncs when a tab comes back; this adds a button for when you
- * want it now, and a quiet check every few minutes while it stays open,
- * so a rock added on the phone or a meeting the server filed shows up
- * without anyone pressing anything. A change found is applied by the
- * existing reconcile, which reloads the page once it is safe to. */
+ * Nothing refreshes on its own while the app is being looked at. There
+ * used to be a check every three minutes and a button in the header; the
+ * check found something to apply often enough that the page kept reloading
+ * under people. Now a refresh is something you ask for: pull down at the
+ * top of the page (a finger on the phone, the trackpad on a Mac), and the
+ * app asks Fathom for new meetings, syncs with the account, and reloads
+ * only if something actually changed. Coming back to the app after a long
+ * time away still syncs quietly, as it always did — but not after a short
+ * one, so flicking between apps never costs a reload. */
 const Refresh = {
-  EVERY_MS: 3 * 60 * 1000,
+  QUIET_MS: 10 * 60 * 1000,
+  PULL_PX: 84,
   busy: false,
   async now(manual) {
     if (Refresh.busy) return;
     Refresh.busy = true;
-    const btn = document.getElementById('fn-refresh');
-    if (btn) btn.classList.add('spin');
+    const ind = document.getElementById('flow-ptr');
+    if (ind) ind.classList.add('spin');
     try {
       let msg = '';
       if (manual && Connect.list.some((c) => c.id === 'fathom' && c.connected)) {
         try { const r = await Meetings.pull(); if (r.added) msg = r.added + ' new meeting' + (r.added === 1 ? '' : 's') + '. '; } catch (e) {}
       }
-      try { if (window.__flowSyncNow) { window.__FLOW_SYNC_GAP_MS = 0; window.__flowSyncNow(); } } catch (e) {}
+      try { if (window.__flowSyncNow) window.__flowSyncNow(); } catch (e) {}
       try { await Inbox.load(); Inbox.paintToday(); } catch (e) {}
       await new Promise((r) => setTimeout(r, 900));
       if (manual) Refresh.say(msg + 'Up to date.');
     } finally {
       Refresh.busy = false;
-      if (btn) btn.classList.remove('spin');
+      if (ind) { ind.classList.remove('spin'); ind.classList.remove('on'); ind.style.transform = ''; }
     }
   },
   say(text) {
@@ -7600,10 +7605,56 @@ const Refresh = {
     el.textContent = text; el.classList.add('on');
     clearTimeout(Refresh._t); Refresh._t = setTimeout(() => el.classList.remove('on'), 2500);
   },
+  /* The indicator that follows the pull. */
+  indicator() {
+    let el = document.getElementById('flow-ptr');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'flow-ptr'; el.setAttribute('aria-hidden', 'true');
+      el.innerHTML = Nav.svg('refresh');
+      document.body.appendChild(el);
+    }
+    return el;
+  },
+  atTop() { return (window.scrollY || document.documentElement.scrollTop || 0) <= 0; },
   boot() {
-    setInterval(() => { if (!document.hidden) Refresh.now(false); }, Refresh.EVERY_MS);
-    const b = document.getElementById('fn-refresh');
-    if (b) b.addEventListener('click', () => Refresh.now(true));
+    /* A long time away is worth a quiet sync on return; a short one is not. */
+    try { window.__FLOW_SYNC_GAP_MS = Refresh.QUIET_MS; } catch (e) {}
+    const ind = Refresh.indicator();
+    /* A finger: pull down from the top. The page does not bounce while the
+       pull is being measured, so the gesture reads as one thing. */
+    let y0 = null, pulling = false;
+    document.addEventListener('touchstart', (e) => {
+      if (Refresh.busy || !Refresh.atTop() || e.touches.length !== 1) { y0 = null; return; }
+      y0 = e.touches[0].clientY; pulling = false;
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (y0 == null) return;
+      const dy = e.touches[0].clientY - y0;
+      if (dy <= 0 || !Refresh.atTop()) { if (pulling) { pulling = false; ind.classList.remove('on'); ind.style.transform = ''; } return; }
+      pulling = true;
+      if (e.cancelable) e.preventDefault();
+      const d = Math.min(dy, Refresh.PULL_PX * 1.6);
+      ind.classList.add('on');
+      ind.classList.toggle('ready', dy >= Refresh.PULL_PX);
+      ind.style.transform = 'translate(-50%, ' + (d * 0.6) + 'px) rotate(' + (d * 2) + 'deg)';
+    }, { passive: false });
+    const end = (e) => {
+      if (y0 == null) return;
+      const was = pulling; y0 = null; pulling = false;
+      if (was && ind.classList.contains('ready')) { ind.classList.remove('ready'); Refresh.now(true); }
+      else { ind.classList.remove('on'); ind.classList.remove('ready'); ind.style.transform = ''; }
+    };
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+    /* A trackpad or wheel: scrolling up past the top, decisively. */
+    let wheel = 0, wheelT = 0;
+    document.addEventListener('wheel', (e) => {
+      if (Refresh.busy || !Refresh.atTop() || e.deltaY >= 0) { wheel = 0; return; }
+      const now = Date.now();
+      if (now - wheelT > 500) wheel = 0;
+      wheelT = now; wheel += -e.deltaY;
+      if (wheel > 320) { wheel = 0; ind.classList.add('on'); ind.style.transform = 'translate(-50%, 40px)'; Refresh.now(true); }
+    }, { passive: true });
   }
 };
 
@@ -8607,7 +8658,6 @@ const Nav = {
     const wrap = document.createElement('div');
     wrap.id = 'flow-headtools';
     wrap.innerHTML =
-      '<button type="button" class="fn-icobtn" id="fn-refresh" aria-label="Refresh" title="Refresh">' + Nav.svg('refresh') + '</button>' +
       '<button type="button" class="fn-icobtn" id="fn-search" aria-label="Search">' + Nav.svg('search') + '</button>' +
       '<button type="button" class="fn-avatar" id="fn-avatar" aria-label="You">' + esc(Nav.initial()) + '</button>';
     host.appendChild(wrap);
