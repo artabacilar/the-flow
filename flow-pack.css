@@ -1916,3 +1916,23 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .fn-dietblock{margin-top:30px;padding-top:18px;border-top:1px solid var(--f-line, rgba(127,127,127,.25))}
 #mktPick{margin-top:10px}
 #mktPick[hidden]{display:none!important}
+
+/* ── Widgets on Today ─────────────────────────────────────────────────── */
+.td-widgets{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:18px 0 6px;padding-top:12px;border-top:1px dashed var(--border)}
+.td-widgets-l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:4px}
+.td-wbtn,.td-wchip{font:inherit;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.td-wbtn.on{color:var(--text);border-color:var(--accent)}
+.td-wchip.on{color:var(--text);background:var(--card2)}
+/* The person, in the sidebar: photo once Google is connected, else a face. */
+#flow-side .fn-you .fn-i{width:20px;height:20px}
+
+/* ── Week Compass on a phone: one day per row, chips you can read ─────── */
+@media (max-width:760px){
+  body.fn-on #tab-compass .cgrid{grid-template-columns:1fr;gap:10px}
+  body.fn-on #tab-compass .cday{min-height:0;padding:12px 14px;gap:7px}
+  body.fn-on #tab-compass .cday .cd-head{font-size:13px}
+  body.fn-on #tab-compass .chip{font-size:13.5px;padding:8px 11px;border-radius:9px;line-height:1.4}
+  body.fn-on #tab-compass .weeknav{flex-wrap:wrap;gap:8px}
+  body.fn-on .td-fix{gap:5px}
+  body.fn-on .td-fix button{font-size:11.5px;padding:3px 8px}
+}

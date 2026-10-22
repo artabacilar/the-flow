@@ -1666,6 +1666,10 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Finances is out of the menu — empty, so out of the way. Settings → Sections brings them back.": "Finans menüden çıkarıldı — boştu, yoldan çekildi. Ayarlar → Bölümler geri getirir.",
   "Priorities is out of the menu — empty, so out of the way. Settings → Sections brings them back.": "Öncelikler menüden çıkarıldı — boştu, yoldan çekildi. Ayarlar → Bölümler geri getirir.",
   "Finances and Priorities are out of the menu — empty, so out of the way. Settings → Sections brings them back.": "Finans ve Öncelikler menüden çıkarıldı — boştu, yoldan çekildi. Ayarlar → Bölümler geri getirir.",
+  "+ Prices": "+ Fiyatlar",
+  "✓ Prices": "✓ Fiyatlar",
+  "Prices added to Today.": "Fiyatlar Bugün'e eklendi.",
+  "Prices removed from Today.": "Fiyatlar Bugün'den kaldırıldı.",
 /* DICT-END */
 }, RULES);
 

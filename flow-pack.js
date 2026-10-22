@@ -1909,10 +1909,8 @@ const Markets = {
   },
 
   async mount() {
-    if (Markets.enabled()) {
-      await Markets.load();
-      await Markets.fetch();
-    }
+    await Markets.load();
+    if (Markets.enabled()) await Markets.fetch();
     /* Today's render replaces the whole section, strip included, so put it
        back afterwards instead of relying on having painted last. Hook it
        before the first paint, so a paint that fails cannot skip the hook. */
@@ -1938,8 +1936,45 @@ const Markets = {
     }
   },
 
+  /* The row at the foot of Today where widgets are added and taken away.
+     One widget so far — prices — with its pairs as chips once it is on. */
+  widgetRow() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    let row = feed.querySelector('#td-widgets');
+    if (!row) {
+      row = document.createElement('div'); row.id = 'td-widgets'; row.className = 'td-widgets';
+      feed.appendChild(row);
+      row.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-widget]');
+        const c = e.target.closest('[data-mkt-chip]');
+        if (b) {
+          const on = !Markets.enabled();
+          await Settings.set('todayMarkets', on);
+          Markets.widgetRow();
+          Markets.refresh().catch(() => {});
+          toast(on ? 'Prices added to Today.' : 'Prices removed from Today.', null, 1400);
+        } else if (c) {
+          const sym = c.getAttribute('data-mkt-chip');
+          const list = (Markets.watch || Markets.DEFAULT).slice();
+          const i = list.indexOf(sym);
+          if (i >= 0) { if (list.length > 1) list.splice(i, 1); } else list.push(sym);
+          await Markets.setWatch(list);
+          Markets.widgetRow();
+        }
+      });
+    }
+    const on = Markets.enabled();
+    const watch = Markets.watch || Markets.DEFAULT;
+    row.innerHTML = '<span class="td-widgets-l">Widgets</span>' +
+      '<button type="button" class="td-wbtn' + (on ? ' on' : '') + '" data-widget="markets">' + (on ? '✓ Prices' : '+ Prices') + '</button>' +
+      (on ? Object.keys(Markets.LABEL).map((sym) => '<button type="button" class="td-wchip' + (watch.indexOf(sym) >= 0 ? ' on' : '') + '" data-mkt-chip="' + sym + '"><span data-i18n="off">' + esc(Markets.LABEL[sym][0]) + ' ' + esc(Markets.LABEL[sym][1]) + '</span></button>').join('') : '');
+    if (row !== feed.lastElementChild) feed.appendChild(row);
+  },
+
   paint() {
     const feed = $('#tab-today') || $('.section#tab-today');
+    try { Markets.widgetRow(); } catch (e) {}
     if (!Markets.enabled()) {
       const old = feed && $('#flow-markets', feed);
       if (old) old.remove();
@@ -2511,7 +2546,7 @@ const Planner = {
   },
   /* The planner had its own tab once; it is a card on North Star now, so
      there is no pill to rename. Kept as a no-op for the settings binder. */
-  applyTabName() {},
+  applyTabName() { try { Nav.relabel(); } catch (e) {} },
 
   /* How many scheduled, undone items the fold's chip should show. */
   chip() {
@@ -3463,6 +3498,7 @@ const SettingsUI = {
           const pick = section.querySelector('#mktPick');
           if (pick) pick.hidden = !v;
           Markets.refresh().catch(() => {});
+          try { Markets.widgetRow(); } catch (e) {}
         }
         if (key === 'showTimeChips') {
           if (v) {
@@ -7215,7 +7251,7 @@ const WeekPlan = {
     });
     const feed = document.getElementById('today-feed');
     if (feed && window.MutationObserver) {
-      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} try { Inbox.paintToday(); } catch (e) {} })
+      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} try { Inbox.paintToday(); } catch (e) {} try { Markets.widgetRow(); } catch (e) {} })
         .observe(feed, { childList: true });
     }
     WeekPlan.paintCard(); TodayFix.paint();
@@ -7546,7 +7582,22 @@ const Sections = {
      ones it has never put anything in — somebody with expenses logged keeps
      Finances exactly where it was. Runs once, and says what it did. */
   async migrate() {
-    if ((Settings.get('sectionsV') || 0) >= 1) return;
+    const v = Settings.get('sectionsV') || 0;
+    if (v >= 2) return;
+    /* The price strip became a widget, off for new accounts. An account
+       that was already using the app keeps it exactly where it was — a
+       thing being optional is not a reason to take it off anyone's screen. */
+    if (v < 2) {
+      /* "Already using the app" = the account is older than the change. */
+      const WIDGET_DAY = Date.parse('2026-10-22T13:40:00Z');
+      let existed = false;
+      try { const c = Auth.user && Auth.user.created; existed = !!c && Date.parse(c) < WIDGET_DAY; } catch (e) {}
+      if (existed && Settings.get('todayMarkets') !== true) {
+        await Settings.set('todayMarkets', true);
+        Markets.refresh().catch(() => {});
+      }
+      if (v >= 1) { await Settings.set('sectionsV', 2); return; }
+    }
     const hid = Sections.hidden().slice();
     const quiet = [];
     try { if (!(Finance.items || []).length && hid.indexOf('finance') < 0) { hid.push('finance'); quiet.push('Finances'); } } catch (e) {}
@@ -7556,7 +7607,7 @@ const Sections = {
       if (!open && hid.indexOf('quad') < 0) { hid.push('quad'); quiet.push('Priorities'); }
     } catch (e) {}
     await Settings.set('hiddenTabs', hid);
-    await Settings.set('sectionsV', 1);
+    await Settings.set('sectionsV', 2);
     if (quiet.length) {
       Sections.apply();
       try { toast(quiet.join(' and ') + (quiet.length === 1 ? ' is' : ' are') + ' out of the menu — empty, so out of the way. Settings → Sections brings them back.', null, 6000); } catch (e) {}
@@ -7795,7 +7846,7 @@ const Connect = {
       if (src) { av.innerHTML = '<img class="fn-face" alt="" src="' + esc(src) + '">'; av.classList.add('has-face'); }
       else { av.classList.remove('has-face'); av.textContent = Nav.initial(); }
     }
-    const side = Nav.sideEl && Nav.sideEl.querySelector('[data-fn-side="artur"]');
+    const side = Nav.sideEl && Nav.sideEl.querySelector('[data-fn-you]');
     if (side) {
       const old = side.querySelector('svg, img.fn-face');
       if (src) {
@@ -7804,7 +7855,7 @@ const Connect = {
         if (old) old.replaceWith(img); else side.insertBefore(img, side.firstChild);
       } else if (old && old.tagName === 'IMG') {
         const tmp = document.createElement('span');
-        tmp.innerHTML = Nav.svg(Nav.ICON.artur || 'user');
+        tmp.innerHTML = Nav.svg('user');
         old.replaceWith(tmp.firstElementChild || tmp);
       }
     }
@@ -8725,6 +8776,10 @@ const Nav = {
     });
 
     html += '<div class="fn-spacer"></div>';
+    /* You: the photo (once Google is connected) and your first name. It
+       opens North Star, which is where the planner lives now. */
+    html += '<button type="button" class="fn-link fn-you" data-fn-you="1">' + Nav.svg('user') +
+            '<span class="fn-txt">' + esc(Planner.who()) + '</span></button>';
     html += Nav.SIDE_FOOT.filter(t => Nav.pill(t)).map(link).join('');
 
     side.innerHTML = html;
@@ -8732,6 +8787,8 @@ const Nav = {
 
     side.querySelectorAll('[data-fn-side]').forEach(b =>
       b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-side'))));
+    const you = side.querySelector('[data-fn-you]');
+    if (you) you.addEventListener('click', () => Nav.go(Nav.pill('northstar') ? 'northstar' : 'settings'));
     document.getElementById('fn-kbtn').addEventListener('click', () => Nav.openPalette());
 
     document.body.classList.add('fn-on');
@@ -8747,6 +8804,8 @@ const Nav = {
         const txt = b.querySelector('.fn-txt');
         if (txt) txt.textContent = Nav.label(t);
       });
+      const you = Nav.sideEl.querySelector('[data-fn-you] .fn-txt');
+      if (you) you.textContent = Planner.who();
     }
     const av = document.getElementById('fn-avatar');
     if (av && !av.classList.contains('has-face')) av.textContent = Nav.initial();

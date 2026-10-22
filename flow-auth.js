@@ -1457,7 +1457,7 @@ async function gate(req, res) {
       try { started = await seedStarter(me.id, me.name); } catch (e) { started = 0; }
     }
 
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner }, seed, healed, packHealed, started });
+    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started });
     return true;
   }
 
