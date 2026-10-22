@@ -69,9 +69,9 @@ const H = 'http://localhost:4222';
   ok('and none of them is a record', !segs.some(t => /Brainstorm|Time/.test(t)), segs);
   ok('and North Star is the selected one', await p.evaluate(() =>
     (document.querySelector('#flow-seg button.on') || {}).getAttribute('data-fn-seg')) === 'northstar');
-  ok('Priorities is there but out of the menu until asked for', await p.evaluate(() => {
+  ok('Priorities is in the row like the rest', await p.evaluate(() => {
     const b = document.querySelector('#flow-seg [data-fn-seg="quad"]');
-    return !!b && getComputedStyle(b).display === 'none';
+    return !!b && getComputedStyle(b).display !== 'none';
   }));
   /* Above the pane, not inside it. A section that repaints itself by
      rewriting its own innerHTML would delete a row that lived inside it. */
@@ -97,7 +97,7 @@ const H = 'http://localhost:4222';
   ok('and it survives the section repainting itself', await p.isVisible('#flow-seg'));
   await p.click('#flow-seg [data-fn-seg="compass"]'); await p.waitForTimeout(900);
   ok('so you can leave without the in-page link', await activeTab(p) === 'compass', await activeTab(p));
-  ok('the planner is folded into North Star', await p.evaluate(() => !!document.querySelector('#tab-northstar [data-foldcard="planner"] #ns-planner #wk-new')));
+
 
   console.log('\n— the second level moves without leaving the group —');
   await p.click('#flow-seg [data-fn-seg="abko"]'); await p.waitForTimeout(900);
@@ -159,9 +159,8 @@ const H = 'http://localhost:4222';
 
   console.log('\n— the other capture types hand you to the right section —');
   await p.click('#fn-capbtn'); await p.waitForTimeout(450);
-  ok('Expense is not offered while Finances is out of the menu', !(await p.$('[data-fn-cap="finance"]')));
-  await p.click('[data-fn-cap="training"]'); await p.waitForTimeout(1000);
-  ok('Set opens Training', await activeTab(p) === 'training', await activeTab(p));
+  await p.click('[data-fn-cap="finance"]'); await p.waitForTimeout(1000);
+  ok('Expense opens Finances', await activeTab(p) === 'finance', await activeTab(p));
 
   console.log('\n— the avatar holds what is not in the bar —');
   await p.click('#fn-avatar'); await p.waitForTimeout(500);
@@ -170,9 +169,9 @@ const H = 'http://localhost:4222';
   /* Journal and Finances left this menu when Record became a real slot: a
      destination in two places is a destination you look for in the wrong
      one. What is left is genuinely outside the daily loop. */
-  ok('with Settings alone — the planner lives on North Star now', menu.join(',') === 'settings', menu);
-  await p.click('[data-fn-menu="settings"]'); await p.waitForTimeout(1000);
-  ok('and it navigates', await activeTab(p) === 'settings', await activeTab(p));
+  ok('with the planner and Settings', menu.join(',') === 'artur,settings', menu);
+  await p.click('[data-fn-menu="artur"]'); await p.waitForTimeout(1000);
+  ok('and it navigates', await activeTab(p) === 'artur', await activeTab(p));
 
   console.log('\n— search on a phone —');
   await p.click('#fn-search'); await p.waitForTimeout(450);
@@ -207,10 +206,10 @@ const H = 'http://localhost:4222';
   ok('the old pill row is gone', !(await d.isVisible('.tabs')));
   ok('the phone bar is not showing', !(await d.isVisible('#flow-tabbar')));
   const links = await d.evaluate(() => [...document.querySelectorAll('[data-fn-side]')].map(b => b.getAttribute('data-fn-side')));
-  /* Thirteen: Brainstorm, Time and the planner tab are retired, Diet is
-     part of Body log, and the mood tab was folded into Sleep before that. */
-  ok('every section has a link', links.length === 13, links.length);
-  ok('none of them is to a retired section', !links.some(t => /brainstorm|time|artur|diet/.test(t)), links);
+  /* Fourteen: Brainstorm and Time are retired, Diet is part of Body log,
+     and the mood tab was folded into Sleep before that. */
+  ok('every section has a link', links.length === 14, links.length);
+  ok('none of them is to a retired section', !links.some(t => /brainstorm|^time$|diet/.test(t)), links);
   ok('nothing is stranded — Today is reachable again', links.indexOf('today') >= 0, links);
   ok('the groups are labelled', await d.evaluate(() =>
     [...document.querySelectorAll('.fn-grouplbl')].map(e => e.textContent).join(',')) === 'Focus,Body,Record');
@@ -234,12 +233,10 @@ const H = 'http://localhost:4222';
     await d.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
 
   console.log('\n— it navigates and stays in step —');
-  ok('Finances is drawn but hidden from the menu on a fresh account', await d.evaluate(() =>
-    getComputedStyle(document.querySelector('[data-fn-side="finance"]')).display === 'none'));
-  await d.click('[data-fn-side="journal"]'); await d.waitForTimeout(900);
-  ok('clicking Journal opens it', await activeTab(d) === 'journal', await activeTab(d));
+  await d.click('[data-fn-side="finance"]'); await d.waitForTimeout(900);
+  ok('clicking Finances opens it', await activeTab(d) === 'finance', await activeTab(d));
   ok('and the link is highlighted', await d.evaluate(() =>
-    document.querySelector('[data-fn-side="journal"]').classList.contains('on')));
+    document.querySelector('[data-fn-side="finance"]').classList.contains('on')));
   ok('only one link is highlighted', await d.evaluate(() =>
     document.querySelectorAll('[data-fn-side].on').length) === 1);
   await d.click('[data-fn-side="ask"]'); await d.waitForTimeout(900);
@@ -268,16 +265,12 @@ const H = 'http://localhost:4222';
 
   console.log('\n— every section still opens —');
   const broken = [];
-  /* Finances and Priorities are hidden from the menu on a fresh account;
-     turn them on first, the way a person would, so every link is clickable. */
-  await d.evaluate(async () => { await window.Flow.Settings.set('hiddenTabs', []); window.Flow.Sections.apply(); });
-  await d.waitForTimeout(200);
   for (const t of links) {
     await d.click('[data-fn-side="' + t + '"]');
     await d.waitForTimeout(420);
     if (await activeTab(d) !== t) broken.push(t);
   }
-  ok('all 13 open through the host', broken.length === 0, broken);
+  ok('all 14 open through the host', broken.length === 0, broken);
   ok('with no errors anywhere', derrs.length === 0, derrs.slice(0, 4));
 
   /* ════════════ SMALL LAPTOP ════════════ */
