@@ -917,7 +917,9 @@ if (remind && push) {
     users: async () => {
       const v = await rawStore.get(flowAuth.USERS_KEY);
       const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
-      return Object.values(users).map((u) => u && u.id).filter(Boolean);
+      const all = Object.values(users).map((u) => u && u.id).filter(Boolean);
+      /* Only the accounts with a device to send to — see flow-push.js. */
+      return push.reachableUsers ? push.reachableUsers(rawStore, all) : all;
     },
     sendToUser: push.sendToUser,
     canSend: push.canSend || push.ready,

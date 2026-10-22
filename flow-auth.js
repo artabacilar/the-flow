@@ -36,11 +36,13 @@ const SESSION_DAYS = 60;
 const PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const INVITE = process.env.FLOW_INVITE_CODE || '';
 const OWNER_EMAIL = (process.env.FLOW_OWNER_EMAIL || '').trim().toLowerCase();
-/* A leaked invite code should not be able to fill the database. 0 disables the
+/* A leaked invite code, or a script, should not be able to fill the database.
+   1000 is room for real people (the Play Store and App Store both sign people
+   up here) and still a ceiling. FLOW_MAX_ACCOUNTS overrides it; 0 disables the
    cap entirely; the owner's own account is always allowed through it. */
 const MAX_ACCOUNTS = (() => {
-  const n = parseInt(process.env.FLOW_MAX_ACCOUNTS || '10', 10);
-  return Number.isFinite(n) && n >= 0 ? n : 10;
+  const n = parseInt(process.env.FLOW_MAX_ACCOUNTS || '1000', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 1000;
 })();
 
 /* A missing sibling module is a valid state. A sibling module that is present
@@ -1744,6 +1746,11 @@ async function gate(req, res) {
     for (const k of ['__push:dev:' + uid, '__push:sent:' + uid]) {
       if (await raw.get(k)) { await raw.set(k, ''); gone.other++; }
     }
+    try {
+      const ix = await raw.get('__push:index');
+      const list = typeof ix === 'string' && ix ? JSON.parse(ix) : (Array.isArray(ix) ? ix : null);
+      if (Array.isArray(list) && list.indexOf(uid) >= 0) await raw.set('__push:index', JSON.stringify(list.filter((x) => x !== uid)));
+    } catch (e) {}
     /* Feedback they left carries their address; it goes with them. */
     {
       const fb = await getJSON(FEEDBACK_KEY, []);

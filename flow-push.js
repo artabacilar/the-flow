@@ -165,6 +165,41 @@ async function readDevices(raw, uid) {
 }
 async function writeDevices(raw, uid, list) {
   await raw.set(devKey(uid), JSON.stringify(list));
+  try { await indexSet(raw, uid, list.length > 0); } catch (e) { logWhy('index', e.message); }
+}
+
+/* ── Who has any device at all ───────────────────────────────────────────
+   The reminder tick runs every minute for every account. Asking each one
+   "any devices?" is one database read per account per minute — nothing at
+   ten accounts, a quota at a thousand. So the accounts that can be reached
+   are kept in one list, and the tick reads that instead.
+
+   An index that has never been written (a server that had devices before
+   this existed) is built once by asking every account, then kept. */
+const INDEX_KEY = '__push:index';
+async function readIndex(raw) {
+  try {
+    const v = await raw.get(INDEX_KEY);
+    if (v == null || v === '') return null;
+    const list = typeof v === 'string' ? JSON.parse(v) : v;
+    return Array.isArray(list) ? list : null;
+  } catch (e) { return null; }
+}
+async function indexSet(raw, uid, on) {
+  const list = (await readIndex(raw)) || [];
+  const has = list.indexOf(uid) >= 0;
+  if (on === has) return;
+  await raw.set(INDEX_KEY, JSON.stringify(on ? list.concat(uid) : list.filter((x) => x !== uid)));
+}
+async function reachableUsers(raw, allUids) {
+  const known = await readIndex(raw);
+  if (known) return known.filter((u) => allUids.indexOf(u) >= 0);
+  const found = [];
+  for (const uid of allUids) {
+    if ((await readDevices(raw, uid)).length) found.push(uid);
+  }
+  await raw.set(INDEX_KEY, JSON.stringify(found));
+  return found;
 }
 
 /* ── Present is not the same as usable ───────────────────────────────────
@@ -394,6 +429,7 @@ async function init(raw) {
 module.exports = {
   handle,
   sendToUser,
+  reachableUsers,
   configured,
   ready,
   canSend,
@@ -401,7 +437,7 @@ module.exports = {
   webpush,
   _internals: {
     PUSH_OFF, PUSH_FAILED,
-    readDevices, writeDevices, devKey, authToken, normalizeKey, keyShape,
+    readDevices, writeDevices, devKey, authToken, readIndex, INDEX_KEY, normalizeKey, keyShape,
     setSender(fn) { sender = fn || apnsPost; },
     resetJwt() { cachedJwt = null; cachedAt = 0; usable = null; }
   }
