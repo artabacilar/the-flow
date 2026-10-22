@@ -1994,11 +1994,12 @@ const Markets = {
       strip = document.createElement('div');
       strip.id = 'flow-markets';
       strip.className = 'flow-td flow-mkt flow-x';
-      /* The day’s work comes first, especially on a phone. Keep market
-         prices and the save indicators together after the daily sections. */
-      const daily = $('#today-feed', feed);
-      const wr = daily && daily.querySelector('#td-widgets');
-      if (wr) daily.insertBefore(strip, wr); else (daily || feed).appendChild(strip);
+      /* Under the morning pulse — where it always sat, and where the
+         Settings switch says it will be. Put at the foot of the page it
+         was, correctly, never seen. */
+      const pulse = $('.flow-td-pulse', feed);
+      if (pulse && pulse.parentNode) pulse.parentNode.insertBefore(strip, pulse.nextSibling);
+      else { const daily = $('#today-feed', feed); const wr = daily && daily.querySelector('#td-widgets'); if (wr) daily.insertBefore(strip, wr); else (daily || feed).appendChild(strip); }
     }
     const d = Markets.data;
     const q = (d && d.quotes) || {};
