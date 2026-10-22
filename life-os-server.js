@@ -250,10 +250,16 @@ function shell() {
 }
 
 // ── PWA assets (generated inline so there are fewer files to ship) ──
+/* Also what Google Play's Android app is built from (a Trusted Web Activity):
+   the id, the categories and the description travel into the store listing
+   tooling, and `id` keeps the installed app the same app if start_url moves. */
 const MANIFEST = JSON.stringify({
-  name: "The Flow — Life OS", short_name: 'The Flow', start_url: '.', scope: '.',
+  id: '/', name: "The Flow — Life OS", short_name: 'The Flow', start_url: '/', scope: '/',
+  lang: 'en', dir: 'ltr', orientation: 'any',
   display: 'standalone', background_color: '#0a0b0d', theme_color: '#0a0b0d',
-  description: 'Personal life dashboard — training, diet, habits, WHOOP & more',
+  description: 'Plan your week around what matters: Big Rocks, habits, training and a journal — one screen for today.',
+  categories: ['productivity', 'lifestyle'],
+  prefer_related_applications: false,
   icons: [
     { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
     { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
@@ -681,6 +687,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── PWA assets (must be reachable pre-login so the icon/manifest work) ──
+    /* Digital Asset Links: proves to Android that the Play Store app and this
+       site belong together, so the app opens full screen with no browser bar.
+       The file holds signing-certificate fingerprints, which are public. */
+    if (p === '/.well-known/assetlinks.json') {
+      try {
+        const body = fs.readFileSync(path.join(__dirname, 'android', 'assetlinks.json'));
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+        return res.end(body);
+      } catch (e) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end('[]'); }
+    }
     if (p === '/manifest.webmanifest') { res.writeHead(200, { 'Content-Type': 'application/manifest+json' }); return res.end(MANIFEST); }
     if (p === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(SW); }
     if (p === '/icon-192.png') return sendFile(res, 'icon-192.png', 'image/png');
