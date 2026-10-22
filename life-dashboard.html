@@ -1804,7 +1804,8 @@ function syncPaint(){
   }
   function run(){ try{ reconcile().catch(fail); }catch(e){ fail(); } }
   /* Called by the sync badge, and by any write that discovers the server gone. */
-  window.__flowSyncNow=function(){
+  window.__flowSyncNow=function(force){
+    window.__FLOW_SYNC_FORCE=!!force;
     window.__FLOW_SYNC.tries=0;
     if(timer){ clearTimeout(timer); timer=null; }
     run();
@@ -1964,22 +1965,64 @@ function syncPaint(){
     }
 
     let changed=false;
+    /* What would change, before anything is touched. Two reasons to know:
+       the reload log below says WHY a reload happened (the pack keeps the
+       last few in the account, so a loop can be diagnosed from another
+       device), and the breaker needs the answer before applying anything. */
+    const moved=[];
     serverKeys.forEach(k=>{
-      if(dirty[k]) return;                     /* ours is newer — do not clobber it */
-
+      if(dirty[k]) return;
       const v=all[k]; if(v==null) return;
-      if(painted[k]!==v){
-        /* Last-ditch net: whatever this device held is kept aside for one
-           generation before the server's copy replaces it. Nothing this app
-           overwrites is ever unrecoverable. */
-        try{ if(painted[k]!=null) localStorage.setItem('bak2_'+k, painted[k]); }catch(e){}
-        try{ localStorage.setItem(k,v); changed=true; }catch(e){}
-        /* `painted` was captured once, at load. Now that this can run again
-           later, it has to keep up — otherwise every subsequent reconcile
-           re-discovers the same difference and asks for the same reload. */
-        painted[k]=v;
-      }
+      if(painted[k]!==v) moved.push({k:k, was:painted[k]==null?null:painted[k].length, now:v.length});
     });
+
+    /* ── The breaker ─────────────────────────────────────────────────────
+       A reload is how new data gets onto the screen, and at most one happens
+       per page life. But a page life can be four seconds long, and if every
+       open finds something "changed" the app reloads forever — a black flash
+       every few seconds, which is what a person sees. So: more than two
+       reloads in two minutes and this stops applying and stops reloading.
+       The device keeps the copy it drew (its own writes still go up), the
+       sync state says so, and a pull-to-refresh (which goes through
+       __flowSyncNow, with force set) is allowed through. */
+    /* A loop re-applies the same sections with the same bytes every time;
+       honest change moves different sections, or the same one to a new
+       size. So the breaker trips on the same diff seen three times in two
+       minutes, never on three different ones. */
+    const sig=moved.map(m=>m.k+':'+m.now).sort().join('|');
+    let recent=[];
+    try{ recent=(JSON.parse(sessionStorage.getItem('__flowReloadLog')||'[]')||[]).filter(e=>e&&Date.now()-e.t<120000); }catch(e){ recent=[]; }
+    const tripped = moved.length>0 && recent.filter(e=>e.sig===sig).length>=2 && !window.__FLOW_SYNC_FORCE;
+    window.__FLOW_SYNC_FORCE=false;
+    if(moved.length && tripped){
+      try{ sessionStorage.setItem('__flowReloadWhy', JSON.stringify({at:new Date().toISOString(), held:true, keys:moved})); }catch(e){}
+      window.__FLOW_SYNC.held=moved.map(m=>m.k);
+      console.warn('[Flow] sync: changes held back after repeated reloads', moved);
+    } else {
+      serverKeys.forEach(k=>{
+        if(dirty[k]) return;                     /* ours is newer — do not clobber it */
+
+        const v=all[k]; if(v==null) return;
+        if(painted[k]!==v){
+          /* Last-ditch net: whatever this device held is kept aside for one
+             generation before the server's copy replaces it. Nothing this app
+             overwrites is ever unrecoverable. */
+          try{ if(painted[k]!=null) localStorage.setItem('bak2_'+k, painted[k]); }catch(e){}
+          try{ localStorage.setItem(k,v); changed=true; }catch(e){}
+          /* `painted` was captured once, at load. Now that this can run again
+             later, it has to keep up — otherwise every subsequent reconcile
+             re-discovers the same difference and asks for the same reload. */
+          painted[k]=v;
+        }
+      });
+      if(changed){
+        try{
+          recent.push({t:Date.now(), sig:sig});
+          sessionStorage.setItem('__flowReloadLog', JSON.stringify(recent.slice(-6)));
+          sessionStorage.setItem('__flowReloadWhy', JSON.stringify({at:new Date().toISOString(), held:false, keys:moved}));
+        }catch(e){}
+      }
+    }
 
     /* ── The map must describe what is actually here ──────────────────────
        The signature map is written from the manifest, for every section the
@@ -2020,6 +2063,7 @@ function syncPaint(){
     const acctNow=cookie('flow_acct');
     if(acctNow && lsGet(OWNER_KEY)!==acctNow){ try{ localStorage.setItem(OWNER_KEY,acctNow); }catch(e){} }
 
+    if(!window.__FLOW_SYNC.held || !moved.length || !tripped) window.__FLOW_SYNC.held=null;
     /* The server has answered, so it is now safe to mirror writes upward. */
     window.__DB_ON=true;
     window.__FLOW_SYNC.state='on';

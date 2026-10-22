@@ -7590,7 +7590,8 @@ const Refresh = {
       if (manual && Connect.list.some((c) => c.id === 'fathom' && c.connected)) {
         try { const r = await Meetings.pull(); if (r.added) msg = r.added + ' new meeting' + (r.added === 1 ? '' : 's') + '. '; } catch (e) {}
       }
-      try { if (window.__flowSyncNow) window.__flowSyncNow(); } catch (e) {}
+      /* Asked for by hand: allowed through the host's reload breaker. */
+      try { if (window.__flowSyncNow) window.__flowSyncNow(true); } catch (e) {}
       try { await Inbox.load(); Inbox.paintToday(); } catch (e) {}
       await new Promise((r) => setTimeout(r, 900));
       if (manual) Refresh.say(msg + 'Up to date.');
@@ -7616,9 +7617,24 @@ const Refresh = {
     return el;
   },
   atTop() { return (window.scrollY || document.documentElement.scrollTop || 0) <= 0; },
+  /* Why the last reloads happened, kept in the account so a loop on one
+     device can be read from another. The host writes the reason to
+     sessionStorage just before it reloads; this picks it up after. */
+  async diag() {
+    let why = null;
+    try { why = JSON.parse(sessionStorage.getItem('__flowReloadWhy') || 'null'); sessionStorage.removeItem('__flowReloadWhy'); } catch (e) { why = null; }
+    if (!why) return;
+    try {
+      const log = (await DB.get('flow:diag:reloads', [])) || [];
+      log.push(Object.assign({ ua: (navigator.userAgent || '').slice(0, 80), app: !!(window.Capacitor && window.Capacitor.Plugins) }, why));
+      await DB.set('flow:diag:reloads', log.slice(-20));
+    } catch (e) {}
+    if (why.held || (window.__FLOW_SYNC && window.__FLOW_SYNC.held)) { try { Refresh.say('Changes from another device are waiting — pull down to refresh.'); } catch (e) {} }
+  },
   boot() {
     /* A long time away is worth a quiet sync on return; a short one is not. */
     try { window.__FLOW_SYNC_GAP_MS = Refresh.QUIET_MS; } catch (e) {}
+    (async () => { try { if (window.__FLOW_ALL_READY) await window.__FLOW_ALL_READY; } catch (e) {} await new Promise((r) => setTimeout(r, 800)); Refresh.diag().catch(() => {}); })();
     const ind = Refresh.indicator();
     /* A finger: pull down from the top. The page does not bounce while the
        pull is being measured, so the gesture reads as one thing. */
