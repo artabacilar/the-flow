@@ -5,7 +5,13 @@
    writes without taking you anywhere. */
 const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
+const { randomUUID } = require('crypto');
 const H = 'http://localhost:4222';
+// Match the isolated replica's configuration without embedding a person's
+// address or a reusable invite/password in this test file.
+const OWNER_EMAIL = process.env.FLOW_OWNER_EMAIL || 'owner@example.test';
+const INVITE_CODE = process.env.FLOW_INVITE_CODE || '';
+const TEST_PASSWORD = randomUUID();
 
 (async () => {
   const b = await chromium.launch();
@@ -22,7 +28,7 @@ const H = 'http://localhost:4222';
     await page.waitForTimeout(250);
     await page.fill('#fa-email', email);
     await page.fill('#fa-name', name);
-    await page.fill('#fa-pw', 'a properly long password');
+    await page.fill('#fa-pw', TEST_PASSWORD);
     if (invite) await page.fill('#fa-inv', invite).catch(() => {});
     await submitAuth(page);
     await page.waitForTimeout(4200);
@@ -37,7 +43,7 @@ const H = 'http://localhost:4222';
   const cm = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const p = await cm.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await signUp(p, 'artur.abacilar@abko.com.tr', 'Artur');   // the owner
+  await signUp(p, OWNER_EMAIL, 'Owner');
 
   console.log('\n— the bar replaces the old one —');
   ok('the app loaded with no errors', errs.length === 0, errs.slice(0, 3));
@@ -197,7 +203,7 @@ const H = 'http://localhost:4222';
   const cd = await b.newContext({ viewport: { width: 1440, height: 950 } });
   const d = await cd.newPage();
   const derrs = []; d.on('pageerror', e => derrs.push(e.message));
-  await signUp(d, 'navdesk@example.com', 'Desk', 'letmein');
+  await signUp(d, 'navdesk@example.test', 'Desk', INVITE_CODE);
 
   console.log('\n— the sidebar replaces the pill row —');
   ok('loaded with no errors', derrs.length === 0, derrs.slice(0, 3));
@@ -318,27 +324,36 @@ const H = 'http://localhost:4222';
   console.log('\n═══ the system pass ═══');
   console.log('\n— the fiddly controls now have a real tap area —');
   await p.click('#flow-tabbar [data-fn-group="focus"]'); await p.waitForTimeout(700);
+  await p.click('#flow-seg [data-fn-seg="quad"]'); await p.waitForTimeout(700);
   await p.evaluate(() => {
     qData.items = [{ id: 't1', q: 1, txt: 'A priority with the usual row of controls', done: false }];
     qSave(); renderQuad();
   });
   await p.waitForTimeout(700);
   const taps = await p.evaluate(() => {
-    const out = [];
-    document.querySelectorAll('#tab-quad .qitem .q-del, #tab-quad .qitem .q-edit, #tab-quad .qitem .q-rock')
-      .forEach(el => {
-        const r = el.getBoundingClientRect();
-        const cs = getComputedStyle(el, '::after');
-        out.push({ cls: el.className, visual: Math.round(r.width) + 'x' + Math.round(r.height),
-                   tapW: parseInt(cs.width, 10) || 0, tapH: parseInt(cs.height, 10) || 0 });
+    const buttons = [], overlaps = [];
+    document.querySelectorAll('#tab-quad .qitem').forEach(row => {
+      const controls = [...row.querySelectorAll('button, select, input')]
+        .filter(el => el.getClientRects().length)
+        .map(el => ({ el, rect: el.getBoundingClientRect() }));
+      controls.forEach(({ el, rect: r }, i) => {
+        if (el.matches('.q-del, .q-edit, .q-rock')) {
+          buttons.push({ cls: el.className, width: r.width, height: r.height });
+        }
+        controls.slice(i + 1).forEach(({ el: other, rect: s }) => {
+          if (Math.min(r.right, s.right) - Math.max(r.left, s.left) > 0.5 &&
+              Math.min(r.bottom, s.bottom) - Math.max(r.top, s.top) > 0.5) {
+            overlaps.push([el.className || el.tagName, other.className || other.tagName]);
+          }
+        });
       });
-    return out;
+    });
+    return { buttons, overlaps };
   });
-  ok('there are row controls to check', taps.length > 0, taps.length);
-  ok('every one has a 44px tap area', taps.every(t => t.tapW >= 44 && t.tapH >= 44), taps);
-  /* The point is that no row got taller — the tap area grows outside the box. */
-  ok('without making any row taller',
-     taps.every(t => parseInt(t.visual.split('x')[1], 10) < 44), taps.map(t => t.visual));
+  ok('there are row controls to check', taps.buttons.length > 0, taps.buttons.length);
+  ok('each row action has a real 44px target',
+     taps.buttons.every(t => t.width >= 44 && t.height >= 44), taps.buttons);
+  ok('the targets do not overlap adjacent buttons, fields or checkboxes', taps.overlaps.length === 0, taps.overlaps);
 
   console.log('\n— numbers line up —');
   ok('metrics use tabular figures', await p.evaluate(() => {
@@ -376,25 +391,43 @@ const H = 'http://localhost:4222';
     const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length;
     return { cols, w: Math.round(el.getBoundingClientRect().width), vw: window.innerWidth };
   });
-  /* This is the bug the sidebar introduced: the old rule was
-     @media(max-width:1000px), so at a 1500px viewport the grid kept seven
-     columns however narrow the column it actually sat in had become. The fix
-     was auto-fit, which counts from the grid's own box — so the honest test is
-     to squeeze that box while leaving the window alone and watch the count
-     fall. A viewport query cannot notice this; auto-fit cannot miss it. */
+  /* Keep Monday through Sunday together. Squeezing the calendar's container
+     should introduce scrolling inside it, without wrapping Sunday onto a
+     second row or widening the document. The viewport stays unchanged. */
   const cgSqueeze = await d.evaluate(() => {
     const el = document.getElementById('cGrid');
     if (!el) return null;
-    const count = () => getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length;
-    const before = count();
+    const measure = () => {
+      const days = [...el.querySelectorAll('.cday')];
+      return { days: days.length,
+        rows: new Set(days.map(day => Math.round(day.getBoundingClientRect().top))).size,
+        cols: getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length,
+        width: el.clientWidth, scrollWidth: el.scrollWidth,
+        overflowX: getComputedStyle(el).overflowX,
+        pageWidth: document.documentElement.scrollWidth,
+        viewport: document.documentElement.clientWidth };
+    };
+    const before = measure();
     const prev = el.style.width;
+    const prevScroll = el.scrollLeft;
     el.style.width = '460px';
-    const after = count();
+    const after = measure();
+    el.scrollLeft = el.scrollWidth;
+    const last = el.querySelector('.cday:last-child');
+    const end = last && last.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    const lastDayReachable = !!end && el.scrollLeft > 0 && end.right <= box.right + 1 && end.left >= box.left - 1;
     el.style.width = prev;
-    return { before, after, vw: window.innerWidth };
+    el.scrollLeft = prevScroll;
+    return { before, after, lastDayReachable, vw: window.innerWidth };
   });
-  ok('the week grid counts columns from its own width, not the window',
-     cgSqueeze && cgSqueeze.after < cgSqueeze.before, cgSqueeze);
+  ok('all seven days stay in one row when the calendar container narrows',
+     cgSqueeze && [cgSqueeze.before, cgSqueeze.after].every(m => m.days === 7 && m.cols === 7 && m.rows === 1), cgSqueeze);
+  ok('the narrow calendar contains its horizontal scroll without widening the page',
+     cgSqueeze && cgSqueeze.after.scrollWidth > cgSqueeze.after.width &&
+     /^(auto|scroll)$/.test(cgSqueeze.after.overflowX) && cgSqueeze.after.pageWidth <= cgSqueeze.after.viewport + 1,
+     cgSqueeze && cgSqueeze.after);
+  ok('scrolling that region makes the final day reachable', cgSqueeze && cgSqueeze.lastDayReachable, cgSqueeze);
   ok('and it uses the width the rail gave back', cg && cg.w > 1100, cg);
   ok('and it does not overflow that column', await d.evaluate(() => {
     const el = document.getElementById('cGrid');
