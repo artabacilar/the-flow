@@ -264,9 +264,20 @@ const MANIFEST = JSON.stringify({
     { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
     { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
   ],
+  /* What Chrome shows in its install sheet, on phones and on desktop. */
+  screenshots: [
+    { src: 'store/phone-1.png', sizes: '540x960', type: 'image/png', form_factor: 'narrow', label: 'Today: what matters, what is done' },
+    { src: 'store/phone-2.png', sizes: '540x960', type: 'image/png', form_factor: 'narrow', label: 'Big Rocks for the week' },
+    { src: 'store/phone-3.png', sizes: '540x960', type: 'image/png', form_factor: 'narrow', label: 'The week compass' },
+    { src: 'store/wide-1.png', sizes: '1280x720', type: 'image/png', form_factor: 'wide', label: 'Today, on a computer' },
+  ],
+  display_override: ['standalone', 'minimal-ui'],
+  /* The Play Store build of this same app. Chrome on Android can offer it
+     instead of a plain install. */
+  related_applications: [{ platform: 'play', id: 'com.abko.theflow', url: 'https://play.google.com/store/apps/details?id=com.abko.theflow' }],
 });
 const SW = `
-const CACHE='life-os-v6';
+const CACHE='life-os-v7';
 const SHELL=['./','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
@@ -759,6 +770,13 @@ const server = http.createServer(async (req, res) => {
     if (p === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(SW); }
     if (p === '/icon-192.png') return sendFile(res, 'icon-192.png', 'image/png');
     if (p === '/icon-512.png') return sendFile(res, 'icon-512.png', 'image/png');
+    if (/^\/store\/(phone-[123]|wide-1)\.png$/.test(p)) {
+      try {
+        const body = fs.readFileSync(path.join(__dirname, 'store', p.slice(7)));
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+        return res.end(body);
+      } catch (e) { res.writeHead(404); return res.end('Not found'); }
+    }
     if (p === '/favicon.ico') return sendFile(res, 'icon-192.png', 'image/png');
 
     // ── Everything below requires login ──
