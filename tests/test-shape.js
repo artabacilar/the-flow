@@ -75,6 +75,11 @@ ok('Finances and Priorities start outside the menu', /hiddenTabs: \['finance', '
 ok('an existing account loses only what it never used', /Sections = \{[\s\S]*?async migrate\(\)[\s\S]*?Finance\.items[\s\S]*?filter\(\(i\) => i && !i\.done\)/.test(pack));
 ok('and only once', /sectionsV/.test(pack));
 ok('prices on Today are a widget, off until asked for', /todayMarkets: false/.test(pack) && /enabled\(\) \{ return Settings\.get\('todayMarkets'\) === true; \}/.test(pack));
+ok('an account older than the change keeps the strip it had', /WIDGET_DAY = Date\.parse\('2026-10-22T13:40:00Z'\)/.test(pack) && /Date\.parse\(c\) < WIDGET_DAY/.test(pack));
+ok('and the account carries its creation time for that', /created: me\.created \|\| null/.test(fs.readFileSync(path.join(__dirname, '..', 'flow-auth.js'), 'utf8')));
+ok('widgets are added and removed on Today itself', /widgetRow\(\) \{/.test(pack) && /data-widget="markets"/.test(pack) && /data-mkt-chip=/.test(pack));
+ok('the person is back in the sidebar, with the photo once Google is connected', /data-fn-you="1"/.test(pack) && /Nav\.sideEl\.querySelector\('\[data-fn-you\]'\)/.test(pack));
+ok('Week Compass is one day per row on a phone', /body\.fn-on #tab-compass \.cgrid\{grid-template-columns:1fr/.test(fs.readFileSync(path.join(__dirname, '..', 'flow-pack.css'), 'utf8')));
 ok('the strip is taken away when the widget is off', /if \(!Markets\.enabled\(\)\) \{\s*const old = feed && \$\('#flow-markets', feed\);\s*if \(old\) old\.remove\(\);/.test(pack));
 ok('a shared task becomes a Big Rock, not a Q1 priority', /src: \{ k: 'inbox', id: item\.id \}/.test(pack) && !/q: 1,\n\s*txt: item\.task\.txt/.test(pack));
 ok('the legacy Google Calendar card is gone', !/<h3>📆 Google Calendar<\/h3>/.test(pack));
