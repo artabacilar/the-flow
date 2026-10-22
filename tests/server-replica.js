@@ -42,6 +42,14 @@ store = flowAuth.protect(store);                            // EDIT 2
    here is a route the suites cannot see — tests would pass against a server
    that does not have the feature. test-audit guards the pair. */
 let push=null; try{ push=require('../flow-push'); }catch(e){ push=null; }
+let meetings=null; try{ meetings=require('../flow-meetings'); }catch(e){ meetings=null; }
+let connectMod=null; try{ connectMod=require('../flow-connect'); }catch(e){ connectMod=null; }
+const MEETING_DEPS=()=>({
+  raw:rawStore,
+  users:async()=>{ const v=await rawStore.get(flowAuth.USERS_KEY); const users=(typeof v==='string'?JSON.parse(v||'{}'):v)||{}; return Object.values(users).map(u=>u&&u.id).filter(Boolean); },
+  connect:connectMod&&connectMod._internals, nsPrefix:flowAuth.nsPrefix, fetch:(...a)=>fetch(...a),
+  sendToUser:push?push.sendToUser:null, log:()=>{}
+});
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}
 function json(res,code,obj){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
 const server=http.createServer(async(req,res)=>{
@@ -113,6 +121,11 @@ const server=http.createServer(async(req,res)=>{
         'Cache-Control':'public, max-age=31536000, immutable'});
       return res.end(fs.readFileSync(f));}
     if(p==='/'||p==='/index.html'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(shell());}
+    if(p==='/api/meetings/pull'){
+      if(!meetings||!connectMod) return json(res,503,{error:'This build has no meetings module.'});
+      const done=await meetings.handle(req,res,{ path:p, uid:req.__flowUid||null, json, deps:MEETING_DEPS() });
+      if(done) return;
+    }
     if(p.indexOf('/api/push/')===0){                           // EDIT 2c
       if(!push) return json(res,503,{error:'This build has no notifications module.'});
       const done = await push.handle(req,res,{
