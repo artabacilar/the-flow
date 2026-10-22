@@ -1924,7 +1924,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .td-wbtn.on{color:var(--text);border-color:var(--accent)}
 .td-wchip.on{color:var(--text);background:var(--card2)}
 /* The person, in the sidebar: photo once Google is connected, else a face. */
-#flow-side .fn-you .fn-i{width:20px;height:20px}
+#flow-side [data-fn-side="artur"] .fn-i{width:20px;height:20px}
 
 /* ── Week Compass on a phone: one day per row, chips you can read ─────── */
 @media (max-width:760px){

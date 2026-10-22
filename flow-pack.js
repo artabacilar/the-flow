@@ -311,7 +311,7 @@ const SETTINGS_DEFAULTS = {
   bankProvider: 'none',
   statementDateFormat: 'auto',
   pushRemindRocks: true,         // reminders at a rock's own time
-  hiddenTabs: ['finance', 'quad'], // sections out of the menu (data kept); fewer by default
+  hiddenTabs: [],                // sections taken out of the menu (data kept)
   sectionsV: 0,                  // which default-hiding pass has run on this account
   todayMarkets: false,           // the price strip on Today is a widget: off until asked for
   upgradeVisuals: true,
@@ -2544,9 +2544,10 @@ const Planner = {
     if (!raw) return 'Planner';
     return raw.split(/\s+/)[0].slice(0, 18);
   },
-  /* The planner had its own tab once; it is a card on North Star now, so
-     there is no pill to rename. Kept as a no-op for the settings binder. */
-  applyTabName() { try { Nav.relabel(); } catch (e) {} },
+  applyTabName() {
+    try { Tabs.relabel('artur', '👤 ' + Planner.who()); } catch (e) {}
+    try { Nav.relabel(); } catch (e) {}
+  },
 
   /* How many scheduled, undone items the fold's chip should show. */
   chip() {
@@ -2573,6 +2574,17 @@ const Planner = {
     const overdue = Schedule.scheduled().filter(r => !r.done && r.date < today());
 
     section.innerHTML = `
+      <div class="flow-row between" style="margin:6px 0 14px">
+        <div>
+          <div class="flow-label">${esc(DOW[now.getDay()])}, ${now.getDate()} ${esc(MON[now.getMonth()])} ${now.getFullYear()} · week ${wk.week}</div>
+          <div class="flow-hero">${esc(s.displayName || Planner.who())}</div>
+        </div>
+        <div class="flow-row">
+          <button class="flow-btn" data-a="refresh">↻ Refresh</button>
+          <button class="flow-btn primary" data-a="settings">⚙ Settings</button>
+        </div>
+      </div>
+
       <div class="flow-grid c2">
         <div class="flow-card">
           <h3>⏱ Today</h3>
@@ -7583,7 +7595,13 @@ const Sections = {
      Finances exactly where it was. Runs once, and says what it did. */
   async migrate() {
     const v = Settings.get('sectionsV') || 0;
-    if (v >= 2) return;
+    if (v >= 3) return;
+    /* Finances and Priorities were taken out of the menu for a day. They
+       are back for everyone; hiding is something a person does themselves. */
+    if (v >= 1 && v < 3) {
+      const hid = Sections.hidden().filter((t) => t !== 'finance' && t !== 'quad');
+      if (hid.length !== Sections.hidden().length) { await Settings.set('hiddenTabs', hid); Sections.apply(); }
+    }
     /* The price strip became a widget, off for new accounts. An account
        that was already using the app keeps it exactly where it was — a
        thing being optional is not a reason to take it off anyone's screen. */
@@ -7596,22 +7614,8 @@ const Sections = {
         await Settings.set('todayMarkets', true);
         Markets.refresh().catch(() => {});
       }
-      if (v >= 1) { await Settings.set('sectionsV', 2); return; }
     }
-    const hid = Sections.hidden().slice();
-    const quiet = [];
-    try { if (!(Finance.items || []).length && hid.indexOf('finance') < 0) { hid.push('finance'); quiet.push('Finances'); } } catch (e) {}
-    try {
-      const q = (typeof qData !== 'undefined' && qData) || null;
-      const open = q && Array.isArray(q.items) ? q.items.filter((i) => i && !i.done).length : 0;
-      if (!open && hid.indexOf('quad') < 0) { hid.push('quad'); quiet.push('Priorities'); }
-    } catch (e) {}
-    await Settings.set('hiddenTabs', hid);
-    await Settings.set('sectionsV', 2);
-    if (quiet.length) {
-      Sections.apply();
-      try { toast(quiet.join(' and ') + (quiet.length === 1 ? ' is' : ' are') + ' out of the menu — empty, so out of the way. Settings → Sections brings them back.', null, 6000); } catch (e) {}
-    }
+    await Settings.set('sectionsV', 3);
   },
   apply() {
     let st = document.getElementById('fn-hide');
@@ -7846,7 +7850,7 @@ const Connect = {
       if (src) { av.innerHTML = '<img class="fn-face" alt="" src="' + esc(src) + '">'; av.classList.add('has-face'); }
       else { av.classList.remove('has-face'); av.textContent = Nav.initial(); }
     }
-    const side = Nav.sideEl && Nav.sideEl.querySelector('[data-fn-you]');
+    const side = Nav.sideEl && Nav.sideEl.querySelector('[data-fn-side="artur"]');
     if (side) {
       const old = side.querySelector('svg, img.fn-face');
       if (src) {
@@ -7855,7 +7859,7 @@ const Connect = {
         if (old) old.replaceWith(img); else side.insertBefore(img, side.firstChild);
       } else if (old && old.tagName === 'IMG') {
         const tmp = document.createElement('span');
-        tmp.innerHTML = Nav.svg('user');
+        tmp.innerHTML = Nav.svg(Nav.ICON.artur || 'user');
         old.replaceWith(tmp.firstElementChild || tmp);
       }
     }
@@ -8319,16 +8323,16 @@ const Nav = {
      nothing; only the pill and the slot go. Brainstorm was a questionnaire
      answered once; Time counted hours that the Journal already records; the
      planner now lives inside North Star. */
-  REMOVED: ['brainstorm', 'time', 'artur'],
+  REMOVED: ['brainstorm', 'time'],
 
   /* Reachable from the avatar and from the palette, but not worth a slot. */
-  MENU: ['settings'],
+  MENU: ['artur', 'settings'],
 
   ICON: {
     today: 'today', northstar: 'star', quad: 'target', compass: 'compass', abko: 'work', dtc: 'rocket',
     training: 'dumbbell', diet: 'food',
     sleep: 'moon', habits: 'check', mood: 'heart', journal: 'note',
-    finance: 'money', ask: 'chat', settings: 'gear'
+    finance: 'money', ask: 'chat', artur: 'user', settings: 'gear'
   },
 
   /* Sidebar order and headings. */
@@ -8338,7 +8342,7 @@ const Nav = {
     { head: 'Body',   tabs: ['training', 'sleep', 'habits'] },
     { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
   ],
-  SIDE_FOOT: ['settings'],
+  SIDE_FOOT: ['artur', 'settings'],
 
   CAPTURE: [
     { id: 'note',    label: 'Note',    icon: 'note'     },
@@ -8776,10 +8780,6 @@ const Nav = {
     });
 
     html += '<div class="fn-spacer"></div>';
-    /* You: the photo (once Google is connected) and your first name. It
-       opens North Star, which is where the planner lives now. */
-    html += '<button type="button" class="fn-link fn-you" data-fn-you="1">' + Nav.svg('user') +
-            '<span class="fn-txt">' + esc(Planner.who()) + '</span></button>';
     html += Nav.SIDE_FOOT.filter(t => Nav.pill(t)).map(link).join('');
 
     side.innerHTML = html;
@@ -8787,8 +8787,6 @@ const Nav = {
 
     side.querySelectorAll('[data-fn-side]').forEach(b =>
       b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-side'))));
-    const you = side.querySelector('[data-fn-you]');
-    if (you) you.addEventListener('click', () => Nav.go(Nav.pill('northstar') ? 'northstar' : 'settings'));
     document.getElementById('fn-kbtn').addEventListener('click', () => Nav.openPalette());
 
     document.body.classList.add('fn-on');
@@ -8804,8 +8802,6 @@ const Nav = {
         const txt = b.querySelector('.fn-txt');
         if (txt) txt.textContent = Nav.label(t);
       });
-      const you = Nav.sideEl.querySelector('[data-fn-you] .fn-txt');
-      if (you) you.textContent = Planner.who();
     }
     const av = document.getElementById('fn-avatar');
     if (av && !av.classList.contains('has-face')) av.textContent = Nav.initial();
@@ -9038,11 +9034,7 @@ const NorthStar = {
       Friends.card() +
       Audit.card() +
       NorthStar.goalsCard(avg) +
-      NorthStar.tenetsCard() +
-      /* The planner — timed items, the week ahead, shared tasks, the
-         calendar file. It was a tab of its own; a direction and the plan
-         that serves it belong on one screen. */
-      Fold.card('planner', Fold.head('planner', '🗓 Planner', Planner.chip()) + Fold.body('<div id="ns-planner"></div>'));
+      NorthStar.tenetsCard();
 
     NorthStar.wire();
     Score.wire(sec);
@@ -9050,7 +9042,6 @@ const NorthStar = {
     Friends.wire(sec);
     Audit.wire(sec);
     Fold.wire(sec);
-    try { const pl = $('#ns-planner', sec); if (pl) Planner.render(pl); } catch (e) { console.warn('[Flow] planner', e); }
     /* A tap on the scoreboard changes what a friend is looking at, so the
        card follows the paint. It sends only when something actually moved. */
     Friends.publish();
@@ -10798,8 +10789,12 @@ async function boot() {
 
   Tabs.init();
   Tabs.add('northstar', '⭐ North Star', (sec) => NorthStar.render(sec));
+  Tabs.add('artur', '👤 Planner', (sec) => Planner.render(sec));
   Tabs.add('ask', '💬 Ask', (sec) => Ask.render(sec));
   Tabs.add('settings', '⚙️ Settings', (sec) => SettingsUI.render(sec));
+  /* Settings and the account are both loaded by now, so the planner tab can
+     take the signed-in person's name. */
+  Planner.applyTabName();
   /* Prices and the shared-task inbox. Both are additive and both fail quietly:
      no server module, no strip, no inbox, and the rest of the app is unchanged. */
   /* Navigation first. It needs the pills, which exist by now, and nothing
