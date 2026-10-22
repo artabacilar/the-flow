@@ -86,7 +86,8 @@ const H = 'http://localhost:4222';
   await p1.waitForTimeout(1500);
   /* The strip is a widget now: nothing is drawn, and nothing is fetched,
      until it is switched on in Settings. */
-  ok('nothing is on Today until the widget is switched on', await p1.evaluate(() => !document.getElementById('flow-markets')));
+  ok('nothing is on Today until the widget is switched on', await p1.evaluate(() => !document.getElementById('flow-markets')),
+    await p1.evaluate(() => ({ on: Flow.Settings.get('todayMarkets'), v: Flow.Settings.get('sectionsV'), created: Flow.Auth.user && Flow.Auth.user.created, keys: Flow.Auth.user && Object.keys(Flow.Auth.user) })));
   await p1.evaluate(async () => { await Flow.Settings.set('todayMarkets', true); await Flow.Markets.refresh(); });
   await p1.waitForTimeout(800);
   const mkt = await p1.evaluate(() => {

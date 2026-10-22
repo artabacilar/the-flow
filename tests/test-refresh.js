@@ -218,6 +218,27 @@ const H = 'http://localhost:4222';
     await p.evaluate(() => (localStorage.getItem('ld_habits') || '')).catch(() => '')
       .then(v => /Changed while typing/.test(v)));
 
+  console.log('\n— what the app rewrote at start-up goes up, not down —');
+  /* The nutrition counter resets each morning inside the seeding gate, so it
+     was never queued; the server kept yesterday, the device re-derived today,
+     and every open reloaded. A held section whose bytes moved since the paint
+     is the app's own change: it must reach the server, and nothing reloads. */
+  await p.waitForTimeout(1500);
+  const rolled = await p.evaluate(async () => {
+    /* The page was painted from the server's current copy; the app then
+       rewrites the section itself, inside the seeding gate. */
+    const local = JSON.stringify({ habits: [{ id: 'h1', name: 'Rolled over on the device', target: 5 }], completions: {} });
+    localStorage.setItem('ld_habits', local);          /* no dirty mark — exactly what a start-up write does */
+    window.__probeAlive = true;
+    window.__flowSyncNow();
+    await new Promise((r) => setTimeout(r, 2500));
+    const g = await (await fetch('/api/get?key=ld_habits', { credentials: 'same-origin', cache: 'no-store' })).json();
+    return { alive: window.__probeAlive === true, server: String(g.value || ''), local: localStorage.getItem('ld_habits') };
+  }).catch(() => ({ alive: false }));
+  ok('the page did not reload', rolled.alive, rolled);
+  ok("the device's derived copy reached the server", /Rolled over on the device/.test(rolled.server), rolled.server);
+  ok('and stayed on the device', /Rolled over on the device/.test(rolled.local || ''));
+
   console.log('\n— and it never reloads forever —');
   /* A loop: the same section "changes" to the same bytes on every open.
      Pretend two such reloads just happened, then make the third diff look
