@@ -145,12 +145,47 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     ok('the price widget sits under the pulse, not at the foot of the page', await p.evaluate(() =>
       !!(document.querySelector('.flow-td-pulse').compareDocumentPosition(document.getElementById('flow-markets')) & Node.DOCUMENT_POSITION_FOLLOWING) &&
       !!(document.getElementById('flow-markets').compareDocumentPosition(document.querySelector('#today-feed .td-rocks')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    /* Plan today writes a rock in place; "Open the week instead" is the
+       way through to the host form, and keeps every safeguard below. */
+    const planWeek = async () => { await action('plan'); await p.locator('#flow-plan.on').waitFor(); await p.locator('#flow-plan [data-pl="week"]').click(); };
+    const reviewWeek = async () => { await action('review'); await p.locator('#flow-review.on').waitFor(); await p.locator('#flow-review [data-rv="week"]').click(); };
+    console.log('\n— Plan today writes a rock without leaving Today —');
+    await action('plan');
+    await p.locator('#flow-plan.on').waitFor();
+    ok('Plan today opens a sheet on Today', await current() === 'today' && await p.locator('#pl-title').isVisible());
+    await p.locator('#pl-title').fill('Call the accountant about Q4');
+    await p.locator('#pl-time').fill('11:30');
+    await p.locator('#flow-plan [data-pl="add"]').click();
+    await p.waitForTimeout(500);
+    const planned = await p.evaluate(() => { const d = new Date(); d.setHours(12, 0, 0, 0); const dow = (d.getDay() + 6) % 7; const all = [].concat(...Object.values(cData.rocks || {})); const r = all.find(x => x.title === 'Call the accountant about Q4'); return { found: !!r, day: r && r.day, dow, time: r && r.time, tile: document.querySelector('[data-jump="progress"] .v').textContent, listed: document.querySelector('#pl-list').textContent.includes('Call the accountant') }; });
+    ok('the rock lands on today, at the time given', planned.found && planned.day === planned.dow && planned.time === '11:30', planned);
+    ok('the progress tile counts it at once', /of 1$/.test(planned.tile) || /of \d+$/.test(planned.tile), planned.tile);
+    ok('and the sheet lists it under "already on today"', planned.listed);
+    await p.locator('#flow-plan .fn-capture-close').click();
+    await action('review');
+    await p.locator('#flow-review.on').waitFor();
+    ok('Review week opens the scorecard on Today', await current() === 'today' && await p.locator('#rv-score').isVisible());
+    ok('with the week\'s numbers and what slipped', await p.evaluate(() => /Big Rocks|rocks/i.test(document.getElementById('rv-score').textContent) && /Slipped/.test(document.getElementById('rv-slipped').textContent)));
+    await p.locator('#flow-review .fn-capture-close').click();
+
+    console.log('\n— the overdue pile goes in one tap —');
+    await p.evaluate(() => { const d = new Date(); d.setDate(d.getDate() - 3); d.setHours(12, 0, 0, 0); const w = (function (x) { const y = new Date(x); y.setHours(0, 0, 0, 0); const day = (y.getDay() + 6) % 7; y.setDate(y.getDate() - day + 3); const j = new Date(y.getFullYear(), 0, 4); const n = 1 + Math.round(((y - j) / 864e5 - 3 + ((j.getDay() + 6) % 7)) / 7); return y.getFullYear() + '-W' + String(n).padStart(2, '0'); })(d); cData.rocks[w] = (cData.rocks[w] || []).concat([{ id: 'od1', title: 'Old one', role: '', day: (d.getDay() + 6) % 7, time: '', end: '', prio: 'med', note: '', done: false }, { id: 'od2', title: 'Old two', role: '', day: (d.getDay() + 6) % 7, time: '', end: '', prio: 'med', note: '', done: false }]); cSave(); renderToday(); });
+    await p.waitForTimeout(500);
+    const lateBefore = await p.evaluate(() => document.querySelectorAll('#today-feed .td-rock[data-rockid] .rk-late').length);
+    ok('a "Drop all overdue" button appears once there is a pile', lateBefore >= 2 && await p.locator('.td-rocks .td-dropall').isVisible(), lateBefore);
+    p.once('dialog', (d) => d.accept());
+    await p.locator('.td-rocks .td-dropall').click();
+    await p.waitForTimeout(600);
+    const after = await p.evaluate(() => ({ left: [].concat(...Object.values(cData.rocks || {})).filter(r => /^Old /.test(r.title)).length, late: document.querySelectorAll('#today-feed .rk-late').length, journal: jData.filter(j => /dropped: Old/.test(j.txt)).length }));
+    ok('every overdue rock is dropped, each with a journal line', after.late === 0 && after.left === 0 && after.journal === 2, after);
+    ok('and the button goes with the pile', !(await p.locator('.td-rocks .td-dropall').count()), after);
+
     await go('compass');
     await p.locator('#wkNext').click();
     await p.locator('#wkNext').click();
     await go('today');
-    await action('plan');
-    ok('Plan today opens the host Week Compass', await current() === 'compass');
+    await planWeek();
+    ok('"Open the week instead" opens the host Week Compass', await current() === 'compass');
     ok('it returns to this week after viewing a future week', /this week/i.test(await p.locator('#cWeekLabel').innerText()));
     ok('a blank form is dated to the local today', await p.locator('#rkDay').inputValue() === await date());
     ok('the title field receives keyboard focus', await focusIs('rkTitle'));
@@ -162,14 +197,14 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     await p.locator('#rkNote').fill('Keep these details while I check Today.');
     const draft = await form();
     await go('today');
-    await action('plan');
+    await planWeek();
     ok('a draft keeps its title, date, time and notes', JSON.stringify(await form()) === JSON.stringify(draft), await form());
     await p.locator('#rkAdd').click();
     const rock = p.locator('#rockList .rockrow').filter({ hasText: draft.rkTitle });
     await rock.locator('.rk-edit').click();
     const edit = await form();
     await go('today');
-    await action('plan');
+    await planWeek();
     ok('an existing rock remains an edit', await p.locator('#rkCancel').isVisible());
     ok('the shortcut never silently reschedules the edit', JSON.stringify(await form()) === JSON.stringify(edit), await form());
     await p.locator('#rkCancel').click();
@@ -185,12 +220,12 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     await p.locator('#rkNote').fill('This belongs to the week I was planning.');
     const futureDraft = await form();
     await go('today');
-    await action('review');
+    await reviewWeek();
     ok('Review week respects the week of an unfinished draft', await p.locator('#cWeekLabel').innerText() === futureWeek);
     ok('reviewing does not change the unscheduled draft', JSON.stringify(await form()) === JSON.stringify(futureDraft));
     ok('reviewing an unfinished week still focuses its review', await focusIs('wkReview'));
     await go('today');
-    await action('plan');
+    await planWeek();
     ok('Plan today preserves the future week of an unscheduled draft', await p.locator('#cWeekLabel').innerText() === futureWeek);
     ok('the draft remains unscheduled with all details intact', JSON.stringify(await form()) === JSON.stringify(futureDraft));
     await p.locator('#rkAdd').click();
@@ -201,7 +236,7 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     await p.locator('#rkNote').fill('Edited without moving this commitment to this week.');
     const futureEdit = await form();
     await go('today');
-    await action('plan');
+    await planWeek();
     ok('an unscheduled edit keeps its original displayed week', await p.locator('#cWeekLabel').innerText() === futureWeek);
     ok('the future-week rock is still an edit with the same date and details', await p.locator('#rkCancel').isVisible() && JSON.stringify(await form()) === JSON.stringify(futureEdit));
     await p.locator('#rkAdd').click();
@@ -215,7 +250,7 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
 
     await p.locator('#wkPrev').click();
     await go('today');
-    await action('review');
+    await reviewWeek();
     ok('Review week opens the current week', await current() === 'compass' && /this week/i.test(await p.locator('#cWeekLabel').innerText()));
     ok('the existing weekly review receives focus', await focusIs('wkReview'));
     await go('today');
@@ -247,8 +282,8 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     await captureTrigger.press('Enter');
     await captureClose.press('Enter');
     ok('the visible Close button also restores the original focus', !(await p.locator('#flow-capture .fn-sheet').isVisible()) && await captureTrigger.evaluate(el => el === document.activeElement));
-    await p.locator('[data-jump="recovery"]').click();
-    ok('Recovery opens Sleep & Mood', await current() === 'sleep');
+    await p.locator('[data-jump="sleep"]').click();
+    ok('the Sleep tile opens Sleep & Mood', await current() === 'sleep');
 
     console.log('\n— completion is explicit and keyboard accessible —');
     await go('today');
@@ -327,7 +362,7 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
             ['Big Rock title', style('.td-rock:not(.done) .rk-title').color,
               style('.td-rocks').backgroundImage.match(/rgba?\([^)]*\)/g) || []],
             ['active bottom-tab label', style('#flow-tabbar button.on .fn-lb').color, [style('#flow-tabbar').backgroundColor]],
-            ['warning pulse value', style('[data-jump="priorities"].warn .v').color, [style('[data-jump="priorities"].warn').backgroundColor]]
+            ['warning pulse value', style(document.querySelector('.flow-td-tile.warn') ? '.flow-td-tile.warn .v' : '.flow-td-tile .v').color, [style(document.querySelector('.flow-td-tile.warn') ? '.flow-td-tile.warn' : '.flow-td-tile').backgroundColor]]
           ] : [['unfinished Compass rock', style('#cGrid .chip.rock:not(.done)').color, [style('#cGrid .chip.rock:not(.done)').backgroundColor]]];
           return cases.map(([name, ink, backgrounds]) => ({ name, ink, backgrounds,
             ratios: backgrounds.map(bg => {
@@ -365,6 +400,31 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     ok('all Q priorities are complete and the pinned task remains', await qChecks.count() === 0 && await pinnedTodayRow.isVisible());
     ok('focus falls back to an always-present Today action', await p.evaluate(() =>
       document.activeElement.matches('.flow-today-actions [data-flow-today-action]') && document.activeElement.getClientRects().length > 0));
+
+    console.log('\n— the four tiles: sleep, progress, focus, spend —');
+    await go('today');
+    const tiles = await p.evaluate(() => [...document.querySelectorAll('.flow-td-pulse [data-jump]')].map(b => b.getAttribute('data-jump')));
+    ok('Today shows sleep, progress, focus and meetings', tiles.join(',') === 'sleep,progress,focus,meetings', tiles);
+    ok('with nothing logged the sleep tile offers the first entry', await p.evaluate(() => document.querySelector('[data-jump="sleep"] .s').textContent) === 'Log sleep');
+    ok('and the focus tile offers to start', await p.evaluate(() => document.querySelector('[data-jump="focus"] .s').textContent) === 'Start focus');
+    await p.locator('[data-jump="focus"]').click();
+    await p.locator('#flow-focus.on').waitFor();
+    ok('the focus tile opens the timer sheet', await p.locator('#flow-focus .fc-clock').isVisible());
+    await p.locator('#flow-focus [data-fc="start"]').click();
+    await p.clock.runFor(26 * 60 * 1000);
+    await p.waitForTimeout(300);
+    ok('while it runs the tile says so', await p.evaluate(() => document.querySelector('[data-jump="focus"] .s').textContent) === '● running');
+    await p.locator('#flow-focus [data-fc="pause"]').click(); await p.waitForTimeout(200);
+    await p.clock.runFor(10 * 60 * 1000);
+    await p.locator('#flow-focus [data-fc="finish"]').click(); await p.waitForTimeout(400);
+    const logged = await p.evaluate(() => ({ tile: document.querySelector('[data-jump="focus"] .v').textContent, sessions: Flow.Focus.data.sessions.map(x => x.min), journal: jData.slice(-1)[0] && jData.slice(-1)[0].cat }));
+    ok('finishing logs the time spent, not the pause', logged.sessions.length === 1 && logged.sessions[0] === 26 && logged.tile === '26m', logged);
+    ok('and writes a line in the journal', logged.journal === 'focus', logged.journal);
+    await p.locator('#flow-focus [data-fc-add="25"]').click(); await p.waitForTimeout(300);
+    ok('a session added by hand counts too', await p.evaluate(() => document.querySelector('[data-jump="focus"] .v').textContent) === '51m');
+    await p.locator('#flow-focus .fn-capture-close').click();
+    await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(3500);
+    ok('and it is still there after a reload', await p.evaluate(() => (document.querySelector('[data-jump="focus"] .v') || {}).textContent) === '51m');
 
     console.log('\n— readable, reachable layouts in both light and dark —');
     for (const theme of ['signature', 'paper']) {
