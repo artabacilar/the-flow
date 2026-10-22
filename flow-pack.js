@@ -1942,7 +1942,7 @@ const Markets = {
        They sit here instead, right under the market strip. The host's own
        updateDbIndicator()/S.saved() write into these ids exactly as they do
        the header pair, so there is one source of truth and two mounts. */
-    if (!$('#flow-dbline', feed)) {
+    if (false && !$('#flow-dbline', feed)) {
       const dbl = document.createElement('div');
       dbl.id = 'flow-dbline';
       dbl.className = 'flow-td flow-dbline';
@@ -3623,6 +3623,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     try { Sections.wire(section); } catch (e) { console.warn('[Flow] sections', e); }
     try { Trial.wire(section); } catch (e) { console.warn('[Flow] trial', e); }
     try { InboxLink.wire(section); } catch (e) { console.warn('[Flow] inbox link', e); }
+    try { DataCard.wire(section); } catch (e) { console.warn('[Flow] data card', e); }
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -7735,6 +7736,33 @@ const Trial = {
  * the plan until it is pressed Add on. The URL is the whole secret: it can
  * be swapped for a new one at any time, and the old one stops at once.
  */
+/* ── Where your data is, in Settings ────────────────────────────────────
+ * The database pill, the save line and Backup / Restore used to sit on
+ * Today and in the Journal: diagnostics on the screens meant for the day.
+ * They live here now, together, and the host's updateDbIndicator() and
+ * S.saved() write into these ids exactly as they did the old ones. */
+const DataCard = {
+  wire(section) {
+    if (section.querySelector('#dataCard')) return;
+    const anchor = section.querySelector('#ibCard') || section.querySelector('#fbCard') || section.querySelector('#secCard') || section.querySelector('.flow-card');
+    if (!anchor) return;
+    const card = document.createElement('div');
+    card.className = 'flow-card'; card.id = 'dataCard';
+    card.innerHTML = '<h3>💾 Your data</h3>' +
+      '<p class="flow-sub">Where it is kept, when it was last saved, and a copy you can keep.</p>' +
+      '<div class="data-line"><span class="dbind" id="dbInd4"></span><span class="saveind" id="saveInd4"></span></div>' +
+      '<div class="flow-row" style="margin-top:10px;gap:8px;flex-wrap:wrap">' +
+        '<button type="button" class="flow-btn" id="dataBackup">💾 Backup</button>' +
+        '<label class="flow-btn ghost" for="jnImportFile" style="cursor:pointer">📥 Restore</label>' +
+      '</div>' +
+      '<p class="flow-sub" style="margin-top:8px">Backup downloads everything as one JSON file. Restore reads one back in and replaces what is here.</p>';
+    anchor.parentNode.insertBefore(card, anchor);
+    card.querySelector('#dataBackup').addEventListener('click', () => { try { if (typeof exportBackup === 'function') exportBackup(); } catch (e) {} });
+    try { if (typeof updateDbIndicator === 'function') updateDbIndicator(); } catch (e) {}
+    try { if (typeof S !== 'undefined' && S && typeof S.saved === 'function') S.saved(); } catch (e) {}
+  }
+};
+
 const InboxLink = {
   wire(section) {
     if (section.querySelector('#ibCard')) return;

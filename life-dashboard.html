@@ -2098,7 +2098,7 @@ const S = {
     const stamp=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     const tail=' '+stamp+' · '+(typeof jData!=='undefined'?jData.length:0)+' journal entries';
     const html=(pending?'<b>saving…</b>':'<b>✓ saved</b>')+tail;
-    ['saveInd','saveInd2','saveInd3'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
+    ['saveInd','saveInd2','saveInd3','saveInd4'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
   }
 };
 // Storage self-test — warns instead of silently losing data
@@ -4630,7 +4630,7 @@ function updateDbIndicator(){
   /* Two indicators now: the header one, and the one beside the backup buttons
      in the Journal tab (the only one a phone shows). Write to whichever of
      them exist rather than bailing on the first that is missing. */
-  const els=['dbInd','dbInd2','dbInd3'].map(id=>document.getElementById(id)).filter(Boolean);
+  const els=['dbInd','dbInd2','dbInd3','dbInd4'].map(id=>document.getElementById(id)).filter(Boolean);
   if(!els.length) return;
   const set=(cls,text,title)=>els.forEach(el=>{ el.className=cls; el.textContent=text; el.title=title; });
   const sync = window.__FLOW_SYNC || {state:'connecting', pending:0};

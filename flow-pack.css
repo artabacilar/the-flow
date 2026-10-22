@@ -1900,3 +1900,11 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 @keyframes flow-spin{to{transform:rotate(360deg)}}
 #flow-toast{position:fixed;left:50%;bottom:84px;transform:translate(-50%,12px);background:#1c1f26;color:#fff;border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:9999;max-width:min(92vw,520px)}
 #flow-toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ── the data card; the old mounts of the same lines are retired ───── */
+.headmeta .dbind,.headmeta .saveind,.headmeta .backupbtns{display:none!important}
+#flow-dbline{display:none!important}
+#dbInd2,#saveInd2,#jnExport,label[for="jnImportFile"].btn{display:none!important}
+.data-line{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.data-line .dbind{margin:0}
+.data-line .saveind{font-size:13px;color:var(--muted)}
