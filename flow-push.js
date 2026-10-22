@@ -25,6 +25,9 @@
 
 const http2 = require('node:http2');
 const crypto = require('node:crypto');
+/* Android, Chromebooks and desktop browsers: same device list, a different
+   way of reaching them. See flow-webpush.js. */
+const webpush = require('./flow-webpush');
 
 /* What the person is told when it cannot work. The server log gets the real
    reason; the screen gets a sentence. Naming an environment variable on
@@ -202,10 +205,33 @@ function ready() {
    Returns what happened per device rather than a bare boolean, because the
    interesting failure is "Apple says this device is gone", and the only
    correct response to it is to stop keeping the token. */
+const isWeb = (d) => d && d.kind === 'web';
+
 async function sendToUser(raw, uid, note) {
-  if (!ready()) return { ok: false, error: PUSH_OFF, sent: 0 };
   const devices = await readDevices(raw, uid);
   if (!devices.length) return { ok: false, error: 'No device is registered for notifications.', sent: 0 };
+  const web = devices.filter(isWeb);
+  const apple = devices.filter((d) => !isWeb(d));
+
+  /* Browsers and Android first: they need nothing from Apple, so a server
+     without an APNs key still reminds everybody who is not on the iPhone app. */
+  let sent = 0;
+  const dead = [];
+  if (web.length) {
+    try { await webpush.ensureKeys(raw); } catch (e) { logWhy('web', 'no VAPID key — ' + e.message); }
+    for (const d of web) {
+      const r = await webpush.sendOne(d, note);
+      if (r.ok) { sent++; continue; }
+      if (r.gone) { dead.push(d.endpoint); logWhy('web', 'dropping a subscription the push service no longer knows (' + (r.status || 'invalid') + ')'); continue; }
+      logWhy('web', 'push service answered ' + (r.status || 'nothing'));
+    }
+  }
+  if (!apple.length || !ready()) {
+    if (dead.length) await writeDevices(raw, uid, devices.filter((d) => dead.indexOf(isWeb(d) ? d.endpoint : d.token) < 0));
+    if (sent) return { ok: true, sent, dropped: dead.length };
+    if (!web.length) return { ok: false, error: PUSH_OFF, sent: 0 };
+    return { ok: false, error: PUSH_FAILED, sent: 0, dropped: dead.length };
+  }
 
   const payload = {
     aps: {
@@ -218,11 +244,9 @@ async function sendToUser(raw, uid, note) {
 
   let jwt;
   try { jwt = authToken(); }
-  catch (e) { logWhy('sign', 'APNS_PRIVATE_KEY is not a usable ES256 key — ' + e.message); return { ok: false, error: PUSH_OFF, sent: 0 }; }
+  catch (e) { logWhy('sign', 'APNS_PRIVATE_KEY is not a usable ES256 key — ' + e.message); return sent ? { ok: true, sent, dropped: dead.length } : { ok: false, error: PUSH_OFF, sent: 0 }; }
 
-  let sent = 0;
-  const dead = [];
-  for (const d of devices) {
+  for (const d of apple) {
     const host = HOSTS[d.env === 'sandbox' ? 'sandbox' : 'production'];
     const r = await sender(host, d.token, payload, {
       authorization: 'bearer ' + jwt,
@@ -242,7 +266,7 @@ async function sendToUser(raw, uid, note) {
     logWhy('send', 'APNs answered ' + r.status + ' ' + (r.reason || ''));
   }
   if (dead.length) {
-    await writeDevices(raw, uid, devices.filter((d) => dead.indexOf(d.token) < 0));
+    await writeDevices(raw, uid, devices.filter((d) => dead.indexOf(isWeb(d) ? d.endpoint : d.token) < 0));
   }
   if (!sent) return { ok: false, error: PUSH_FAILED, sent: 0, dropped: dead.length };
   return { ok: true, sent, dropped: dead.length };
@@ -260,15 +284,54 @@ async function handle(req, res, ctx) {
       /* Deliberately not "why". A person cannot act on a missing server
          credential, and the log already says it plainly. */
       available: ready(),
+      /* Web Push needs nothing configured, so for a browser it is always on. */
+      web: true,
       devices: devices.length,
       platforms: devices.map((d) => d.platform || 'ios')
     });
     return true;
   }
 
+  /* The key a browser subscribes with. Public by design — it is what lets
+     the push service check that a message really came from this server. */
+  if (p === '/api/push/vapid' && req.method === 'GET') {
+    try {
+      await webpush.ensureKeys(raw);
+      json(res, 200, { publicKey: webpush.publicKey() });
+    } catch (e) {
+      logWhy('web', 'could not make a VAPID key — ' + e.message);
+      json(res, 503, { error: PUSH_OFF });
+    }
+    return true;
+  }
+
   if (p === '/api/push/register' && req.method === 'POST') {
     let b = {};
     try { b = JSON.parse((await readBody(req)) || '{}'); } catch (e) {}
+
+    /* A browser's subscription rather than an iPhone's token. */
+    if (b.subscription) {
+      const s = b.subscription;
+      if (!webpush.subscriptionOk(s)) {
+        json(res, 400, { error: 'That does not look like a browser push subscription.' });
+        return true;
+      }
+      const platform = String(b.platform || 'web').slice(0, 16);
+      const devices = await readDevices(raw, uid);
+      const now = new Date().toISOString();
+      const existing = devices.find((d) => isWeb(d) && d.endpoint === s.endpoint);
+      if (existing) {
+        existing.keys = { p256dh: s.keys.p256dh, auth: s.keys.auth };
+        existing.platform = platform; existing.seen = now;
+      } else {
+        devices.push({ kind: 'web', endpoint: s.endpoint, keys: { p256dh: s.keys.p256dh, auth: s.keys.auth }, platform, added: now, seen: now });
+      }
+      const kept = devices.slice(-10);
+      await writeDevices(raw, uid, kept);
+      json(res, 200, { ok: true, devices: kept.length, available: true });
+      return true;
+    }
+
     const token = String(b.token || '').trim();
     /* An APNs token is hex. Anything else is a bug upstream or somebody
        poking, and storing it would only produce failed sends later. */
@@ -299,8 +362,10 @@ async function handle(req, res, ctx) {
     let b = {};
     try { b = JSON.parse((await readBody(req)) || '{}'); } catch (e) {}
     const token = String(b.token || '').trim();
+    const endpoint = String(b.endpoint || '').trim();
     const devices = await readDevices(raw, uid);
-    const left = token ? devices.filter((d) => d.token !== token) : [];
+    const left = endpoint ? devices.filter((d) => !(isWeb(d) && d.endpoint === endpoint))
+      : token ? devices.filter((d) => d.token !== token) : [];
     await writeDevices(raw, uid, left);
     json(res, 200, { ok: true, devices: left.length });
     return true;
@@ -318,11 +383,22 @@ async function handle(req, res, ctx) {
   return false;
 }
 
+/* Whether the reminder tick has any way to reach anybody: Apple's, or the
+   browsers'. The VAPID key is made at start-up by init(), so after that a
+   server with no Apple key at all still reminds Android and desktop. */
+function canSend() { return ready() || webpush.ready(); }
+async function init(raw) {
+  try { await webpush.ensureKeys(raw); } catch (e) { logWhy('web', 'no VAPID key yet — ' + e.message); }
+}
+
 module.exports = {
   handle,
   sendToUser,
   configured,
   ready,
+  canSend,
+  init,
+  webpush,
   _internals: {
     PUSH_OFF, PUSH_FAILED,
     readDevices, writeDevices, devKey, authToken, normalizeKey, keyShape,

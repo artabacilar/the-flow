@@ -3392,7 +3392,7 @@ const SettingsUI = {
 
       <div class="flow-card" id="pushCard">
         <h3>📣 Notifications</h3>
-        <p class="flow-sub">Reminders that arrive whether or not the app is open — on the iPhone app and the Mac app. A browser cannot receive these.</p>
+        <p class="flow-sub">Reminders that arrive whether or not the app is open — on iPhone, Mac, Android, and in Chrome, Edge or Firefox on a computer.</p>
         <div class="flow-switch"><div class="t"><b>Allow notifications</b><span id="pushState">Checking…</span></div>
           <button class="flow-btn" id="pushBtn" disabled>…</button></div>
         <div class="flow-switch"><div class="t"><b>Remind me about Big Rocks</b><span>At the time on the rock, on the day it is planned for.</span></div>
@@ -6737,6 +6737,52 @@ const Notify = {
   mac() {
     return (window.FlowMac && window.FlowMac.notifications) || null;
   },
+  /* Everything else that can: the Android app from Google Play (this site in
+     a Trusted Web Activity, which uses Chrome's push), Chromebooks, and any
+     desktop browser. The server sends at the rock's time, same as iPhone. */
+  web() {
+    if (Notify.mac() || Notify.isIOS()) return false;
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  },
+  platform() {
+    const ua = navigator.userAgent || '';
+    return /Android/i.test(ua) ? 'android' : /CrOS/.test(ua) ? 'chromeos' : 'web';
+  },
+  keyBytes(b64) {
+    const s = String(b64).replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(s + '==='.slice((s.length + 3) % 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  },
+  /* Make sure this browser is subscribed with the server's key and that the
+     server holds the subscription. Only ever prompts when `ask` is set. */
+  async subscribeWeb(ask) {
+    if (!Notify.web()) return false;
+    if (Notification.permission !== 'granted') {
+      if (!ask || Notification.permission === 'denied') return false;
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return false;
+    }
+    const k = await fetch('/api/push/vapid', { credentials: 'same-origin' }).then((r) => r.ok ? r.json() : {}).catch(() => ({}));
+    if (!k.publicKey) return false;
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(() => r(null), 8000))]);
+    if (!reg || !reg.pushManager) return false;
+    const key = Notify.keyBytes(k.publicKey);
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      /* A subscription made under another key can never be delivered to. */
+      const had = new Uint8Array(sub.options.applicationServerKey);
+      if (had.length !== key.length || had.some((b, i) => b !== key[i])) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    const r = await fetch('/api/push/register', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub.toJSON(), platform: Notify.platform() })
+    }).catch(() => null);
+    return !!(r && r.ok);
+  },
 
   /* ── iPhone bridge ──
      Prefer the shim's own method; on a build whose shim lacks it, post to the
@@ -6867,6 +6913,12 @@ const Notify = {
       Notify.later();
       return;
     }
+    if (Notify.web()) {
+      /* Every launch, quietly: if this browser already allows notifications,
+         keep the server's copy of its subscription current. Never prompts. */
+      if (Notification.permission === 'granted') Notify.subscribeWeb(false).catch(() => {});
+      return;
+    }
     if (Notify.isIOS()) {
       /* Every launch: if this phone already allows notifications, make sure
          the server has it. Quiet — nothing to show unless it is asked for. */
@@ -6905,6 +6957,19 @@ const Notify = {
         return;
       }
       const srv = await Notify.server();
+      if (!ios && Notify.web()) {
+        const perm = Notification.permission;
+        if (perm === 'denied') {
+          set('Blocked for this site in your browser settings. Allow notifications for theflow.today, then open this again.', 'Blocked', false, false);
+        } else if (perm === 'granted') {
+          const ok = await Notify.subscribeWeb(false);
+          set(ok ? 'On for this device. Big Rocks with a time will remind you, app open or not.'
+            : 'Allowed here, but this device has not reached the server yet.', ok ? 'Allowed' : 'Retry', !ok, ok);
+        } else {
+          set('Not switched on yet.', 'Turn on', true, !!srv.devices);
+        }
+        return;
+      }
       if (!ios) {
         set(srv.devices
           ? 'On for ' + srv.devices + ' iPhone' + (srv.devices === 1 ? '' : 's') + '. Open the iPhone or Mac app to change it.'
@@ -6941,6 +7006,8 @@ const Notify = {
         if (mac) {
           await mac.request();
           await Notify.syncMac();
+        } else if (Notify.web()) {
+          await Notify.subscribeWeb(true);
         } else if (ios) {
           await Notify.ios('pushRequest');
           /* The token arrives in a delegate callback a moment after the

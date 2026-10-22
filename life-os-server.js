@@ -271,6 +271,27 @@ const SHELL=['./','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('message',e=>{ if(e.data==='skip-waiting') self.skipWaiting(); });
+// Web Push: Android (the Play Store app), Chromebooks and desktop browsers.
+// The server encrypts {title, body, tag, data}; the browser decrypts it and
+// hands it here, with the app closed. Shown even if the payload is odd —
+// a push that shows nothing gets the subscription revoked by Chrome.
+self.addEventListener('push',e=>{
+  let n={};
+  try{ n=e.data?e.data.json():{}; }catch(_){ try{ n={body:e.data.text()}; }catch(__){} }
+  const title=n.title||'The Flow';
+  e.waitUntil(self.registration.showNotification(title,{
+    body:n.body||'', tag:n.tag||'flow', renotify:true,
+    icon:'/icon-192.png', badge:'/icon-192.png', data:n.data||{}
+  }));
+});
+self.addEventListener('notificationclick',e=>{
+  e.notification.close();
+  e.waitUntil((async()=>{
+    const cs=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    for(const c of cs){ if(new URL(c.url).origin===self.location.origin && 'focus' in c){ try{ c.postMessage({type:'flow-notification',data:e.notification.data||{}}); }catch(_){} return c.focus(); } }
+    return self.clients.openWindow('/');
+  })());
+});
 // Tell every open window to reload — used when a background revalidate finds the
 // app shell has changed (a new deploy), so an update applies itself without the
 // user having to hard-refresh or reinstall on each device.
@@ -852,6 +873,7 @@ PACK_V = packVersion();
    present. It reads the account list straight from the raw store, because
    there is no signed-in request to scope it to — this is the one thing in the
    server that acts for everybody rather than for a caller. */
+if (push && push.init) push.init(rawStore);
 if (remind && push) {
   remind.start({
     raw: rawStore,
@@ -861,7 +883,7 @@ if (remind && push) {
       return Object.values(users).map((u) => u && u.id).filter(Boolean);
     },
     sendToUser: push.sendToUser,
-    canSend: push.ready,
+    canSend: push.canSend || push.ready,
     nsPrefix: flowAuth.nsPrefix,
     log: (m) => console.error(m)
   });
