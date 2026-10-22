@@ -1876,3 +1876,11 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .fb-people small,.fb-note small{color:var(--muted);font-size:11px;}
 .fb-note{border-top:1px solid var(--border,rgba(255,255,255,.08));padding:8px 0;}
 .fb-note p{margin:4px 0 0;white-space:pre-wrap;}
+
+/* ── the inbox address card ─────────────────────────────────────────── */
+.ib-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 4px}
+.ib-url code{flex:1 1 240px;min-width:0;overflow-wrap:anywhere;font-size:12px;padding:8px 10px;border:1px solid var(--border,rgba(255,255,255,.1));border-radius:8px;background:transparent}
+.ib-how{margin-top:8px}
+.ib-how summary{cursor:pointer;color:var(--muted);font-size:13px}
+.ib-how p,.ib-how li{font-size:13px;line-height:1.5;color:var(--muted)}
+.ib-how code{font-size:12px}

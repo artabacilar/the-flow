@@ -136,6 +136,14 @@ const INBOX = (uid) => '__share:inbox:' + uid;
 const INBOX_MAX = 50;                       /* so nobody can flood a mailbox  */
 const SHARE_DAILY_MAX = 50;                 /* and nobody can flood everyone  */
 const SHARE_SENT = (uid, day) => '__share:sent:' + uid + ':' + day;
+/* The universal inbox: a private URL that anything can post to — Zapier,
+   Make, an iPhone Shortcut, a mail rule, a script. The key is the whole
+   secret, so it lives outside the person's namespace (never mirrored into a
+   browser by /api/all) and can be thrown away and remade at will. */
+const INBOX_KEY = (uid) => '__inbox:key:' + uid;
+const INBOX_BYKEY = (key) => '__inbox:bykey:' + key;
+const INBOX_HIT = (uid, day) => '__inbox:hit:' + uid + ':' + day;
+const INBOX_DAILY_MAX = 200;
 
 /* A single task shared with other accounts as a live, collaborative item —
    every member can edit it, move its status and comment; only the owner can
@@ -955,6 +963,73 @@ async function gate(req, res) {
     return true;
   }
 
+  /* ---- the universal inbox ----
+     GET  /api/inbox/key         the URL to post to (made on first ask)
+     POST /api/inbox/key/rotate  a new one; the old URL stops working at once
+     POST /api/inbox/<key>       from anywhere, no session: {text, note, due, time, source}
+                                 as JSON, as a form, or as a plain-text body. */
+  if (p === '/api/inbox/key' && req.method !== 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    let key = await raw.get(INBOX_KEY(me.id));
+    if (!key) {
+      key = crypto.randomBytes(18).toString('base64url');
+      await raw.set(INBOX_KEY(me.id), key);
+      await raw.set(INBOX_BYKEY(key), me.id);
+    }
+    json(res, 200, { ok: true, url: ORIGIN() + '/api/inbox/' + key });
+    return true;
+  }
+  if (p === '/api/inbox/key/rotate' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const old = await raw.get(INBOX_KEY(me.id));
+    if (old) await raw.set(INBOX_BYKEY(old), '');
+    const key = crypto.randomBytes(18).toString('base64url');
+    await raw.set(INBOX_KEY(me.id), key);
+    await raw.set(INBOX_BYKEY(key), me.id);
+    json(res, 200, { ok: true, url: ORIGIN() + '/api/inbox/' + key });
+    return true;
+  }
+  {
+    const m = /^\/api\/inbox\/([A-Za-z0-9_-]{16,40})$/.exec(p);
+    if (m && req.method === 'POST') {
+      const uid = await raw.get(INBOX_BYKEY(m[1]));
+      /* The same answer for "no such key" and "a key that was rotated away",
+         so the URL leaks nothing about which it is. */
+      if (!uid) { json(res, 404, { error: 'That inbox address is not valid.' }); return true; }
+      const rawBody = await readBody(req);
+      const ctype = String((req.headers && req.headers['content-type']) || '');
+      let b = {};
+      if (/json/i.test(ctype)) b = safeParse(rawBody);
+      else if (/x-www-form-urlencoded/i.test(ctype)) { try { for (const [k, v] of new URLSearchParams(rawBody)) b[k] = v; } catch (e) {} }
+      else { b = safeParse(rawBody); if (!b || typeof b !== 'object' || !Object.keys(b).length) b = { text: rawBody }; }
+      const txt = String(b.text || b.task || b.title || b.message || b.body || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      if (!txt) { json(res, 400, { error: 'Send some text: {"text": "…"}' }); return true; }
+      const note = String(b.note || b.notes || b.description || b.url || b.link || '').trim().slice(0, 1000);
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.due || b.date || '')) ? String(b.due || b.date) : '';
+      const time = /^\d{1,2}:\d{2}$/.test(String(b.time || '')) ? String(b.time).padStart(5, '0') : '';
+      const source = String(b.source || b.from || b.app || 'Inbox').replace(/\s+/g, ' ').trim().slice(0, 40) || 'Inbox';
+
+      const day = new Date().toISOString().slice(0, 10);
+      const hits = (await getJSON(INBOX_HIT(uid, day), 0)) || 0;
+      if (hits >= INBOX_DAILY_MAX) { json(res, 429, { error: 'This inbox has had a lot today. Try again tomorrow.' }); return true; }
+      const inbox = await getJSON(INBOX(uid), []);
+      if (inbox.length >= INBOX_MAX) { json(res, 429, { error: 'The inbox is full — open The Flow and clear it.' }); return true; }
+      const item = {
+        id: crypto.randomBytes(8).toString('hex'),
+        at: new Date().toISOString(),
+        from: { name: source, via: 'inbox' },
+        task: Object.assign({ txt }, note ? { note } : {}, due ? { due } : {}, time ? { time } : {})
+      };
+      inbox.push(item);
+      await setJSON(INBOX(uid), inbox);
+      await setJSON(INBOX_HIT(uid, day), hits + 1);
+      json(res, 200, { ok: true, id: item.id, waiting: inbox.length });
+      return true;
+    }
+  }
+
   if (p === '/api/share/inbox' && req.method !== 'POST') {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
@@ -1730,6 +1805,11 @@ async function gate(req, res) {
     /* 5 · the odds and ends that are keyed by the person rather than the data */
     for (const k of [SEED(uid), PACK_CLAIMED(uid), INBOX(uid)]) {
       await raw.set(k, ''); gone.other++;
+    }
+    /* The inbox URL is a secret that reaches this person; both halves go. */
+    {
+      const k = await raw.get(INBOX_KEY(uid));
+      if (k) { await raw.set(INBOX_BYKEY(k), ''); await raw.set(INBOX_KEY(uid), ''); gone.other++; }
     }
     /* Connected apps, and WHOOP's tokens. Both live outside the data
        namespace on purpose (see flow-connect.js, flow-whoop.js), which is

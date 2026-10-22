@@ -2028,7 +2028,7 @@ const Inbox = {
     q.items.push({
       id: 'q' + Date.now().toString(36),
       q: 1,
-      txt: item.task.txt + (item.from ? '  (from ' + item.from.name + ')' : ''),
+      txt: item.task.txt + (item.from && item.from.via !== 'inbox' ? '  (from ' + item.from.name + ')' : ''),
       done: false
     });
     qSave();
@@ -2049,12 +2049,12 @@ const Inbox = {
     box.className = 'flow-card flow-x';
     box.id = 'flow-inbox';
     box.innerHTML = `<h3>📥 Shared with you${n ? ' · ' + n : ''}</h3>` +
-      (!n ? '<p class="flow-sub">Nothing waiting. When somebody shares a task with you it appears here.</p>'
+      (!n ? '<p class="flow-sub">Nothing waiting. A task somebody shares with you, or anything sent to your inbox address, appears here.</p>'
           : '<p class="flow-sub">Nothing is added to your app until you press Add.</p>' +
             Inbox.items.map(it => `
               <div class="flow-inbox-row" data-id="${esc(it.id)}">
                 <div class="t">${esc(it.task.txt)}</div>
-                <div class="m">from ${esc(it.from ? it.from.name : 'someone')}${it.task.due ? ' · due ' + esc(it.task.due) + (it.task.time ? ' ' + esc(it.task.time) : '') : ''}</div>
+                <div class="m">${it.from && it.from.via === 'inbox' ? 'via ' : 'from '}${esc(it.from ? it.from.name : 'someone')}${it.task.due ? ' · due ' + esc(it.task.due) + (it.task.time ? ' ' + esc(it.task.time) : '') : ''}</div>
                 ${it.task.note ? `<div class="n">${esc(it.task.note)}</div>` : ''}
                 <div class="a">
                   <button class="flow-btn small primary" data-inbox="add">Add to my priorities</button>
@@ -3622,6 +3622,7 @@ ICLOUD_REMINDER_LIST=${esc(s.remindersListName)}</pre>
     Notify.wire(section);
     try { Sections.wire(section); } catch (e) { console.warn('[Flow] sections', e); }
     try { Trial.wire(section); } catch (e) { console.warn('[Flow] trial', e); }
+    try { InboxLink.wire(section); } catch (e) { console.warn('[Flow] inbox link', e); }
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -7530,6 +7531,53 @@ const Trial = {
         ((j.feedback || []).length ? (j.feedback || []).map((f) => '<div class="fb-note"><b>' + esc(f.name || f.email) + '</b> <small>' + esc(d(f.at)) + '</small><p>' + esc(f.text) + '</p></div>').join('')
           : '<p class="flow-sub">No notes yet.</p>');
     } catch (e) { box.innerHTML = '<p class="flow-sub">The trial view could not load.</p>'; }
+  }
+};
+
+/* ── Send things in from anywhere ───────────────────────────────────────
+ *
+ * A private address that anything can post to: Zapier, Make, an iPhone
+ * Shortcut, IFTTT, a mail rule, a script. Whatever arrives waits in the
+ * same "Shared with you" box as a task from a person, and nothing lands in
+ * the plan until it is pressed Add on. The URL is the whole secret: it can
+ * be swapped for a new one at any time, and the old one stops at once.
+ */
+const InboxLink = {
+  wire(section) {
+    if (section.querySelector('#ibCard')) return;
+    const anchor = section.querySelector('#fbCard') || section.querySelector('#secCard') || section.querySelector('.flow-card');
+    if (!anchor) return;
+    const card = document.createElement('div');
+    card.className = 'flow-card'; card.id = 'ibCard';
+    card.innerHTML = '<h3>📮 Send things in from anywhere</h3>' +
+      '<p class="flow-sub">A private address for your Flow. Anything that can send a web request can drop a task here: Zapier, Make, an iPhone Shortcut, IFTTT, a script. It waits under Shared with you on Today until you press Add.</p>' +
+      '<div class="ib-url"><code id="ibUrl">…</code><button type="button" class="flow-btn small" id="ibCopy">Copy</button><button type="button" class="flow-btn small ghost" id="ibRotate">New address</button></div>' +
+      '<p class="flow-sub" id="ibOut"></p>' +
+      '<details class="ib-how"><summary>How to use it</summary>' +
+      '<p>Send a <b>POST</b> to the address with JSON like <code>{"text": "Call the accountant", "due": "2026-10-28", "time": "10:00", "note": "about Q4", "source": "Zapier"}</code>. Only <code>text</code> is required. A plain-text body works too.</p>' +
+      '<ul><li><b>Zapier / Make:</b> add a <i>Webhooks → POST</i> step, paste the address, map your fields to <code>text</code>, <code>note</code>, <code>due</code>.</li>' +
+      '<li><b>iPhone Shortcut:</b> <i>Get Contents of URL</i> → Method POST → Request Body JSON → add <code>text</code>. Put it in the Share Sheet and anything on your phone can become a task.</li>' +
+      '<li><b>Email:</b> a Zapier or Make trigger on starred or labelled mail, then the POST step.</li></ul>' +
+      '<p>Treat the address like a password. If it gets out, press <b>New address</b>.</p></details>';
+    anchor.parentNode.insertBefore(card, anchor);
+    const urlEl = card.querySelector('#ibUrl'), out = card.querySelector('#ibOut');
+    const paint = async (rotate) => {
+      try {
+        const r = await fetch('/api/inbox/key' + (rotate ? '/rotate' : ''), { method: rotate ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '');
+        urlEl.textContent = j.url;
+        if (rotate) out.textContent = 'New address made. The old one no longer works.';
+      } catch (e) { urlEl.textContent = 'Could not load the address.'; }
+    };
+    card.querySelector('#ibCopy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(urlEl.textContent); out.textContent = 'Copied.'; }
+      catch (e) { out.textContent = 'Select the address and copy it.'; }
+    });
+    card.querySelector('#ibRotate').addEventListener('click', () => {
+      if (confirm('Make a new address? Anything using the old one will stop working.')) paint(true);
+    });
+    paint(false);
   }
 };
 
