@@ -1738,6 +1738,12 @@ async function gate(req, res) {
       catch (e) { console.error('[delete] connections purge failed: ' + (e && e.message)); }
     }
     if (await raw.get('whoop:tok:' + uid)) { await raw.set('whoop:tok:' + uid, ''); gone.other++; }
+    /* Notification devices — iPhone tokens and browser/Android push
+       subscriptions — are the means of reaching this person. They go too,
+       with the record of which reminders were already sent. */
+    for (const k of ['__push:dev:' + uid, '__push:sent:' + uid]) {
+      if (await raw.get(k)) { await raw.set(k, ''); gone.other++; }
+    }
     /* Feedback they left carries their address; it goes with them. */
     {
       const fb = await getJSON(FEEDBACK_KEY, []);

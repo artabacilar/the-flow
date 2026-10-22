@@ -627,6 +627,39 @@ const SUPPORT_HTML = legalPage('Support',
   <p>What is stored and who can see it: <a href="/privacy">the privacy policy</a>.</p>
   `);
 
+/* Google Play asks for a web address where somebody can find out how to
+   delete their account without installing anything first. */
+const DELETE_HTML = legalPage('Delete your account',
+  'How to delete your The Flow account, and what happens to your data when you do.',
+  `
+  <h2>From inside the app</h2>
+  <ol>
+    <li>Open The Flow (Android, iPhone, Mac, or theflow.today in a browser) and sign in.</li>
+    <li>Open <b>Settings</b> (your avatar, top right) → <b>Account</b>.</li>
+    <li>Press <b>Delete my account and everything in it</b>.</li>
+    <li>Confirm with your password, then type your email address.</li>
+  </ol>
+  <p>The deletion is immediate and permanent.</p>
+
+  <h2>Without the app</h2>
+  <p>Write to <a href="mailto:artur.abacilar@abko.com.tr?subject=Delete%20my%20The%20Flow%20account">artur.abacilar@abko.com.tr</a>
+     from the email address on the account, with the subject “Delete my The Flow account”. It is
+     done within 7 days and you get a reply when it is.</p>
+
+  <h2>What is deleted</h2>
+  <p>Everything: your entries (Big Rocks, habits, training, meals, sleep, journal, time and money
+     records), your settings, your sign-in sessions and recovery codes, your notification devices,
+     your connections to Google, Microsoft, Notion, Fathom and assistants (and the tokens for them),
+     any feedback you sent, and finally the record that you had an account.</p>
+
+  <h2>What is kept</h2>
+  <p>Nothing. There is no backup copy and no retention period. Server logs, which hold no entries,
+     roll over on their own within 30 days.</p>
+
+  <h2>Deleting some data but keeping the account</h2>
+  <p>Any entry can be edited or deleted where it appears in the app, and <b>Backup</b> exports all of it first if you want a copy.</p>
+  `);
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
   CURRENT_REQ = req;
@@ -674,6 +707,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/privacy') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
       return res.end(PRIVACY_HTML);
+    }
+    if (p === '/delete-account' || p === '/account/delete') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(DELETE_HTML);
     }
     if (p === '/support' || p === '/help') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
