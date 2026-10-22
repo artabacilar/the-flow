@@ -1930,12 +1930,10 @@ const Markets = {
       strip = document.createElement('div');
       strip.id = 'flow-markets';
       strip.className = 'flow-td flow-mkt flow-x';
-      /* Put the strip in whatever parent the pulse actually has — that is
-         where it was always meant to sit, and it is the only node we know
-         the reference sibling belongs to. */
-      const pulse = $('.flow-td-pulse', feed);
-      if (pulse && pulse.parentNode) pulse.parentNode.insertBefore(strip, pulse.nextSibling);
-      else feed.insertBefore(strip, feed.firstChild);
+      /* The day’s work comes first, especially on a phone. Keep market
+         prices and the save indicators together after the daily sections. */
+      const daily = $('#today-feed', feed);
+      (daily || feed).appendChild(strip);
     }
     /* On the phone the database pill and the save line no longer live in the
        header — the top of the screen belongs to Today, not to diagnostics.
@@ -5288,6 +5286,36 @@ const TodayPlus = {
     return '£' + (Math.abs(v) >= 1000 ? v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : v.toFixed(v % 1 ? 2 : 0));
   },
 
+  /* The daily entry points use the host's existing forms and save paths.
+     Opening a shortcut must never clear a draft or turn an edit into a new
+     item. Only a genuinely empty form gets today's date preselected. */
+  focusField(id) {
+    const field = document.getElementById(id);
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    field.scrollIntoView({ block: 'center', behavior:
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  },
+
+  openPlan(review) {
+    const title = document.getElementById('rkTitle');
+    const note = document.getElementById('rkNote');
+    const date = document.getElementById('rkDay');
+    const hasDraft = !!TodayPlus.host('cEditRockId') ||
+      !!(title && title.value.trim()) || !!(note && note.value.trim()) ||
+      !!(date && date.value && date.value !== '-1');
+    if (!Nav.go('compass')) return;
+    const currentWeek = document.getElementById('wkToday');
+    /* Unscheduled entries belong to the week on screen. Keep that context
+       with a draft or edit, otherwise saving would silently move the rock. */
+    if (currentWeek && !hasDraft) currentWeek.click();
+    if (!review && !hasDraft && date && Array.from(date.options).some(o => o.value === today())) {
+      date.value = today();
+      date.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    TodayPlus.focusField(review ? 'wkReview' : 'rkTitle');
+  },
+
   /* ---------- build ---------- */
   apply() {
     const feed = document.getElementById('today-feed');
@@ -5366,23 +5394,43 @@ const TodayPlus = {
     const head = $('.td-head', feed);
     if (head && head.nextSibling) feed.insertBefore(strip, head.nextSibling); else feed.insertBefore(strip, feed.firstChild);
 
+    const actions = document.createElement('div');
+    actions.className = 'flow-td flow-today-actions flow-x';
+    actions.innerHTML =
+      '<button type="button" class="flow-today-primary" data-flow-today-action="plan">' + Nav.svg('plus') + '<span>Plan today</span></button>' +
+      '<button type="button" data-flow-today-action="capture">' + Nav.svg('plus') + '<span>Quick add</span></button>' +
+      '<button type="button" data-flow-today-action="review">' + Nav.svg('compass') + '<span>Review week</span></button>';
+    if (head) head.insertAdjacentElement('afterend', actions);
+    else feed.insertBefore(actions, feed.firstChild);
+
     /* — priorities — */
     const pblock = document.createElement('div');
     pblock.className = 'flow-td flow-td-sec flow-x';
     pblock.id = 'flow-td-priorities';
-    const prow = (txt, meta, cls, attr) =>
-      `<div class="flow-td-row${cls || ''}" ${attr || ''}><span class="tx">${linkifyText(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
+    const prow = (txt, meta, cls, id) =>
+      `<div class="flow-td-row${cls || ''}">${id ?
+        `<button type="button" class="flow-today-check" role="checkbox" aria-checked="false" data-q="${esc(id)}" aria-label="Complete priority: ${esc(txt)}"><span class="bx" aria-hidden="true"></span></button>` : ''}
+        <span class="tx" data-i18n="off">${linkifyText(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
     const pbody = [
       ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
       ...(pri.flagged || []).slice(0, 5).map(r => prow(r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
-      ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', `data-q="${esc(i.id)}"`)),
-      ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', `data-q="${esc(i.id)}"`))
+      ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', i.id)),
+      ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', i.id))
     ].join('');
     pblock.innerHTML =
       `<div class="flow-td-head"><span class="l">Priorities</span><span class="c">${pri.q1.length + pri.q2.length + (pri.flagged || []).length} open</span></div>` +
-      (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Star a Planner task or add them in 🎯 Priorities.</div>`);
+      (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Star a Planner task or add them in 🎯 Priorities.<button type="button" class="flow-empty-action" data-flow-today-action="priority">Add a priority</button></div>`);
     const rocks = $('.td-rocks', feed);
     if (rocks && rocks.nextSibling) feed.insertBefore(pblock, rocks.nextSibling); else feed.appendChild(pblock);
+    const emptyRocks = rocks && $('.td-rocks-empty', rocks);
+    if (emptyRocks && !$('.flow-empty-action', emptyRocks)) {
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'flow-empty-action';
+      add.setAttribute('data-flow-today-action', 'plan');
+      add.textContent = 'Add your first Big Rock';
+      emptyRocks.appendChild(add);
+    }
 
     /* — habits — */
     const hblock = document.createElement('div');
@@ -5392,9 +5440,9 @@ const TodayPlus = {
       `<div class="flow-td-head"><span class="l">Habits</span><span class="c${hab.total && hab.done === hab.total ? ' ok' : ''}">${hab.done} / ${hab.total}</span></div>` +
       (hab.list.length
         ? hab.list.map(h =>
-            `<div class="flow-td-row hb${h.done ? ' done' : ''}" data-hb="${esc(h.id)}">
-               <span class="bx">${h.done ? '✓' : ''}</span>
-               <span class="tx">${esc(h.name)}</span>
+            `<div class="flow-td-row hb${h.done ? ' done' : ''}">
+               <button type="button" class="flow-today-check" role="checkbox" aria-checked="${h.done ? 'true' : 'false'}" data-hb="${esc(h.id)}" aria-label="${h.done ? 'Uncheck habit' : 'Complete habit'}: ${esc(h.name)}"><span class="bx" aria-hidden="true">${h.done ? '✓' : ''}</span></button>
+               <span class="tx" data-i18n="off">${esc(h.name)}</span>
                ${h.streak > 0 ? `<span class="mt">🔥 ${h.streak}</span>` : ''}
              </div>`).join('')
         : `<div class="flow-td-empty">No habits yet. Add them in ✅ Habits and they show up here.</div>`);
@@ -5428,16 +5476,27 @@ const TodayPlus = {
     if (feed.__flowTdBound) return;
     feed.__flowTdBound = 1;
     feed.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-flow-today-action]');
+      if (action) {
+        const kind = action.getAttribute('data-flow-today-action');
+        if (kind === 'plan' || kind === 'review') TodayPlus.openPlan(kind === 'review');
+        else if (kind === 'capture') Nav.openCapture();
+        else if (kind === 'priority' && Nav.go('quad')) TodayPlus.focusField('qin2');
+        return;
+      }
       const jump = e.target.closest('[data-jump]');
       if (jump) {
-        const id = { recovery: 'flow-td-habits', priorities: 'flow-td-priorities', habits: 'flow-td-habits', spend: 'flow-td-spend' }[jump.getAttribute('data-jump')];
+        const destination = jump.getAttribute('data-jump');
+        if (destination === 'recovery') { Nav.go('sleep'); return; }
+        const id = { priorities: 'flow-td-priorities', habits: 'flow-td-habits', spend: 'flow-td-spend' }[destination];
         const el = id && document.getElementById(id);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (el) el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
         return;
       }
 
       const hb = e.target.closest('[data-hb]');
       if (hb) {
+        const restoreFocus = document.activeElement === hb;
         const id = hb.getAttribute('data-hb');
         const data = TodayPlus.host('hbData');
         const S_ = TodayPlus.host('S');
@@ -5456,11 +5515,17 @@ const TodayPlus = {
         const rh = TodayPlus.host('renderHabits');
         if (typeof rh === 'function') { try { rh(); } catch (x) {} }
         if (typeof window.renderToday === 'function') window.renderToday();
+        if (restoreFocus) {
+          const next = Array.from(feed.querySelectorAll('button[data-hb]')).find(b => b.getAttribute('data-hb') === id);
+          if (next) next.focus({ preventScroll: true });
+        }
         return;
       }
 
       const qr = e.target.closest('[data-q]');
       if (qr && !hitLink(e)) {
+        const restoreFocus = document.activeElement === qr;
+        const index = Array.from(feed.querySelectorAll('button[data-q]')).indexOf(qr);
         const id = qr.getAttribute('data-q');
         const q = TodayPlus.host('qData');
         const qs = TodayPlus.host('qSave');
@@ -5472,6 +5537,13 @@ const TodayPlus = {
         const rq = TodayPlus.host('renderQuad');
         if (typeof rq === 'function') { try { rq(); } catch (x) {} }
         if (typeof window.renderToday === 'function') window.renderToday();
+        if (restoreFocus) {
+          const remaining = Array.from(feed.querySelectorAll('button[data-q]'));
+          const next = remaining[Math.min(index, remaining.length - 1)] ||
+            feed.querySelector('[data-flow-today-action="priority"]') ||
+            feed.querySelector('[data-flow-today-action="plan"]');
+          if (next) next.focus({ preventScroll: true });
+        }
       }
     });
   }
@@ -5502,6 +5574,26 @@ const CompassPlus = {
   apply() {
     const grid = document.getElementById('cGrid');
     if (!grid || !grid.children.length) return;
+    grid.setAttribute('role', 'region');
+    grid.setAttribute('aria-label', 'Week calendar');
+    grid.setAttribute('tabindex', '0');
+    let hint = document.getElementById('flow-week-scrollhint');
+    if (!hint) {
+      hint = document.createElement('p');
+      hint.id = 'flow-week-scrollhint';
+      hint.className = 'flow-week-scrollhint';
+      hint.textContent = 'Scroll to see all seven days.';
+      hint.hidden = true;
+      grid.insertAdjacentElement('afterend', hint);
+      grid.setAttribute('aria-describedby', hint.id);
+    }
+    const updateHint = () => { hint.hidden = grid.scrollWidth <= grid.clientWidth + 1; };
+    if (!grid.__flowWeekResize) {
+      grid.__flowWeekResize = true;
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(updateHint).observe(grid);
+      else window.addEventListener('resize', updateHint);
+    }
+    requestAnimationFrame(updateHint);
     grid.querySelectorAll('.flow-cchip').forEach(n => n.remove());
 
     let dates;
@@ -8259,8 +8351,9 @@ const Nav = {
     wrap.className = 'fn-sheetwrap';
     wrap.innerHTML =
       '<div class="fn-scrim" data-fn-close="1"></div>' +
-      '<div class="fn-sheet" role="dialog" aria-label="Capture">' +
+      '<div class="fn-sheet" role="dialog" aria-label="Capture" aria-modal="true">' +
         '<div class="fn-grab" data-fn-close="1"></div>' +
+        '<button type="button" class="fn-capture-close" data-fn-close="1" aria-label="Close">×</button>' +
         '<h4>Capture</h4>' +
         '<div class="fn-sub">A note is saved without leaving this screen.</div>' +
         '<div class="fn-grid">' +
@@ -8294,19 +8387,44 @@ const Nav = {
       /* The rest hand you to the section that owns that kind of entry. Writing
          them in place needs each section's own write path; the journal is the
          one the pack already owns end to end. */
-      Nav.closeCapture();
+      Nav.closeCapture(false);
       Nav.go(id);
     }));
 
-    document.getElementById('fn-notecancel').addEventListener('click', () => wrap.classList.remove('note'));
+    document.getElementById('fn-notecancel').addEventListener('click', () => {
+      wrap.classList.remove('note');
+      wrap.querySelector('[data-fn-cap="note"]').focus();
+    });
     document.getElementById('fn-notesave').addEventListener('click', () => Nav.saveNote());
     document.getElementById('fn-noteinput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') Nav.saveNote();
     });
+    wrap.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || !wrap.classList.contains('on')) return;
+      const controls = Array.from(wrap.querySelectorAll('button:not([disabled]), textarea:not([disabled])'))
+        .filter(el => el.getClientRects().length);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (!first) return;
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
   },
 
-  openCapture() { Nav.capEl.classList.remove('note'); Nav.capEl.classList.add('on'); },
-  closeCapture() { Nav.capEl.classList.remove('on'); Nav.capEl.classList.remove('note'); },
+  openCapture() {
+    Nav.capReturn = document.activeElement;
+    Nav.capEl.classList.remove('note');
+    Nav.capEl.classList.add('on');
+    const first = Nav.capEl.querySelector('[data-fn-cap]');
+    if (first) first.focus({ preventScroll: true });
+  },
+  closeCapture(restoreFocus) {
+    Nav.capEl.classList.remove('on');
+    Nav.capEl.classList.remove('note');
+    if (restoreFocus !== false && Nav.capReturn && Nav.capReturn.isConnected && Nav.capReturn.getClientRects().length) {
+      Nav.capReturn.focus({ preventScroll: true });
+    }
+    Nav.capReturn = null;
+  },
 
   /* A real write, not a redirect: the entry lands in the journal and the
      screen you were on is still the screen you are on. */
