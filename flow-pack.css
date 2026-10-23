@@ -2410,3 +2410,7 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
 .fl-flash{animation:flFlash 2.4s ease;border-radius:10px;}
 @keyframes flFlash{0%,30%{box-shadow:0 0 0 2px var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
 @media (prefers-reduced-motion:reduce){.fl-flash{animation:none;outline:2px solid var(--accent);}}
+/* Pinch-zoom without double-tap-zoom: double-tap zoom makes a web view wait
+   to see whether a tap is the first of two, which delays every tap in the
+   iPhone app. `manipulation` keeps pinch and scroll and drops only that. */
+html{touch-action:manipulation;}
