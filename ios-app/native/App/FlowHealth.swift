@@ -117,7 +117,12 @@ final class FlowHealth {
                 /// Seconds actually asleep, per night. "In bed" is not sleep,
                 /// and counting it would tell somebody they slept eight hours
                 /// on a night they lay awake for two of them.
-                var asleep: [String: TimeInterval] = [:]
+                /// Intervals, not durations: the phone and the watch (or the
+                /// watch and a ring) both record the same night, and adding
+                /// their samples together counted it twice. Overlapping
+                /// intervals are merged first; separate ones still add up.
+                var spans: [String: [(Date, Date)]] = [:]
+                var latest: [String: Date] = [:]
                 for s in samples {
                     guard let v = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
                     switch v {
@@ -127,10 +132,29 @@ final class FlowHealth {
                     /// Attributed to the day the night ended, which is the day
                     /// a person means when they say "I slept badly".
                     let day = fmt.string(from: s.endDate)
-                    asleep[day, default: 0] += s.endDate.timeIntervalSince(s.startDate)
+                    spans[day, default: []].append((s.startDate, s.endDate))
+                    if latest[day].map({ s.endDate > $0 }) ?? true { latest[day] = s.endDate }
                 }
-                for (day, secs) in asleep where secs > 0 {
-                    put(day, "hours", (secs / 3600 * 100).rounded() / 100)
+                let iso = ISO8601DateFormatter()
+                for (day, list) in spans {
+                    let sorted = list.sorted { $0.0 < $1.0 }
+                    var secs: TimeInterval = 0
+                    var cur: (Date, Date)? = nil
+                    for span in sorted {
+                        if let c = cur, span.0 <= c.1 {
+                            cur = (c.0, max(c.1, span.1))
+                        } else {
+                            if let c = cur { secs += c.1.timeIntervalSince(c.0) }
+                            cur = span
+                        }
+                    }
+                    if let c = cur { secs += c.1.timeIntervalSince(c.0) }
+                    if secs > 0 {
+                        put(day, "hours", (secs / 3600 * 100).rounded() / 100)
+                        /// When the night's last sample ended — the page shows
+                        /// each figure with its own time, not one shared date.
+                        if let l = latest[day] { put(day, "sleepAt", iso.string(from: l)) }
+                    }
                 }
             }
             store.execute(q)
@@ -211,6 +235,7 @@ final class FlowHealth {
         /// the group, because a HealthKit query that never calls back would
         /// otherwise leave the page waiting on a promise forever.
         var answered = false
+        var complete = false
         let finish = {
             guard !answered else { return }
             answered = true
@@ -218,11 +243,16 @@ final class FlowHealth {
             let out = rows.values
                 .sorted { ((($0["date"] as? String) ?? "")) < ((($1["date"] as? String) ?? "")) }
             lock.unlock()
+            /// A read cut short by the timeout says so, so the page keeps the
+            /// figures it already had instead of treating gaps as "no data".
+            let partial = !complete
             DispatchQueue.main.async {
-                done(["available": true, "days": out, "read": out.count])
+                done(["available": true, "days": out, "read": out.count, "partial": partial])
             }
         }
-        group.notify(queue: .global(), execute: finish)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: finish)
+        /// Both paths land on the main queue, so `answered` and `complete`
+        /// are only ever touched there.
+        group.notify(queue: .main) { complete = true; finish() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { finish() }
     }
 }
