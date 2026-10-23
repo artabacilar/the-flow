@@ -182,6 +182,28 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
     ok('Today shows the meeting under the rock, one short line', ui.line && /Davines with Climboost/.test(ui.line) && /Notes/.test(ui.line) && !/Open recording/.test(ui.line), ui.line);
     ok('the recording link and the people are inside the notes', /Open recording/.test(ui.html) && /Ozcan/.test(ui.html), ui.html);
     ok('and the notes unfold: who was there, the summary, the other items', ui.open && /Ozcan/.test(ui.html) && /Slow sellers/.test(ui.html) && /Send slow-sellers list/.test(ui.html) && /<b>TikTok<\/b>/.test(ui.html), ui.html);
+    /* A real Fathom summary on a phone: a long bullet that is one big
+       timestamp link, and a bare recording URL. It used to show raw
+       markdown and push the row past the card. */
+    await p.setViewportSize({ width: 390, height: 844 });
+    const ph = await p.evaluate(() => {
+      const ms = JSON.parse(localStorage.getItem('ld_meetings'));
+      const long = 'Reklamlar, lead başına maliyeti 200 TL\'den 500 TL\'ye çıkaran ve form doldurma oranını düşüren, niteliksiz lead\'ler (ör. son kullanıcılar, öğrenciler, rakipler ve yanlış şehirdeki salonlar) çekiyor; satış ekibi zamanını bunlarla harcıyor.';
+      ms.forEach((m) => { m.summary = '## Önemli çıkarımlar\n- [**Lead Kalitesi Sorunu:** ' + long + '](https://fathom.video/share/DVP5WLGi1XXdqyvcZDwm1ztxLiKXbW5V?tab=summary&timestamp=1762.0)\n- Raw https://fathom.video/share/DVP5WLGi1XXdqyvcZDwm1ztxLiKXbW5VDVP5WLGi1XXdqyvcZDwm1ztxLiKXbW5V?tab=summary'; });
+      localStorage.setItem('ld_meetings', JSON.stringify(ms));
+      document.querySelectorAll('#today-feed .td-meet').forEach((e) => e.remove());
+      FlowMeetings.paint();
+      const row = document.querySelector('#today-feed .td-rock[data-rockid]:not([data-rockid="legacy1"])');
+      const tg = row.querySelector('.td-meet-tg'); tg.click();
+      const body = row.querySelector('.td-meet-body');
+      const card = row.closest('.td-rocks').getBoundingClientRect();
+      const worst = Math.max(...[...row.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right));
+      return { raw: /\]\(https/.test(body.textContent), ts: (body.querySelector('.td-ts') || {}).textContent, over: Math.round(worst - card.right), doc: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    ok('a long timestamped bullet reads as text with a ▶ 29:22 chip, not raw markdown', !ph.raw && ph.ts === '▶ 29:22', ph);
+    ok('open notes stay inside the card on a phone', ph.over <= 0 && ph.doc <= 0, ph);
+    await p.setViewportSize({ width: 1280, height: 900 });
+
     /* Nothing refreshes by itself: no timer, no button. A pull from the top
        is the only way to ask, and coming back after a short time away is
        not treated as asking. */
