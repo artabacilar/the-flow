@@ -74,7 +74,13 @@ struct FlowWidgetView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(Array(t.lines.prefix(maxLines).enumerated()), id: \.offset) { _, line in
-                        row(line)
+                        /// Each row opens its own rock in the app. A small
+                        /// widget is one tap target, set below.
+                        if family != .systemSmall, let url = FlowWidgetView.link(line) {
+                            Link(destination: url) { row(line) }
+                        } else {
+                            row(line)
+                        }
                     }
                     let hidden = t.lines.count - min(t.lines.count, maxLines) + t.more
                     if hidden > 0 {
@@ -92,6 +98,13 @@ struct FlowWidgetView: View {
         }
         .padding(14)
         .containerBackground(for: .widget) { Color(red: 0.04, green: 0.05, blue: 0.06) }
+        .widgetURL(entry.today?.lines.first(where: { !$0.done }).flatMap(FlowWidgetView.link))
+    }
+
+    static func link(_ line: FlowToday.Line) -> URL? {
+        guard let id = line.id, !id.isEmpty,
+              let safe = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        return URL(string: "theflow://rock/" + safe)
     }
 
     private var header: some View {
