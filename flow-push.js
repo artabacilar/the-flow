@@ -156,6 +156,25 @@ let sender = apnsPost;
 
 const devKey = (uid) => '__push:dev:' + uid;
 
+/* One device, one account. The same iPhone (or browser) signed out of one
+   account and into another registers the same token again; without this the
+   first account kept it and its reminders kept arriving on a phone that no
+   longer belonged to it. Registering takes the device off whoever had it. */
+const ownerKey = (id) => '__push:owner:' + require('crypto').createHash('sha256').update(String(id)).digest('hex').slice(0, 32);
+async function claimDevice(raw, uid, id) {
+  if (!id) return;
+  try {
+    const prev = await raw.get(ownerKey(id));
+    const prevUid = typeof prev === 'string' ? prev : null;
+    if (prevUid && prevUid !== uid) {
+      const list = await readDevices(raw, prevUid);
+      const left = list.filter((d) => d.token !== id && d.endpoint !== id);
+      if (left.length !== list.length) await writeDevices(raw, prevUid, left);
+    }
+    await raw.set(ownerKey(id), uid);
+  } catch (e) { logWhy('claim', e.message); }
+}
+
 async function readDevices(raw, uid) {
   try {
     const v = await raw.get(devKey(uid));
@@ -363,6 +382,7 @@ async function handle(req, res, ctx) {
       }
       const kept = devices.slice(-10);
       await writeDevices(raw, uid, kept);
+      await claimDevice(raw, uid, s.endpoint);
       json(res, 200, { ok: true, devices: kept.length, available: true });
       return true;
     }
@@ -389,6 +409,7 @@ async function handle(req, res, ctx) {
        this into an unbounded list. */
     const kept = devices.slice(-10);
     await writeDevices(raw, uid, kept);
+    await claimDevice(raw, uid, token);
     json(res, 200, { ok: true, devices: kept.length, available: ready() });
     return true;
   }
@@ -399,8 +420,11 @@ async function handle(req, res, ctx) {
     const token = String(b.token || '').trim();
     const endpoint = String(b.endpoint || '').trim();
     const devices = await readDevices(raw, uid);
+    /* Naming no device used to mean "remove every device". Signing out of
+       one phone must never stop reminders on the others. */
+    if (!endpoint && !token) { json(res, 400, { error: 'Say which device.' }); return true; }
     const left = endpoint ? devices.filter((d) => !(isWeb(d) && d.endpoint === endpoint))
-      : token ? devices.filter((d) => d.token !== token) : [];
+      : devices.filter((d) => d.token !== token);
     await writeDevices(raw, uid, left);
     json(res, 200, { ok: true, devices: left.length });
     return true;

@@ -282,7 +282,11 @@ async function buildContext(mine) {
   push('Habits', await pick('ld_habits'));
   push('Sleep', await pick('ld_sleep'));
   push('Mood and energy', await pick('ld_mood'));
-  push('Finances', await pick('ld_finance'));
+  push('Finances (budget and the first expense form)', await pick('ld_finance'));
+  /* The second expense store: receipts, statement imports and the newer
+     form. Without it, half the spending was invisible to Ask. */
+  const exp = await pick('flow:expenses');
+  if (Array.isArray(exp)) push('Expenses (newest last)', exp.slice(-60).map(x => ({ date: x.date, amount: x.amount, currency: x.currency, merchant: x.merchant, category: x.category })));
   push('Diet checklist', await pick('ld_diet'));
   push('Notes', await pick('flow:notes'));
 

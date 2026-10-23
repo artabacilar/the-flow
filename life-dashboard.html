@@ -2916,8 +2916,9 @@ function paintHealth(state){
        on purpose, because being able to tell "denied" from "no data" would
        leak what data somebody has. So an empty read is genuinely ambiguous
        and the honest thing is to name both possibilities. */
+    const line=healthLine(healthData.days);
     foot.textContent = n
-      ? (n+' day'+(n===1?'':'s')+' read · last checked '+new Date(healthData.updated).toLocaleString('en-GB'))
+      ? ((line?line+' · ':'')+'read '+new Date(healthData.updated).toLocaleString('en-GB')+(healthData.partial?' · the last read was cut short; earlier figures kept':''))
       : 'Nothing came back — either there is no data for these days, or Health is not sharing it. You can change what it shares in Health → Sharing → Apps.';
   } else foot.textContent='';
 }
@@ -2934,22 +2935,59 @@ async function syncHealth(quiet){
   try{ res=await p.healthRead({days:14}); }catch(e){ res=null; }
   if(!res || !Array.isArray(res.days)) return;
 
-  healthData={days:res.days, updated:new Date().toISOString(), asked:true};
+  /* Merged by day, not replaced: a read cut short (the phone gave up after
+     20 seconds) must not wipe days it simply did not get to. A day it did
+     read replaces the old copy of that day. */
+  const byDay={};
+  (healthData.days||[]).forEach(d=>{ if(d&&d.date) byDay[d.date]=d; });
+  res.days.forEach(d=>{ if(d&&d.date) byDay[d.date]=Object.assign({}, res.partial?byDay[d.date]:null, d); });
+  const merged=Object.keys(byDay).sort().slice(-60).map(k=>byDay[k]);
+  healthData={days:merged, updated:new Date().toISOString(), asked:true, partial:!!res.partial};
   S.set('health', healthData);
   healthFillSleepLog(res.days);
-  healthFillPanel(res.days, quiet);
+  healthFillPanel(merged, quiet);
   paintHealth(state);
+}
+
+/* The newest value of each figure, with the day it is from. Sleep, HRV and
+   resting heart rate are rarely all from the same day, and one shared date
+   made an old reading look like today's. */
+function healthLatest(days){
+  const out={};
+  [...(days||[])].reverse().forEach(d=>{
+    if(!d) return;
+    ['hours','hrv','rhr'].forEach(k=>{ if(out[k]==null && d[k]!=null) out[k]={v:d[k], date:d.date}; });
+  });
+  return out;
+}
+function healthLine(days){
+  const L=healthLatest(days), day=s=>{ try{ return new Date(s+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }catch(e){ return s; } };
+  const bits=[];
+  if(L.hours) bits.push('sleep '+Number(L.hours.v).toFixed(1)+' h ('+day(L.hours.date)+')');
+  if(L.hrv) bits.push('HRV '+L.hrv.v+' ms ('+day(L.hrv.date)+')');
+  if(L.rhr) bits.push('resting HR '+L.rhr.v+' ('+day(L.rhr.date)+')');
+  return bits.join(' · ');
 }
 
 /* Same rule as the WHOOP fill: add nights the log does not have, never touch
    one somebody wrote themselves. */
 function healthFillSleepLog(days){
   if(!Array.isArray(days) || !days.length) return;
-  const have=new Set(slData.map(e=>e.date));
+  const byDate={}; slData.forEach(e=>{ if(e&&e.date) byDate[e.date]=e; });
   let added=0;
   for(const d of days){
-    if(!d || !d.date || d.hours==null || have.has(d.date)) continue;
-    slData.push({date:d.date, bed:'', wake:'', hrs:d.hours, quality:null, note:'from Apple Health'});
+    if(!d || !d.date || d.hours==null) continue;
+    const have=byDate[d.date];
+    /* A night this import wrote is refreshed when Health has a newer total
+       (the watch finished syncing, overlaps were merged). A night somebody
+       wrote or edited themselves is never touched. */
+    if(have){
+      if(have.src==='health' || (have.note==='from Apple Health' && !have.edited)){
+        if(Number(have.hrs)!==Number(d.hours)){ have.hrs=d.hours; have.src='health'; added++; }
+      }
+      continue;
+    }
+    slData.push({date:d.date, bed:'', wake:'', hrs:d.hours, quality:null, note:'from Apple Health', src:'health'});
     added++;
   }
   if(!added) return;
@@ -2965,14 +3003,18 @@ function healthFillSleepLog(days){
    watch's is worse than showing one of them consistently. */
 function healthFillPanel(days, quiet){
   if(whoopLive) return;
-  const latest=[...days].reverse().find(d=>d && (d.hrv!=null || d.rhr!=null || d.hours!=null));
-  if(!latest) return;
+  /* Each figure is its own newest value, with its own date. */
+  const L=healthLatest(days);
+  if(!L.hrv && !L.rhr && !L.hours) return;
+  const latest={ hrv:L.hrv?L.hrv.v:null, rhr:L.rhr?L.rhr.v:null };
   const before=whoopData.hrv;
+  const newest=[L.hrv,L.rhr,L.hours].filter(Boolean).map(x=>x.date).sort().pop();
   whoopData=Object.assign({}, whoopData, {
-    hrv: latest.hrv!=null?latest.hrv:whoopData.hrv,
-    rhr: latest.rhr!=null?latest.rhr:whoopData.rhr,
-    hours: latest.hours!=null?latest.hours:whoopData.hours,
-    date: latest.date,
+    hrv: L.hrv?L.hrv.v:whoopData.hrv,
+    rhr: L.rhr?L.rhr.v:whoopData.rhr,
+    hours: L.hours?L.hours.v:whoopData.hours,
+    date: newest,
+    dates: { hrv:L.hrv&&L.hrv.date, rhr:L.rhr&&L.rhr.date, hours:L.hours&&L.hours.date },
     source: 'health',
     updated: new Date().toISOString()
   });
@@ -3369,24 +3411,35 @@ document.getElementById('fnAdd').addEventListener('click',()=>{
   if(!amt||amt<=0) return;
   const cat=document.getElementById('fnCat').value;
   const note=document.getElementById('fnNote').value.trim();
-  fnData.monthly[NOW_MONTH].push({id:Date.now().toString(), date:todayStr, cat, amt, note});
-  (function(){ const jc=FIN_CATS.find(x=>x.id===cat); J('money','💸 £'+amt.toFixed(2)+' — '+(note||(jc?jc.name:cat))); })();
+  const L=window.FlowLedger;
+  (function(){ const jc=FIN_CATS.find(x=>x.id===cat); J('money','💸 '+(L?L.money(amt):'£'+amt.toFixed(2))+' — '+(note||(jc?jc.name:cat))); })();
   document.getElementById('fnAmt').value=''; document.getElementById('fnNote').value='';
+  /* One ledger: with the pack loaded, this form writes where every other
+     expense goes, and the budget, Today and the charts all see it. */
+  if(L){ L.add({date:todayStr, amount:amt, merchant:note, category:({food:'Groceries',eating_out:'Dining',transport:'Transport',gym:'Fitness',subscriptions:'Subscriptions',shopping:'Shopping',entertainment:'Entertainment'})[cat]||'Other', budgetCat:cat, source:'form'}); return; }
+  fnData.monthly[NOW_MONTH].push({id:Date.now().toString(), date:todayStr, cat, amt, note});
   fnSave(); renderFinance();
 });
 
 function renderFinance(){
-  const expenses=fnData.monthly[NOW_MONTH]||[];
+  /* Every expense from both stores when the pack's ledger is there. */
+  const L=window.FlowLedger;
+  const expenses=L ? L.all().filter(x=>String(x.date).slice(0,7)===NOW_MONTH && String(x.currency||L.home()).toUpperCase()===L.home())
+      .map(x=>({id:x.id, date:x.date, cat:L.budgetCat(x), amt:Math.abs(Number(x.amount)||0), note:x.merchant||x.note||x.category||''}))
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+    : (fnData.monthly[NOW_MONTH]||[]);
+  const M=v=>L?L.money(v):'£'+Number(v).toFixed(2);
   const totalSpent=expenses.reduce((s,e)=>s+e.amt,0);
   const income=fnData.budgets.income||0;
   const totalBudget=FIN_CATS.reduce((s,c)=>s+(fnData.budgets[c.id]||0),0);
   const remain=Math.max(0, totalBudget-totalSpent);
   const saved=Math.max(0, income-totalSpent);
 
-  document.getElementById('fnIncome').textContent='£'+income.toFixed(0);
-  document.getElementById('fnSpent').textContent='£'+totalSpent.toFixed(2);
-  document.getElementById('fnRemain').textContent='£'+remain.toFixed(2);
-  document.getElementById('fnSaved').textContent='£'+saved.toFixed(2);
+  document.getElementById('fnIncome').textContent=M(income);
+  document.getElementById('fnSpent').textContent=M(totalSpent);
+  document.getElementById('fnRemain').textContent=M(remain);
+  document.getElementById('fnSaved').textContent=M(saved);
+  if(L){ const sym=L.symbol(); document.querySelectorAll('#budgetInputs label').forEach(l=>{ l.textContent=l.textContent.replace(/\((£|[^)]{1,4})\)/,'('+sym+')'); }); const al=document.querySelector('label[for="fnAmt"]')||[...document.querySelectorAll('#tab-finance label')].find(x=>/Amount \(/.test(x.textContent)); if(al) al.textContent=al.textContent.replace(/\((£|[^)]{1,4})\)/,'('+sym+')'); }
 
   // Category bars
   const budgets=document.getElementById('finBudgets');
@@ -3398,7 +3451,7 @@ function renderFinance(){
     return `<div class="fin-cat">
       <div class="fin-cat-header">
         <div class="fin-cat-name" style="color:${c.color}">${c.name}</div>
-        <div class="fin-cat-nums"><span class="spent" style="color:${c.color}">£${spent.toFixed(2)}</span>${budget?' / £'+budget.toFixed(0):''}</div>
+        <div class="fin-cat-nums"><span class="spent" style="color:${c.color}">${M(spent)}</span>${budget?' / '+M(budget):''}</div>
       </div>
       <div class="fin-bar"><div class="fin-fill ${cls}" style="width:${pct}%"></div></div>
     </div>`;
@@ -3408,16 +3461,16 @@ function renderFinance(){
   const list=document.getElementById('finExpenses'), empty=document.getElementById('fnEmpty');
   if(!expenses.length){ empty.style.display='block'; list.innerHTML=''; return; } empty.style.display='none';
   list.innerHTML=[...expenses].reverse().map(e=>{
-    const c=FIN_CATS.find(x=>x.id===e.cat);
+    const c=FIN_CATS.find(x=>x.id===e.cat)||FIN_CATS[FIN_CATS.length-1];
     return `<div class="fin-expense">
       <span class="fe-cat" style="background:${c.color}22;color:${c.color}">${c.name}</span>
       <span style="flex:1;padding:0 10px;color:var(--text);">${e.note||'—'}</span>
       <span style="color:var(--muted);font-size:12px;margin-right:8px;">${e.date}</span>
-      <span class="fe-amt">£${e.amt.toFixed(2)}</span>
+      <span class="fe-amt">${M(e.amt)}</span>
       <button class="fe-del" data-fid="${e.id}">×</button>
     </div>`;
   }).join('');
-  list.querySelectorAll('.fe-del').forEach(b=>{ b.addEventListener('click',()=>{ fnData.monthly[NOW_MONTH]=fnData.monthly[NOW_MONTH].filter(e=>e.id!==b.dataset.fid); fnSave(); renderFinance(); }); });
+  list.querySelectorAll('.fe-del').forEach(b=>{ b.addEventListener('click',()=>{ if(L){ L.remove(b.dataset.fid); return; } fnData.monthly[NOW_MONTH]=fnData.monthly[NOW_MONTH].filter(e=>e.id!==b.dataset.fid); fnSave(); renderFinance(); }); });
 }
 
 renderFinance();

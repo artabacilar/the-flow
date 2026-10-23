@@ -1344,11 +1344,13 @@ const Finance = {
     await Finance.save();
   },
 
-  inMonth(ym) { return Finance.items.filter(x => String(x.date).slice(0, 7) === ym); },
+  /* Every expense, from both forms — see Ledger. */
+  inMonth(ym) { return Ledger.all().filter(x => String(x.date).slice(0, 7) === ym); },
 
   byCategory(items) {
     const m = {};
-    items.forEach(x => { const c = x.category || 'Other'; m[c] = (m[c] || 0) + Math.abs(Number(x.amount) || 0); });
+    const home = Ledger.home();
+    items.forEach(x => { if (String(x.currency || home).toUpperCase() !== home) return; const c = x.category || 'Other'; m[c] = (m[c] || 0) + Math.abs(Number(x.amount) || 0); });
     return Object.keys(m).map(k => ({ label: k, value: m[k] })).sort((a, b) => b.value - a.value);
   },
 
@@ -1357,7 +1359,7 @@ const Finance = {
     for (let i = n - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-      const total = Finance.inMonth(ym).reduce((s, x) => s + Math.abs(Number(x.amount) || 0), 0);
+      const total = Ledger.sum(Finance.inMonth(ym)).total;
       out.push({ label: MON[d.getMonth()], value: Math.round(total) });
     }
     return out;
@@ -1514,7 +1516,9 @@ const Finance = {
   async importItems(items) {
     // de-duplicate against what is already stored: date + amount + merchant
     const seen = {};
-    Finance.items.forEach(x => { seen[`${x.date}|${Math.abs(x.amount).toFixed(2)}|${norm(x.merchant).toLowerCase().slice(0, 24)}`] = 1; });
+    /* De-duplicated against both stores, so a statement line already typed
+       into the first form is not imported a second time. */
+    (typeof Ledger !== 'undefined' ? Ledger.all() : Finance.items).forEach(x => { seen[`${x.date}|${Math.abs(x.amount).toFixed(2)}|${norm(x.merchant).toLowerCase().slice(0, 24)}`] = 1; });
     let added = 0, dupes = 0;
     for (const it of items) {
       const k = `${it.date}|${Math.abs(it.amount).toFixed(2)}|${norm(it.merchant).toLowerCase().slice(0, 24)}`;
@@ -1527,6 +1531,86 @@ const Finance = {
     return { added, dupes };
   }
 };
+
+/* ── One ledger ───────────────────────────────────────────────────────────
+ * There were two expense stores. The first Finances form (budget, the Spend
+ * tile on Today) writes `ld_finance` — amounts per month, a category id, no
+ * currency. The receipt reader, statement import and "Add an expense by
+ * hand" write `flow:expenses`. Each screen read only one of them, so an
+ * expense showed in one place and not the other.
+ *
+ * Nothing is moved or deleted. Every reader now goes through here and sees
+ * both, as one list: records from the first form appear with id "ld:…" and
+ * `legacy: true`. New expenses from either form are written to
+ * `flow:expenses` only, so the old store stops growing; what is already in it
+ * keeps counting. Deleting a row deletes it from whichever store holds it.
+ *
+ * Currency: the first form never stored one (its "£" was template text), so
+ * its rows are in the currency chosen in Preferences, as is the display
+ * everywhere. A row stored in another currency is never added into a total
+ * as if it were the same money — totals report it separately. */
+const LEGACY_CAT = { food: 'Groceries', eating_out: 'Dining', transport: 'Transport', gym: 'Fitness',
+  subscriptions: 'Subscriptions', shopping: 'Shopping', entertainment: 'Entertainment', other: 'Other' };
+const CAT_TO_BUDGET = { Groceries: 'food', Dining: 'eating_out', Transport: 'transport', Fuel: 'transport',
+  Health: 'gym', Fitness: 'gym', Supplements: 'gym', Subscriptions: 'subscriptions', Shopping: 'shopping',
+  Entertainment: 'entertainment', Music: 'entertainment' };
+const Ledger = {
+  host(name) { try { return eval(name); } catch (e) { return undefined; } },
+  home() { return String(Settings.get('currency') || 'TRY').toUpperCase(); },
+  money(n, cur) { return money(n, cur || Ledger.home()); },
+  symbol() {
+    try { const p = new Intl.NumberFormat(undefined, { style: 'currency', currency: Ledger.home() }).formatToParts(0); const c = p.find((x) => x.type === 'currency'); return c ? c.value : Ledger.home(); }
+    catch (e) { return Ledger.home(); }
+  },
+  legacy() {
+    const fn = Ledger.host('fnData');
+    if (!fn || !fn.monthly) return [];
+    const out = [];
+    Object.keys(fn.monthly).forEach((ym) => (fn.monthly[ym] || []).forEach((e) => {
+      if (!e) return;
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || '')) ? e.date : ym + '-01';
+      out.push({ id: 'ld:' + ym + ':' + e.id, legacyId: e.id, legacyMonth: ym, legacy: true, date, time: '',
+        amount: Math.abs(Number(e.amt) || 0), currency: '', merchant: e.note || '', note: '',
+        category: LEGACY_CAT[e.cat] || 'Other', budgetCat: e.cat || 'other', source: 'form', receiptId: null });
+    }));
+    return out;
+  },
+  all() { return Finance.items.concat(Ledger.legacy()); },
+  budgetCat(x) { return x.budgetCat || CAT_TO_BUDGET[x.category] || 'other'; },
+  /* Only money in the chosen currency is added up; anything else is counted
+     apart rather than silently mixed in. */
+  sum(items) {
+    const home = Ledger.home(); let total = 0; const other = {};
+    items.forEach((x) => {
+      const cur = String(x.currency || home).toUpperCase(), v = Math.abs(Number(x.amount) || 0);
+      if (cur === home) total += v; else other[cur] = (other[cur] || 0) + v;
+    });
+    return { total, other };
+  },
+  otherLine(other) {
+    const k = Object.keys(other || {});
+    return k.length ? ' · plus ' + k.map((c) => money(other[c], c)).join(', ') + ' not counted' : '';
+  },
+  async add(rec) { const it = await Finance.add(rec); Ledger.changed(); return it; },
+  async remove(id) {
+    if (String(id).indexOf('ld:') === 0) {
+      const fn = Ledger.host('fnData');
+      const m = /^ld:(\d{4}-\d{2}):(.*)$/.exec(id);
+      if (fn && m && fn.monthly && fn.monthly[m[1]]) {
+        fn.monthly[m[1]] = fn.monthly[m[1]].filter((e) => String(e.id) !== m[2]);
+        try { Ledger.host('fnSave')(); } catch (e) {}
+      }
+    } else await Finance.remove(id);
+    Ledger.changed();
+  },
+  /* Both Finances screens and the Today tile repaint from the same list. */
+  changed() {
+    try { const r = Ledger.host('renderFinance'); if (typeof r === 'function') r(); } catch (e) {}
+    try { const sec = document.querySelector('[data-flow-finance]'); if (sec) FinanceUI.repaint(sec.closest('.flow-section, .section') || sec.parentElement); } catch (e) {}
+    try { TodayPlus.apply(); } catch (e) {}
+  }
+};
+window.FlowLedger = Ledger;
 
 /* =========================================================================
  * 13 · Notes — nested bracket sections, explicit save + autosave
@@ -2838,16 +2922,17 @@ const FinanceUI = {
     const now = new Date();
     const ym = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
     const month = Finance.inMonth(ym);
-    const total = month.reduce((a, x) => a + Math.abs(Number(x.amount) || 0), 0);
+    const sums = Ledger.sum(month);
+    const total = sums.total;
     const cats = Finance.byCategory(month);
     const trend = Finance.byMonth(6);
-    const recent = Finance.items.slice().sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''))).slice(0, 25);
+    const recent = Ledger.all().sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''))).slice(0, 25);
     const budget = Number(s.budgetMonthly) || 0;
 
     wrap.innerHTML = `
       <div class="flow-card">
         <h3>📸 Snap a receipt</h3>
-        <p class="flow-sub">Photograph an invoice or till receipt and the text is read on your device — nothing is uploaded anywhere. Merchant, total, date and time are filled in for you; correct anything that came out wrong and save.</p>
+        <p class="flow-sub">Photograph an invoice or till receipt. The text is read on your device; when you save, the photo is kept with the expense in your account so you can open it again. Merchant, total, date and time are filled in for you — correct anything that came out wrong and save.</p>
         <div class="flow-drop" data-fa="pick">
           Tap to take a photo or choose an image<br>
           <span style="font-size:11.5px">JPG · PNG · HEIC · works offline after the first run</span>
@@ -2888,7 +2973,7 @@ const FinanceUI = {
       <div class="flow-grid c2">
         <div class="flow-card">
           <h3>Where ${esc(MON[now.getMonth()])} went</h3>
-          <p class="flow-sub">${month.length} expense${month.length === 1 ? '' : 's'} · ${esc(money(total, s.currency))} total</p>
+          <p class="flow-sub">${month.length} expense${month.length === 1 ? '' : 's'} · ${esc(money(total, s.currency))} total${esc(Ledger.otherLine(sums.other))}</p>
           ${budget ? Chart.meter(total, budget, { label: 'Monthly budget', format: v => money(v, s.currency) }) : ''}
           <div style="margin-top:14px">${cats.length ? Chart.bars(cats, { format: v => money(v, s.currency), title: 'Spending by category' }) : '<p class="flow-empty">Nothing logged this month yet.</p>'}</div>
         </div>
@@ -2952,8 +3037,9 @@ const FinanceUI = {
         });
         toast('Expense added ✓');
         FinanceUI.repaint(section);
+        Ledger.changed();
       }
-      else if (a === 'del') { await Finance.remove(t.getAttribute('data-id')); toast('Deleted'); FinanceUI.repaint(section); }
+      else if (a === 'del') { await Ledger.remove(t.getAttribute('data-id')); toast('Deleted'); FinanceUI.repaint(section); }
       else if (a === 'viewRcpt') {
         const it = Finance.items.find(x => x.id === t.getAttribute('data-id'));
         if (!it) return;
@@ -2964,11 +3050,11 @@ const FinanceUI = {
       }
       else if (a === 'exportCsv') {
         const rows = [['date', 'time', 'merchant', 'category', 'amount', 'currency', 'note', 'source']]
-          .concat(Finance.items.map(x => [x.date, x.time || '', x.merchant || '', x.category || '', Math.abs(x.amount), x.currency || '', (x.note || '').replace(/"/g, "'"), x.source || '']));
+          .concat(Ledger.all().map(x => [x.date, x.time || '', x.merchant || '', x.category || '', Math.abs(x.amount), x.currency || Ledger.home(), (x.note || '').replace(/"/g, "'"), x.source || '']));
         download(`the-flow-expenses-${today()}.csv`,
           rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
       }
-      else if (a === 'exportJson') download(`the-flow-expenses-${today()}.json`, JSON.stringify(Finance.items, null, 2), 'application/json');
+      else if (a === 'exportJson') download(`the-flow-expenses-${today()}.json`, JSON.stringify(Ledger.all(), null, 2), 'application/json');
       else if (a === 'saveParsed') {
         const p = FinanceUI.state.parsed || {};
         const amt = parseFloat(wrap.querySelector('#fr-amt').value);
@@ -3005,7 +3091,14 @@ const FinanceUI = {
     wrap.addEventListener('change', async (e) => {
       const sel = e.target.closest('[data-recat]');
       if (sel) {
-        const it = Finance.items.find(x => x.id === sel.getAttribute('data-recat'));
+        const rid = sel.getAttribute('data-recat');
+        if (String(rid).indexOf('ld:') === 0) {
+          const fn = Ledger.host('fnData'); const m = /^ld:(\d{4}-\d{2}):(.*)$/.exec(rid);
+          const row = fn && m && (fn.monthly[m[1]] || []).find((e) => String(e.id) === m[2]);
+          if (row) { row.cat = CAT_TO_BUDGET[sel.value] || 'other'; try { Ledger.host('fnSave')(); } catch (e2) {} Ledger.changed(); toast('Category updated.'); }
+          return;
+        }
+        const it = Finance.items.find(x => x.id === rid);
         if (it) {
           it.category = sel.value;
           await Finance.save();
@@ -4200,8 +4293,8 @@ const Journal = {
   contextFor(date) {
     const out = { done: [], planned: [], spend: [], log: [] };
     Schedule.onDate(date).forEach(r => (r.done ? out.done : out.planned).push(r.text));
-    Finance.items.filter(x => x.date === date).forEach(x =>
-      out.spend.push(`${x.merchant || x.category} · ${money(Math.abs(x.amount), x.currency)}`));
+    Ledger.all().filter(x => x.date === date).forEach(x =>
+      out.spend.push(`${x.merchant || x.category} · ${money(Math.abs(x.amount), x.currency || Ledger.home())}`));
     out.log = Journal.hostLogFor(date);
     return out;
   },
@@ -5385,24 +5478,23 @@ const TodayPlus = {
 
   spend() {
     const fn = TodayPlus.host('fnData');
-    const month = TodayPlus.host('NOW_MONTH');
+    const month = TodayPlus.host('NOW_MONTH') || today().slice(0, 7);
     const t = TodayPlus.host('todayStr') || today();
     const cats = TodayPlus.host('FIN_CATS') || [];
-    if (!fn || !fn.monthly || !month) return null;
-    const rows = fn.monthly[month] || [];
-    const mtd = rows.reduce((s, r) => s + (Number(r.amt) || 0), 0);
-    const tod = rows.filter(r => r.date === t).reduce((s, r) => s + (Number(r.amt) || 0), 0);
+    /* Both expense stores, one total — see Ledger. */
+    const rows = Finance.inMonth(month);
+    const mtd = Ledger.sum(rows).total;
+    const tod = Ledger.sum(rows.filter(r => r.date === t)).total;
     let budget = 0;
-    try { cats.forEach(c => { budget += Number((fn.budgets || {})[c.id]) || 0; }); } catch (e) {}
+    try { cats.forEach(c => { budget += Number(((fn || {}).budgets || {})[c.id]) || 0; }); } catch (e) {}
     if (!budget) budget = Number(Settings.get('budgetMonthly')) || 0;
     return { today: tod, mtd, budget, count: rows.length };
   },
 
-  /* Their finance UI labels every field in £, so the numbers in this store are
-     pounds. Match the host rather than inventing a currency for them. */
+  /* The currency chosen in Preferences, the same on every screen. */
   money(n) {
     const v = Number(n) || 0;
-    return '£' + (Math.abs(v) >= 1000 ? v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : v.toFixed(v % 1 ? 2 : 0));
+    return Math.abs(v) >= 1000 ? moneyCompact(v, Ledger.home()) : money(v, Ledger.home()).replace(/[.,]00(?=\D*$)/, '');
   },
 
   /* The daily entry points use the host's existing forms and save paths.
@@ -5729,7 +5821,9 @@ const TodayPlus = {
       ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', i.id))
     ].join('');
     pblock.innerHTML =
-      `<div class="flow-td-head"><span class="l">Priorities</span><span class="c">${pri.q1.length + pri.q2.length + (pri.flagged || []).length} open</span></div>` +
+      /* The count is of what the card lists: overdue rows were shown under a
+         header that said "0 open". */
+      `<div class="flow-td-head"><span class="l">Priorities</span><span class="c${pri.overdue.length ? ' late' : ''}">${pri.q1.length + pri.q2.length + (pri.flagged || []).length + pri.overdue.length} open${pri.overdue.length ? ' · ' + pri.overdue.length + ' overdue' : ''}</span></div>` +
       (pbody || `<div class="flow-td-empty">Nothing open in Q1 or Q2. Star a Planner task or add them in 🎯 Priorities.<button type="button" class="flow-empty-action" data-flow-today-action="priority">Add a priority</button></div>`);
     const rocks = $('.td-rocks', feed);
     if (rocks && rocks.nextSibling) feed.insertBefore(pblock, rocks.nextSibling); else feed.appendChild(pblock);
@@ -6702,6 +6796,28 @@ const Auth = {
   },
 
   async signOut() {
+    /* This device stops being this account's before the session ends — the
+       unregister call needs the session. On iPhone: reminders stop coming to
+       this phone and the home-screen widget forgets the day it was showing.
+       In a browser: this browser's notification subscription goes. Each step
+       is best effort and time-boxed; none may block signing out. */
+    const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+    const unreg = (body) => fetch('/api/push/unregister', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    try {
+      const B = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FlowBridge;
+      if (B) {
+        await within((async () => {
+          try { const t = await B.pushToken(); if (t && t.token) await unreg({ token: t.token }); } catch (e) {}
+          try { await B.clear(); } catch (e) {}
+        })(), 2500);
+      } else if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistration) {
+        await within((async () => {
+          const reg = await navigator.serviceWorker.getRegistration();
+          const sub = reg && reg.pushManager && await reg.pushManager.getSubscription();
+          if (sub) { await unreg({ endpoint: sub.endpoint }); try { await sub.unsubscribe(); } catch (e) {} }
+        })(), 2500);
+      }
+    } catch (e) {}
     try { await fetch('/api/auth/logout', { credentials: 'same-origin' }); } catch (e) {}
     /* Clear the local mirror too, or the next person to open this browser sees
        the previous account's cached data behind the sign-in screen. */
@@ -8181,18 +8297,15 @@ const HealthMirror = {
     if (sync) sync.style.display = 'none';
     const desc = panel.querySelector('.whoop-top + div');
     if (desc) desc.textContent = 'Your iPhone reads Health and keeps what it finds in your account, so it shows here too. A Mac cannot read Health itself — open The Flow on the iPhone to read again.';
-    const latest = [...h.days].reverse().find((d) => d && (d.hrv != null || d.rhr != null || d.hours != null));
     const foot = document.getElementById('healthFoot');
     if (foot) {
-      const bits = [];
-      if (latest) {
-        if (latest.hours != null) bits.push('sleep ' + Number(latest.hours).toFixed(1) + ' h');
-        if (latest.hrv != null) bits.push('HRV ' + latest.hrv + ' ms');
-        if (latest.rhr != null) bits.push('resting HR ' + latest.rhr);
-      }
+      /* Each figure with the day it is from — see healthLine on the host. */
+      let line = '';
+      try { line = typeof healthLine === 'function' ? healthLine(h.days) : ''; } catch (e) {}
       foot.textContent = h.days.length + ' day' + (h.days.length === 1 ? '' : 's') + ' on record' +
-        (latest && latest.date ? ' · latest ' + latest.date : '') + (bits.length ? ' · ' + bits.join(' · ') : '') +
-        (h.updated ? ' · read ' + new Date(h.updated).toLocaleString('en-GB') : '');
+        (line ? ' · ' + line : '') +
+        (h.updated ? ' · read on your iPhone ' + new Date(h.updated).toLocaleString('en-GB') : '') +
+        (h.partial ? ' · that read was cut short; earlier figures kept' : '');
     }
   },
   boot() {
@@ -8711,6 +8824,40 @@ const Photo = {
     Connect.paintFace();
     toast('Photo removed');
     if (Nav.menuEl && Nav.menuEl.classList.contains('on')) Nav.openMenu();
+  }
+};
+
+/* ── Sheets above the iPhone keyboard ────────────────────────────────────
+ * iOS does not shrink the page when the keyboard opens; it slides the
+ * keyboard over it. A sheet pinned to the bottom of the page ended up with
+ * its Back / Save buttons underneath the keys. The visual viewport says how
+ * much is really visible: the sheet's bottom is lifted by the keyboard's
+ * height and its height capped to what is left. Opening and closing a sheet
+ * also puts the page back where it was — focusing a field had scrolled it. */
+const SheetKB = {
+  y: null,
+  update() {
+    const vv = window.visualViewport;
+    const root = document.documentElement;
+    if (!vv) return;
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    root.style.setProperty('--kb', (kb > 60 ? kb : 0) + 'px');
+    root.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+    root.classList.toggle('fl-kb', kb > 60);
+  },
+  boot() {
+    const vv = window.visualViewport;
+    if (vv) { vv.addEventListener('resize', SheetKB.update); vv.addEventListener('scroll', SheetKB.update); }
+    SheetKB.update();
+    if (!window.MutationObserver) return;
+    const anyOpen = () => !!document.querySelector('.fn-sheetwrap.on');
+    let was = false;
+    new MutationObserver(() => {
+      const now = anyOpen();
+      if (now && !was) SheetKB.y = window.scrollY;
+      if (!now && was && SheetKB.y != null) { const y = SheetKB.y; SheetKB.y = null; requestAnimationFrame(() => window.scrollTo(0, y)); }
+      was = now;
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 };
 
@@ -9704,8 +9851,9 @@ const Nav = {
       if (id === 'note') {
         wrap.classList.add('note');
         const ta = document.getElementById('fn-noteinput');
-        ta.value = '';
-        setTimeout(() => ta.focus(), 60);
+        /* A note closed half-written is still there when Note is opened
+           again; it is cleared only once it has been saved. */
+        setTimeout(() => ta.focus({ preventScroll: true }), 60);
         return;
       }
       /* The rest hand you to the section that owns that kind of entry. Writing
@@ -11924,6 +12072,8 @@ async function boot() {
   try {
     await Settings.load();
     await Promise.all([Schedule.load(), Finance.load(), Notes.load(), Journal.load()]);
+    /* The first Finances form painted before the second store was read. */
+    try { const rf = Ledger.host('renderFinance'); if (typeof rf === 'function') rf(); } catch (e) {}
     Focus.load().then(() => { try { Focus.paintTile(); } catch (e) {} }).catch(() => {});
   } catch (e) { console.error('[Flow] load failed', e); }
 
@@ -11945,6 +12095,7 @@ async function boot() {
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
   try { SetView.boot(); } catch (e) {}
   try { Typing.boot(); } catch (e) {}
+  try { SheetKB.boot(); } catch (e) {}
   try { BudgetFold.boot(); } catch (e) {}
   try { EmptyStat.boot(); } catch (e) {}
   if (Auth.user && !Auth.user.guest) Photo.load();

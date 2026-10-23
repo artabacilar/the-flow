@@ -502,7 +502,7 @@ const legalPage = (title, sub, body) => `<!doctype html>
   <div class="foot">The Flow · <a href="/">theflow.today</a> · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></div>
 </div></body></html>`;
 
-const PRIVACY_UPDATED = 'September 2026';
+const PRIVACY_UPDATED = '23 October 2026';
 
 const PRIVACY_HTML = legalPage('Privacy Policy',
   'Last updated ' + PRIVACY_UPDATED + '. This describes what the software does, not what we would like you to believe it does.',
@@ -522,6 +522,16 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
         training and diet logs, sleep and mood entries, expenses and budgets, and anything else
         you type into a field. This is the point of the app.</li>
     <li><b>Recovery codes</b>, hashed the same way as the password.</li>
+    <li><b>Receipt photos</b>, if you photograph a receipt in Finances. The text is read on your
+        device; the photo is then kept with that expense in your account so you can open it
+        again, and is deleted with the expense.</li>
+    <li><b>Apple Health figures</b>, on iPhone, only if you allow it. The app reads — never
+        writes — sleep, resting heart rate, heart-rate variability and similar daily values, and
+        copies them into your Body log so they appear on your other devices. You choose which
+        types in iOS and can stop access in the Health app at any time; that stops new reads but
+        does not delete figures already copied, which you can delete in the app.</li>
+    <li><b>A notification address for each device</b> where you turn notifications on, so
+        reminders for your Big Rocks can reach it. Signing out on that device removes it.</li>
     <li><b>Session and access tokens</b>, so you stay signed in and so an assistant you have
         connected can read your day.</li>
     <li><b>Apps you connect yourself</b>, and only if you do, each separately (you can connect
@@ -542,6 +552,8 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
             Big Rocks.</li>
         <li><b>Notion</b> keeps the integration secret you paste, to create a page under the
             Notion page you chose when you press Send.</li>
+        <li><b>WHOOP</b>, if you connect it, keeps a token to read your recovery, strain, sleep and
+            heart-rate figures; the daily numbers are stored with your Body log.</li>
       </ul>
       Keys and tokens are kept on the server, outside your data, and are never sent back to the
       app. Google data is used only to show it to you, under Google's Limited Use rules: it is
@@ -561,9 +573,12 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>Nobody, by default.</b> Not the operator of this server in the ordinary course of
         things, not other account holders, not any advertiser or data broker — there are none.</li>
     <li><b>An assistant you connect yourself.</b> If you connect Claude, ChatGPT or another
-        assistant, you are granting that service permission to read the parts of your Flow you
-        agreed to. It reads; it cannot change anything. You can revoke it at any moment in
-        Settings, and revoking it takes effect immediately.</li>
+        assistant, you are granting that service permission to read your Flow and to add or
+        reword items in it — new Big Rocks, habits ticked, your weekly commitments. It cannot
+        delete anything. You can revoke it at any moment in Settings → Assistant connections,
+        and revoking it takes effect immediately.</li>
+    <li><b>The email service</b> (Resend), only for a password reset you ask for: it receives
+        your email address and the reset link, and nothing else.</li>
     <li><b>The assistant inside the app</b>, if the operator has switched it on. Questions you
         ask it, and the parts of your record needed to answer, are sent to Anthropic's API for
         that answer and are not used to train anything.</li>
@@ -574,11 +589,17 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
   <h2>What is not collected</h2>
   <p>No advertising identifiers. No analytics or telemetry SDKs of any kind — the app contains
      none, which you can check: the source is a handful of plain files. No location. No contacts.
-     No microphone or camera. Nothing is collected in the background, and nothing about you is
-     sold or shared for anybody else's purposes, ever.</p>
+     Nothing is collected in the background, and nothing about you is sold or shared for anybody
+     else's purposes, ever.</p>
+  <p><b>Microphone and camera are used only when you press the button for them.</b> Dictation
+     (the microphone button beside a text field) turns your speech into editable text: on iPhone
+     recognition runs on the device when supported, and otherwise Apple may process it online
+     under Apple's terms; in a browser it uses the browser's own speech service. Audio is not
+     recorded or kept by The Flow — only the text you choose to save. The camera is used only
+     when you take a receipt photo.</p>
 
   <h2>Deleting everything</h2>
-  <p>Settings → Account → <b>Delete my account and everything in it</b>. It asks for your
+  <p>Tap your photo → Privacy &amp; security → <b>Delete my account and everything in it</b>. It asks for your
      password and then for your email address, and then it removes your entries, your sessions,
      your access tokens and your assistant connections, and finally the record that you had an
      account. It is immediate and there is no backup copy to restore from. If you would rather
@@ -622,7 +643,7 @@ const SUPPORT_HTML = legalPage('Support',
 
   <h2>Where are my recovery codes?</h2>
   <p>You were shown ten of them once, when you signed up. If you did not keep them, open
-     Settings → Account → <b>Recovery codes</b> and make a new set — the old ones stop working
+     tap your photo → Privacy &amp; security → <b>Recovery codes</b> and make a new set — the old ones stop working
      the moment you do. Do this <i>before</i> you need them: the moment you need them is the
      moment you can no longer sign in to come and make them.</p>
 
@@ -636,7 +657,7 @@ const SUPPORT_HTML = legalPage('Support',
      and you can disconnect it at any time from the same place.</p>
 
   <h2>Deleting your account</h2>
-  <p>Settings → Account → <b>Delete my account and everything in it</b>. It is immediate and
+  <p>Tap your photo → Privacy &amp; security → <b>Delete my account and everything in it</b>. It is immediate and
      permanent, and there is no copy kept.</p>
 
   <h2>Privacy</h2>
