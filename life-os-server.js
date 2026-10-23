@@ -716,6 +716,13 @@ const server = http.createServer(async (req, res) => {
 
     // ── Health check (for cloud hosts) — always open ──
     if (p === '/healthz') return json(res, 200, { ok: true });
+    /* Which build of the app this server is handing out, so an app that has
+       been open since before a deploy can notice and pick it up on a pull to
+       refresh, instead of only when it is closed and opened again. */
+    if (p === '/api/version') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(JSON.stringify({ v: PACK_V }));
+    }
 
     /* ── The two public pages the App Store requires ──
        Open on purpose: a privacy policy behind a login is not a privacy

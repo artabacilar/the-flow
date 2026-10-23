@@ -8023,6 +8023,21 @@ const Refresh = {
       if (manual && Connect.list.some((c) => c.id === 'fathom' && c.connected)) {
         try { const r = await Meetings.pull(); if (r.added) msg = r.added + ' new meeting' + (r.added === 1 ? '' : 's') + '. '; } catch (e) {}
       }
+      /* A new version deployed since this screen loaded: a pull is the
+         moment to pick it up — the person asked for fresh, and nothing is
+         half-typed. Data is already safe on the server. */
+      if (manual) {
+        try {
+          const r = await fetch('/api/version', { cache: 'no-store', credentials: 'same-origin' });
+          const j = r.ok ? await r.json() : null;
+          const mine = window.FLOW_PACK_V;
+          if (j && j.v && mine && mine !== '__PACK_V__' && j.v !== mine && j.v !== 'missing' && j.v !== 'dev') {
+            Refresh.say('Updating to the new version…');
+            setTimeout(() => location.reload(), 500);
+            return;
+          }
+        } catch (e) {}
+      }
       /* Asked for by hand: allowed through the host's reload breaker. */
       try { if (window.__flowSyncNow) window.__flowSyncNow(true); } catch (e) {}
       try { await Inbox.load(); Inbox.paintToday(); } catch (e) {}
