@@ -158,7 +158,8 @@ const H = 'http://localhost:4222';
   ok('it shows this week so far and the Plan button', await p.isVisible('#wp-compass [data-weekplan]'));
 
   console.log('\n— the trial: feedback —');
-  await p.click('[data-fn-side="settings"]');
+  /* Feedback has its own view, opened from the avatar menu. */
+  await p.evaluate(() => Flow.SetView.open('help'));
   ok('the owner sees the trial view', !!(await p.waitForSelector('#fbOwner', { timeout: 8000 }).catch(() => null)));
   const c2 = await b.newContext({ viewport: { width: 1280, height: 900 } });
   const q = await c2.newPage();
@@ -168,7 +169,7 @@ const H = 'http://localhost:4222';
   await q.fill('#fa-pw', 'a properly long password');
   await q.fill('#fa-inv', 'letmein').catch(() => {});
   await submitAuth(q); await q.waitForTimeout(4200);
-  await q.click('[data-fn-side="settings"]');
+  await q.evaluate(() => Flow.SetView.open('help'));
   ok('a trial user gets the feedback box', !!(await q.waitForSelector('#fbText', { timeout: 8000 }).catch(() => null)));
   ok('but not the owner\'s view', !(await q.$('#fbOwner')));
   await q.fill('#fbText', 'The Sunday thing is great, but where do I see last month?');
@@ -179,7 +180,7 @@ const H = 'http://localhost:4222';
   await p.reload({ waitUntil: 'load' });
   await p.waitForFunction(() => document.documentElement.classList.contains('flow-ready'), null, { timeout: 15000 });
   await p.waitForTimeout(1500);
-  await p.click('[data-fn-side="settings"]'); await p.waitForSelector('#fbOwner h4', { timeout: 8000 });
+  await p.evaluate(() => Flow.SetView.open('help')); await p.waitForSelector('#fbOwner h4', { timeout: 8000 });
   const ov = await p.textContent('#fbOwner');
   ok('the owner sees who joined and what they wrote', /1 of \d+ places used/.test(ov) && /Deniz/.test(ov) && /where do I see last month/.test(ov), ov.slice(0, 200));
   await c2.close();

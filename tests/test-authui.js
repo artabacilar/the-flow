@@ -32,7 +32,9 @@ const {chromium}=require('playwright');const H='http://localhost:4222';
   // account card in Settings
   /* The shipped navigation hides the host's own pill row, so Playwright
      cannot click it. Go through the same primitive the nav uses. */
-  await p.evaluate(() => document.querySelector('.tab[data-tab="settings"]').click()); await p.waitForTimeout(1200);
+  /* The account lives in Settings' Privacy & security view, reached from the
+     avatar menu. */
+  await p.evaluate(() => Flow.SetView.open('privacy')); await p.waitForTimeout(1200);
   const st=await p.evaluate(()=>({card:!!document.querySelector('[data-act2="signout"]'),
     txt:(document.body.innerText.match(/Signed in as[^\n]*/)||[''])[0]}));
   ok('Settings shows an Account card', st.card);

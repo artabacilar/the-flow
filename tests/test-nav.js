@@ -176,6 +176,16 @@ const TEST_PASSWORD = randomUUID();
      destination in two places is a destination you look for in the wrong
      one. What is left is genuinely outside the daily loop. */
   ok('with the planner and Settings', menu.join(',') === 'artur,settings', menu);
+  const acts = await p.evaluate(() => [...document.querySelectorAll('[data-fn-act]')].map(b => b.getAttribute('data-fn-act')));
+  ok('and Privacy, Feedback and Sign out', acts.join(',') === 'privacy,help,signout', acts);
+  ok('it says who is signed in', /artur\.abacilar@abko\.com\.tr/.test(await p.textContent('#fn-me')));
+  await p.click('[data-fn-act="privacy"]'); await p.waitForTimeout(900);
+  ok('Privacy opens Settings on the account', await activeTab(p) === 'settings' && await p.isVisible('[data-act2="changepw"]') && await p.isVisible('#dataCard'));
+  ok('and only the account', !(await p.isVisible('#connCard')) && !(await p.isVisible('#lookCard')));
+  await p.click('#set-viewbar .set-back'); await p.waitForTimeout(500);
+  ok('back shows the settings themselves', await p.isVisible('#connCard') && !(await p.isVisible('[data-act2="changepw"]')));
+  ok('with chips to jump between them', await p.evaluate(() => document.querySelectorAll('#set-viewbar [data-setgo]').length) >= 8);
+  await p.click('#fn-avatar'); await p.waitForTimeout(500);
   await p.click('[data-fn-menu="artur"]'); await p.waitForTimeout(1000);
   ok('and it navigates', await activeTab(p) === 'artur', await activeTab(p));
 
