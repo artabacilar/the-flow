@@ -51,7 +51,17 @@ const {chromium}=require('playwright');const H='http://localhost:4222';
 
   // sign out clears the local mirror
   await p.evaluate(()=>localStorage.setItem('ld_probe','x'));
+  /* As inside the iPhone app: this phone is registered for reminders and the
+     widget holds a token. Signing out has to undo both. */
+  const TOK='ab'.repeat(32);
+  const reg=await p.evaluate(async(t)=>{ const r=await fetch('/api/push/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}); return r.status; }, TOK);
+  await p.evaluate((t)=>{ window.__cleared=0; window.Capacitor={Plugins:{FlowBridge:{pushToken:async()=>({token:t}),clear:async()=>{ window.__cleared++; return {}; }}}}; }, TOK);
+  const before=await p.evaluate(async()=>(await (await fetch('/api/push/status',{credentials:'same-origin'})).json()).devices);
+  let unregistered=null; p.on('request',(rq)=>{ if(/\/api\/push\/unregister/.test(rq.url())) unregistered=rq.postData(); });
+  const cleared=p.evaluate(async()=>{ const w=window; const n=()=>w.__cleared; await new Promise(r=>setTimeout(r,10)); return n(); });
   await p.evaluate(()=>{ Flow.Auth.signOut(); });
+  await p.waitForTimeout(400);
+  ok('signing out on a phone unregisters that phone for reminders', reg===200 && before===1 && unregistered && unregistered.indexOf(TOK)>=0, {reg,before,unregistered});
   await p.waitForTimeout(2600);
   ok('sign out returns to the sign-in screen', await p.isVisible('#flow-auth'));
   ok('and clears the cached copy', await p.evaluate(()=>localStorage.getItem('ld_probe'))===null);

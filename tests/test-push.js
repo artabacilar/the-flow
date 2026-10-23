@@ -111,6 +111,17 @@ const TOKEN_B = 'b'.repeat(64);
   await post('sam', '/api/push/unregister', { token: TOKEN_A });
   ok("unregistering another account's token leaves it alone",
      (await as('artur', '/api/push/status')).json.devices === 1);
+  const none = await post('artur', '/api/push/unregister', {});
+  ok('unregistering without naming a device removes nothing', none.status === 400 && (await as('artur', '/api/push/status')).json.devices === 1, none.json);
+
+  console.log('\n— one phone belongs to one account —');
+  /* The same iPhone signed out of Artur and into Sam registers the same
+     token: Artur's reminders must stop going to it. */
+  await post('sam', '/api/push/register', { token: TOKEN_A });
+  ok('the phone moves to the account now signed in on it',
+     (await as('artur', '/api/push/status')).json.devices === 0 &&
+     (await as('sam', '/api/push/status')).json.devices === 2);
+  await post('artur', '/api/push/register', { token: TOKEN_A });
 
   console.log('\n— what it says when it cannot send —');
   const t = await post('artur', '/api/push/test', {});
