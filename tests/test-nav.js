@@ -248,6 +248,17 @@ const TEST_PASSWORD = randomUUID();
     document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1),
     await d.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
 
+  console.log('\n— on a desktop, you can find the way out —');
+  await d.click('[data-fn-side="artur"]'); await d.waitForTimeout(500);
+  ok('the person in the sidebar opens the profile menu', await d.isVisible('#flow-menu .fn-sheet'));
+  ok('that menu has Profile and Sign out', await d.evaluate(() => {
+    const m = document.getElementById('fn-menugrid');
+    return !!(m && m.querySelector('[data-fn-menu="artur"]') && m.querySelector('[data-fn-act="signout"]'));
+  }));
+  await d.click('#fn-menugrid [data-fn-menu="artur"]'); await d.waitForTimeout(700);
+  ok('Profile in it still goes to the profile page', await activeTab(d) === 'artur', await activeTab(d));
+  await d.click('[data-fn-side="today"]'); await d.waitForTimeout(500);
+
   console.log('\n— it navigates and stays in step —');
   await d.click('[data-fn-side="finance"]'); await d.waitForTimeout(900);
   ok('clicking Finances opens it', await activeTab(d) === 'finance', await activeTab(d));
@@ -284,6 +295,12 @@ const TEST_PASSWORD = randomUUID();
   for (const t of links) {
     await d.click('[data-fn-side="' + t + '"]');
     await d.waitForTimeout(420);
+    if (t === 'artur') {   /* the person opens the menu; Profile is one row in */
+      if (!(await d.isVisible('#flow-menu .fn-sheet'))) broken.push(t);
+      await d.keyboard.press('Escape'); await d.waitForTimeout(250);
+      if (await d.isVisible('#flow-menu .fn-sheet')) { broken.push('artur-menu-stays-open'); await d.click('#flow-menu .fn-scrim', { position: { x: 5, y: 5 } }); }
+      continue;
+    }
     if (await activeTab(d) !== t) broken.push(t);
   }
   ok('all 14 open through the host', broken.length === 0, broken);
