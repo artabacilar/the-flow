@@ -294,16 +294,26 @@ const MAIL = (() => {
      the default sender; MAIL_FROM still overrides it (another domain, or a
      self-hosted Flow). Only the key has to be set by hand. */
   const from = (process.env.MAIL_FROM || '').trim() || 'The Flow <mail@theflow.today>';
+  /* A sending key can be locked to one domain. If the provider refuses the
+     default sender (403), try once more from the older verified subdomain so
+     a reset still goes out while the key is being replaced. */
+  const fallback = process.env.MAIL_FROM ? '' : 'The Flow <hello@mail.theflow.today>';
+  const post = (sender, to, subject, text) => fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: sender, to, subject, text })
+  });
   return {
     ready: () => !!(key && from),
     async send(to, subject, text) {
       if (!key || !from) return false;
       try {
-        const r = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from, to, subject, text })
-        });
+        let r = await post(from, to, subject, text);
+        if (r.status === 403 && fallback) {
+          console.error('[mail] provider refused ' + from + ' (403) — retrying from ' + fallback +
+                        '. The API key is probably locked to another domain; make one for theflow.today.');
+          r = await post(fallback, to, subject, text);
+        }
         if (!r.ok) {
           console.error('[mail] provider refused (' + r.status + ') — reset email not sent');
           return false;
