@@ -161,6 +161,14 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     ok('it lands on today\'s calendar, at the time given', planned.found && planned.time === '11:30' && planned.onCalendar && /Call the accountant/.test(planned.calText), planned);
     ok('and not among the week\'s Big Rocks', !planned.asRock, planned);
     ok('and the sheet lists it under "already on today"', planned.listed);
+    /* Add to the week, from the same sheet: pick the day, it is a Big Rock there. */
+    await p.locator('#pl-title').fill('Send the proposal to Davines');
+    await p.locator('#flow-plan [data-pl="weekpick"]').click();
+    ok('the week\'s days appear in the sheet', await p.locator('#pl-days [data-pl-day]').count() === 7);
+    await p.locator('#pl-days [data-pl-day="4"]').click(); await p.waitForTimeout(400);
+    const weekAdd = await p.evaluate(() => { const all = [].concat(...Object.values(cData.rocks || {})); const r = all.find(x => x.title === 'Send the proposal to Davines'); return { found: !!r, day: r && r.day, onCal: /Send the proposal/.test((document.querySelector('#today-feed #td-cal') || {}).textContent || '') }; });
+    ok('it becomes a Big Rock on Friday, without leaving Today', weekAdd.found && weekAdd.day === 4 && await current() === 'today', weekAdd);
+    ok('and is not on today\'s calendar', !weekAdd.onCal, weekAdd);
     await p.locator('#flow-plan .fn-capture-close').click();
     await p.waitForTimeout(300);
     ok('the Meetings tile counts it', await p.evaluate(() => document.querySelector('[data-jump="meetings"] .v').textContent) === '1');
@@ -170,6 +178,18 @@ const CAPTURE_ONLY = process.env.UX_CAPTURE_ONLY === '1';
     await p.locator('#flow-review.on').waitFor();
     ok('Review week opens the scorecard on Today', await current() === 'today' && await p.locator('#rv-score').isVisible());
     ok('with the week\'s numbers and what slipped', await p.evaluate(() => /Big Rocks|rocks/i.test(document.getElementById('rv-score').textContent) && /Slipped/.test(document.getElementById('rv-slipped').textContent)));
+    await p.locator('#flow-review .fn-capture-close').click();
+    /* Every slipped rock is listed, each with its four fixes; none hides behind "and more". */
+    await p.evaluate(() => { const d = new Date(); d.setDate(d.getDate() - 2); d.setHours(12, 0, 0, 0); const w = (function (x) { const y = new Date(x); y.setHours(0, 0, 0, 0); const day = (y.getDay() + 6) % 7; y.setDate(y.getDate() - day + 3); const j = new Date(y.getFullYear(), 0, 4); const n = 1 + Math.round(((y - j) / 864e5 - 3 + ((j.getDay() + 6) % 7)) / 7); return y.getFullYear() + '-W' + String(n).padStart(2, '0'); })(d); const dow = (d.getDay() + 6) % 7; cData.rocks[w] = (cData.rocks[w] || []).concat(Array.from({ length: 15 }, (_, i) => ({ id: 'sl' + i, title: 'Slipped ' + i, role: '', day: dow, time: '', end: '', prio: 'med', note: '', done: false }))); cSave(); renderToday(); });
+    await action('review');
+    await p.locator('#flow-review.on').waitFor();
+    const slippedRows = await p.locator('#rv-slipped [data-rv-id]').count();
+    ok('every slipped rock is listed, none behind "and more"', slippedRows >= 15 && !/and \d+ more/.test(await p.locator('#rv-slipped').innerText()), slippedRows);
+    await p.locator('#rv-slipped [data-rv-id="sl3"] [data-rv-fix="today"]').click(); await p.waitForTimeout(300);
+    ok('a slipped rock can be moved to today from the review', await p.evaluate(() => { const d = new Date(); const dow = (d.getDay() + 6) % 7; const all = [].concat(...Object.values(cData.rocks || {})); const r = all.find(x => x.id === 'sl3'); return !!r && r.day === dow && !document.querySelector('#rv-slipped [data-rv-id="sl3"]'); }));
+    p.once('dialog', (d) => d.accept());
+    await p.locator('#rv-slipped [data-rv-dropall]').click(); await p.waitForTimeout(500);
+    ok('and the rest can be dropped in one tap', await p.evaluate(() => [].concat(...Object.values(cData.rocks || {})).filter(x => /^Slipped /.test(x.title)).length === 1));
     await p.locator('#flow-review .fn-capture-close').click();
 
     console.log('\n— the overdue pile goes in one tap —');
