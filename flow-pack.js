@@ -5415,7 +5415,7 @@ const TodayPlus = {
           '<h4>Plan today</h4>' +
           '<div class="fn-sub">One thing that has to happen today, with its time. It goes on today\'s calendar.</div>' +
           '<input class="flow-in" id="pl-title" placeholder="What has to happen today?" maxlength="200" autocomplete="off">' +
-          '<div class="pl-row"><input class="flow-in" type="time" id="pl-time"><select class="flow-in" id="pl-prio"><option value="high">Must</option><option value="med" selected>Should</option><option value="low">Could</option></select></div>' +
+          '<div class="pl-row"><input class="flow-in" type="time" id="pl-time" data-ph="Time (optional)" aria-label="Time"><select class="flow-in" id="pl-prio"><option value="high">Must</option><option value="med" selected>Should</option><option value="low">Could</option></select></div>' +
           '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn" data-pl="weekpick">Add to the week ▾</button></div>' +
           '<div class="pl-days" id="pl-days" hidden></div>' +
           '<div class="pl-list" id="pl-list"></div>' +

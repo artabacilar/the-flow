@@ -1750,6 +1750,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Connect to Claude": "Claude'a bağlan",
   "Bank & statements": "Banka ve ekstreler",
   "Send things in from anywhere": "Her yerden bir şeyler gönder",
+  "Time (optional)": "Saat (isteğe bağlı)",
 /* DICT-END */
 }, RULES);
 

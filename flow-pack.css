@@ -2287,7 +2287,8 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
    so it read as a broken field. */
 @supports (-webkit-touch-callout:none){
   input[type="time"].fl-empty{color:transparent;}
-  input[type="time"].fl-empty::before{content:attr(data-ph);color:var(--muted);}
+  input[type="time"].fl-empty::before{content:attr(data-ph);color:var(--muted);white-space:nowrap;}
+  input[type="time"].fl-empty::-webkit-date-and-time-value{min-width:0;width:0;}
   input[type="time"]{min-height:38px;}
   input[type="time"]::-webkit-date-and-time-value{text-align:left;}
 }

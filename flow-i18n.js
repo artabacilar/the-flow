@@ -83,7 +83,7 @@
                '.flow-sub,.flow-empty,.flow-chip,.fn-txt,.mg-lbl,.sw-sub,' +
                '[class*="lbl"],[class*="label"],[data-i18n="on"]';
 
-  var ATTRS = ['placeholder', 'title', 'aria-label', 'aria-placeholder', 'alt', 'data-empty'];
+  var ATTRS = ['placeholder', 'title', 'aria-label', 'aria-placeholder', 'alt', 'data-empty', 'data-ph'];
 
   function skipped(el) {
     for (var n = el; n && n.nodeType === 1; n = n.parentNode) {
