@@ -3334,7 +3334,7 @@ const SettingsUI = {
       </div>
 
       <div class="flow-card">
-        <h3>👤 You</h3>
+        <h3>🧭 Preferences</h3>
         <div class="flow-grid c2" style="gap:10px">
           <div class="flow-field"><label class="flow-label">Display name</label><input class="flow-in" data-s="displayName" value="${esc(s.displayName)}"></div>
           <div class="flow-field"><label class="flow-label">Currency</label><input class="flow-in" data-s="currency" value="${esc(s.currency)}"></div>
@@ -3576,6 +3576,7 @@ const SettingsUI = {
     try { Trial.wire(section); } catch (e) { console.warn('[Flow] trial', e); }
     try { InboxLink.wire(section); } catch (e) { console.warn('[Flow] inbox link', e); }
     try { DataCard.wire(section); } catch (e) { console.warn('[Flow] data card', e); }
+    try { SetView.apply(section); } catch (e) { console.warn('[Flow] settings view', e); }
 
     section.querySelectorAll('[data-act2]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -5431,7 +5432,7 @@ const TodayPlus = {
         Schedule.put(key, { text: title, tab: 'today', date: today(), time: wrap.querySelector('#pl-time').value || '', dur: Settings.get('defaultDurationMin'), done: false, source: 'today', priority: wrap.querySelector('#pl-prio').value || 'med' });
         try { await Schedule.saveNow(); } catch (e) {}
         try { if (typeof J === 'function') J('planning', '📅 On today: ' + title); } catch (e) {}
-        inp.value = ''; wrap.querySelector('#pl-time').value = '';
+        inp.value = ''; wrap.querySelector('#pl-time').value = ''; Typing.mark(wrap.querySelector('#pl-time'));
         try { ConnectApps.calendarPaint(); } catch (e) {}
         TodayPlus.planList();
         toast('On today ✓', null, 1400);
@@ -5453,7 +5454,7 @@ const TodayPlus = {
         cSave();
         const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         try { if (typeof J === 'function') J('planning', '🪨 Big rock for ' + names[dow] + ': ' + title); } catch (e) {}
-        inp.value = ''; wrap.querySelector('#pl-time').value = '';
+        inp.value = ''; wrap.querySelector('#pl-time').value = ''; Typing.mark(wrap.querySelector('#pl-time'));
         wrap.querySelector('#pl-days').hidden = true;
         TodayFix.redraw();
         TodayPlus.planList();
@@ -7070,6 +7071,8 @@ const NAV_ICONS = {
   money:    '<path d="M12 3v18M16.5 7.5C16.5 5.8 14.5 5 12 5s-4.5.9-4.5 2.8S9.6 11 12 11.5s4.6 1.3 4.6 3.3S14.5 19 12 19s-4.5-.9-4.5-2.6"/>',
   chat:     '<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/>',
   user:     '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  lock:     '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  out:      '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/>',
   gear:     '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/>',
   plus:     '<path d="M12 5v14M5 12h14"/>',
   search:   '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
@@ -8386,6 +8389,118 @@ const Trial = {
  * Today and in the Journal: diagnostics on the screens meant for the day.
  * They live here now, together, and the host's updateDbIndicator() and
  * S.saved() write into these ids exactly as they did the old ones. */
+/* ── Settings, in three rooms ────────────────────────────────────────────
+ * Sixteen cards on one page made Settings the longest screen in the app, and
+ * the things you look for once a year (password, recovery codes, a backup)
+ * sat between the things you change every week. The avatar menu now opens
+ * Settings in one of three views — the settings themselves, Privacy &
+ * security, or Feedback — and Settings gets a row of chips to jump between
+ * its own cards. Nothing moved out of the page: the cards are tagged and the
+ * view decides which are shown, so every handler keeps working. */
+const SetView = {
+  view: 'main',
+  opening: false,
+  TITLE: { main: 'Settings', privacy: 'Privacy & security', help: 'Feedback' },
+  SUB: { main: 'Preferences · integrations', privacy: 'Your account and your data', help: 'Straight to Artur' },
+
+  tag(section) {
+    section.querySelectorAll(':scope > .flow-card, :scope .flow-card').forEach((c) => {
+      if (c.dataset.setv) return;
+      if (c.querySelector('[data-act2="changepw"]')) { c.dataset.setv = 'privacy'; c.id = c.id || 'acctCard'; }
+      else if (c.id === 'dataCard') c.dataset.setv = 'privacy';
+      else if (c.id === 'fbCard') c.dataset.setv = 'help';
+      else c.dataset.setv = 'main';
+    });
+  },
+
+  apply(section) {
+    section = section || document.getElementById('tab-settings');
+    if (!section) return;
+    SetView.tag(section);
+    const v = SetView.view;
+    section.setAttribute('data-setview', v);
+    const hero = section.querySelector('.flow-hero');
+    if (hero) {
+      hero.textContent = SetView.TITLE[v] || 'Settings';
+      const lab = hero.previousElementSibling;
+      if (lab && lab.classList.contains('flow-label')) lab.textContent = SetView.SUB[v] || '';
+    }
+    let bar = section.querySelector('#set-viewbar');
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'set-viewbar';
+      const head = hero && hero.parentElement;
+      if (head && head.parentNode === section) head.after(bar); else section.prepend(bar);
+      bar.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-setgo]');
+        if (!b) return;
+        const to = b.getAttribute('data-setgo');
+        if (to === 'main') { SetView.view = 'main'; SetView.apply(section); window.scrollTo(0, 0); return; }
+        const card = section.querySelector('#' + CSS.escape(to));
+        if (card) { const y = card.getBoundingClientRect().top + window.scrollY - 70; window.scrollTo({ top: y, behavior: 'smooth' }); }
+      });
+    }
+    if (v === 'main') {
+      const cards = [...section.querySelectorAll('.flow-card[data-setv="main"]')];
+      cards.forEach((c, i) => { if (!c.id) c.id = 'setc-' + i; });
+      bar.innerHTML = '<div class="set-chips">' + cards.map((c) => {
+        const h = c.querySelector('h3');
+        const t = h ? h.textContent.replace(/^[^\p{L}\p{N}]+/u, '').trim() : '';
+        return t ? '<button type="button" data-setgo="' + esc(c.id) + '">' + esc(t) + '</button>' : '';
+      }).join('') + '</div>';
+    } else {
+      bar.innerHTML = '<button type="button" class="set-back" data-setgo="main">‹ Settings</button>';
+    }
+  },
+
+  open(view) {
+    SetView.view = SetView.TITLE[view] ? view : 'main';
+    SetView.opening = true;
+    try { Nav.go('settings'); } finally { SetView.opening = false; }
+    SetView.apply();
+    window.scrollTo(0, 0);
+  },
+
+  boot() {
+    /* Any other way into Settings — the sidebar, search, a link — lands on
+       the settings themselves, not on whichever room was open last. */
+    document.addEventListener('click', (e) => {
+      const t = e.target.closest && e.target.closest('.tab[data-tab="settings"], [data-fn-side="settings"], [data-fn-seg="settings"]');
+      if (t && !SetView.opening && SetView.view !== 'main') { SetView.view = 'main'; setTimeout(() => SetView.apply(), 0); }
+    }, true);
+  }
+};
+
+/* ── Phone typing and empty time boxes ───────────────────────────────── */
+const Typing = {
+  isField(el) {
+    return !!el && (el.tagName === 'TEXTAREA' || el.isContentEditable ||
+      (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range|color|file)$/i.test(el.type || '')));
+  },
+  mark(el) {
+    if (!el || el.type !== 'time') return;
+    if (!el.dataset.ph) el.dataset.ph = '--:--';
+    el.classList.toggle('fl-empty', !el.value);
+  },
+  scan(root) {
+    if (!root || !root.querySelectorAll) return;
+    if (root.matches && root.matches('input[type="time"]')) Typing.mark(root);
+    root.querySelectorAll('input[type="time"]').forEach(Typing.mark);
+  },
+  boot() {
+    document.addEventListener('focusin', (e) => { if (Typing.isField(e.target)) document.body.classList.add('fl-typing'); });
+    document.addEventListener('focusout', () => setTimeout(() => {
+      if (!Typing.isField(document.activeElement)) document.body.classList.remove('fl-typing');
+    }, 60));
+    const on = (e) => Typing.mark(e.target);
+    document.addEventListener('input', on, true);
+    document.addEventListener('change', on, true);
+    Typing.scan(document);
+    if (window.MutationObserver) new MutationObserver((ms) => {
+      for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) Typing.scan(n);
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+};
+
 const DataCard = {
   /* One file for everything: the app's own sections (every ld_* key) and
      what this pack keeps beside them (settings, schedules, expenses, notes,
@@ -9097,7 +9212,9 @@ const Nav = {
     const p = Nav.pill(tab);
     if (!p) return false;
     p.click();
-    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+    /* Instant, not smooth: on iOS a smooth scroll started during a fling is
+       cancelled by it, and the new tab opens halfway down. */
+    window.scrollTo(0, 0);
     Nav.sync();
     return true;
   },
@@ -9240,11 +9357,10 @@ const Nav = {
     wrap.className = 'fn-sheetwrap';
     wrap.innerHTML =
       '<div class="fn-scrim" data-fn-close="1"></div>' +
-      '<div class="fn-sheet" role="dialog" aria-label="You">' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="You">' +
         '<div class="fn-grab" data-fn-close="1"></div>' +
-        '<h4>You</h4>' +
-        '<div class="fn-sub">Everything that is not part of the daily loop.</div>' +
-        '<div class="fn-grid" id="fn-menugrid"></div>' +
+        '<div class="fn-me" id="fn-me"></div>' +
+        '<div class="fn-mlist" id="fn-menugrid"></div>' +
       '</div>';
     document.body.appendChild(wrap);
     wrap.querySelectorAll('[data-fn-close]').forEach(e =>
@@ -9252,15 +9368,43 @@ const Nav = {
     Nav.menuEl = wrap;
   },
 
+  /* The avatar is the person: who is signed in, their page, the settings,
+     what is private, and the way out. Account and data used to sit halfway
+     down a long Settings page; now they are one tap from the face. */
   openMenu() {
+    const u = (typeof Auth !== 'undefined' && Auth.user) || {};
+    const name = u.name || Settings.get('displayName') || '';
+    const src = (() => { try { return Connect.photo(); } catch (e) { return null; } })();
+    document.getElementById('fn-me').innerHTML =
+      (src ? '<img class="fn-me-face" alt="" src="' + esc(src) + '">' : '<span class="fn-me-face">' + esc(Nav.initial()) + '</span>') +
+      '<div class="fn-me-t"><b>' + esc(name || 'You') + '</b>' + (u.email ? '<span>' + esc(u.email) + '</span>' : '') + '</div>';
     const grid = document.getElementById('fn-menugrid');
-    /* Rebuilt each time: the planner's label follows the signed-in name. */
-    grid.innerHTML = Nav.MENU.filter(t => Nav.pill(t)).map(t =>
-      '<button type="button" data-fn-menu="' + t + '">' + Nav.svg(Nav.ICON[t] || 'note') +
-      '<span>' + esc(Nav.label(t)) + '</span></button>').join('');
+    const row = (attr, icon, label, sub, cls) =>
+      '<button type="button" ' + attr + (cls ? ' class="' + cls + '"' : '') + '>' + Nav.svg(icon) +
+      '<span class="fn-m-t"><b>' + esc(label) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' +
+      (cls ? '' : '<i class="fn-m-chev" aria-hidden="true">›</i>') + '</button>';
+    let html = '';
+    if (Nav.pill('artur')) html += row('data-fn-menu="artur"', Nav.ICON.artur || 'user', 'Profile', 'Your page — mission, roles, the long view');
+    html += row('data-fn-menu="settings"', Nav.ICON.settings || 'gear', 'Settings', 'Look, Today, connections, notifications');
+    if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="privacy"', 'lock', 'Privacy & security', 'Password, recovery codes, your data');
+    html += row('data-fn-act="help"', 'note', 'Send feedback', 'What is confusing, missing or annoying');
+    if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="signout"', 'out', 'Sign out', '', 'fn-m-danger');
+    grid.innerHTML = html;
+    const close = () => Nav.menuEl.classList.remove('on');
     grid.querySelectorAll('[data-fn-menu]').forEach(b => b.addEventListener('click', () => {
-      Nav.menuEl.classList.remove('on');
+      close();
+      if (b.getAttribute('data-fn-menu') === 'settings') { try { SetView.open('main'); return; } catch (e) {} }
       Nav.go(b.getAttribute('data-fn-menu'));
+    }));
+    grid.querySelectorAll('[data-fn-act]').forEach(b => b.addEventListener('click', async () => {
+      const a = b.getAttribute('data-fn-act');
+      close();
+      if (a === 'signout') {
+        if (!confirm('Sign out of The Flow on this device?')) return;
+        try { await Auth.signOut(); } catch (e) {}
+        return;
+      }
+      try { SetView.open(a); } catch (e) { Nav.go('settings'); }
     }));
     Nav.menuEl.classList.add('on');
   },
@@ -11536,6 +11680,8 @@ async function boot() {
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
   /* Not awaited: the photo arrives when it arrives, and nothing waits on it. */
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
+  try { SetView.boot(); } catch (e) {}
+  try { Typing.boot(); } catch (e) {}
   if (Auth.user && !Auth.user.guest) { try { Notify.boot(); } catch (e) { console.warn('[Flow] notify', e); } }
   try { Sections.apply(); } catch (e) { console.warn('[Flow] sections', e); }
   if (Auth.user && !Auth.user.guest) Sections.migrate().catch((e) => console.warn('[Flow] sections', e));
@@ -11594,6 +11740,7 @@ async function boot() {
   Queue.flush();
 
   window.Flow = {
+    SetView,
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
     Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, Focus, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,

@@ -2229,3 +2229,90 @@ html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) :is(.flow-td-tile.b
 html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) :is(.fin-cat-name, .fin-cat-nums .spent){ filter:brightness(.52) saturate(1.25); }
 html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .whoop-ring .ring-bg{ stroke:var(--card2); }
 html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .whoop-panel .whoop-title{ color:var(--text); }
+
+/* Sheets, the palette and toasts live on <body>, outside .flow-x, so the pack
+   tokens are given to body too — otherwise every input in a sheet loses its
+   background and border (an invalid var() drops the whole declaration). */
+body{--f-surface:      #141b1e;--f-surface-2:    #1b2427;--f-plane:        #0a0d0e;--f-ink:          #ffffff;--f-ink-2:        #b9c6cc;--f-muted:        #8a98a0;--f-line:         rgba(255,255,255,0.09);--f-grid:         rgba(255,255,255,0.06);--f-accent:       #17bb92;--f-accent-soft:  rgba(23,187,146,0.14);--f-accent-2:     #3987e5;--f-seq-1: #0b5f4a;--f-seq-2: #0e7a5f;--f-seq-3: #129a78;--f-seq-4: #17bb92;--f-seq-5: #2fd4a8;--f-good:     #0ca30c;--f-warning:  #fab219;--f-serious:  #ec835a;--f-critical: #d03b3b;--f-radius: 12px;--f-radius-sm: 8px}
+html[data-flow-theme="signature"] body{--f-surface:#14161b;--f-surface-2:#1b1e25;--f-plane:#0a0b0d;--f-ink:#f5f7fa;--f-ink-2:#b6bdc9;--f-muted:#7e8493;--f-line:rgba(255,255,255,0.09);--f-grid:rgba(255,255,255,0.06);--f-accent:#0093e7;--f-accent-soft:rgba(0,147,231,0.16);--f-accent-2:#00e88a;--f-seq-1:#073b5c;--f-seq-2:#0a5583;--f-seq-3:#0071b4;--f-seq-4:#0093e7;--f-seq-5:#3fb4f0;--f-radius:16px;--f-radius-sm:10px}
+html[data-flow-theme="calm"] body{--f-surface:#14171b;--f-surface-2:#181c21;--f-plane:#0c0e11;--f-ink:#e8ecf1;--f-ink-2:#a8b2bd;--f-muted:#5c646e;--f-line:rgba(255,255,255,0.07);--f-grid:rgba(255,255,255,0.045);--f-accent:#7fa8dd;--f-accent-soft:rgba(127,168,221,0.15);--f-accent-2:#9aa3ad;--f-seq-1:#26374b;--f-seq-2:#33506e;--f-seq-3:#466b92;--f-seq-4:#7fa8dd;--f-seq-5:#a8c5e9;--f-radius:12px;--f-radius-sm:8px}
+html[data-flow-theme="aurora"] body{--f-surface:#1b1830;--f-surface-2:#231e3c;--f-plane:#12101e;--f-ink:#f3effb;--f-ink-2:#c3b9e0;--f-muted:#736a96;--f-line:rgba(255,255,255,0.10);--f-grid:rgba(255,255,255,0.06);--f-accent:#c084fc;--f-accent-soft:rgba(192,132,252,0.17);--f-accent-2:#5eead4;--f-seq-1:#3b2a63;--f-seq-2:#533a87;--f-seq-3:#7a52c4;--f-seq-4:#c084fc;--f-seq-5:#d9b3ff;--f-radius:20px;--f-radius-sm:13px}
+html[data-flow-theme="bold"] body{--f-surface:#111111;--f-surface-2:#181818;--f-plane:#000000;--f-ink:#ffffff;--f-ink-2:#c4c4c4;--f-muted:#6b6b6b;--f-line:rgba(255,255,255,0.14);--f-grid:rgba(255,255,255,0.08);--f-accent:#ffe600;--f-accent-soft:rgba(255,230,0,0.15);--f-accent-2:#00ff9c;--f-seq-1:#4a4300;--f-seq-2:#6e6400;--f-seq-3:#a89a00;--f-seq-4:#ffe600;--f-seq-5:#fff27a;--f-radius:4px;--f-radius-sm:3px}
+html[data-flow-theme="operator"] body{--f-surface:#0c1113;--f-surface-2:#101619;--f-plane:#06090a;--f-ink:#cfe6da;--f-ink-2:#9dbcac;--f-muted:#4d635a;--f-line:rgba(160,255,210,0.10);--f-grid:rgba(160,255,210,0.06);--f-accent:#00e08a;--f-accent-soft:rgba(0,224,138,0.13);--f-accent-2:#d7c94a;--f-seq-1:#04382a;--f-seq-2:#065643;--f-seq-3:#098a63;--f-seq-4:#00e08a;--f-seq-5:#5cf0b8;--f-radius:6px;--f-radius-sm:4px}
+html[data-flow-theme="paper"] body{--f-surface:#fffdf8;--f-surface-2:#f1ece2;--f-plane:#f8f5ef;--f-ink:#1d1a15;--f-ink-2:#4a443a;--f-muted:#9a9184;--f-line:rgba(29,26,21,0.14);--f-grid:rgba(29,26,21,0.08);--f-accent:#2f6f5e;--f-accent-soft:rgba(47,111,94,0.14);--f-accent-2:#b07d2a;--f-seq-1:#cfe3dc;--f-seq-2:#9cc6ba;--f-seq-3:#66a493;--f-seq-4:#2f6f5e;--f-seq-5:#1d4d40;--f-radius:14px;--f-radius-sm:9px}
+html[data-flow-theme="bloom"] body{--f-surface:#fffbfa;--f-surface-2:#f8eeef;--f-plane:#fdf8f7;--f-ink:#2b2024;--f-ink-2:#57454b;--f-muted:#a89599;--f-line:rgba(43,32,36,0.13);--f-grid:rgba(43,32,36,0.07);--f-accent:#b0648a;--f-accent-soft:rgba(176,100,138,0.14);--f-accent-2:#6f9e7d;--f-seq-1:#f0d9e3;--f-seq-2:#dcadc3;--f-seq-3:#c684a5;--f-seq-4:#b0648a;--f-seq-5:#8a4368;--f-radius:20px;--f-radius-sm:13px}
+html[data-flow-theme="paper"] body{--f-muted:#6f6657}
+html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
+
+/* ── Sheets fit the part of the screen you can see ─────────────────────
+   On iPhone Safari 100vh includes the area behind the toolbar, so a sheet
+   capped at 88vh ran its last buttons underneath it. dvh is the visible
+   height; vh stays as the fallback for anything older. */
+.fn-sheetwrap .fn-sheet{max-height:88vh;max-height:88dvh;overscroll-behavior:contain;}
+@media (min-width:761px){ .fn-sheetwrap .fn-sheet{max-height:90vh;max-height:90dvh;} }
+
+/* ── The profile menu ───────────────────────────────────────────────── */
+#flow-menu .fn-me{display:flex;align-items:center;gap:12px;padding:2px 2px 14px;margin-bottom:6px;border-bottom:1px solid var(--border);}
+#flow-menu .fn-me-face{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:0 0 auto;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--accent),var(--purple,var(--accent)));color:#fff;font-weight:800;font-size:20px;text-shadow:0 1px 2px rgba(0,0,0,.25);}
+#flow-menu .fn-me-t{min-width:0;display:flex;flex-direction:column;gap:2px;}
+#flow-menu .fn-me-t b{font-size:16px;color:var(--text);}
+#flow-menu .fn-me-t span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#flow-menu .fn-mlist{display:flex;flex-direction:column;gap:4px;}
+#flow-menu .fn-mlist button{display:flex;align-items:center;gap:13px;width:100%;min-height:54px;padding:10px 12px;
+  background:transparent;border:0;border-radius:12px;color:var(--text);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+#flow-menu .fn-mlist button:hover,#flow-menu .fn-mlist button:active{background:var(--card);}
+#flow-menu .fn-mlist .fn-i{width:20px;height:20px;flex:0 0 auto;opacity:.85;}
+#flow-menu .fn-m-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+#flow-menu .fn-m-t b{font-size:15px;font-weight:600;}
+#flow-menu .fn-m-t small{font-size:12px;color:var(--muted);}
+#flow-menu .fn-m-chev{font-style:normal;font-size:20px;color:var(--muted);}
+#flow-menu .fn-mlist .fn-m-danger{margin-top:6px;border-top:1px solid var(--border);border-radius:0 0 12px 12px;color:#e5484d;}
+#flow-menu .fn-mlist .fn-m-danger .fn-i{stroke:#e5484d;}
+#fn-avatar{min-width:36px;min-height:36px;}
+
+/* ── Settings views: the settings, Privacy & security, Feedback ──────── */
+#tab-settings[data-setview="main"] .flow-card[data-setv]:not([data-setv="main"]),
+#tab-settings[data-setview="privacy"] .flow-card[data-setv]:not([data-setv="privacy"]),
+#tab-settings[data-setview="help"] .flow-card[data-setv]:not([data-setv="help"]){display:none!important;}
+#set-viewbar{margin:10px 0 4px;}
+#set-viewbar .set-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 6px;-webkit-overflow-scrolling:touch;}
+#set-viewbar .set-chips::-webkit-scrollbar{display:none;}
+#set-viewbar button{flex:0 0 auto;font:inherit;font-size:12.5px;font-weight:600;padding:7px 12px;min-height:34px;border-radius:999px;
+  border:1px solid var(--border);background:var(--card);color:var(--text2,var(--text));cursor:pointer;white-space:nowrap;}
+#set-viewbar .set-back{border:0;background:transparent;padding:6px 0;color:var(--accent);font-size:15px;}
+
+/* ── An empty time box says so on iPhone ─────────────────────────────
+   WebKit draws an unset <input type=time> as a blank box — no "--:--" —
+   so it read as a broken field. */
+@supports (-webkit-touch-callout:none){
+  input[type="time"].fl-empty{color:transparent;}
+  input[type="time"].fl-empty::before{content:attr(data-ph);color:var(--muted);}
+  input[type="time"]{min-height:38px;}
+  input[type="time"]::-webkit-date-and-time-value{text-align:left;}
+}
+
+/* ── While typing on a phone the tab bar steps aside ───────────────────
+   With the keyboard up, iOS lifts fixed bars above it and the tab bar sat
+   in the middle of the screen, over the field being typed into. */
+@media (max-width:760px){ body.fl-typing #flow-tabbar{display:none!important;} }
+
+/* ── Training week: one row on a phone ─────────────────────────────── */
+@media (max-width:760px){
+  #tab-training .weekbar > div:first-child{flex-wrap:nowrap!important;width:100%;}
+  #tWkPrev,#tWkNext{font-size:0!important;min-width:44px;min-height:40px;padding:6px 10px!important;}
+  #tWkPrev::before{content:'←';font-size:17px;}
+  #tWkNext::before{content:'→';font-size:17px;}
+  #weekLabel{flex:1;min-width:0;text-align:center;font-size:17px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #tWkToday{white-space:nowrap;}
+  #tab-training .weekbar .btns{width:100%;}
+  #tab-training .weekbar .btns button{flex:1;}
+  /* The manual WHOOP form, two to a row instead of a long column. */
+  .whoop-manual .form-row{display:grid!important;grid-template-columns:auto 1fr auto 1fr;gap:8px 10px;align-items:center;}
+  .whoop-manual .form-row input{width:100%!important;box-sizing:border-box;min-height:40px;}
+  .whoop-manual .form-row button{grid-column:1 / -1;}
+}
+
+/* ── Review week: fixes you can hit with a thumb ───────────────────── */
+#flow-review .td-fix{gap:6px;flex-wrap:wrap;}
+#flow-review .td-fix button{min-height:34px;padding:6px 12px;font-size:13px;}
