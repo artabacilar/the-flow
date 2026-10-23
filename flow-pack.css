@@ -1579,7 +1579,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .sc-edit{ display:flex; flex-direction:column; gap:8px; }
 .sc-e-ic{ width:56px; text-align:center; }
 .sc-e-n{ width:74px; }
-.flow-btn.danger{ color:var(--f-bad, #e5484d); }
+.flow-btn.danger{ color:var(--f-critical, #e5484d); }
 
 /* ======================================================================
  * Direction — the read on where this is actually going
@@ -1618,7 +1618,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
  * ────────────────────────────────────────────────────────────────────────── */
 .fr-none{ margin:0 0 16px; }
 .fr-err{
-  margin:0 0 14px; font-size:13px; color:var(--f-warn,#e0a33e);
+  margin:0 0 14px; font-size:13px; color:var(--f-warning, #e0a33e);
   background:rgba(224,163,62,.09); border:1px solid rgba(224,163,62,.24);
   border-radius:10px; padding:9px 12px;
 }
@@ -1643,7 +1643,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
   font:inherit; font-size:11.5px; color:var(--f-ink-2); cursor:pointer;
   -webkit-tap-highlight-color:transparent;
 }
-.fr-x:hover{ color:var(--f-warn,#e0a33e); }
+.fr-x:hover{ color:var(--f-warning, #e0a33e); }
 
 .fr-block{ margin-top:12px; }
 .fr-block:first-child{ margin-top:0; }
@@ -1762,7 +1762,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
   padding:3px 8px; border-radius:100px; white-space:nowrap;
 }
 .au-said.keep  { background:rgba(23,187,146,.14); color:var(--f-accent); }
-.au-said.cut   { background:rgba(224,90,90,.14);  color:var(--f-warn,#e0665e); }
+.au-said.cut   { background:rgba(224,90,90,.14);  color:var(--f-warning, #e0665e); }
 .au-said.change{ background:rgba(0,147,231,.14);  color:#63c2f7; }
 
 .au-bar{ height:5px; border-radius:999px; background:var(--f-grid); overflow:hidden; margin-bottom:8px; }
@@ -1774,7 +1774,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .au-meta{ font-size:12px; line-height:1.55; color:var(--f-ink-2); margin-bottom:11px; }
 .au-meta b{ color:var(--f-ink); font-weight:600; }
 .au-up  { color:var(--f-accent); }
-.au-down{ color:var(--f-warn,#e0a33e); }
+.au-down{ color:var(--f-warning, #e0a33e); }
 .au-flat{ color:var(--f-ink-2); }
 
 .au-acts{ display:flex; gap:7px; }
@@ -1838,9 +1838,9 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
    A secret shown once wants to look like a secret: monospaced, boxed, and
    sitting next to the one button that matters. */
 .mcp-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-.mcp-url code{flex:1;min-width:220px;background:var(--f-card2,rgba(255,255,255,.04));border:1px solid var(--f-border,rgba(255,255,255,.12));
+.mcp-url code{flex:1;min-width:220px;background:var(--f-surface-2, var(--card2));border:1px solid var(--f-line, var(--border));
   border-radius:9px;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
-  color:var(--f-text,#e9eef5);word-break:break-all;line-height:1.45;}
+  color:var(--f-ink, var(--text));word-break:break-all;line-height:1.45;}
 .mcp-new{margin-top:14px;padding:12px;border-radius:11px;border:1px solid var(--f-accent,#63c2f7);
   background:color-mix(in srgb,var(--f-accent,#63c2f7) 8%,transparent);}
 .mcp-new .flow-label{margin-bottom:7px;}
@@ -1848,10 +1848,10 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 /* The empty state is a quiet note, not a headline — it says nothing is wrong. */
 .mcp-list .flow-sub{margin:0;font-size:13px;line-height:1.55;}
 .mcp-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;
-  background:var(--f-card2,rgba(255,255,255,.04));border:1px solid var(--f-border,rgba(255,255,255,.10));}
+  background:var(--f-surface-2, var(--card2));border:1px solid var(--f-line, var(--border));}
 .mcp-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.mcp-meta b{font-size:14px;color:var(--f-text,#e9eef5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.mcp-meta span{font-size:12px;color:var(--f-muted,#93a2b4);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+.mcp-meta b{font-size:14px;color:var(--f-ink, var(--text));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mcp-meta span{font-size:12px;color:var(--f-ink-2, var(--text2, #93a2b4));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 .mcp-acts{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
 .mcp-acts .flow-in{flex:1;min-width:200px;}
 @media(max-width:520px){
@@ -1924,7 +1924,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
   overflow:hidden; text-overflow:ellipsis;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3;
 }
-.fv-bubble.bad{ color:var(--f-bad, #e5484d); border-color:var(--f-bad, #e5484d); }
+.fv-bubble.bad{ color:var(--f-critical, #e5484d); border-color:var(--f-critical, #e5484d); }
 
 /* Someone who has asked for less movement still gets the colour change,
    which is the part that says "this is on". */
@@ -1940,7 +1940,7 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 }
 .vc-dot{ width:8px; height:8px; border-radius:50%; background:var(--f-ink-2); flex:none; }
 .vc-dot.ok{ background:var(--f-good, #00e88a); }
-.vc-dot.no{ background:var(--f-bad, #e5484d); }
+.vc-dot.no{ background:var(--f-critical, #e5484d); }
 
 /* ── Connections ────────────────────────────────────────────────────────
    The account's photo, once Google is connected, in the two places that
@@ -2156,3 +2156,76 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 
 .rv-week{margin:14px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .rv-week span{color:var(--text);margin-left:4px}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Light themes (Paper, Bloom): the host's blocks that were drawn for a dark
+ * screen only — the mission statement, the Work/Side Project goal and
+ * problem panels, the WHOOP panel, and the coloured pills (training tags,
+ * calendar chips, rock roles). Each takes the theme's own surface and ink,
+ * keeping a tint of its colour so the three kinds still read apart.
+ * ══════════════════════════════════════════════════════════════════════ */
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .mission{
+  background:linear-gradient(135deg, color-mix(in srgb, var(--purple) 7%, var(--card)), var(--card));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .mission h3 span{color:var(--muted)}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .ws-north{
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--card)), var(--card));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .ws-problem{
+  background:linear-gradient(135deg, color-mix(in srgb, var(--orange) 8%, var(--card)), var(--card));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .ws-problem h4{color:color-mix(in srgb, var(--orange) 80%, var(--text))}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) :is(.ws-north,.ws-problem) .ns-view{color:var(--text)}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .whoop-panel{
+  background:linear-gradient(160deg, var(--card), var(--card2));
+}
+/* Pills: a light wash of the colour, and the colour itself as ink. */
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .tag.strength,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .chip.train{
+  background:color-mix(in srgb, var(--accent) 14%, var(--card)); color:color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .tag.hyper,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .rockrow .rk-role{
+  background:color-mix(in srgb, var(--purple) 14%, var(--card)); color:color-mix(in srgb, var(--purple) 85%, var(--text));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .tag.cond,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .chip.shake{
+  background:color-mix(in srgb, var(--orange) 16%, var(--card)); color:color-mix(in srgb, var(--orange) 80%, var(--text));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .tag.rest{
+  background:var(--card2); color:var(--muted);
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .chip.meal{
+  background:color-mix(in srgb, var(--green) 14%, var(--card)); color:color-mix(in srgb, var(--green) 85%, var(--text));
+}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .chip.rock{
+  background:color-mix(in srgb, var(--purple) 12%, var(--card)); color:var(--text2, var(--text));
+}
+
+/* ── Light themes: readable ink everywhere ───────────────────────────────
+   Measured, not guessed: every text element on every tab in Paper and
+   Bloom was checked against its own background, and these are the ones
+   that fell under 3:1. Muted ink gets darker (it is still quieter than the
+   text, just no longer faint), the coloured accents get enough ink mixed
+   in to read on a light card, and buttons on the accent get white ink. */
+html[data-flow-theme="paper"]{ --muted:#655d50; --muted2:#7a7264; }
+html[data-flow-theme="paper"] .flow-x{ --f-muted:#6f6657; }
+html[data-flow-theme="bloom"]{ --muted:#6e5a60; --muted2:#7f6a70; --green:#4f7d5d; --teal:#4f7d5d; --orange:#a8721f; --yellow:#a8721f; }
+html[data-flow-theme="bloom"] .flow-x{ --f-muted:#7a6469; --f-accent-2:#4f7d5d; }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-sub,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-label{ font-weight:500; }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-btn.primary,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-seg button.on,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .pl-acts .flow-btn.primary,
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) #flow-focus .fc-acts button[data-fc="start"],
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-today-actions > .flow-today-primary{ color:#fff; }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-chip.accent{ color:var(--f-accent); border-color:color-mix(in srgb, var(--f-accent) 35%, transparent); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .flow-btn.danger{ color:var(--f-critical, #b03a2e); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .rk-prio.high{ background:color-mix(in srgb, var(--red) 12%, var(--card)); color:color-mix(in srgb, var(--red) 85%, var(--text)); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .rk-prio.med{ background:color-mix(in srgb, var(--orange) 14%, var(--card)); color:color-mix(in srgb, var(--orange) 75%, var(--text)); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) :is(.flow-td-tile.bad .v, .flow-td-head .c.bad, .flow-td-row.od .mt){ color:color-mix(in srgb, var(--red) 85%, var(--text)); }
+/* Finance categories carry their own bright colours, chosen for a dark
+   screen; on a light one the same hue, darkened, reads. */
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) :is(.fin-cat-name, .fin-cat-nums .spent){ filter:brightness(.52) saturate(1.25); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .whoop-ring .ring-bg{ stroke:var(--card2); }
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"]) .whoop-panel .whoop-title{ color:var(--text); }
