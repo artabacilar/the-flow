@@ -53,8 +53,8 @@ const TEST_PASSWORD = randomUUID();
   ok('the "More" sheet is gone too', !(await p.isVisible('.moresheet')));
   ok('it has exactly five slots', await p.evaluate(() =>
     document.querySelectorAll('#flow-tabbar > button').length) === 5);
-  ok('labelled Today / Focus / Body / Record', await p.evaluate(() =>
-    [...document.querySelectorAll('#flow-tabbar .fn-lb')].map(e => e.textContent).join(',')) === 'Today,Focus,Body,Record');
+  ok('labelled Today / Plan / Body / Record', await p.evaluate(() =>
+    [...document.querySelectorAll('#flow-tabbar .fn-lb')].map(e => e.textContent).join(',')) === 'Today,Plan,Body,Record');
 
   console.log('\n— every control clears 44px —');
   const small = await p.evaluate(() => [...document.querySelectorAll('#flow-tabbar button')]
@@ -228,7 +228,7 @@ const TEST_PASSWORD = randomUUID();
   ok('none of them is to a retired section', !links.some(t => /brainstorm|^time$|diet/.test(t)), links);
   ok('nothing is stranded — Today is reachable again', links.indexOf('today') >= 0, links);
   ok('the groups are labelled', await d.evaluate(() =>
-    [...document.querySelectorAll('.fn-grouplbl')].map(e => e.textContent).join(',')) === 'Focus,Body,Record');
+    [...document.querySelectorAll('.fn-grouplbl')].map(e => e.textContent).join(',')) === 'Plan,Body,Record');
 
   console.log('\n— Today is not a lost 560px column —');
   const tw = await d.evaluate(() => {
@@ -559,6 +559,48 @@ const TEST_PASSWORD = randomUUID();
     [...document.querySelectorAll('.section-header')].map(e => e.textContent.trim().split(' ')[0]));
   const dupes = icons.filter((v, i) => icons.indexOf(v) !== i);
   ok('no icon is used for two different sections', dupes.length === 0, dupes);
+
+  console.log('\n— a reload comes back to the same tab —');
+  await d.evaluate(() => Flow.Nav.go('training')); await d.waitForTimeout(600);
+  await d.reload({ waitUntil: 'load' });
+  await d.waitForFunction(() => document.documentElement.classList.contains('flow-ready'), null, { timeout: 15000 }).catch(() => {});
+  await d.waitForTimeout(1800);
+  ok('reloading on Training stays on Training', await activeTab(d) === 'training', await activeTab(d));
+
+  console.log('\n— empty numbers look empty —');
+  await d.evaluate(() => Flow.Nav.go('sleep')); await d.waitForTimeout(700);
+  const emp = await d.evaluate(() => { const e = document.getElementById('slAvg'); return { t: e.textContent.trim(), c: e.classList.contains('is-empty'), lab: e.getAttribute('data-empty') }; });
+  ok('a stat with no data is marked empty and says so', emp.t === '—' && emp.c && emp.lab === 'no data yet', emp);
+
+  console.log('\n— Finances: the budget folds once it is set —');
+  await d.evaluate(() => Flow.Nav.go('finance')); await d.waitForTimeout(700);
+  ok('with no budget the form is open', await d.isVisible('#budgetInputs'));
+  await d.fill('#bi_income', '3000'); await d.fill('#bi_food', '400').catch(() => {});
+  await d.click('#fnSaveBudget'); await d.waitForTimeout(400);
+  ok('saving folds it to one line', !(await d.isVisible('#budgetInputs')) && /budgeted/.test(await d.textContent('.budget-setup .bf-sum')), await d.textContent('.budget-setup .bf-sum'));
+  await d.click('.budget-setup .bf-tog'); await d.waitForTimeout(300);
+  ok('Edit opens it again', await d.isVisible('#budgetInputs'));
+
+  console.log('\n— a photo of your own —');
+  const ph = await d.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 800; c.height = 500;
+    const g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 800, 500);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    const data = await Flow.Photo.shrink(blob);
+    await Flow.Photo.use(data);
+    const im = new Image(); await new Promise((r) => { im.onload = r; im.src = data; });
+    return { w: im.width, h: im.height, kb: Math.round(data.length / 1024), face: !!document.querySelector('#fn-avatar img.fn-face') };
+  });
+  ok('any picture becomes a 320px square', ph.w === 320 && ph.h === 320, ph);
+  ok('small enough to keep with the account', ph.kb < 80, ph);
+  ok('and it is the face in the corner', ph.face, ph);
+
+  console.log('\n— changing a password happens in the app —');
+  await d.evaluate(() => Flow.PwSheet.open()); await d.waitForTimeout(400);
+  ok('a sheet with password fields opens', await d.isVisible('#flow-pw #pw-cur') && await d.getAttribute('#pw-new', 'type') === 'password');
+  await d.fill('#pw-cur', 'a properly long password'); await d.fill('#pw-new', 'a brand new password'); await d.fill('#pw-new2', 'a different new one');
+  await d.click('#pw-go'); await d.waitForTimeout(300);
+  ok('a mismatch is caught before anything is sent', /not the same/.test(await d.textContent('#pw-err')));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed\n');
   await b.close();

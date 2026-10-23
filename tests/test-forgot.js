@@ -112,7 +112,10 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
     ok('asking for it shows the code field', await q.isVisible('#fa-rcwrap'));
     ok('the heading says what will happen', (await q.textContent('#fa-h')).indexOf('new password') >= 0,
        await q.textContent('#fa-h'));
-    ok('the other road is offered too', await q.isVisible('#fa-mail'));
+    /* No mail provider on this replica: the email button would be a promise
+       nobody keeps, so it is not offered — the screen says who can help. */
+    ok('with no email set up, it says who can help instead of offering a dead button',
+       await q.isVisible('#fa-nomail') && !(await q.isVisible('#fa-mail')));
 
     /* Typed the way somebody reads it off a piece of paper: wrong case, a
        space where the dash is, and the two letters that look like digits. */
@@ -132,13 +135,11 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
     const m = await ctx3.newPage();
     await m.goto(H + '/', { waitUntil: 'load' });
     await m.waitForTimeout(2600);
-    await m.click('#fa-forgot'); await m.waitForTimeout(200);
-    await m.fill('#fa-email', OWNER);
-    await m.click('#fa-mail'); await m.waitForTimeout(900);
-    const said = await m.textContent('#fa-err').catch(() => '');
-    ok('it admits there is no mail set up rather than faking a send',
-       /not set up/i.test(said || ''), said);
-    ok('and points at the codes instead', /recovery code/i.test(said || ''), said);
+    await m.click('#fa-forgot'); await m.waitForTimeout(400);
+    ok('it does not offer an email that will never come', !(await m.isVisible('#fa-mail')));
+    const said = await m.textContent('#fa-nomail').catch(() => '');
+    ok('it says the owner can make a reset link', await m.isVisible('#fa-nomail') && /reset link/i.test(said || ''), said);
+    ok('the recovery code field is right there', await m.isVisible('#fa-rcwrap'));
     await ctx3.close();
   } finally {
     await browser.close();
@@ -232,6 +233,29 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
   ok('an invented reset token is refused', r.status === 401, { s: r.status, b: r.body });
   r = await post('/api/auth/reset/confirm', { token: '', password: 'a long enough password' });
   ok('so is an empty one', r.status === 401, r.status);
+  r = await call('/api/auth/reset/available');
+  ok('the sign-in screen can ask whether email works here', r.status === 200 && r.body.mail === false, r.body);
+
+  console.log('\n— the owner can hand someone a way back in —');
+  r = await post('/api/auth/signup', { email: 'friend@example.com', name: 'Deniz', password: 'a friend long password', invite: 'letmein' }, 'friend');
+  ok('a second account exists', r.status === 200, { s: r.status, b: r.body });
+  r = await post('/api/auth/reset/link', { email: OWNER }, 'friend');
+  ok('somebody who is not the owner cannot make a reset link', r.status === 403, r.status);
+  r = await post('/api/auth/reset/link', { email: 'friend@example.com' }, 'nobody');
+  ok('nor can a stranger', r.status === 401, r.status);
+  r = await post('/api/auth/reset/link', { email: 'nobody@example.com' }, 'artur');
+  ok('a link for an address with no account is refused', r.status === 404, r.status);
+  r = await post('/api/auth/reset/link', { email: 'friend@example.com' }, 'artur');
+  ok('the owner makes a one-time link', r.status === 200 && /\/\?reset=[0-9a-f]{64}$/.test(r.body.link || ''), r.body);
+  const tok = ((r.body && r.body.link) || '').split('reset=')[1] || '';
+  r = await post('/api/auth/reset/confirm', { token: tok, password: 'the friend chose this one' }, 'friend2');
+  ok('the link sets their new password', r.status === 200, { s: r.status, b: r.body });
+  r = await post('/api/auth/login', { email: 'friend@example.com', password: 'the friend chose this one' }, 'friend3');
+  ok('and they sign in with it', r.status === 200, r.status);
+  r = await call('/api/auth/me', {}, 'friend');
+  ok('their other sessions are closed', !(r.body && r.body.user), r.body);
+  r = await post('/api/auth/reset/confirm', { token: tok, password: 'yet another long password' });
+  ok('the link works once', r.status === 401, r.status);
 
   /* ---- 5 · the screen that shows codes can only be reached honestly ----- */
   console.log('\n— what the client is built to do —');
@@ -243,6 +267,9 @@ const post = (p, body, who) => call(p, { method: 'POST', body: JSON.stringify(bo
   ok('settings can mint a set for an account that has none',
      pack.indexOf("a === 'reccodes'") >= 0 && pack.indexOf('/api/auth/recovery') >= 0);
   ok('settings says out loud when there are none', pack.indexOf('You have no recovery codes') >= 0);
+  ok('changing a password is a sheet with real password fields, not prompt()',
+     pack.indexOf('const PwSheet') >= 0 && pack.indexOf("prompt('Your current password:')") < 0);
+  ok('the sign-in screen only offers the email link when it can work', pack.indexOf("/api/auth/reset/available") >= 0 && pack.indexOf('fa-nomail') >= 0);
   /* The codes must never be written anywhere the browser keeps them. */
   const codeBlock = pack.slice(pack.indexOf('showCodes(codes, opts)'), pack.indexOf('resetScreen(token)'));
   ok('the codes are never put in localStorage', codeBlock.indexOf('localStorage') < 0);

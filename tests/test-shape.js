@@ -39,8 +39,8 @@ ok('the planner keeps its tab — it carries the name and the photo', removed.in
 ok('none of them is still listed in the sidebar', !allSide.some(t => removed.indexOf(t) >= 0), allSide);
 ok('nor given a phone slot', !nav.GROUPS.some(g => g.tabs.some(t => removed.indexOf(t) >= 0)));
 ok('Focus is left with the five things you actually steer by',
-   nav.SIDE.find(s => s.head === 'Focus').tabs.join(',') === 'northstar,quad,compass,abko,dtc',
-   nav.SIDE.find(s => s.head === 'Focus').tabs);
+   nav.SIDE.find(s => s.head === 'Plan').tabs.join(',') === 'northstar,quad,compass,abko,dtc',
+   nav.SIDE.find(s => s.head === 'Plan').tabs);
 ok('Record is Journal, Finances and Ask', nav.SIDE.find(s => s.head === 'Record').tabs.join(',') === 'journal,finance,ask');
 ok('the pills are taken off the page at install', /retire\(\) \{/.test(pack) && /Nav\.retire\(\)/.test(pack));
 ok('the sections stay, hidden, so the host can still render into them', /data-fn-retired/.test(pack) && /\[data-fn-retired\]\{display:none!important\}/.test(fs.readFileSync(path.join(__dirname, '..', 'flow-pack.css'), 'utf8')));
