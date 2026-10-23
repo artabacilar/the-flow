@@ -285,15 +285,15 @@ function bearerOf(req) {
  * pretending to have sent something.
  *
  * Set RESEND_API_KEY (and MAIL_FROM, an address on a domain you have verified
- * with the provider — on theflow.today it defaults to hello@mail.theflow.today)
+ * with the provider — on theflow.today it defaults to mail@theflow.today)
  * to turn it on.
  * ------------------------------------------------------------------------- */
 const MAIL = (() => {
   const key = (process.env.RESEND_API_KEY || '').trim();
-  /* The sending domain is verified with the provider as mail.theflow.today,
-     so that is the default sender; MAIL_FROM still overrides it (another
-     domain, or a self-hosted Flow). Only the key has to be set by hand. */
-  const from = (process.env.MAIL_FROM || '').trim() || 'The Flow <hello@mail.theflow.today>';
+  /* theflow.today is verified with the provider, so mail@theflow.today is
+     the default sender; MAIL_FROM still overrides it (another domain, or a
+     self-hosted Flow). Only the key has to be set by hand. */
+  const from = (process.env.MAIL_FROM || '').trim() || 'The Flow <mail@theflow.today>';
   return {
     ready: () => !!(key && from),
     async send(to, subject, text) {
