@@ -231,7 +231,8 @@ const challenge = Buffer.from(crypto.createHash('sha256').update(verifier).diges
   ok('connected apps have their own list', /id="mcpConns"/.test(pack));
   ok('so do access tokens', /Access tokens<\/div>/.test(pack));
   ok('the instructions lead with signing in, not with copying a token',
-     /add a custom connector and give it the server URL/.test(pack));
+     /add a custom connector with this address/.test(pack) && pack.indexOf('add a custom connector') < pack.indexOf('Create access token'));
+  ok('tokens and the raw server URL sit under Advanced', /<details class="mcp-adv"/.test(pack) && /Assistant connections/.test(pack));
   ok('and say a token is the fallback, not the route', /manual way in/.test(pack));
   ok('an app can be disconnected from there', /data-mcp="disconnect"/.test(pack));
 

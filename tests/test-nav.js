@@ -595,6 +595,25 @@ const TEST_PASSWORD = randomUUID();
   ok('small enough to keep with the account', ph.kb < 80, ph);
   ok('and it is the face in the corner', ph.face, ph);
 
+  console.log('\n— a reminder or widget tap opens that rock —');
+  const orr = await d.evaluate(async () => {
+    const wid = Object.keys(cData.rocks)[0] || (typeof cWeekId === 'function' ? cWeekId(new Date()) : '2026-W43');
+    const day = (new Date().getDay() + 6) % 7;
+    (cData.rocks[wid] = cData.rocks[wid] || []).push({ id: 'openme', title: 'Open me from a reminder', day, prio: 'med', done: false });
+    cSave();
+    Flow.Nav.go('settings');
+    window.__flowOpen({ rock: 'openme' });
+    await new Promise((r) => setTimeout(r, 900));
+    const row = document.querySelector('#today-feed .td-rock[data-rockid="openme"]');
+    const hit = { tab: Flow.Nav.current(), flashed: !!(row && row.classList.contains('fl-flash')) };
+    window.__flowOpen({ rock: 'gone-for-good' });
+    await new Promise((r) => setTimeout(r, 500));
+    hit.gone = (document.getElementById('flow-toast') || document.body).textContent;
+    return hit;
+  });
+  ok('it lands on Today with that rock marked', orr.tab === 'today' && orr.flashed, orr);
+  ok('a rock deleted since says so', /no longer in your week/.test(orr.gone || ''), orr.gone);
+
   console.log('\n— changing a password happens in the app —');
   await d.evaluate(() => Flow.PwSheet.open()); await d.waitForTimeout(400);
   ok('a sheet with password fields opens', await d.isVisible('#flow-pw #pw-cur') && await d.getAttribute('#pw-new', 'type') === 'password');

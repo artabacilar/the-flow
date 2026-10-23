@@ -457,6 +457,38 @@ window.__fail = function (code) {
   }));
   ok('and nothing broke on that page either', errs2.length === 0, errs2.slice(0, 3));
 
+  console.log('\n— the iPhone app: the first tap asks, it does not say "blocked" —');
+  const c3 = await b.newContext();
+  await c3.addInitScript(`
+    window.__asked = 0; window.__perm = { mic: 'undetermined', speech: 'undetermined' };
+    window.Capacitor = { Plugins: { FlowBridge: {
+      voiceStart: async () => (window.__perm.mic === 'granted' && window.__perm.speech === 'granted') ? { ok: true } : { ok: false, error: 'denied' },
+      voiceStop: async () => ({}), voiceCancel: async () => ({}),
+      voicePermission: async () => window.__perm,
+      voiceRequest: async () => { window.__asked++; window.__perm = window.__grant || { mic: 'granted', speech: 'granted' }; return window.__perm; }
+    } } };
+  `);
+  const p3 = await c3.newPage();
+  await p3.goto(H + '/', { waitUntil: 'load' }); await p3.waitForTimeout(2600);
+  const first = await p3.evaluate(async () => {
+    const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    window.FlowVoice.start(t); await new Promise((r) => setTimeout(r, 300));
+    const bub = document.querySelector('.fv-bubble');
+    return { asked: window.__asked, listening: window.FlowVoice.listening, said: bub && !bub.hidden ? bub.textContent : '' };
+  });
+  ok('the first tap shows the system prompts', first.asked === 1, first);
+  ok('and once allowed, it is listening — no "blocked" message', first.listening === true && !/blocked/i.test(first.said), first);
+  const refused = await p3.evaluate(async () => {
+    window.FlowVoice.cancel && window.FlowVoice.cancel();
+    window.__perm = { mic: 'undetermined', speech: 'undetermined' }; window.__grant = { mic: 'denied', speech: 'granted' };
+    const t = document.querySelector('textarea'); t.focus();
+    window.FlowVoice.start(t); await new Promise((r) => setTimeout(r, 300));
+    const bub = document.querySelector('.fv-bubble');
+    return bub ? bub.textContent : '';
+  });
+  ok('a refusal says where to turn it on, on an iPhone', /iPhone Settings/.test(refused) && !/this site/.test(refused), refused);
+  await c3.close();
+
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
