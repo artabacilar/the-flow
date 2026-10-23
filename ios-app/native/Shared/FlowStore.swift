@@ -39,6 +39,9 @@ enum FlowStore {
 /// Today, in the shape the widget draws it.
 struct FlowToday: Codable {
     struct Line: Codable {
+        /// The rock's id, so a tap on the row can open it. Optional: an older
+        /// server does not send it and the row is then just a row.
+        let id: String?
         let title: String
         let time: String?
         let done: Bool
