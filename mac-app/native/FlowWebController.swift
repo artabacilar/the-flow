@@ -134,6 +134,21 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
         }
     }
 
+    /* <input type="file"> — a receipt photo, a bank CSV, a profile photo.
+       WKWebView on the Mac shows no picker unless the app opens one itself;
+       without this the button did nothing at all. */
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler done: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.beginSheetModal(for: view.window!) { r in
+            done(r == .OK ? panel.urls : nil)
+        }
+    }
+
     /* Offline, or the server asleep. Showing WebKit's own error page would
        say "Safari cannot open the page", naming a browser this is not. */
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
