@@ -10163,8 +10163,15 @@ const Nav = {
     side.innerHTML = html;
     document.body.appendChild(side);
 
-    side.querySelectorAll('[data-fn-side]').forEach(b =>
-      b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-side'))));
+    /* The person at the foot of the sidebar opens the same menu as the phone
+       avatar — Profile, Settings, Privacy, Sign out — rather than jumping
+       straight to the profile page, which left a desktop with no visible way
+       to sign out. */
+    side.querySelectorAll('[data-fn-side]').forEach(b => {
+      const t = b.getAttribute('data-fn-side');
+      if (t === 'artur') b.setAttribute('aria-haspopup', 'dialog');
+      b.addEventListener('click', () => (t === 'artur' ? Nav.openMenu() : Nav.go(t)));
+    });
     document.getElementById('fn-kbtn').addEventListener('click', () => Nav.openPalette());
 
     document.body.classList.add('fn-on');
