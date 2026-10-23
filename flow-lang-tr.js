@@ -1765,6 +1765,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Someone locked out?": "Biri dışarıda mı kaldı?",
   "Make reset link": "Sıfırlama bağlantısı oluştur",
   "Their email address": "E-posta adresi",
+  "＋ Add Big Rocks in Week Compass": "＋ Hafta Pusulası'nda Büyük Taş ekle",
 /* DICT-END */
 }, RULES);
 

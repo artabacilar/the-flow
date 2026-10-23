@@ -5434,7 +5434,7 @@ const TodayPlus = {
           '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn" data-pl="weekpick">Add to the week ▾</button></div>' +
           '<div class="pl-days" id="pl-days" hidden></div>' +
           '<div class="pl-list" id="pl-list"></div>' +
-          '<button type="button" class="pl-link" data-pl="week">Open Week Compass</button>' +
+          '<button type="button" class="flow-btn ghost pl-rocks" data-pl="week">＋ Add Big Rocks in Week Compass</button>' +
         '</div>';
       document.body.appendChild(wrap);
       /* A thing for today, with a time: it goes on today's calendar — the

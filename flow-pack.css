@@ -2373,3 +2373,4 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
    floating halfway down the notes. */
 .td-rock:has(.td-meet-body:not([hidden])){align-items:flex-start;}
 .td-rock:has(.td-meet-body:not([hidden])) > .dot{margin-top:8px;}
+#flow-plan .pl-rocks{display:block;width:100%;margin-top:14px;min-height:44px;font-size:14px;}
