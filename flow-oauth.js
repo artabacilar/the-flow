@@ -257,7 +257,7 @@ button{flex:1;font:600 15px/1 inherit;padding:13px;border-radius:11px;cursor:poi
     <button class="allow" name="decision" value="allow" type="submit">Connect</button>
   </div>
   <div class="who">Signed in as ${esc(me.email)}</div>
-  <p class="warn">You can disconnect this at any time in Settings → Connect to Claude. Doing so stops it working immediately and changes nothing you have saved.</p>
+  <p class="warn">You can disconnect this at any time in Settings → Assistant connections. Doing so stops it working immediately and changes nothing you have saved.</p>
 </form></body></html>`);
   }
 

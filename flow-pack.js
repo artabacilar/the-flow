@@ -94,7 +94,9 @@ function download(filename, text, mime) {
 }
 function money(n, cur) {
   const v = Number(n) || 0;
-  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'TRY', maximumFractionDigits: 2 }).format(v); }
+  /* narrowSymbol: ₺, $, £ — not "TRY 0.00", which is what most locales print
+     for a currency that is not their own. */
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'TRY', currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2 }).format(v); }
   catch (e) { return v.toFixed(2) + ' ' + (cur || ''); }
 }
 
@@ -103,7 +105,7 @@ function moneyCompact(n, cur) {
   const v = Number(n) || 0;
   try {
     return new Intl.NumberFormat(undefined, {
-      style: 'currency', currency: cur || 'TRY',
+      style: 'currency', currency: cur || 'TRY', currencyDisplay: 'narrowSymbol',
       notation: 'compact', maximumFractionDigits: 1
     }).format(v);
   } catch (e) {
@@ -1559,7 +1561,7 @@ const Ledger = {
   home() { return String(Settings.get('currency') || 'TRY').toUpperCase(); },
   money(n, cur) { return money(n, cur || Ledger.home()); },
   symbol() {
-    try { const p = new Intl.NumberFormat(undefined, { style: 'currency', currency: Ledger.home() }).formatToParts(0); const c = p.find((x) => x.type === 'currency'); return c ? c.value : Ledger.home(); }
+    try { const p = new Intl.NumberFormat(undefined, { style: 'currency', currency: Ledger.home(), currencyDisplay: 'narrowSymbol' }).formatToParts(0); const c = p.find((x) => x.type === 'currency'); return c ? c.value : Ledger.home(); }
     catch (e) { return Ledger.home(); }
   },
   legacy() {
@@ -3449,28 +3451,31 @@ const SettingsUI = {
       </div>
 
       <div class="flow-card" id="mcp-card">
-        <h3>🤖 Connect to Claude</h3>
-        <p class="flow-sub">Give Claude an access token and it can read your week, add Big Rocks, tick habits and reword your own lists — working on this account and no other. It can add and change things; removing anything stays something you do here.</p>
-        <div class="flow-field"><label class="flow-label">Server URL</label>
-          <div class="mcp-url"><code id="mcpUrl">${esc(location.origin)}/mcp</code><button type="button" class="flow-btn sm" data-mcp="copyurl">Copy</button></div>
-        </div>
-        <div class="mcp-new" id="mcpNew" hidden>
-          <div class="flow-label">Your new token — copy it now, it is not shown again</div>
-          <div class="mcp-url"><code id="mcpSecret"></code><button type="button" class="flow-btn sm primary" data-mcp="copytok">Copy</button></div>
-        </div>
-        <div id="mcpConns" class="mcp-list"></div>
-        <div id="mcpList" class="mcp-list"><div class="flow-sub">Loading…</div></div>
-        <div class="mcp-acts">
-          <input class="flow-in" id="mcpName" placeholder="What is this for? e.g. Claude on my laptop" maxlength="60">
-          <button type="button" class="flow-btn primary" data-mcp="new">Create access token</button>
-        </div>
+        <h3>🤖 Assistant connections</h3>
+        <p class="flow-sub">Let Claude, ChatGPT or another assistant read your week, add Big Rocks, tick habits and reword your own lists — on this account and no other. It can add and change things; removing anything stays something you do here.</p>
         <ol class="flow-ol">
-          <li>In Claude or ChatGPT, add a custom connector and give it the server URL above.</li>
-          <li>It will send you here to sign in and say yes. That is all — no token to copy.</li>
+          <li>In Claude or ChatGPT, add a custom connector with this address: <code class="mcp-inline">${esc(location.origin)}/mcp</code></li>
+          <li>It sends you here to sign in and say yes. That is all — nothing to copy.</li>
           <li>Ask it "what's on my week?" to check it worked.</li>
         </ol>
-        <p class="flow-sub">An access token below is the manual way in, for a client that cannot do the above, or for your own scripts.</p>
-        <p class="flow-sub">A token is as good as your password for reading and adding — treat it like one. If you no longer recognise a token in the list, revoke it; anything using it stops working immediately and nothing you have saved is touched.</p>
+        <div id="mcpConns" class="mcp-list"></div>
+        <details class="mcp-adv" id="mcpAdv">
+          <summary>Advanced — server address and access tokens</summary>
+          <div class="flow-field"><label class="flow-label">Server URL</label>
+            <div class="mcp-url"><code id="mcpUrl">${esc(location.origin)}/mcp</code><button type="button" class="flow-btn sm" data-mcp="copyurl">Copy</button></div>
+          </div>
+          <div class="mcp-new" id="mcpNew" hidden>
+            <div class="flow-label">Your new token — copy it now, it is not shown again</div>
+            <div class="mcp-url"><code id="mcpSecret"></code><button type="button" class="flow-btn sm primary" data-mcp="copytok">Copy</button></div>
+          </div>
+          <div id="mcpList" class="mcp-list"><div class="flow-sub">Loading…</div></div>
+          <div class="mcp-acts">
+            <input class="flow-in" id="mcpName" placeholder="What is this for? e.g. my script" maxlength="60">
+            <button type="button" class="flow-btn primary" data-mcp="new">Create access token</button>
+          </div>
+          <p class="flow-sub">An access token is the manual way in, for a client that cannot sign in as above, for your own scripts, or for the home-screen widget.</p>
+          <p class="flow-sub">A token is as good as your password for reading and adding — treat it like one. If you no longer recognise a token in the list, revoke it; anything using it stops working immediately and nothing you have saved is touched.</p>
+        </details>
       </div>
 
       <div class="flow-card" id="pushCard">
@@ -4014,6 +4019,7 @@ const SettingsUI = {
           const box = card.querySelector('#mcpNew');
           card.querySelector('#mcpSecret').textContent = r.token;
           box.hidden = false;
+          const adv = card.querySelector('#mcpAdv'); if (adv) adv.open = true;
           if (nameEl) nameEl.value = '';
           toast('Token created — copy it now');
           SettingsUI.nativeToken(r.token);
@@ -8861,6 +8867,94 @@ const SheetKB = {
   }
 };
 
+/* ── Lead with the thing you came to do ─────────────────────────────────
+ * Habits opened on four statistics; the habits themselves were below the
+ * fold on a phone. The tiles now follow the list. And an unconnected WHOOP
+ * panel — an empty ring, four dashes and a five-field form — took a screen
+ * of the Body log before anything you could act on. With no WHOOP numbers
+ * and no connection it folds to one line and an "Enter by hand" button. */
+const LeadFirst = {
+  habits() {
+    const sec = document.getElementById('tab-habits');
+    const stats = sec && sec.querySelector(':scope > .stats');
+    const anchor = sec && (sec.querySelector('#hbEmpty') || sec.querySelector('#habitsList'));
+    if (stats && anchor && !stats.dataset.moved) { anchor.after(stats); stats.dataset.moved = '1'; stats.classList.add('lf-after'); }
+  },
+  whoop() {
+    const panel = document.getElementById('whoopPanel');
+    if (!panel) return;
+    let live = false, w = {};
+    try { live = !!eval('whoopLive'); w = eval('whoopData') || {}; } catch (e) {}
+    const empty = !live && ['recovery', 'strain', 'sleep', 'hrv', 'rhr'].every((k) => w[k] == null);
+    panel.classList.toggle('wh-empty', empty);
+    let b = panel.querySelector('.wh-hand');
+    if (empty && !b) {
+      b = document.createElement('button'); b.type = 'button'; b.className = 'btn wh-hand';
+      b.textContent = 'Enter WHOOP numbers by hand';
+      b.addEventListener('click', () => { panel.classList.toggle('wh-open'); b.textContent = panel.classList.contains('wh-open') ? 'Hide' : 'Enter WHOOP numbers by hand'; });
+      const top = panel.querySelector('.whoop-top');
+      (top || panel).after(b);
+    }
+    if (!empty && b) { b.remove(); panel.classList.remove('wh-open'); }
+  },
+  boot() {
+    LeadFirst.habits();
+    try {
+      const orig = window.paintWhoop;
+      if (typeof orig === 'function' && !orig.__lf) {
+        const wrapped = function () { const r = orig.apply(this, arguments); try { LeadFirst.whoop(); } catch (e) {} return r; };
+        wrapped.__lf = 1; window.paintWhoop = wrapped;
+      }
+    } catch (e) {}
+    LeadFirst.whoop();
+    document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-tab="sleep"], [data-fn-side="sleep"], [data-fn-seg="sleep"]')) setTimeout(LeadFirst.whoop, 50); }, true);
+  }
+};
+
+/* ── Open one Big Rock ────────────────────────────────────────────────────
+ * A reminder or a widget row names a rock; tapping it should land on that
+ * rock, not just open the app. The iPhone app calls window.__flowOpen({rock})
+ * when it is already running, and loads /?rock=<id> when it was not. On
+ * Today the row is scrolled to and marked; a rock on another day is shown in
+ * the Week Compass; one that has since been deleted says so, on Today. */
+const OpenRock = {
+  find(id) {
+    try { const all = (typeof cData !== 'undefined' && cData.rocks) || {}; for (const w of Object.keys(all)) { const r = (all[w] || []).find((x) => String(x.id) === String(id)); if (r) return { w, r }; } } catch (e) {}
+    return null;
+  },
+  flash(el) {
+    if (!el) return false;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('fl-flash');
+    setTimeout(() => el.classList.remove('fl-flash'), 2600);
+    return true;
+  },
+  open(arg) {
+    const id = String((arg && arg.rock) || '');
+    if (!id) return;
+    const hit = OpenRock.find(id);
+    if (!hit) { try { Nav.go('today'); } catch (e) {} toast('That Big Rock is no longer in your week.', 'warn', 3500); return; }
+    try { Nav.go('today'); } catch (e) {}
+    setTimeout(() => {
+      if (OpenRock.flash(document.querySelector('#today-feed .td-rock[data-rockid="' + CSS.escape(id) + '"]'))) return;
+      try { Nav.go('compass'); } catch (e) {}
+      setTimeout(() => { OpenRock.flash(document.querySelector('#cGrid [data-rid="' + CSS.escape(id) + '"]')); }, 350);
+    }, 350);
+  },
+  boot() {
+    window.__flowOpen = (arg) => { try { OpenRock.open(arg || {}); } catch (e) {} };
+    const q = new URLSearchParams(location.search);
+    const rock = q.get('rock') || window.__flowPendingRock;
+    window.__flowPendingRock = null;
+    if (!rock) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    let n = 0;
+    const t = setInterval(() => {
+      if (document.documentElement.classList.contains('flow-ready') || ++n > 40) { clearInterval(t); OpenRock.open({ rock }); }
+    }, 250);
+  }
+};
+
 /* ── Phone typing and empty time boxes ───────────────────────────────── */
 const Typing = {
   isField(el) {
@@ -12096,6 +12190,8 @@ async function boot() {
   try { SetView.boot(); } catch (e) {}
   try { Typing.boot(); } catch (e) {}
   try { SheetKB.boot(); } catch (e) {}
+  try { LeadFirst.boot(); } catch (e) {}
+  try { OpenRock.boot(); } catch (e) {}
   try { BudgetFold.boot(); } catch (e) {}
   try { EmptyStat.boot(); } catch (e) {}
   if (Auth.user && !Auth.user.guest) Photo.load();
@@ -12105,7 +12201,7 @@ async function boot() {
   try {
     const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
     const back = Nav.reloadTab;
-    if (nav && nav.type === 'reload' && back && back !== 'today' && !/[?&]reset=/.test(location.search)) {
+    if (nav && nav.type === 'reload' && back && back !== 'today' && !/[?&](reset|rock)=/.test(location.search)) {
       let n = 0;
       const t = setInterval(() => {
         if (document.documentElement.classList.contains('flow-ready') || ++n > 40) {
@@ -12173,7 +12269,7 @@ async function boot() {
   Queue.flush();
 
   window.Flow = {
-    SetView, PwSheet, BudgetFold, Photo,
+    SetView, PwSheet, BudgetFold, Photo, OpenRock,
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
     Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, Focus, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,

@@ -1021,6 +1021,8 @@ async function widgetToday(store, now) {
   const LIMIT = 4;
 
   const line = (r, overdue) => ({
+    /* So a tap on the row can open this rock in the app. */
+    id: r.id != null ? String(r.id) : null,
     title: r.title,
     time: r.time || null,
     done: !!r.done,

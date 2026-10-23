@@ -255,13 +255,30 @@
         var p = plugin();
         if (!p) { h.error('unavailable'); h.end(); return; }
         live = h;
-        p.voiceStart({ locale: loc }).then(function (res) {
-          res = res || {};
-          if (res.ok === false) {
-            var had = live; live = null;
-            if (had) { had.error(String(res.error || 'unavailable')); had.end(); }
-          }
-        });
+        var fail = function (code) { var had = live; live = null; if (had) { had.error(code); had.end(); } };
+        var go = function (retry) {
+          p.voiceStart({ locale: loc }).then(function (res) {
+            res = res || {};
+            if (res.ok !== false) return;
+            var code = String(res.error || 'unavailable');
+            /* The first tap used to say "blocked" when nothing had been asked
+               yet — the shell only starts once both permissions exist. Ask on
+               that first tap instead, then try once more. A real refusal is
+               reported as one, with where to change it on an iPhone. */
+            if (code !== 'denied' || retry || typeof p.voicePermission !== 'function') { fail(code); return; }
+            Promise.resolve(p.voicePermission()).then(function (st) {
+              st = st || {};
+              var undecided = st.mic === 'undetermined' || st.speech === 'undetermined' || st.speech === 'notDetermined';
+              if (!undecided || typeof p.voiceRequest !== 'function') { fail('denied-ios'); return; }
+              Promise.resolve(p.voiceRequest()).then(function (after) {
+                after = after || {};
+                if (after.mic === 'granted' && (after.speech === 'authorized' || after.speech === 'granted')) go(true);
+                else fail('denied-ios');
+              }, function () { fail('denied-ios'); });
+            }, function () { fail(code); });
+          }, function () { fail('unavailable'); });
+        };
+        go(false);
       },
 
       stop: function () { var p = plugin(); if (p) p.voiceStop(); },
@@ -437,6 +454,9 @@
    * them; everything else gets a plain "that did not work".
    * ------------------------------------------------------------------ */
   function explain(code) {
+    if (code === 'denied-ios') {
+      return t('Dictation needs the microphone and speech recognition. Turn both on in iPhone Settings → The Flow, then try again.');
+    }
     if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'denied') {
       return t('The microphone is blocked. Allow it for this site and try again.');
     }

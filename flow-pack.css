@@ -2382,3 +2382,31 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
   html.fl-kb #flow-capture textarea{min-height:84px;max-height:calc(var(--vvh,100dvh) - 220px);}
 }
 #flow-td-priorities .flow-td-head .c.late{color:var(--f-critical,#e5484d);}
+
+/* ── Pinch-zoom is allowed again ───────────────────────────────────────
+   The page used to forbid zooming, which shuts out anybody who needs larger
+   text. With zoom on, iOS zooms into any field whose text is under 16px the
+   moment it is tapped — so on iPhone every field is at least 16px. */
+@supports (-webkit-touch-callout:none){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea{font-size:max(16px,1em)!important;}
+}
+
+/* ── Assistant connections: the manual way in, folded ──────────────── */
+#mcp-card .mcp-adv{margin-top:14px;border-top:1px solid var(--f-line,var(--border));padding-top:10px;}
+#mcp-card .mcp-adv > summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--f-muted,var(--muted));padding:6px 0;list-style:none;}
+#mcp-card .mcp-adv > summary::before{content:'▸ ';}
+#mcp-card .mcp-adv[open] > summary::before{content:'▾ ';}
+#mcp-card .mcp-inline{font-size:12.5px;padding:1px 6px;border-radius:6px;background:var(--f-surface-2,var(--card2));word-break:break-all;}
+
+/* ── Habits list first; empty WHOOP panel folded (LeadFirst) ───────── */
+#tab-habits > .stats.lf-after{margin-top:18px;}
+#whoopPanel.wh-empty:not(.wh-open) .whoop-body,
+#whoopPanel.wh-empty:not(.wh-open) #whoopManual,
+#whoopPanel.wh-empty:not(.wh-open) #whoopFoot{display:none!important;}
+#whoopPanel.wh-empty.wh-open #whoopManual{display:block!important;}
+#whoopPanel .wh-hand{margin-top:10px;}
+
+/* A rock opened from a reminder or the widget, marked for a moment. */
+.fl-flash{animation:flFlash 2.4s ease;border-radius:10px;}
+@keyframes flFlash{0%,30%{box-shadow:0 0 0 2px var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
+@media (prefers-reduced-motion:reduce){.fl-flash{animation:none;outline:2px solid var(--accent);}}

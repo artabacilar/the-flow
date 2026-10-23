@@ -1775,6 +1775,17 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   " · plus {} not counted": " · ayrıca sayılmayan {}",
   "that read was cut short; earlier figures kept": "o okuma yarıda kesildi; önceki değerler korundu",
   "the last read was cut short; earlier figures kept": "son okuma yarıda kesildi; önceki değerler korundu",
+  "🤖 Assistant connections": "🤖 Asistan bağlantıları",
+  "Assistant connections": "Asistan bağlantıları",
+  "Let Claude, ChatGPT or another assistant read your week, add Big Rocks, tick habits and reword your own lists — on this account and no other. It can add and change things; removing anything stays something you do here.": "Claude, ChatGPT ya da başka bir asistan haftanı okuyabilsin, Büyük Taş ekleyebilsin, alışkanlıkları işaretleyebilsin ve kendi listelerini yeniden yazabilsin — yalnızca bu hesapta. Ekleyip değiştirebilir; bir şeyi silmek her zaman senin yapacağın bir şey olarak kalır.",
+  "In Claude or ChatGPT, add a custom connector with this address:": "Claude ya da ChatGPT'de bu adresle özel bir bağlayıcı ekle:",
+  "It sends you here to sign in and say yes. That is all — nothing to copy.": "Seni giriş yapıp onay vermen için buraya gönderir. Hepsi bu — kopyalanacak bir şey yok.",
+  "Advanced — server address and access tokens": "Gelişmiş — sunucu adresi ve erişim anahtarları",
+  "What is this for? e.g. my script": "Bu ne için? ör. betiğim",
+  "An access token is the manual way in, for a client that cannot sign in as above, for your own scripts, or for the home-screen widget.": "Erişim anahtarı elle bağlanmanın yoludur: yukarıdaki gibi giriş yapamayan bir istemci, kendi betiklerin ya da ana ekran widget'ı için.",
+  "Enter WHOOP numbers by hand": "WHOOP değerlerini elle gir",
+  "Dictation needs the microphone and speech recognition. Turn both on in iPhone Settings → The Flow, then try again.": "Dikte için mikrofon ve konuşma tanıma gerekli. İkisini de iPhone Ayarlar → The Flow'dan aç ve tekrar dene.",
+  "That Big Rock is no longer in your week.": "O Büyük Taş artık haftanda yok.",
 /* DICT-END */
 }, RULES);
 

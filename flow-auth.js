@@ -861,7 +861,7 @@ async function gate(req, res) {
     if (!tok) {
       const rm = oauth ? oauth.originOf(req) + '/.well-known/oauth-protected-resource' : '';
       res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"' + (rm ? ', resource_metadata="' + rm + '"' : ''));
-      json(res, 401, { error: 'Connect this from Settings → Connect to Claude, or sign in through the app when your assistant asks.' });
+      json(res, 401, { error: 'Connect this from Settings → Assistant connections, or sign in through the app when your assistant asks.' });
       return true;
     }
     /* Two kinds of credential reach here: a personal token somebody pasted,
@@ -904,7 +904,7 @@ async function gate(req, res) {
     }
     if (!wwho) {
       res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
-      json(res, 401, { error: 'The widget needs its own token. Open Settings \u2192 Connect to Claude in the app and add one.' });
+      json(res, 401, { error: 'The widget needs its own token. Open Settings \u2192 Assistant connections \u2192 Advanced in the app and add one.' });
       return true;
     }
     req.__flowUid = wwho.id;

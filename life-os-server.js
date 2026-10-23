@@ -653,8 +653,9 @@ const SUPPORT_HTML = legalPage('Support',
      roughly every fifteen minutes; iOS decides exactly when.</p>
 
   <h2>Connecting an assistant</h2>
-  <p>Settings → Connect to Claude. The assistant can read your Flow and cannot change anything,
-     and you can disconnect it at any time from the same place.</p>
+  <p>Settings → Assistant connections. The assistant can read your Flow and add or reword
+     items in it, but it cannot delete anything, and you can disconnect it at any time from the
+     same place.</p>
 
   <h2>Deleting your account</h2>
   <p>Tap your photo → Privacy &amp; security → <b>Delete my account and everything in it</b>. It is immediate and
