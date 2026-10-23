@@ -1751,6 +1751,20 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Bank & statements": "Banka ve ekstreler",
   "Send things in from anywhere": "Her yerden bir şeyler gönder",
   "Time (optional)": "Saat (isteğe bağlı)",
+  "{} budgeted · {} income": "{} bütçe · {} gelir",
+  "{} budgeted": "{} bütçe",
+  "no data yet": "henüz veri yok",
+  "Change photo": "Fotoğrafı değiştir",
+  "Add a photo": "Fotoğraf ekle",
+  "Photo updated ✓": "Fotoğraf güncellendi ✓",
+  "Photo removed": "Fotoğraf kaldırıldı",
+  "At least 10 characters. Other devices stay signed in.": "En az 10 karakter. Diğer cihazlar oturumda kalır.",
+  "Current password": "Mevcut şifre",
+  "New password, again": "Yeni şifre, tekrar",
+  "Show passwords": "Şifreleri göster",
+  "Someone locked out?": "Biri dışarıda mı kaldı?",
+  "Make reset link": "Sıfırlama bağlantısı oluştur",
+  "Their email address": "E-posta adresi",
 /* DICT-END */
 }, RULES);
 

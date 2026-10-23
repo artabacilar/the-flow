@@ -3430,6 +3430,14 @@ const SettingsUI = {
              the moment they can no longer sign in to come and make them, so
              this line has to be visible before anything goes wrong. -->
         <p class="flow-sub" id="set-rcstat" style="margin-top:8px">Checking your recovery codes…</p>
+        ${Auth.user && Auth.user.owner ? `
+        <div class="pw-owner" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--f-line)">
+          <div class="flow-label">Someone locked out?</div>
+          <p class="flow-sub" style="margin:6px 0 10px">Make a one-time link that lets them choose a new password. It works for 30 minutes and signs them out everywhere else. Send it to them yourself.</p>
+          <div class="flow-row"><input class="flow-in grow" id="pw-for" type="email" placeholder="Their email address" autocomplete="off">
+            <button class="flow-btn" data-act2="resetlink">Make reset link</button></div>
+          <div class="mcp-url" id="pw-linkrow" hidden style="margin-top:8px"><code id="pw-link"></code><button type="button" class="flow-btn sm primary" data-act2="copyreset">Copy</button></div>
+        </div>` : ''}
         <!-- An account you can open but not close is a hostage. This removes
              everything rather than hiding it, which is why it asks twice. -->
         <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--f-line)">
@@ -3663,13 +3671,20 @@ const SettingsUI = {
         } catch (e) { toast(e.message, 'err', 5000); }
         return;
       }
-      if (a === 'changepw') {
-        const current = prompt('Your current password:');
-        if (current == null) return;
-        const next = prompt('New password (at least 10 characters):');
-        if (next == null) return;
-        try { await Auth.post('/api/auth/password', { current, next }); toast('Password changed ✓'); }
-        catch (e) { toast(e.message, 'err', 5000); }
+      if (a === 'changepw') { PwSheet.open(); return; }
+      if (a === 'resetlink') {
+        const who = (section.querySelector('#pw-for') || {}).value || '';
+        if (!who.trim()) { toast('Type their email address first.', 'err'); return; }
+        try {
+          const j = await Auth.post('/api/auth/reset/link', { email: who.trim() });
+          section.querySelector('#pw-link').textContent = j.link;
+          section.querySelector('#pw-linkrow').hidden = false;
+        } catch (e) { toast(e.message, 'err', 5000); }
+        return;
+      }
+      if (a === 'copyreset') {
+        const t = (section.querySelector('#pw-link') || {}).textContent || '';
+        try { await navigator.clipboard.writeText(t); toast('Link copied ✓'); } catch (e) { toast('Select the link and copy it.', 'err'); }
         return;
       }
         if (a === 'formDonut' || a === 'formBars') {
@@ -6316,6 +6331,7 @@ const Auth = {
         <button class="flow-btn ghost fa-alt" id="fa-alt">${firstRun ? '' : 'Create an account instead'}</button>
         <button class="flow-btn ghost" id="fa-forgot" ${firstRun ? 'hidden' : ''} style="margin-top:4px">Forgot your password?</button>
         <button class="flow-btn ghost" id="fa-mail" hidden style="margin-top:4px">Email me a link instead</button>
+        <p class="fa-fine" id="fa-nomail" hidden style="margin:8px 0 0">No recovery codes? Ask whoever runs this Flow for a reset link — they can make one for you in Privacy &amp; security.</p>
         <div class="fa-or"><span>or</span></div>
         <button class="flow-btn ghost" id="fa-guest">Have a look around first</button>
         <p class="fa-fine">No account, nothing saved to the server. You can keep your work if you sign up afterwards.</p>
@@ -6323,6 +6339,13 @@ const Auth = {
     document.body.appendChild(el);
 
     let mode = firstRun ? 'signup' : 'login';
+    /* null until the server answers; false means no mail provider here, so
+       the email button is not offered and the way out is said instead. */
+    let mailOk = null;
+    fetch('/api/auth/reset/available', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j) { mailOk = !!j.mail; if (mode === 'recover') setMode('recover'); } })
+      .catch(() => {});
     const err = $('#fa-err', el);
     const setMode = (m) => {
       mode = m;
@@ -6351,8 +6374,10 @@ const Auth = {
       }
       $('#fa-rcwrap', el).hidden = m !== 'recover';
       const mailb = $('#fa-mail', el);
-      if (mailb) { mailb.hidden = m !== 'recover'; mailb.disabled = false;
+      if (mailb) { mailb.hidden = m !== 'recover' || mailOk === false; mailb.disabled = false;
                    mailb.textContent = 'Email me a link instead'; }
+      const nomail = $('#fa-nomail', el);
+      if (nomail) nomail.hidden = m !== 'recover' || mailOk !== false;
       $('#fa-alt', el).hidden = m === 'recover';
       const forgot = $('#fa-forgot', el);
       if (forgot) {
@@ -8389,6 +8414,64 @@ const Trial = {
  * Today and in the Journal: diagnostics on the screens meant for the day.
  * They live here now, together, and the host's updateDbIndicator() and
  * S.saved() write into these ids exactly as they did the old ones. */
+/* ── Change password, in the app ─────────────────────────────────────────
+ * It used to be two browser prompts: the password shown in plain text, no
+ * second box to catch a typo, and inside the phone app a dialog that looked
+ * nothing like the rest of it. A sheet with real password fields instead. */
+const PwSheet = {
+  open() {
+    let wrap = document.getElementById('flow-pw');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'flow-pw'; wrap.className = 'fn-sheetwrap';
+      wrap.setAttribute('data-flow-no-chip', '1');   /* a settings checkbox, not a task */
+      wrap.innerHTML =
+        '<div class="fn-scrim" data-pw-close="1"></div>' +
+        '<div class="fn-sheet" role="dialog" aria-label="Change password" aria-modal="true">' +
+          '<div class="fn-grab" data-pw-close="1"></div>' +
+          '<button type="button" class="fn-capture-close" data-pw-close="1" aria-label="Close">×</button>' +
+          '<h4>Change password</h4>' +
+          '<div class="fn-sub">At least 10 characters. Other devices stay signed in.</div>' +
+          '<div class="fa-err" id="pw-err" hidden></div>' +
+          '<input class="flow-in" id="pw-cur" type="password" autocomplete="current-password" placeholder="Current password">' +
+          '<input class="flow-in" id="pw-new" type="password" autocomplete="new-password" placeholder="New password">' +
+          '<input class="flow-in" id="pw-new2" type="password" autocomplete="new-password" placeholder="New password, again">' +
+          '<label class="pw-show"><input type="checkbox" id="pw-show"> Show passwords</label>' +
+          '<div class="pl-acts"><button type="button" class="flow-btn primary" id="pw-go">Change password</button></div>' +
+        '</div>';
+      document.body.appendChild(wrap);
+      const $w = (q) => wrap.querySelector(q);
+      const close = () => { wrap.classList.remove('on'); ['#pw-cur', '#pw-new', '#pw-new2'].forEach((q) => { $w(q).value = ''; }); };
+      wrap.querySelectorAll('[data-pw-close]').forEach((e) => e.addEventListener('click', close));
+      $w('#pw-show').addEventListener('change', (e) => {
+        ['#pw-cur', '#pw-new', '#pw-new2'].forEach((q) => { $w(q).type = e.target.checked ? 'text' : 'password'; });
+      });
+      const go = async () => {
+        const err = $w('#pw-err'); err.hidden = true;
+        const say = (m) => { err.textContent = m; err.hidden = false; };
+        const cur = $w('#pw-cur').value, nx = $w('#pw-new').value, nx2 = $w('#pw-new2').value;
+        if (!cur) return say('Type your current password.');
+        if (nx.length < 10) return say('Use at least 10 characters for the new password.');
+        if (nx !== nx2) return say('The two new passwords are not the same.');
+        if (nx === cur) return say('That is the password you already have.');
+        const btn = $w('#pw-go'); btn.disabled = true;
+        try {
+          await Auth.post('/api/auth/password', { current: cur, next: nx });
+          close(); toast('Password changed ✓');
+        } catch (e) { say(e.message); }
+        finally { btn.disabled = false; }
+      };
+      $w('#pw-go').addEventListener('click', go);
+      wrap.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); if (e.key === 'Escape') close(); });
+    }
+    wrap.querySelector('#pw-show').checked = false;
+    ['#pw-cur', '#pw-new', '#pw-new2'].forEach((q) => { wrap.querySelector(q).type = 'password'; });
+    wrap.querySelector('#pw-err').hidden = true;
+    wrap.classList.add('on');
+    setTimeout(() => { try { wrap.querySelector('#pw-cur').focus(); } catch (e) {} }, 80);
+  }
+};
+
 /* ── Settings, in three rooms ────────────────────────────────────────────
  * Sixteen cards on one page made Settings the longest screen in the app, and
  * the things you look for once a year (password, recovery codes, a backup)
@@ -8467,6 +8550,140 @@ const SetView = {
       const t = e.target.closest && e.target.closest('.tab[data-tab="settings"], [data-fn-side="settings"], [data-fn-seg="settings"]');
       if (t && !SetView.opening && SetView.view !== 'main') { SetView.view = 'main'; setTimeout(() => SetView.apply(), 0); }
     }, true);
+  }
+};
+
+/* ── Finances: the budget form folds away once there is a budget ─────────
+ * Nine number boxes stood between the totals and the spending every time the
+ * tab opened, for something set once a month. With a budget saved the card
+ * is one line — what is budgeted, and Edit — and opens on a tap. With none
+ * saved it stays open, because then it is the first thing to do. */
+const BudgetFold = {
+  box() { return document.querySelector('#tab-finance .budget-setup'); },
+  totals() {
+    const box = BudgetFold.box(); if (!box) return null;
+    const num = (el) => parseFloat(el && el.value) || 0;
+    const inc = num(box.querySelector('#bi_income'));
+    let budget = 0;
+    box.querySelectorAll('#budgetInputs input').forEach((el) => { if (el.id !== 'bi_income') budget += num(el); });
+    const lab = (box.querySelector('#budgetInputs label') || {}).textContent || '';
+    const cur = (lab.match(/\(([^)]{1,3})\)/) || [])[1] || '';
+    return { inc, budget, cur };
+  },
+  /* Whether a budget is saved is decided when the tab loads and when Save is
+     pressed — never while typing, or the first digit typed into an empty
+     form would fold it shut under your thumb. */
+  paint(decide) {
+    const box = BudgetFold.box(); if (!box) return;
+    const t = BudgetFold.totals();
+    if (decide) box.classList.toggle('bf-set', !!(t && (t.inc || t.budget)));
+    const set = box.classList.contains('bf-set');
+    const sum = box.querySelector('.bf-sum');
+    const fmt = (n) => t.cur + Math.round(n).toLocaleString();
+    if (sum) sum.textContent = set ? fmt(t.budget) + ' budgeted' + (t.inc ? ' · ' + fmt(t.inc) + ' income' : '') : '';
+    const tog = box.querySelector('.bf-tog');
+    if (tog) { tog.hidden = !set; tog.textContent = box.classList.contains('bf-open') ? 'Done' : 'Edit'; tog.setAttribute('aria-expanded', box.classList.contains('bf-open') ? 'true' : 'false'); }
+  },
+  boot() {
+    const box = BudgetFold.box();
+    if (!box || box.dataset.fold) return;
+    box.dataset.fold = '1';
+    const h = box.querySelector('h3');
+    if (!h) return;
+    const head = document.createElement('div'); head.className = 'bf-head';
+    h.parentNode.insertBefore(head, h); head.appendChild(h);
+    const sum = document.createElement('div'); sum.className = 'bf-sum'; head.appendChild(sum);
+    const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'bf-tog'; head.appendChild(tog);
+    tog.addEventListener('click', () => { box.classList.toggle('bf-open'); BudgetFold.paint(); });
+    const save = box.querySelector('#fnSaveBudget');
+    if (save) save.addEventListener('click', () => setTimeout(() => { box.classList.remove('bf-open'); BudgetFold.paint(true); }, 30));
+    box.addEventListener('input', () => BudgetFold.paint());
+    const inputs = box.querySelector('#budgetInputs');
+    if (inputs && window.MutationObserver) new MutationObserver(() => BudgetFold.paint(true)).observe(inputs, { childList: true });
+    BudgetFold.paint(true);
+  }
+};
+
+/* ── An empty number looks empty ─────────────────────────────────────────
+ * A stat with no data shows "—". Drawn at 32px in the stat's own colour, the
+ * dash read as a coloured bar — a reading, not an absence. Empty values are
+ * marked so they draw as a quiet grey dash with "no data yet" under it. */
+const EmptyStat = {
+  SEL: '.stat .num, .wm-num, .whoop-ring-num',
+  mark(el) {
+    const t = (el.textContent || '').trim();
+    const empty = t === '' || t === '—' || t === '–' || t === '-';
+    el.classList.toggle('is-empty', empty);
+    if (empty && !el.hasAttribute('data-empty')) el.setAttribute('data-empty', 'no data yet');
+  },
+  boot() {
+    document.querySelectorAll(EmptyStat.SEL).forEach(EmptyStat.mark);
+    if (!window.MutationObserver) return;
+    const mo = new MutationObserver((ms) => {
+      for (const m of ms) {
+        const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+        if (el && el.matches && el.matches(EmptyStat.SEL)) EmptyStat.mark(el);
+        else if (el && el.querySelectorAll) el.querySelectorAll(EmptyStat.SEL).forEach(EmptyStat.mark);
+      }
+    });
+    document.querySelectorAll('.section, .flow-section').forEach((sec) => mo.observe(sec, { childList: true, characterData: true, subtree: true }));
+  }
+};
+
+/* ── Your photo, without Google ──────────────────────────────────────────
+ * The face in the corner used to appear only once Google was connected. Now
+ * it can be any picture: cropped square, shrunk to 320px and kept with the
+ * account (about 20 KB), so every device shows the same face. */
+const Photo = {
+  KEY: 'flow:photo',
+  data: null,
+  async load() {
+    try { Photo.data = await DB.get(Photo.KEY, null); } catch (e) {}
+    try { Connect.paintFace(); } catch (e) {}
+  },
+  shrink(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const S = 320, side = Math.min(img.naturalWidth, img.naturalHeight);
+        const c = document.createElement('canvas'); c.width = S; c.height = S;
+        const g = c.getContext('2d');
+        g.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S, S);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a picture this device can read.')); };
+      img.src = url;
+    });
+  },
+  pick() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', async () => {
+      const f = inp.files && inp.files[0];
+      inp.remove();
+      if (!f) return;
+      try {
+        await Photo.use(await Photo.shrink(f));
+        toast('Photo updated ✓');
+        if (Nav.menuEl && Nav.menuEl.classList.contains('on')) Nav.openMenu();
+      } catch (e) { toast(e.message || 'Could not use that picture.', 'err', 4000); }
+    });
+    inp.click();
+  },
+  async use(data) {
+    await DB.set(Photo.KEY, data);
+    Photo.data = data;
+    Connect.paintFace();
+  },
+  async clear() {
+    try { await DB.set(Photo.KEY, null); } catch (e) {}
+    Photo.data = null;
+    Connect.paintFace();
+    toast('Photo removed');
+    if (Nav.menuEl && Nav.menuEl.classList.contains('on')) Nav.openMenu();
   }
 };
 
@@ -8616,6 +8833,8 @@ const Connect = {
   },
 
   photo() {
+    /* A photo you chose yourself wins over the one Google lends. */
+    try { if (Photo.data) return Photo.data; } catch (e) {}
     const g = Connect.list.find(c => c.connected && c.photo);
     return g ? g.photo : null;
   },
@@ -9129,7 +9348,10 @@ const Nav = {
     /* Focus is what you are steering by. Brainstorm and Time are not that —
        one is where thinking gets put down, the other is where hours get
        counted. Both belong with the rest of what you keep a record of. */
-    { id: 'focus', label: 'Focus', icon: 'target',
+    /* Labelled Plan, not Focus: the Focus tile on Today is the timer, and
+       one word meaning two places sent people to the wrong one. The id stays
+       'focus' so remembered positions and links keep working. */
+    { id: 'focus', label: 'Plan', icon: 'compass',
       tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
     /* Mood lives inside Sleep now: how you slept and how you feel are the
        same morning question, and asking it twice in two places got it
@@ -9160,7 +9382,7 @@ const Nav = {
   /* Sidebar order and headings. */
   SIDE: [
     { head: '',       tabs: ['today'] },
-    { head: 'Focus',  tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
+    { head: 'Plan',   tabs: ['northstar', 'quad', 'compass', 'abko', 'dtc'] },
     { head: 'Body',   tabs: ['training', 'sleep', 'habits'] },
     { head: 'Record', tabs: ['journal', 'finance', 'ask'] }
   ],
@@ -9375,9 +9597,19 @@ const Nav = {
     const u = (typeof Auth !== 'undefined' && Auth.user) || {};
     const name = u.name || Settings.get('displayName') || '';
     const src = (() => { try { return Connect.photo(); } catch (e) { return null; } })();
-    document.getElementById('fn-me').innerHTML =
-      (src ? '<img class="fn-me-face" alt="" src="' + esc(src) + '">' : '<span class="fn-me-face">' + esc(Nav.initial()) + '</span>') +
-      '<div class="fn-me-t"><b>' + esc(name || 'You') + '</b>' + (u.email ? '<span>' + esc(u.email) + '</span>' : '') + '</div>';
+    const own = (() => { try { return !!Photo.data; } catch (e) { return false; } })();
+    const me = document.getElementById('fn-me');
+    me.innerHTML =
+      '<button type="button" class="fn-me-pic" data-me="pick" aria-label="Change photo">' +
+        (src ? '<img class="fn-me-face" alt="" src="' + esc(src) + '">' : '<span class="fn-me-face">' + esc(Nav.initial()) + '</span>') +
+        '<i class="fn-me-cam" aria-hidden="true">✎</i></button>' +
+      '<div class="fn-me-t"><b>' + esc(name || 'You') + '</b>' + (u.email ? '<span>' + esc(u.email) + '</span>' : '') +
+        (u.guest ? '' : '<div class="fn-me-acts"><button type="button" data-me="pick">' + (src ? 'Change photo' : 'Add a photo') + '</button>' +
+        (own ? '<button type="button" data-me="clear">Remove</button>' : '') + '</div>') + '</div>';
+    me.querySelectorAll('[data-me]').forEach((b) => b.addEventListener('click', () => {
+      if (u.guest) return;
+      if (b.getAttribute('data-me') === 'clear') Photo.clear(); else Photo.pick();
+    }));
     const grid = document.getElementById('fn-menugrid');
     const row = (attr, icon, label, sub, cls) =>
       '<button type="button" ' + attr + (cls ? ' class="' + cls + '"' : '') + '>' + Nav.svg(icon) +
@@ -9696,6 +9928,9 @@ const Nav = {
 
     const g = Nav.groupOf(cur);
     if (g && g.tabs.length > 1 && !initial) Nav.last[g.id] = cur;
+    /* Remembered for this window only, so a reload — pull to refresh, or a
+       sync that found something new — comes back to the same tab, not Today. */
+    if (!initial) { try { sessionStorage.setItem('fl:tab', cur); } catch (e) {} }
 
     const bar = document.getElementById('flow-tabbar');
     if (bar) bar.querySelectorAll('[data-fn-group]').forEach(b =>
@@ -11677,11 +11912,31 @@ async function boot() {
      no server module, no strip, no inbox, and the rest of the app is unchanged. */
   /* Navigation first. It needs the pills, which exist by now, and nothing
      else — so it must not queue behind two network calls. */
+  try { Nav.reloadTab = sessionStorage.getItem('fl:tab'); } catch (e) {}
   try { Nav.install(); } catch (e) { console.warn('[Flow] nav', e); }
   /* Not awaited: the photo arrives when it arrives, and nothing waits on it. */
   if (Auth.user && !Auth.user.guest) Connect.boot().catch(() => {});
   try { SetView.boot(); } catch (e) {}
   try { Typing.boot(); } catch (e) {}
+  try { BudgetFold.boot(); } catch (e) {}
+  try { EmptyStat.boot(); } catch (e) {}
+  if (Auth.user && !Auth.user.guest) Photo.load();
+  /* A reload puts you back where you were. Only a reload: a fresh open of
+     the app still starts on Today. Read before anything paints (the first
+     paint lands on Today and would overwrite it), applied once the app is up. */
+  try {
+    const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    const back = Nav.reloadTab;
+    if (nav && nav.type === 'reload' && back && back !== 'today' && !/[?&]reset=/.test(location.search)) {
+      let n = 0;
+      const t = setInterval(() => {
+        if (document.documentElement.classList.contains('flow-ready') || ++n > 40) {
+          clearInterval(t);
+          if (Nav.current() === 'today' && Nav.pill(back)) Nav.go(back);
+        }
+      }, 250);
+    }
+  } catch (e) {}
   if (Auth.user && !Auth.user.guest) { try { Notify.boot(); } catch (e) { console.warn('[Flow] notify', e); } }
   try { Sections.apply(); } catch (e) { console.warn('[Flow] sections', e); }
   if (Auth.user && !Auth.user.guest) Sections.migrate().catch((e) => console.warn('[Flow] sections', e));
@@ -11740,7 +11995,7 @@ async function boot() {
   Queue.flush();
 
   window.Flow = {
-    SetView,
+    SetView, PwSheet, BudgetFold, Photo,
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
     Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, Focus, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,

@@ -923,8 +923,8 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
 .fn-sheetwrap .fn-grid button:active{transform:scale(.96);}
 
 /* A visible dismissal target on both the phone sheet and desktop dialog. */
-#flow-capture .fn-sheet > h4, #flow-capture .fn-sheet > .fn-sub, #flow-focus .fn-sheet > h4, #flow-focus .fn-sheet > .fn-sub, #flow-plan .fn-sheet > h4, #flow-plan .fn-sheet > .fn-sub, #flow-review .fn-sheet > h4, #flow-review .fn-sheet > .fn-sub { padding-right: 56px; }
-#flow-capture .fn-capture-close, #flow-focus .fn-capture-close, #flow-plan .fn-capture-close, #flow-review .fn-capture-close {
+#flow-pw .fn-sheet > h4, #flow-pw .fn-sheet > .fn-sub, #flow-capture .fn-sheet > h4, #flow-capture .fn-sheet > .fn-sub, #flow-focus .fn-sheet > h4, #flow-focus .fn-sheet > .fn-sub, #flow-plan .fn-sheet > h4, #flow-plan .fn-sheet > .fn-sub, #flow-review .fn-sheet > h4, #flow-review .fn-sheet > .fn-sub { padding-right: 56px; }
+#flow-pw .fn-capture-close, #flow-capture .fn-capture-close, #flow-focus .fn-capture-close, #flow-plan .fn-capture-close, #flow-review .fn-capture-close {
   position: absolute; top: 18px; right: 14px; width: 44px; height: 44px;
   display: grid; place-items: center; padding: 0;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -2317,3 +2317,33 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
 /* ── Review week: fixes you can hit with a thumb ───────────────────── */
 #flow-review .td-fix{gap:6px;flex-wrap:wrap;}
 #flow-review .td-fix button{min-height:34px;padding:6px 12px;font-size:13px;}
+
+/* ── Change password sheet ─────────────────────────────────────────── */
+#flow-pw .flow-in{width:100%;box-sizing:border-box;margin-top:10px;min-height:44px;font-size:16px;}
+#flow-pw .fa-err{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.4);color:#e5484d;font-weight:600;border-radius:10px;padding:9px 12px;font-size:13px;margin:4px 0 2px;}
+#flow-pw .pw-show{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:12px 2px 4px;}
+#flow-pw .pl-acts{margin-top:12px;}
+#pw-linkrow code{word-break:break-all;}
+
+/* ── Finances: budget setup folds once set ─────────────────────────── */
+.budget-setup .bf-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.budget-setup .bf-head h3{margin:0!important;flex:1 1 auto;}
+.budget-setup .bf-sum{font-size:13px;color:var(--muted);}
+.budget-setup .bf-tog{font:inherit;font-size:13px;font-weight:600;padding:6px 14px;min-height:34px;border-radius:999px;border:1px solid var(--border);background:var(--card2);color:var(--text);cursor:pointer;}
+.budget-setup .bf-head + .budget-inputs{margin-top:12px;}
+.budget-setup.bf-set:not(.bf-open) .budget-inputs,
+.budget-setup.bf-set:not(.bf-open) #fnSaveBudget{display:none;}
+@media (max-width:760px){ .budget-setup .bf-sum{flex-basis:100%;order:3;} }
+
+/* ── Empty stats: a grey dash, not a coloured bar ──────────────────── */
+.stat .num.is-empty,.wm-num.is-empty,.whoop-ring-num.is-empty{color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important;background:none!important;}
+.stat .num.is-empty::after,.wm-num.is-empty::after{content:attr(data-empty);display:block;font-size:10.5px;font-weight:600;letter-spacing:.02em;margin-top:2px;}
+
+/* ── Photo in the profile menu ─────────────────────────────────────── */
+#flow-menu .fn-me-pic{position:relative;padding:0;border:0;background:none;cursor:pointer;border-radius:50%;flex:0 0 auto;-webkit-tap-highlight-color:transparent;}
+#flow-menu .fn-me-cam{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  font-style:normal;font-size:11px;background:var(--card);color:var(--text);border:1px solid var(--border);}
+#flow-menu .fn-me-acts{display:flex;gap:12px;margin-top:4px;}
+#flow-menu .fn-me-acts button{padding:0;border:0;background:none;font:inherit;font-size:12.5px;font-weight:600;color:var(--accent);cursor:pointer;}
+
+#pw-linkrow[hidden]{display:none!important;}

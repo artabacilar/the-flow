@@ -1678,6 +1678,31 @@ async function gate(req, res) {
     return true;
   }
 
+  /* Whether "email me a link" can work here — so the sign-in screen offers
+     it only when it is real, and says what to do instead when it is not. */
+  if (p === '/api/auth/reset/available') {
+    json(res, 200, { ok: true, mail: MAIL.ready() });
+    return true;
+  }
+
+  /* The owner can make a one-time reset link for somebody on this Flow and
+     hand it over however they like — the way back in when email is not set
+     up and the person never kept recovery codes. Same token, same 30 minutes,
+     same "ends every other session" as the emailed link. */
+  if (p === '/api/auth/reset/link' && req.method === 'POST') {
+    const me = await currentUser(req);
+    if (!me) return json(res, 401, { error: 'Sign in first.' }), true;
+    if (!me.owner) return json(res, 403, { error: 'Only the owner of this Flow can make reset links.' }), true;
+    const b = safeParse(await readBody(req));
+    const email = String(b.email || '').trim().toLowerCase();
+    const users = await getJSON(USERS_KEY, {});
+    if (!users[email]) return json(res, 404, { error: 'Nobody here has that email address.' }), true;
+    const token = crypto.randomBytes(32).toString('hex');
+    await setJSON(RESET_TOK(token), { email, expires: Date.now() + RESET_TTL_MIN * 60000, by: me.id });
+    json(res, 200, { ok: true, link: ORIGIN() + '/?reset=' + token, minutes: RESET_TTL_MIN });
+    return true;
+  }
+
   if (p === '/api/auth/reset' && req.method === 'POST') {
     const b = safeParse(await readBody(req));
     const email = String(b.email || '').trim().toLowerCase();
