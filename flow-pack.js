@@ -7936,11 +7936,23 @@ const Meetings = {
       return '<p>' + Meetings.inline(l) + '</p>';
     }).join('').replace(/(<li>.*?<\/li>)+/g, (m) => '<ul>' + m + '</ul>');
   },
-  /* Bold, and Fathom's [moment](url?timestamp=59.0) links, which open the
-     recording at that second — the one part of the summary worth a tap. */
+  /* Bold, and Fathom's [moment](url?timestamp=59.0) links. The words stay
+     plain, readable text; the link becomes a small "▶ 29:22" after them that
+     opens the recording at that second. A whole paragraph drawn as an
+     underlined link was hard to read, and a long one (over 200 characters)
+     did not match at all and showed its raw markdown and URL instead. */
   inline(t) {
+    const ts = (url) => {
+      const m = /[?&;]timestamp=(\d+(?:\.\d+)?)/.exec(url);   /* &amp; once escaped */
+      if (!m) return 'Open';
+      const sec = Math.floor(parseFloat(m[1])), h = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
+      return (h ? h + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0');
+    };
     return esc(t)
-      .replace(/\[([^\]]{1,200})\]\((https?:\/\/[^)\s]+)\)/g, (m, txt, url) => /^https:\/\/(www\.)?fathom\.video\//.test(url) ? '<a class="flow-link" href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>' : txt)
+      .replace(/\[((?:[^\[\]]|\[[^\[\]]*\]){1,2000}?)\]\((https?:\/\/[^)\s]+)\)/g, (m, txt, url) =>
+        /^https:\/\/(www\.)?fathom\.video\//.test(url)
+          ? txt + ' <a class="td-ts" href="' + url + '" target="_blank" rel="noopener" aria-label="Play this moment">▶ ' + ts(url) + '</a>'
+          : txt)
       .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   },
   /* The meetings live in the account; a rock filed from one on another

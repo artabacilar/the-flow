@@ -2347,3 +2347,29 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
 #flow-menu .fn-me-acts button{padding:0;border:0;background:none;font:inherit;font-size:12.5px;font-weight:600;color:var(--accent);cursor:pointer;}
 
 #pw-linkrow[hidden]{display:none!important;}
+
+/* ── Today rows never push past the card ───────────────────────────────
+   A rock's title column had no min-width, so one long unbroken word — a
+   recording URL in its notes — widened the row past the card on a phone,
+   cutting the title and hiding the day on the right. */
+.td-rock .rk-title{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:normal;}
+.td-rock .rk-meta{flex:0 0 auto;}
+.td-meet,.td-meet-body{min-width:0;max-width:100%;overflow-wrap:anywhere;box-sizing:border-box;}
+.td-meet-body a{overflow-wrap:anywhere;}
+.td-meet-body{font-size:13px;line-height:1.5;}
+.td-meet-body li{margin:4px 0;}
+/* A moment in the recording: a small chip after the sentence. */
+.td-ts{display:inline-block;margin-left:4px;padding:0 7px;border-radius:999px;font-size:11px;font-weight:700;line-height:18px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;text-decoration:none!important;
+  color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);vertical-align:1px;}
+/* When the notes are open on a phone they use the row's full width, not
+   just the column beside the dot. */
+@media (max-width:760px){
+  .td-rock:has(.td-meet-body:not([hidden])){flex-wrap:wrap;}
+  .td-rock:has(.td-meet-body:not([hidden])) .rk-title{flex-basis:calc(100% - 24px);}
+  .td-rock:has(.td-meet-body:not([hidden])) .rk-meta{margin-left:24px;}
+}
+/* With the notes open the row is tall: keep the dot beside the title, not
+   floating halfway down the notes. */
+.td-rock:has(.td-meet-body:not([hidden])){align-items:flex-start;}
+.td-rock:has(.td-meet-body:not([hidden])) > .dot{margin-top:8px;}
