@@ -5415,8 +5415,10 @@ const TodayPlus = {
           '<div class="fn-sub">One thing that has to happen today, with its time. It goes on today\'s calendar.</div>' +
           '<input class="flow-in" id="pl-title" placeholder="What has to happen today?" maxlength="200" autocomplete="off">' +
           '<div class="pl-row"><input class="flow-in" type="time" id="pl-time"><select class="flow-in" id="pl-prio"><option value="high">Must</option><option value="med" selected>Should</option><option value="low">Could</option></select></div>' +
-          '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn ghost" data-pl="week">Open the week instead</button></div>' +
+          '<div class="pl-acts"><button type="button" class="flow-btn primary" data-pl="add">Add to today</button><button type="button" class="flow-btn" data-pl="weekpick">Add to the week ▾</button></div>' +
+          '<div class="pl-days" id="pl-days" hidden></div>' +
           '<div class="pl-list" id="pl-list"></div>' +
+          '<button type="button" class="pl-link" data-pl="week">Open Week Compass</button>' +
         '</div>';
       document.body.appendChild(wrap);
       /* A thing for today, with a time: it goes on today's calendar — the
@@ -5435,19 +5437,57 @@ const TodayPlus = {
         toast('On today ✓', null, 1400);
         inp.focus();
       };
+      /* Add to the week: pick the day here, and it is a Big Rock on that
+         day — the week's list, not today's calendar. */
+      const addToWeek = (dow) => {
+        const inp = wrap.querySelector('#pl-title');
+        const title = String(inp.value || '').trim();
+        if (!title) { inp.focus(); return; }
+        if (typeof cData === 'undefined' || !cData || typeof cSave !== 'function') { toast('Could not reach your week.', 'err'); return; }
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        const wid = WeekLoop.wid(d);
+        (cData.rocks[wid] = cData.rocks[wid] || []).push({
+          id: Date.now().toString(36) + Math.floor(Math.random() * 1e4), title, role: '', day: dow,
+          time: wrap.querySelector('#pl-time').value || '', end: '', prio: wrap.querySelector('#pl-prio').value || 'med', note: '', done: false
+        });
+        cSave();
+        const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        try { if (typeof J === 'function') J('planning', '🪨 Big rock for ' + names[dow] + ': ' + title); } catch (e) {}
+        inp.value = ''; wrap.querySelector('#pl-time').value = '';
+        wrap.querySelector('#pl-days').hidden = true;
+        TodayFix.redraw();
+        TodayPlus.planList();
+        toast('On ' + names[dow] + ' as a Big Rock ✓', null, 1600);
+        inp.focus();
+      };
+      const paintDays = () => {
+        const box = wrap.querySelector('#pl-days');
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        const todayDow = WeekLoop.dow(d);
+        const mon = new Date(d); mon.setDate(d.getDate() - todayDow);
+        box.innerHTML = '<div class="flow-label">Which day this week?</div><div class="pl-daychips">' + [0, 1, 2, 3, 4, 5, 6].map((i) => {
+          const x = new Date(mon); x.setDate(mon.getDate() + i);
+          return '<button type="button" data-pl-day="' + i + '" class="' + (i === todayDow ? 'today' : i < todayDow ? 'past' : '') + '"><b>' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i] + '</b><small>' + x.getDate() + '</small></button>';
+        }).join('') + '</div>';
+      };
       wrap.addEventListener('click', async (e) => {
         if (e.target.closest('[data-pl-close]')) { wrap.classList.remove('on'); return; }
         const rm = e.target.closest('[data-pl-rm]');
         if (rm) { try { Schedule.remove(rm.getAttribute('data-pl-rm')); await Schedule.saveNow(); } catch (e2) {} try { ConnectApps.calendarPaint(); } catch (e2) {} TodayPlus.planList(); return; }
+        const day = e.target.closest('[data-pl-day]');
+        if (day) { addToWeek(Number(day.getAttribute('data-pl-day'))); return; }
         const b = e.target.closest('[data-pl]');
         if (!b) return;
-        if (b.getAttribute('data-pl') === 'add') add();
-        else if (b.getAttribute('data-pl') === 'week') { wrap.classList.remove('on'); TodayPlus.openPlan(false); }
+        const a = b.getAttribute('data-pl');
+        if (a === 'add') add();
+        else if (a === 'weekpick') { const box = wrap.querySelector('#pl-days'); if (box.hidden) { paintDays(); box.hidden = false; } else box.hidden = true; }
+        else if (a === 'week') { wrap.classList.remove('on'); TodayPlus.openPlan(false); }
       });
       wrap.querySelector('#pl-title').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) wrap.classList.remove('on'); });
     }
     TodayPlus.planList();
+    try { wrap.querySelector('#pl-days').hidden = true; } catch (e) {}
     wrap.classList.add('on');
     setTimeout(() => { try { wrap.querySelector('#pl-title').focus(); } catch (e) {} }, 80);
   },
@@ -5492,18 +5532,59 @@ const TodayPlus = {
       const sc = WeekLoop.scorecard(WeekLoop.monday(new Date()));
       wrap.querySelector('#rv-score').innerHTML = WeekLoop.scoreHtml(sc);
     } catch (e) { wrap.querySelector('#rv-score').innerHTML = ''; }
+    /* What slipped, week by week: this week first, then last week, then
+       the weeks before — each one named, so what fell off three weeks ago
+       is not mixed in with what fell off yesterday. */
     let slipped = [];
+    let wid = '';
     try {
       const now = new Date(); now.setHours(12, 0, 0, 0);
-      const dow = WeekLoop.dow(now), wid = WeekLoop.wid(now);
+      const dow = WeekLoop.dow(now); wid = WeekLoop.wid(now);
       Object.keys(cData.rocks || {}).forEach((w) => (cData.rocks[w] || []).forEach((r) => {
         if (!r || r.done) return;
-        if (w < wid || (w === wid && r.day < dow)) slipped.push(r);
+        if (w < wid || (w === wid && r.day < dow)) slipped.push(Object.assign({ w }, r));
       }));
     } catch (e) {}
-    wrap.querySelector('#rv-slipped').innerHTML = '<div class="flow-label" style="margin-top:12px">Slipped · ' + slipped.length + '</div>' +
-      (slipped.length ? slipped.slice(0, 12).map((r) => '<div class="pl-item"><span data-i18n="off">' + esc(r.title) + '</span></div>').join('') + (slipped.length > 12 ? '<p class="flow-sub">and ' + (slipped.length - 12) + ' more</p>' : '')
+    slipped.sort((a, b) => (b.w > a.w ? 1 : b.w < a.w ? -1 : 0) || (b.day - a.day));
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const weekLabel = (w) => {
+      if (w === wid) return 'This week';
+      const m = /^(\d{4})-W(\d{2})$/.exec(w); if (!m) return w;
+      const nowM = /^(\d{4})-W(\d{2})$/.exec(wid);
+      const back = nowM && nowM[1] === m[1] ? Number(nowM[2]) - Number(m[2]) : null;
+      return (back === 1 ? 'Last week' : back != null && back > 1 ? back + ' weeks ago' : 'Earlier') + ' · W' + m[2];
+    };
+    const groups = [];
+    slipped.forEach((r) => { let g = groups[groups.length - 1]; if (!g || g.w !== r.w) { g = { w: r.w, items: [] }; groups.push(g); } g.items.push(r); });
+    wrap.querySelector('#rv-slipped').innerHTML = '<div class="flow-row between" style="margin-top:12px;align-items:center"><div class="flow-label">Slipped · ' + slipped.length + (groups.length > 1 ? ' · ' + groups.length + ' weeks' : '') + '</div>' +
+      (slipped.length >= 2 ? '<button type="button" class="td-dropall" data-rv-dropall="1">Drop all (' + slipped.length + ')</button>' : '') + '</div>' +
+      (slipped.length ? groups.map((g) => '<div class="rv-week">' + esc(weekLabel(g.w)) + ' <span>' + g.items.length + '</span></div>' + g.items.map((r) =>
+          '<div class="pl-item rv-item" data-rv-id="' + esc(String(r.id)) + '"><div class="rv-main"><span data-i18n="off">' + esc(r.title) + '</span><small>' + names[r.day] + (r.time ? ' ' + esc(r.time) : '') + '</small></div>' +
+          '<div class="td-fix"><button type="button" data-rv-fix="today">Today</button><button type="button" data-rv-fix="tomorrow">Tomorrow</button><button type="button" data-rv-fix="done">Done</button><button type="button" data-rv-fix="drop" class="ghost">Drop</button></div></div>').join('')).join('')
         : '<p class="flow-sub">Nothing slipped. Good week.</p>');
+    if (!wrap.__rvFix) {
+      wrap.__rvFix = 1;
+      wrap.addEventListener('click', (e) => {
+        const all = e.target.closest('[data-rv-dropall]');
+        if (all) {
+          const ids = Array.from(wrap.querySelectorAll('[data-rv-id]')).map((x) => x.getAttribute('data-rv-id'));
+          if (!ids.length || !confirm('Drop all ' + ids.length + ' slipped Big Rocks? They are not marked done; the journal keeps a line for each.')) return;
+          ids.forEach((id) => { const hit = TodayFix.find(id); if (!hit) return; cData.rocks[hit.w] = cData.rocks[hit.w].filter((x) => x !== hit.r); if (!cData.rocks[hit.w].length) delete cData.rocks[hit.w]; try { if (typeof J === 'function') J('planning', '🗑️ Big rock dropped: ' + hit.r.title); } catch (e2) {} });
+          cSave(); TodayFix.redraw(); TodayPlus.reviewSheet(); return;
+        }
+        const b = e.target.closest('[data-rv-fix]');
+        if (!b) return;
+        e.preventDefault(); e.stopPropagation();
+        const id = b.closest('[data-rv-id]').getAttribute('data-rv-id');
+        const what = b.getAttribute('data-rv-fix');
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        if (what === 'tomorrow') d.setDate(d.getDate() + 1);
+        if (what === 'done') TodayFix.done(id);
+        else if (what === 'drop') TodayFix.drop(id);
+        else TodayFix.move(id, d);
+        TodayPlus.reviewSheet();
+      });
+    }
     wrap.classList.add('on');
   },
 
@@ -7941,6 +8022,28 @@ const Refresh = {
     return el;
   },
   atTop() { return (window.scrollY || document.documentElement.scrollTop || 0) <= 0; },
+  /* Script errors, kept in the account the same way, so a bug that only
+     shows on the phone can be read from the Mac. Last twenty, no text a
+     person typed — only the message, where it came from, and the device. */
+  errors() {
+    if (Refresh._errOn) return;
+    Refresh._errOn = true;
+    const buf = [];
+    let t = null;
+    const flush = async () => {
+      t = null;
+      if (!buf.length) return;
+      try {
+        const log = (await DB.get('flow:diag:errors', [])) || [];
+        const ua = (navigator.userAgent || '').slice(0, 80), app = !!(window.Capacitor && window.Capacitor.Plugins);
+        buf.splice(0).forEach((e) => log.push(Object.assign({ ua, app, at: new Date().toISOString() }, e)));
+        await DB.set('flow:diag:errors', log.slice(-20));
+      } catch (e) {}
+    };
+    const note = (e) => { buf.push(e); if (buf.length > 10) buf.length = 10; if (!t) t = setTimeout(flush, 2500); };
+    window.addEventListener('error', (ev) => { try { note({ msg: String(ev.message || '').slice(0, 200), src: String(ev.filename || '').split('/').pop().slice(0, 60) + ':' + (ev.lineno || 0), tab: Nav.current && Nav.current() }); } catch (e) {} });
+    window.addEventListener('unhandledrejection', (ev) => { try { const r = ev.reason; note({ msg: 'promise: ' + String(r && r.message || r).slice(0, 200), tab: Nav.current && Nav.current() }); } catch (e) {} });
+  },
   /* Why the last reloads happened, kept in the account so a loop on one
      device can be read from another. The host writes the reason to
      sessionStorage just before it reloads; this picks it up after. */
@@ -7958,6 +8061,7 @@ const Refresh = {
   boot() {
     /* A long time away is worth a quiet sync on return; a short one is not. */
     try { window.__FLOW_SYNC_GAP_MS = Refresh.QUIET_MS; } catch (e) {}
+    try { Refresh.errors(); } catch (e) {}
     (async () => { try { if (window.__FLOW_ALL_READY) await window.__FLOW_ALL_READY; } catch (e) {} await new Promise((r) => setTimeout(r, 800)); Refresh.diag().catch(() => {}); })();
     const ind = Refresh.indicator();
     /* A finger: pull down from the top. The page does not bounce while the

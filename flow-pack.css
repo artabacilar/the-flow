@@ -896,11 +896,15 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
 }
 @keyframes fnUp{from{transform:translateY(100%)}to{transform:none}}
 @media (min-width:761px){
+  /* Anchored near the top and never taller than the window: a long sheet
+     (a review with thirty slipped rocks) scrolls inside itself, with its
+     title still in reach, instead of running off the top of a small window. */
   .fn-sheetwrap .fn-sheet{
-    left:50%;bottom:auto;top:16vh;transform:translateX(-50%);
+    left:50%;bottom:auto;top:5vh;transform:translateX(-50%);
     width:440px;border-radius:20px;border:1px solid var(--border2,#333846);
-    animation:fnPop .18s ease;padding-bottom:24px;
+    animation:fnPop .18s ease;padding-bottom:24px;max-height:90vh;
   }
+  #flow-review .fn-sheet{width:520px}
   @keyframes fnPop{from{opacity:0;transform:translateX(-50%) scale(.97)}
                    to{opacity:1;transform:translateX(-50%) scale(1)}}
 }
@@ -2133,3 +2137,22 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 /* ── Plan-today items on today's calendar ─────────────────────────────── */
 .td-plan.done .rk-title > span{text-decoration:line-through;opacity:.5}
 .pl-item .pl-rm{background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px}
+
+/* ── Plan today: the week's days ─────────────────────────────────────── */
+.pl-days{margin-top:12px}
+.pl-daychips{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:8px}
+.pl-daychips button{font:inherit;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:48px;-webkit-tap-highlight-color:transparent}
+.pl-daychips button b{font-size:12px}
+.pl-daychips button small{font-size:11px;color:var(--muted)}
+.pl-daychips button.today{border-color:var(--accent);color:var(--accentOn,var(--accent))}
+.pl-daychips button.past{opacity:.45}
+.pl-daychips button:hover{border-color:var(--accent)}
+.pl-link{display:block;margin:12px auto 0;background:none;border:0;color:var(--muted);font:inherit;font-size:12.5px;text-decoration:underline;cursor:pointer}
+
+.rv-item{flex-direction:column;align-items:stretch;gap:6px}
+.rv-item .rv-main{display:flex;justify-content:space-between;gap:10px}
+.rv-item .rv-main small{color:var(--muted);white-space:nowrap}
+#flow-review .td-dropall{margin:0}
+
+.rv-week{margin:14px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.rv-week span{color:var(--text);margin-left:4px}

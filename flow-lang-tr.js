@@ -1720,6 +1720,13 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Notes ▴": "Notlar ▴",
   "Drop all overdue ({})": "Geciken hepsini bırak ({})",
   "none logged": "kayıt yok",
+  "Add to the week ▾": "Haftaya ekle ▾",
+  "Which day this week?": "Bu hafta hangi gün?",
+  "On {} as a Big Rock ✓": "{} gününe Büyük Taş olarak eklendi ✓",
+  "Drop all ({})": "Hepsini bırak ({})",
+  "Last week · W{}": "Geçen hafta · H{}",
+  "{} weeks ago · W{}": "{} hafta önce · H{}",
+  "Slipped · {} · {} weeks": "Kaydı · {} · {} hafta",
 /* DICT-END */
 }, RULES);
 
