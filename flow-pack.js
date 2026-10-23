@@ -5275,6 +5275,14 @@ const Focus = {
     const h = Math.floor(min / 60), m = min % 60;
     return h ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm';
   },
+  /* The Today tile reads like Recovery beside it — one short line, 4.5h —
+     instead of 4h 30m breaking onto two lines. Under an hour stays minutes. */
+  short(min) {
+    min = Math.max(0, Math.round(min));
+    if (min < 60) return min + 'm';
+    const h = min / 60;
+    return (h >= 10 ? String(Math.round(h)) : h.toFixed(1)) + 'h';   /* 6.0h, as Recovery writes it */
+  },
   fmtMs(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor((s % 3600) / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
@@ -5333,7 +5341,7 @@ const Focus = {
     if (!tile) return;
     const min = Focus.todayMin();
     const v = tile.querySelector('.v'), sub = tile.querySelector('.s');
-    if (v) v.textContent = min ? Focus.fmt(min) : '—';
+    if (v) v.textContent = min ? Focus.short(min) : '—';
     if (sub) sub.textContent = Focus.running() ? '● running' : (min ? 'logged today' : 'Start focus');
     tile.classList.toggle('good', Focus.running());
   },
@@ -5793,7 +5801,7 @@ const TodayPlus = {
     strip.innerHTML = [
       ['recovery', 'Recovery', recTxt, recSub, recTone],
       ['meetings', 'Meetings', mt.v, mt.sub, mt.tone || ''],
-      ['focus', 'Focus', fmin ? Focus.fmt(fmin) : '—', frun ? '● running' : (fmin ? 'logged today' : 'none logged'), frun ? ' good' : ''],
+      ['focus', 'Focus', fmin ? Focus.short(fmin) : '—', frun ? '● running' : (fmin ? 'logged today' : 'none logged'), frun ? ' good' : ''],
       ['spend', 'Spend', sp ? TodayPlus.money(sp.today) : '—', sp ? TodayPlus.money(sp.mtd) + ' this month' : 'nothing logged', '']
     ].map(([k, lbl, v, sub, tone]) =>
       `<button class="flow-td-tile${tone}" data-jump="${k}">
