@@ -35,6 +35,18 @@ final class FlowViewController: UIViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(didBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(deliverRoute),
+            name: FlowRoute.open, object: nil)
+    }
+
+    /// Hand a pending "open this rock" to the page. If the page has not
+    /// finished starting, it keeps the id and opens it once it has.
+    @objc private func deliverRoute() {
+        guard let id = FlowRoute.pending, webView.url != nil, !webView.isLoading else { return }
+        FlowRoute.pending = nil
+        let q = quote(id)
+        webView.evaluateJavaScript("if (window.__flowOpen) window.__flowOpen({ rock: \(q) }); else window.__flowPendingRock = \(q);")
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
@@ -162,6 +174,7 @@ extension FlowViewController: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         refresher.endRefreshing()
         offline.isHidden = true
+        deliverRoute()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

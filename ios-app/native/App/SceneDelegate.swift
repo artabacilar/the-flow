@@ -26,5 +26,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         w.backgroundColor = FlowTheme.background
         w.makeKeyAndVisible()
         window = w
+        /* Opened from a widget row while the app was not running. */
+        if let url = connectionOptions.urlContexts.first?.url { FlowRoute.handle(url: url) }
+    }
+
+    /// Opened from a widget row while the app was already running.
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        if let url = URLContexts.first?.url { FlowRoute.handle(url: url) }
     }
 }

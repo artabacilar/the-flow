@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 
 /// No storyboard, no framework, no dependency graph. The shell exists to put a
 /// web view on screen and to carry one token across a process boundary — and a
@@ -17,6 +18,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
            restore without telling anybody, and a server holding the old one
            pushes into nothing, silently, forever. */
         FlowPush.refreshIfAlreadyAllowed()
+        /* Set before launch finishes, or a reminder tapped while the app was
+           closed is delivered to nobody. */
+        UNUserNotificationCenter.current().delegate = FlowNotificationDelegate.shared
         return true
     }
 
@@ -59,4 +63,49 @@ enum FlowTheme {
                                     green: 0x0b / 255.0,
                                     blue: 0x0d / 255.0,
                                     alpha: 1)
+}
+
+/// "Open this rock", from wherever it came: a reminder that was tapped, or a
+/// row on the home-screen widget (theflow://rock/<id>). Kept in this file
+/// rather than a new one so the Xcode target needs no new member.
+enum FlowRoute {
+    static let open = Notification.Name("FlowRouteOpen")
+    /// Held until the web view has a page to hand it to — on a cold launch
+    /// the tap arrives before there is one.
+    static var pending: String?
+
+    static func rock(_ id: String) {
+        guard !id.isEmpty else { return }
+        pending = id
+        NotificationCenter.default.post(name: open, object: nil)
+    }
+
+    static func handle(url: URL) {
+        guard url.scheme == "theflow", url.host == "rock" else { return }
+        let id = url.pathComponents.first(where: { $0 != "/" }) ?? ""
+        rock(id)
+    }
+}
+
+/// Reminders carry the rock they are about (flow-remind.js puts it in the
+/// payload as flow.rock). Tapping one opens that rock instead of only the app.
+final class FlowNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = FlowNotificationDelegate()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler done: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
+        if let flow = info["flow"] as? [String: Any], let id = flow["rock"] as? String {
+            DispatchQueue.main.async { FlowRoute.rock(id) }
+        }
+        done()
+    }
+
+    /// A reminder that arrives while the app is open still shows, as a banner.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        done([.banner, .list, .sound])
+    }
 }
