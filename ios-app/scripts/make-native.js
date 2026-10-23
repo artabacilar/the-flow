@@ -445,6 +445,26 @@ if ((plist.match(/<key>UIApplicationSceneManifest<\/key>/g) || []).length !== 1 
   process.exit(1);
 }
 
+/* theflow://rock/<id> — what a tap on a widget row opens. Without the
+ * scheme registered, iOS has nowhere to send it and the tap does nothing. */
+if (plist.indexOf('<string>theflow</string>') < 0) {
+  plist = plist.replace('</dict>\n</plist>', [
+    '\t<key>CFBundleURLTypes</key>',
+    '\t<array>',
+    '\t\t<dict>',
+    '\t\t\t<key>CFBundleURLName</key>',
+    '\t\t\t<string>com.abko.theflow</string>',
+    '\t\t\t<key>CFBundleURLSchemes</key>',
+    '\t\t\t<array>',
+    '\t\t\t\t<string>theflow</string>',
+    '\t\t\t</array>',
+    '\t\t</dict>',
+    '\t</array>',
+    '</dict>',
+    '</plist>'
+  ].join('\n'));
+}
+
 fs.writeFileSync(plistPath, plist);
 
 const WHY_REQUIRED = {
