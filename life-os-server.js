@@ -525,6 +525,11 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>Receipt photos</b>, if you photograph a receipt in Finances. The text is read on your
         device; the photo is then kept with that expense in your account so you can open it
         again, and is deleted with the expense.</li>
+    <li><b>Bank statements</b>, if you upload one in Finances. The file is read once and not
+        kept: what is stored is the list of transactions in it (date, description, amount,
+        category) and the report made from them, until you remove that report. Card numbers and
+        IBANs are left out of what is stored. Spending only becomes part
+        of your expenses if you choose to add it.</li>
     <li><b>Apple Health figures</b>, on iPhone, only if you allow it. The app reads — never
         writes — sleep, resting heart rate, heart-rate variability and similar daily values, and
         copies them into your Body log so they appear on your other devices. You choose which
@@ -581,7 +586,8 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
         your email address and the reset link, and nothing else.</li>
     <li><b>The assistant inside the app</b>, if the operator has switched it on. Questions you
         ask it, and the parts of your record needed to answer, are sent to Anthropic's API for
-        that answer and are not used to train anything.</li>
+        that answer and are not used to train anything. A bank statement you upload is read the
+        same way, to turn it into transactions.</li>
     <li><b>Hosting providers</b> — Render and Upstash — who necessarily hold the data at rest
         and in transit in the course of running the server, under their own terms.</li>
   </ul>

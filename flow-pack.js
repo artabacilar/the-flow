@@ -1534,6 +1534,144 @@ const Finance = {
   }
 };
 
+/* ── Bank statements ──────────────────────────────────────────────────────
+ * A statement from the bank — PDF, Excel or CSV — read by the server into
+ * transactions, turned into a report here, and kept as lines (never as the
+ * file). Spending is only added to the ledger when you say so, and the same
+ * de-duplication as every other import applies, so a month uploaded twice,
+ * or a coffee you already typed in, is not counted again.
+ *
+ * Reports live under one key each (flow:statement:<id>) with a small index
+ * (flow:statements) so the Finances tab can list them without loading every
+ * line of every month.
+ * ====================================================================== */
+const Statement = {
+  INDEX: 'flow:statements',
+  MAX: 12,
+  POLL_MS: 2500,
+  GIVE_UP_MS: 6 * 60 * 1000,
+
+  async list() { const l = await DB.get(Statement.INDEX, []); return Array.isArray(l) ? l : []; },
+  async get(id) { return DB.get('flow:statement:' + id, null); },
+
+  /* Money out and in, in the statement's own currency; rows in another
+     currency are counted separately rather than added to the wrong total. */
+  summarise(r) {
+    const cur = r.currency || Ledger.home();
+    const same = (r.tx || []).filter(t => (t.currency || cur) === cur);
+    const other = (r.tx || []).length - same.length;
+    const spendRows = same.filter(t => t.amount < 0 && (t.kind === 'spend' || t.kind === 'fee'));
+    const out = spendRows.reduce((a, t) => a - t.amount, 0);
+    const inc = same.filter(t => t.amount > 0 && (t.kind === 'income' || t.kind === 'refund')).reduce((a, t) => a + t.amount, 0);
+    const fees = same.filter(t => t.kind === 'fee').reduce((a, t) => a + Math.abs(t.amount), 0);
+    const byCat = {}, byMerch = {};
+    spendRows.forEach(t => {
+      byCat[t.category || 'Other'] = (byCat[t.category || 'Other'] || 0) - t.amount;
+      const k = norm(t.merchant).toLowerCase();
+      const m = byMerch[k] || (byMerch[k] = { name: t.merchant, total: 0, n: 0, amounts: [] });
+      m.total -= t.amount; m.n++; m.amounts.push(-t.amount);
+    });
+    const cats = Object.keys(byCat).map(k => ({ label: k, value: Math.round(byCat[k] * 100) / 100 })).sort((a, b) => b.value - a.value);
+    const merchants = Object.values(byMerch).sort((a, b) => b.total - a.total);
+    /* Recurring: the same merchant more than once at much the same price,
+       or anything filed as a subscription. */
+    const recurring = merchants.filter(m => {
+      if (m.n >= 2) { const lo = Math.min.apply(null, m.amounts), hi = Math.max.apply(null, m.amounts); return hi <= lo * 1.15 + 1; }
+      return false;
+    }).concat(spendRows.filter(t => t.category === 'Subscriptions' && !(byMerch[norm(t.merchant).toLowerCase()].n >= 2))
+      .map(t => ({ name: t.merchant, total: -t.amount, n: 1, amounts: [-t.amount] })))
+      .slice(0, 8);
+    const biggest = spendRows.slice().sort((a, b) => a.amount - b.amount).slice(0, 5);
+    return { cur, out, inc, fees, cats, merchants: merchants.slice(0, 6), recurring, biggest, other, spendCount: spendRows.length };
+  },
+
+  /* What would go into the ledger: spending and fees, money out only. */
+  expenses(r) {
+    const label = r.bank ? r.bank + ' statement' : 'Bank statement';
+    return (r.tx || []).filter(t => t.amount < 0 && (t.kind === 'spend' || t.kind === 'fee')).map(t => ({
+      date: t.date, amount: Math.abs(t.amount), merchant: t.merchant, currency: t.currency || r.currency || Ledger.home(),
+      category: t.category || 'Other', note: 'From ' + label, source: 'statement'
+    }));
+  },
+
+  /* The same key importItems uses, so the preview and the import agree. */
+  dupeCount(items) {
+    const key = (x) => `${x.date}|${Math.abs(x.amount).toFixed(2)}|${norm(x.merchant).toLowerCase().slice(0, 24)}`;
+    const seen = {};
+    Ledger.all().forEach(x => { seen[key(x)] = 1; });
+    return items.filter(x => seen[key(x)]).length;
+  },
+
+  async save(r) {
+    const id = uid('st');
+    const full = {
+      id, at: new Date().toISOString(), bank: r.bank || '', account: r.account || '', currency: r.currency || Ledger.home(),
+      from: r.from || null, to: r.to || null, opening: r.opening, closing: r.closing,
+      partial: !!r.partial, tx: r.tx || [], imported: null
+    };
+    const s = Statement.summarise(full);
+    await DB.set('flow:statement:' + id, full);
+    const list = await Statement.list();
+    list.unshift({ id, at: full.at, bank: full.bank, account: full.account, currency: full.currency, from: full.from, to: full.to,
+      out: Math.round(s.out * 100) / 100, inc: Math.round(s.inc * 100) / 100, n: full.tx.length, imported: null });
+    const drop = list.splice(Statement.MAX);
+    for (const d of drop) { try { await DB.set('flow:statement:' + d.id, null); } catch (e) {} }
+    await DB.set(Statement.INDEX, list);
+    return full;
+  },
+
+  async markImported(id, added) {
+    const full = await Statement.get(id);
+    const at = new Date().toISOString();
+    if (full) { full.imported = { at, added }; await DB.set('flow:statement:' + id, full); }
+    const list = await Statement.list();
+    const row = list.find(x => x.id === id);
+    if (row) { row.imported = { at, added }; await DB.set(Statement.INDEX, list); }
+  },
+
+  async remove(id) {
+    await DB.set('flow:statement:' + id, null);
+    await DB.set(Statement.INDEX, (await Statement.list()).filter(x => x.id !== id));
+  },
+
+  period(r) {
+    if (!r.from && !r.to) return '';
+    const f = r.from ? parseISO(r.from) : null, t = r.to ? parseISO(r.to) : null;
+    const d = (x, y) => x.getDate() + ' ' + MON[x.getMonth()] + (y ? ' ' + x.getFullYear() : '');
+    if (f && t) return f.getFullYear() === t.getFullYear() ? d(f) + ' – ' + d(t, true) : d(f, true) + ' – ' + d(t, true);
+    return d(f || t, true);
+  },
+
+  /* Send the file and wait for the reading. onTick gets seconds elapsed. */
+  async read(file, onTick) {
+    const buf = await file.arrayBuffer();
+    let bin = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const r = await fetch('/api/flow/statement', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: file.name || '', data: btoa(bin), categories: Settings.get('categories') })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.job) { const e = new Error(j.error || ('The statement could not be sent (' + r.status + ').')); e.status = r.status; throw e; }
+    const t0 = Date.now();
+    for (;;) {
+      await new Promise(res => setTimeout(res, Statement.POLL_MS));
+      if (onTick) onTick(Math.round((Date.now() - t0) / 1000));
+      let s = null;
+      try {
+        const g = await fetch('/api/flow/statement?job=' + encodeURIComponent(j.job), { credentials: 'same-origin' });
+        s = await g.json().catch(() => null);
+        if (g.status === 404) throw new Error((s && s.error) || 'That reading has expired. Upload the statement again.');
+      } catch (e) { if (/expired/.test(e.message)) throw e; /* a dropped poll — try again */ }
+      if (s && s.status === 'done') return s;
+      if (s && s.status === 'error') throw new Error(s.error || 'The statement could not be read.');
+      if (Date.now() - t0 > Statement.GIVE_UP_MS) throw new Error('Reading that statement is taking too long. Try a shorter period.');
+    }
+  }
+};
+window.FlowStatement = Statement;
+
 /* ── One ledger ───────────────────────────────────────────────────────────
  * There were two expense stores. The first Finances form (budget, the Spend
  * tile on Today) writes `ld_finance` — amounts per month, a category id, no
@@ -2960,15 +3098,16 @@ const FinanceUI = {
         </div>
       </div>
 
-      <div class="flow-card">
-        <h3>🏦 Import a bank statement</h3>
-        <p class="flow-sub">Export CSV from your internet banking, drop it here, and every line is dated, categorised and de-duplicated against what you already have. Re-importing an overlapping file is safe.</p>
-        <div class="flow-drop" data-fa="pickCsv">Drop a CSV here, or tap to choose one</div>
-        <input type="file" accept=".csv,.txt,text/csv" id="fx-csv" style="display:none">
+      <div class="flow-card" id="fx-stmt">
+        <h3>🏦 Bank statements</h3>
+        <p class="flow-sub">Upload the statement your bank lets you download — PDF, Excel or CSV, current account or credit card. Every transaction is read, sorted into your categories and turned into a report, and you decide whether the spending goes into your expenses. The lines are kept; the file is not.</p>
+        <div class="flow-drop" data-fa="pickCsv">Drop a statement here, or tap to choose one<small class="fx-drop-sub">PDF · Excel · CSV</small></div>
+        <input type="file" accept=".pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" id="fx-csv" style="display:none">
         <div id="fx-csvresult" style="margin-top:12px"></div>
+        <div id="fx-stmtpast"></div>
         <details style="margin-top:12px">
           <summary style="cursor:pointer;font-size:12.5px;color:var(--f-muted)">Why not connect the bank directly?</summary>
-          <p class="flow-sub" style="margin-top:8px">Direct bank connections go through an aggregator — Plaid (US/CA/UK/EU), GoCardless Bank Account Data (free, EU/UK), or Salt Edge (widest coverage, includes Turkey). All three need a signed-up account, server-side API keys and, for the EU ones, a licensed agent agreement. Turkish banks in particular are thin on aggregator coverage, which is why statement import is the path that actually works today. When you have credentials, set the provider in Settings and the server add-on will pull transactions on the same schedule.</p>
+          <p class="flow-sub" style="margin-top:8px">In Türkiye only providers licensed by the Central Bank may pull account data on someone's behalf, so a live bank feed means partnering with one of them. Until then, the statement every bank already gives you is the reliable way in — and re-uploading an overlapping month is safe.</p>
         </details>
       </div>
 
@@ -3012,12 +3151,21 @@ const FinanceUI = {
 
     FinanceUI.bind(section, wrap);
     Chart.hydrate(wrap);
+    FinanceUI.paintPast(wrap);
+    if (FinanceUI.state.openStatement) {
+      Statement.get(FinanceUI.state.openStatement).then(full => { if (full) FinanceUI.showStatement(wrap, full); });
+    }
   },
 
   bind(section, wrap) {
     const fileEl = wrap.querySelector('#fx-file');
     const csvEl = wrap.querySelector('#fx-csv');
 
+    /* repaint() re-renders inside the same wrap and calls bind() again. The
+       wrap's own listeners must be added once, or every repaint stacked
+       another copy and one tap on "Add expense" added it two, three times. */
+    if (!wrap.__faBound) {
+    wrap.__faBound = true;
     wrap.addEventListener('click', async (e) => {
       const t = e.target.closest('[data-fa]');
       if (!t) return;
@@ -3081,6 +3229,38 @@ const FinanceUI = {
         const box = wrap.querySelector('#fr-raw');
         if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
       }
+      else if (a === 'stmtImport') {
+        const id = t.getAttribute('data-id');
+        const full = await Statement.get(id);
+        if (!full) { toast('That statement is no longer stored.', 'warn'); return; }
+        if (full.imported || FinanceUI._importing) return;
+        FinanceUI._importing = true;
+        t.disabled = true;
+        let res;
+        try {
+          res = await Finance.importItems(Statement.expenses(full));
+          await Statement.markImported(id, res.added);
+        } finally { FinanceUI._importing = false; }
+        Ledger.changed();
+        toast(`Added ${res.added} expense${res.added === 1 ? '' : 's'}${res.dupes ? ` · ${res.dupes} already there` : ''} ✓`, null, 4200);
+        FinanceUI.state.openStatement = id;
+        FinanceUI.repaint(section);
+      }
+      else if (a === 'stmtOpen') {
+        const full = await Statement.get(t.getAttribute('data-id'));
+        if (!full) { toast('That statement is no longer stored.', 'warn'); return; }
+        FinanceUI.showStatement(wrap, full);
+        const box = wrap.querySelector('#fx-csvresult');
+        if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      else if (a === 'stmtDel') {
+        const id = t.getAttribute('data-id');
+        if (!confirm('Remove this statement report? Expenses already added stay in your expenses.')) return;
+        await Statement.remove(id);
+        if (FinanceUI.state.openStatement === id) { FinanceUI.state.openStatement = null; const box = wrap.querySelector('#fx-csvresult'); if (box) box.innerHTML = ''; }
+        FinanceUI.paintPast(wrap);
+      }
+      else if (a === 'stmtClose') { FinanceUI.state.openStatement = null; const box = wrap.querySelector('#fx-csvresult'); if (box) box.innerHTML = ''; }
       else if (a === 'confirmCsv') {
         const staged = FinanceUI.state.staged || [];
         const res = await Finance.importItems(staged);
@@ -3109,6 +3289,7 @@ const FinanceUI = {
         }
       }
     });
+    }
 
     if (fileEl && !fileEl.__bound) {
       fileEl.__bound = true;
@@ -3124,9 +3305,8 @@ const FinanceUI = {
       csvEl.addEventListener('change', () => {
         const f = csvEl.files && csvEl.files[0];
         if (!f) return;
-        const fr = new FileReader();
-        fr.onload = () => { FinanceUI.handleCSV(wrap, String(fr.result)); csvEl.value = ''; };
-        fr.readAsText(f, 'utf-8');
+        csvEl.value = '';
+        FinanceUI.handleStatementFile(section, wrap, f);
       });
     }
 
@@ -3138,7 +3318,7 @@ const FinanceUI = {
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (!f) return;
         if (/image\//.test(f.type)) await FinanceUI.handlePhoto(wrap, f);
-        else { const fr = new FileReader(); fr.onload = () => FinanceUI.handleCSV(wrap, String(fr.result)); fr.readAsText(f, 'utf-8'); }
+        else FinanceUI.handleStatementFile(section, wrap, f);
       });
     });
   },
@@ -3198,6 +3378,124 @@ const FinanceUI = {
           <pre class="flow-code" id="fr-raw" style="display:none;margin-top:10px;max-height:220px;overflow:auto;white-space:pre-wrap">${esc(p.raw || '')}</pre>
         </div>
       </div>`;
+  },
+
+  async handleStatementFile(section, wrap, file) {
+    const box = wrap.querySelector('#fx-csvresult');
+    if (!box) return;
+    if (file.size > 10 * 1024 * 1024) { box.innerHTML = '<p class="flow-empty">That file is over 10 MB. Download a shorter period, or the PDF rather than a scan.</p>'; return; }
+    const name = String(file.name || '');
+    const isText = /\.(csv|txt)$/i.test(name) || /^text\//.test(file.type || '');
+    box.innerHTML = `<div class="fx-reading" role="status" aria-live="polite">
+        <div class="flow-prog" style="display:block"><i style="width:8%"></i></div>
+        <p class="flow-empty" id="fx-readmsg">Reading ${esc(name || 'your statement')}…</p>
+      </div>`;
+    const bar = box.querySelector('.flow-prog i'), msg = box.querySelector('#fx-readmsg');
+    const tick = (sec) => {
+      if (bar) bar.style.width = Math.min(92, 8 + sec * 1.6).toFixed(0) + '%';
+      if (msg) msg.textContent = sec < 8 ? 'Reading ' + (name || 'your statement') + '…'
+        : 'Reading every line — a long statement takes up to a minute or two. (' + sec + 's)';
+    };
+    try {
+      const out = await Statement.read(file, tick);
+      if (bar) bar.style.width = '100%';
+      const full = await Statement.save(out);
+      FinanceUI.state.openStatement = full.id;
+      FinanceUI.showStatement(wrap, full);
+      FinanceUI.paintPast(wrap);
+    } catch (e) {
+      /* With no assistant on this Flow, a CSV can still be read the old way. */
+      if (isText && (e.status === 503 || e.status === 401 || /not switched on|Sign in/i.test(e.message || ''))) {
+        const fr = new FileReader();
+        fr.onload = () => FinanceUI.handleCSV(wrap, String(fr.result));
+        fr.readAsText(file, 'utf-8');
+        return;
+      }
+      box.innerHTML = `<p class="flow-empty">${esc(e.message || 'The statement could not be read.')}</p>`;
+    }
+  },
+
+  async paintPast(wrap) {
+    const host = wrap.querySelector('#fx-stmtpast');
+    if (!host) return;
+    const list = await Statement.list();
+    if (!list.length) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="fx-past"><div class="flow-label" style="margin:14px 0 6px">Your statements</div>
+      ${list.map(x => `<div class="fx-past-row">
+        <button type="button" class="fx-past-open" data-fa="stmtOpen" data-id="${esc(x.id)}">
+          <b>${esc(x.bank || 'Statement')}${x.account ? ' · ' + esc(x.account) : ''}</b>
+          <span>${esc(Statement.period(x) || prettyDate(String(x.at).slice(0, 10)))} · ${esc(money(x.out || 0, x.currency))} out · ${x.n} line${x.n === 1 ? '' : 's'}${x.imported ? ' · added ✓' : ''}</span>
+        </button>
+        <button type="button" class="flow-btn ghost sm" data-fa="stmtDel" data-id="${esc(x.id)}" aria-label="Remove this statement">×</button>
+      </div>`).join('')}</div>`;
+  },
+
+  showStatement(wrap, r) {
+    const box = wrap.querySelector('#fx-csvresult');
+    if (!box) return;
+    FinanceUI.state.openStatement = r.id;
+    const s = Statement.summarise(r);
+    const cur = s.cur;
+    const m = (v) => money(v, cur);
+    const items = Statement.expenses(r);
+    const dupes = r.imported ? 0 : Statement.dupeCount(items);
+    const fresh = items.length - dupes;
+    const kindLbl = { spend: 'spend', income: 'in', transfer: 'transfer', fee: 'fee', refund: 'refund', 'card-payment': 'card payment' };
+    const list = (rows, f) => rows.length ? '<ol class="fx-rlist">' + rows.map(f).join('') + '</ol>' : '<p class="flow-empty">None.</p>';
+    box.innerHTML = `
+      <div class="fx-report">
+        <div class="fx-rtop">
+          <div style="min-width:0;flex:1">
+            <div class="fx-rh">${esc(r.bank || 'Statement')}${r.account ? ' · ' + esc(r.account) : ''}</div>
+            <div class="flow-sub" style="margin:2px 0 0">${esc(Statement.period(r))}${Statement.period(r) ? ' · ' : ''}${r.tx.length} transaction${r.tx.length === 1 ? '' : 's'}</div>
+          </div>
+          <button type="button" class="flow-btn ghost sm" data-fa="stmtClose" aria-label="Close the report">×</button>
+        </div>
+        ${r.partial ? '<p class="fx-warn">Only part of this statement could be read in one go. Check the dates covered, and upload the rest as a shorter period.</p>' : ''}
+        <div class="fx-tiles">
+          <div class="fx-tile"><span>Money out</span><b>${esc(m(s.out))}</b></div>
+          <div class="fx-tile"><span>Money in</span><b>${esc(m(s.inc))}</b></div>
+          <div class="fx-tile"><span>Net</span><b class="${s.inc - s.out >= 0 ? 'fx-pos' : 'fx-neg'}">${esc(m(s.inc - s.out))}</b></div>
+          ${s.fees ? `<div class="fx-tile"><span>Fees &amp; interest</span><b>${esc(m(s.fees))}</b></div>` : ''}
+        </div>
+        ${s.other ? `<p class="flow-sub">${s.other} line${s.other === 1 ? ' is' : 's are'} in another currency and not in these totals.</p>` : ''}
+
+        <div class="fx-addbar">
+          ${r.imported
+            ? `<span>Added to your expenses ✓ <small>${r.imported.added} line${r.imported.added === 1 ? '' : 's'}, ${esc(prettyDate(String(r.imported.at).slice(0, 10)))}</small></span>`
+            : fresh > 0
+              ? `<span>${fresh} expense${fresh === 1 ? '' : 's'} to add${dupes ? ` <small>${dupes} already in your expenses</small>` : ''}</span>
+                 <button type="button" class="flow-btn primary sm" data-fa="stmtImport" data-id="${esc(r.id)}">Add to expenses</button>`
+              : `<span>Everything here is already in your expenses${items.length ? '' : ' — there was no spending to add'}.</span>`}
+        </div>
+
+        <div class="flow-grid c2" style="margin-top:12px">
+          <div><div class="flow-label">Spending by category</div>
+            ${s.cats.length ? '<ol class="fx-rlist fx-cats">' + s.cats.slice(0, 10).map(c => `<li><span>${esc(c.label)}</span><b>${esc(m(c.value))}</b><i style="width:${Math.max(3, Math.round(c.value / s.cats[0].value * 100))}%"></i></li>`).join('') + '</ol>' : '<p class="flow-empty">No spending in this statement.</p>'}
+          </div>
+          <div>
+            <div class="flow-label">Where it went most</div>
+            ${list(s.merchants, x => `<li><span>${esc(x.name)}${x.n > 1 ? ' <small>×' + x.n + '</small>' : ''}</span><b>${esc(m(x.total))}</b></li>`)}
+          </div>
+          <div>
+            <div class="flow-label">Recurring</div>
+            ${list(s.recurring, x => `<li><span>${esc(x.name)}${x.n > 1 ? ' <small>×' + x.n + '</small>' : ''}</span><b>${esc(m(x.total / x.n))}${x.n > 1 ? '<small> each</small>' : ''}</b></li>`)}
+          </div>
+          <div>
+            <div class="flow-label">Biggest charges</div>
+            ${list(s.biggest, t => `<li><span>${esc(t.merchant)} <small>${esc(prettyDate(t.date))}</small></span><b>${esc(m(-t.amount))}</b></li>`)}
+          </div>
+        </div>
+
+        <details class="fx-all">
+          <summary>Every line (${r.tx.length})</summary>
+          <div class="flow-scroll"><table class="flow-table">
+            <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+            <tbody>${r.tx.map(t => `<tr><td>${esc(prettyDate(t.date))}</td><td>${esc(t.merchant)}${t.kind !== 'spend' ? ' <span class="flow-chip">' + esc(kindLbl[t.kind] || t.kind) + '</span>' : ''}</td><td>${esc(t.category)}</td><td class="num ${t.amount > 0 ? 'fx-pos' : ''}">${esc(money(t.amount, t.currency || cur))}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </details>
+      </div>`;
+    try { Chart.hydrate(box); } catch (e) {}
   },
 
   handleCSV(wrap, text) {

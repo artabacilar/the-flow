@@ -988,6 +988,383 @@ async function handlePlanWeek(p, req, res, ctx) {
   return true;
 }
 
+
+/* ==========================================================================
+ * Bank statements — read a PDF, Excel or CSV export into transactions
+ * --------------------------------------------------------------------------
+ * Turkish banks will not hand an app a live feed without a licence, but every
+ * one of them lets you download a statement. This turns that file into lines
+ * the ledger understands.
+ *
+ *   · The file is read in memory and forgotten. Nothing about it is written
+ *     to the store here; the browser decides what to keep, and keeps lines,
+ *     not the document.
+ *   · Excel is unpacked here (an .xlsx is a zip of XML; Node's zlib is enough)
+ *     and HTML-disguised .xls exports are flattened, so the model only ever
+ *     sees text or a PDF.
+ *   · Reading a long statement takes longer than a phone will hold a request
+ *     open, so it runs as a job: POST starts it, GET asks how it is going.
+ *     Jobs live in memory for twenty minutes and belong to one account.
+ *   · Card numbers and IBANs are not wanted. The model is told to drop them,
+ *     and anything that still looks like one is masked before it leaves.
+ * ========================================================================== */
+
+const zlib = require('zlib');
+const crypto = require('crypto');
+
+const STMT_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_STATEMENT_DAILY_CAP || '12', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 12;
+})();
+const STMT_MAX_BYTES = 10 * 1024 * 1024;     /* the file itself, before base64 */
+const STMT_MAX_TEXT = 220000;                /* characters of spreadsheet text */
+const STMT_JOB_TTL = 20 * 60 * 1000;
+const stmtCountKey = () => 'stmt:' + new Date().toISOString().slice(0, 10);
+const stmtJobs = new Map();
+let stmtPost = (...a) => postJSON(...a);   /* swapped in tests */
+
+const STMT_KINDS = ['spend', 'income', 'transfer', 'fee', 'refund', 'card-payment'];
+
+const STMT_SYSTEM = [
+  'You read bank-account and credit-card statements and return every transaction in them as JSON.',
+  'Statements are usually Turkish (Garanti BBVA, Akbank, İş Bankası, Yapı Kredi, Ziraat, QNB, Enpara, DenizBank and others) but may be in any language.',
+  '',
+  'Reply with ONE JSON object and nothing else — no prose, no code fence:',
+  '{"bank":"","account":"","currency":"TRY","from":"YYYY-MM-DD","to":"YYYY-MM-DD","opening":null,"closing":null,',
+  ' "tx":[["YYYY-MM-DD","Description",-123.45,"TRY","Category","spend"]]}',
+  '',
+  'Rules for every row in tx:',
+  '· amount is NEGATIVE for money leaving the account or charged to the card, POSITIVE for money coming in.',
+  '· kind is one of: spend, income, transfer (own-account or person-to-person moves), fee (bank fees, interest, BSMV/KKDF, card fees), refund (iade), card-payment (a payment made TO a credit card).',
+  '· On a credit-card statement, purchases are spend with negative amounts; the payment you made to the card is card-payment and positive.',
+  '· Instalments (taksit): use the amount charged on THIS statement and keep the "3/6" marker in the description.',
+  '· Dates are day-first in Turkey (01.10.2026 is 1 October). Resolve two-digit years and missing years from the statement period.',
+  '· Description: the merchant or counterparty, cleaned up and readable (e.g. "Migros", "Netflix", "Havale — Ahmet Y."), at most 60 characters. Drop terminal ids, reference numbers and city suffixes.',
+  '· NEVER include card numbers, IBANs or account numbers anywhere. "account" may say only the type and last four digits, e.g. "Bonus card ••1234".',
+  '· category must be one of the categories given. Use "Other" when nothing fits; income, transfers and card payments may also use "Other".',
+  '· currency is the ISO code of that row (TRY unless the row says otherwise).',
+  '· Skip summary lines: opening/closing balances, totals, minimum payment, available limit, carried-over debt, points/bonus summaries.',
+  '· Keep the statement order. Include every transaction — do not summarise or merge.',
+  '',
+  'opening/closing are the balances the statement states, or null. from/to is the period the statement covers.'
+].join('\n');
+
+/* ---- reading the file ---------------------------------------------------- */
+
+function xmlText(s) {
+  return String(s || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(+d))
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, '&');
+}
+
+/* The smallest zip reader that opens an .xlsx: central directory, then each
+   member inflated on its own. No streaming, no encryption, no zip64. */
+function unzip(buf) {
+  const out = {};
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('not a zip');
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  for (let n = 0; n < count && p + 46 <= buf.length; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(p + 10);
+    const csize = buf.readUInt32LE(p + 20);
+    const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.slice(p + 46, p + 46 + nlen).toString('utf8');
+    p += 46 + nlen + xlen + clen;
+    if (!/^xl\/(sharedStrings|styles|workbook|worksheets\/sheet\d+|_rels\/workbook)\.xml(\.rels)?$/.test(name)) continue;
+    const lnlen = buf.readUInt16LE(local + 26), lxlen = buf.readUInt16LE(local + 28);
+    const data = buf.slice(local + 30 + lnlen + lxlen, local + 30 + lnlen + lxlen + csize);
+    out[name] = (method === 8 ? zlib.inflateRawSync(data) : data).toString('utf8');
+  }
+  return out;
+}
+
+function colIndex(ref) {
+  const m = /^([A-Z]+)/.exec(ref || '');
+  if (!m) return -1;
+  let n = 0;
+  for (const ch of m[1]) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/* Excel stores dates as day counts from 1899-12-30. Which numbers are dates
+   is decided by the cell's style, so the styles are read just far enough to
+   know that. */
+function dateStyles(stylesXml) {
+  const custom = {};
+  (stylesXml.match(/<numFmt [^>]*>/g) || []).forEach(t => {
+    const id = /numFmtId="(\d+)"/.exec(t), code = /formatCode="([^"]*)"/.exec(t);
+    if (id && code) custom[id[1]] = xmlText(code[1]);
+  });
+  const isDateFmt = (id) => {
+    const n = +id;
+    if ((n >= 14 && n <= 22) || (n >= 45 && n <= 47)) return true;
+    const c = custom[id];
+    return !!(c && /[dmy]/i.test(c.replace(/"[^"]*"|\[[^\]]*\]/g, '')) && !/0\.0|#/.test(c));
+  };
+  const xfs = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(stylesXml);
+  return (xfs ? (xfs[1].match(/<xf [^>]*>/g) || []) : []).map(t => {
+    const id = /numFmtId="(\d+)"/.exec(t);
+    return !!(id && isDateFmt(id[1]));
+  });
+}
+
+function serialToISO(n) {
+  const ms = Math.round((n - 25569) * 86400000);
+  const d = new Date(ms);
+  if (isNaN(d)) return String(n);
+  const iso = d.toISOString();
+  return d.getUTCHours() || d.getUTCMinutes() ? iso.slice(0, 16).replace('T', ' ') : iso.slice(0, 10);
+}
+
+function xlsxToText(buf) {
+  const z = unzip(buf);
+  const shared = [];
+  const ss = z['xl/sharedStrings.xml'] || '';
+  (ss.match(/<si>[\s\S]*?<\/si>/g) || []).forEach(si => {
+    shared.push((si.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(xmlText).join(''));
+  });
+  const dates = dateStyles(z['xl/styles.xml'] || '');
+  const sheets = Object.keys(z).filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
+    .sort((a, b) => (+a.match(/(\d+)\.xml$/)[1]) - (+b.match(/(\d+)\.xml$/)[1]));
+  const blocks = [];
+  sheets.slice(0, 4).forEach(name => {
+    const rows = [];
+    (z[name].match(/<row[^>]*>[\s\S]*?<\/row>|<row[^>]*\/>/g) || []).forEach(row => {
+      const cells = [];
+      (row.match(/<c [^>]*\/>|<c [^>]*>[\s\S]*?<\/c>/g) || []).forEach(c => {
+        const head = /^<c ([^>]*)/.exec(c)[1];
+        const r = /r="([A-Z]+\d+)"/.exec(head), t = /t="(\w+)"/.exec(head), s = /s="(\d+)"/.exec(head);
+        const v = /<v>([\s\S]*?)<\/v>/.exec(c);
+        let val = '';
+        if (t && t[1] === 's') val = v ? (shared[+v[1]] || '') : '';
+        else if (t && t[1] === 'inlineStr') val = (c.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(xmlText).join('');
+        else if (v) {
+          val = xmlText(v[1]);
+          if ((!t || t[1] === 'n') && s && dates[+s[1]] && /^\d+(\.\d+)?$/.test(val)) val = serialToISO(+val);
+          else if ((!t || t[1] === 'n') && /^-?\d+\.\d{6,}/.test(val)) val = String(Number(parseFloat(val).toPrecision(12)));
+        }
+        const i = r ? colIndex(r[1]) : cells.length;
+        if (i >= 0 && i < 60) cells[i] = String(val).replace(/[\t\r\n]+/g, ' ').trim();
+      });
+      const line = Array.from(cells, x => x || '').join('\t').replace(/\t+$/, '');
+      if (line.trim()) rows.push(line);
+    });
+    if (rows.length) blocks.push(rows.join('\n'));
+  });
+  return blocks.join('\n\n— next sheet —\n\n');
+}
+
+/* Several Turkish banks "export to Excel" by sending an HTML table with an
+   .xls name. Flatten it to rows. */
+function htmlTableToText(s) {
+  const rows = [];
+  (s.match(/<tr[\s\S]*?<\/tr>/gi) || []).forEach(tr => {
+    const cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || [])
+      .map(td => xmlText(td.replace(/<br\s*\/?>/gi, ' ')).replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim());
+    if (cells.some(Boolean)) rows.push(cells.join('\t'));
+  });
+  return rows.join('\n');
+}
+
+function decodeText(buf) {
+  const utf8 = buf.toString('utf8');
+  if (utf8.indexOf('�') < 0) return utf8.replace(/^﻿/, '');
+  for (const enc of ['windows-1254', 'iso-8859-9', 'utf-16le']) {
+    try { return new TextDecoder(enc).decode(buf); } catch (e) {}
+  }
+  return utf8;
+}
+
+/* What the model will see: a PDF as a document, everything else as text. */
+function prepareStatement(buf, name) {
+  const head = buf.slice(0, 8);
+  if (head.slice(0, 4).toString('latin1') === '%PDF') return { kind: 'pdf', pdf: buf.toString('base64') };
+  if (head[0] === 0x50 && head[1] === 0x4b) {
+    let text = '';
+    try { text = xlsxToText(buf); } catch (e) { return { error: 'That spreadsheet could not be opened. Save it again as .xlsx or PDF and try once more.' }; }
+    if (!text.trim()) return { error: 'That spreadsheet has no rows in it.' };
+    return { kind: 'xlsx', text };
+  }
+  if (head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0) {
+    return { error: 'That is an old-style .xls file, which cannot be read here. Download the statement as PDF, or open it and save it as .xlsx.' };
+  }
+  const text = decodeText(buf);
+  if (/<table[\s>]/i.test(text.slice(0, 200000))) {
+    const t = htmlTableToText(text);
+    if (t.trim()) return { kind: 'html', text: t };
+  }
+  if (!text.trim()) return { error: 'That file is empty.' };
+  if (/[\x00-\x08\x0e-\x1f]/.test(text.slice(0, 2000))) return { error: 'That file type cannot be read. Use the PDF, Excel or CSV statement from your bank.' };
+  return { kind: 'text', text };
+}
+
+/* ---- understanding the reply ------------------------------------------- */
+
+const maskNumbers = (s) => String(s || '')
+  .replace(/\bTR\s?\d{2}(?:\s?\d{4}){5}\s?\d{2}\b/gi, 'IBAN')
+  .replace(/\b\d(?:[ -]?\d){12,18}\b/g, (m) => '••' + m.replace(/\D/g, '').slice(-4));
+
+function cleanRow(r, cats, fallbackCur) {
+  if (!Array.isArray(r)) return null;
+  const [date, desc, amount, cur, cat, kind] = r;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return null;
+  const a = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(',', '.'));
+  if (!Number.isFinite(a) || a === 0) return null;
+  const k = STMT_KINDS.indexOf(kind) >= 0 ? kind : (a < 0 ? 'spend' : 'income');
+  return {
+    date: String(date),
+    merchant: maskNumbers(String(desc || '').replace(/\s+/g, ' ').trim()).slice(0, 80) || '—',
+    amount: Math.round(a * 100) / 100,
+    currency: /^[A-Z]{3}$/.test(String(cur || '')) ? String(cur) : fallbackCur,
+    category: cats.indexOf(cat) >= 0 ? cat : 'Other',
+    kind: k
+  };
+}
+
+function parseStatementReply(text, cats, truncated) {
+  cats = Array.isArray(cats) && cats.length ? cats : ['Other'];
+  const s = String(text || '');
+  let obj = null;
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { obj = JSON.parse(s.slice(a, b + 1)); } catch (e) {} }
+  let partial = false;
+  if (!obj) {
+    /* A long statement can run out of room mid-reply. Keep every row that
+       arrived whole, and say so, rather than throwing the lot away. */
+    const rows = [];
+    (s.match(/\[\s*"\d{4}-\d{2}-\d{2}"[^\[\]]*\]/g) || []).forEach(m => { try { rows.push(JSON.parse(m)); } catch (e) {} });
+    if (!rows.length) return null;
+    const meta = {};
+    ['bank', 'account', 'currency', 'from', 'to'].forEach(k => {
+      const m = new RegExp('"' + k + '"\\s*:\\s*"([^"]*)"').exec(s);
+      if (m) meta[k] = m[1];
+    });
+    obj = Object.assign(meta, { tx: rows });
+    partial = true;
+  }
+  const cur = /^[A-Z]{3}$/.test(String(obj.currency || '')) ? obj.currency : 'TRY';
+  const tx = (Array.isArray(obj.tx) ? obj.tx : []).map(r => cleanRow(r, cats, cur)).filter(Boolean);
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null);
+  const dates = tx.map(t => t.date).sort();
+  return {
+    bank: String(obj.bank || '').slice(0, 60),
+    account: maskNumbers(String(obj.account || '')).slice(0, 60),
+    currency: cur,
+    from: iso(obj.from) || dates[0] || null,
+    to: iso(obj.to) || dates[dates.length - 1] || null,
+    opening: num(obj.opening), closing: num(obj.closing),
+    tx,
+    partial: partial || !!truncated
+  };
+}
+
+/* ---- the job ------------------------------------------------------------ */
+
+async function readStatementJob(job, prep, cats, key) {
+  const content = [];
+  if (prep.kind === 'pdf') {
+    content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: prep.pdf } });
+  } else {
+    let t = maskNumbers(prep.text);          /* IBANs and card numbers never need to leave */
+    if (t.length > STMT_MAX_TEXT) { t = t.slice(0, STMT_MAX_TEXT); job.clipped = true; }
+    content.push({ type: 'text', text: '<statement format="' + prep.kind + '">\n' + t + '\n</statement>' });
+  }
+  content.push({ type: 'text', text: 'Categories: ' + JSON.stringify(cats) + '\nToday is ' +
+    new Date().toISOString().slice(0, 10) + '. Return the JSON for this statement.' });
+
+  const r = await stmtPost('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, {
+    model: CHAT_MODEL,
+    max_tokens: 24000,
+    system: STMT_SYSTEM,
+    messages: [{ role: 'user', content }]
+  }, 330000);
+
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('statement', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status === 413) throw new Error('That file is too large to read in one go. Try a shorter period.');
+  if (r.status < 200 || r.status >= 300) {
+    const msg = r.body && r.body.error && r.body.error.message;
+    if (/pdf|page|document/i.test(String(msg || ''))) throw new Error('That PDF could not be read (' + String(msg).slice(0, 120) + ').');
+    throw new Error('The statement could not be read just now (upstream ' + r.status + ').');
+  }
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const text = parts.filter(b => b && b.type === 'text').map(b => b.text).join('\n');
+  const out = parseStatementReply(text, cats, r.body && r.body.stop_reason === 'max_tokens');
+  if (!out || !out.tx.length) throw new Error('No transactions were found in that file. Is it a statement or an account history export?');
+  if (job.clipped) out.partial = true;
+  return out;
+}
+
+function sweepJobs() {
+  const now = Date.now();
+  for (const [id, j] of stmtJobs) if (now - j.at > STMT_JOB_TTL) stmtJobs.delete(id);
+}
+
+async function handleStatement(p, req, res, ctx) {
+  if (p !== '/api/flow/statement') return false;
+  sweepJobs();
+  const uid = (ctx.user && ctx.user.id) || 'anon';
+
+  if (req.method === 'GET') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const j = stmtJobs.get(String(q.get('job') || ''));
+    if (!j || j.uid !== uid) { ctx.json(res, 404, { error: 'That reading has expired. Upload the statement again.' }); return true; }
+    if (j.status === 'working') { ctx.json(res, 200, { ok: true, status: 'working', seconds: Math.round((Date.now() - j.at) / 1000) }); return true; }
+    if (j.status === 'error') { ctx.json(res, 200, { ok: false, status: 'error', error: j.error }); return true; }
+    ctx.json(res, 200, Object.assign({ ok: true, status: 'done' }, j.result));
+    return true;
+  }
+  if (req.method !== 'POST') return false;
+
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+
+  const spent = (await ctx.counter.get(stmtCountKey())) || 0;
+  if (STMT_DAILY_CAP > 0 && spent >= STMT_DAILY_CAP) {
+    ctx.json(res, 429, { error: 'You have read ' + spent + ' statements today. It resets at midnight UTC.', used: spent, cap: STMT_DAILY_CAP });
+    return true;
+  }
+
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const b64 = typeof body.data === 'string' ? body.data.replace(/^data:[^,]*,/, '') : '';
+  if (!b64) { ctx.json(res, 400, { error: 'No file came through.' }); return true; }
+  if (b64.length > Math.ceil(STMT_MAX_BYTES * 4 / 3) + 8) {
+    ctx.json(res, 413, { error: 'That file is over 10 MB. Download a shorter period, or the PDF instead of a scan.' }); return true;
+  }
+  const buf = Buffer.from(b64, 'base64');
+  const prep = prepareStatement(buf, String(body.name || ''));
+  if (prep.error) { ctx.json(res, 415, { error: prep.error }); return true; }
+
+  const cats = (Array.isArray(body.categories) ? body.categories : [])
+    .map(c => String(c || '').trim().slice(0, 40)).filter(Boolean).slice(0, 40);
+  if (cats.indexOf('Other') < 0) cats.push('Other');
+
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = { uid, status: 'working', at: Date.now() };
+  stmtJobs.set(id, job);
+  await ctx.counter.set(stmtCountKey(), spent + 1);
+
+  readStatementJob(job, prep, cats, key)
+    .then(out => { job.result = Object.assign(out, { kindRead: prep.kind }); job.status = 'done'; })
+    .catch(e => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'The statement could not be read just now.'; if (!(e && e.message)) console.error('[flow/statement]', e); });
+
+  ctx.json(res, 202, { ok: true, job: id, kind: prep.kind, used: spent + 1, cap: STMT_DAILY_CAP });
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -996,6 +1373,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleChatStream(p, req, res, ctx)) return true;
   if (await handleDirection(p, req, res, ctx)) return true;
   if (await handlePlanWeek(p, req, res, ctx)) return true;
+  if (await handleStatement(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.parsePlan = parsePlan;
@@ -1012,3 +1390,9 @@ module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
 module.exports._internals.postStream = postStream;
 module.exports._internals.sseFrames = sseFrames;
 module.exports._internals.systemBlocks = systemBlocks;
+module.exports._internals.statement = {
+  prepareStatement, xlsxToText, htmlTableToText, parseStatementReply, maskNumbers, decodeText,
+  jobs: stmtJobs, config: () => ({ cap: STMT_DAILY_CAP, maxBytes: STMT_MAX_BYTES }),
+  handle: handleStatement, STMT_SYSTEM,
+  setPoster(fn) { stmtPost = fn || ((...a) => postJSON(...a)); }
+};

@@ -2414,3 +2414,35 @@ html[data-flow-theme="bloom"] body{--f-muted:#7a6469;--f-accent-2:#4f7d5d}
    to see whether a tap is the first of two, which delays every tap in the
    iPhone app. `manipulation` keeps pinch and scroll and drops only that. */
 html{touch-action:manipulation;}
+
+/* ── Bank statements: the report ────────────────────────────────────────── */
+.flow-drop .fx-drop-sub{display:block;margin-top:4px;font-size:11.5px;color:var(--f-muted,var(--muted));letter-spacing:.04em}
+.fx-report{border:1px solid var(--f-line,var(--border));border-radius:14px;padding:14px;background:var(--f-surface,var(--card))}
+.fx-rh{font-size:16px;font-weight:700;color:var(--f-ink,var(--text));overflow-wrap:anywhere}
+.fx-warn{margin:10px 0 0;padding:9px 11px;border-radius:10px;font-size:12.5px;background:rgba(245,166,35,.12);color:var(--f-ink,var(--text))}
+.fx-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px}
+.fx-tile{border:1px solid var(--f-line,var(--border));border-radius:12px;padding:10px 12px;min-width:0}
+.fx-tile span{display:block;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--f-muted,var(--muted))}
+.fx-tile b{display:block;margin-top:3px;font-size:18px;font-weight:800;color:var(--f-ink,var(--text));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-pos{color:var(--f-good,#00c27a) !important}
+.fx-neg{color:var(--f-critical,#e5484d) !important}
+.fx-addbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--f-accent-soft,rgba(10,132,255,.1));font-size:13.5px;font-weight:600}
+.fx-addbar small{display:block;font-weight:500;font-size:12px;color:var(--f-muted,var(--muted))}
+.fx-rlist{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.fx-rlist li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--f-line,var(--border));font-size:13px}
+.fx-rlist li:last-child{border-bottom:0}
+.fx-rlist li span{min-width:0;overflow-wrap:anywhere}
+.fx-rlist li small{color:var(--f-muted,var(--muted));font-weight:500}
+.fx-rlist li b{white-space:nowrap;font-weight:700}
+.fx-all{margin-top:12px}
+.fx-all summary{cursor:pointer;font-size:12.5px;color:var(--f-muted,var(--muted))}
+.fx-past-row{display:flex;align-items:center;gap:6px;border-top:1px solid var(--f-line,var(--border))}
+.fx-past-open{flex:1;min-width:0;text-align:left;background:none;border:0;padding:10px 2px;cursor:pointer;color:inherit;font:inherit}
+.fx-past-open b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fx-past-open span{display:block;font-size:12px;color:var(--f-muted,var(--muted))}
+.fx-past-open:hover b{color:var(--f-accent,var(--accent))}
+.fx-rtop{display:flex;align-items:flex-start;gap:10px}
+.fx-rtop > .flow-btn{flex:0 0 auto}
+.fx-cats li{display:grid;grid-template-columns:1fr auto;row-gap:5px;border-bottom:0;padding:5px 0}
+.fx-cats li i{grid-column:1 / -1;display:block;height:6px;border-radius:99px;background:var(--f-accent,var(--accent));opacity:.85}
+.fx-report > .flow-sub{font-size:12.5px;margin:8px 0 0}
