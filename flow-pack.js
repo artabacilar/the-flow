@@ -1672,6 +1672,303 @@ const Statement = {
 };
 window.FlowStatement = Statement;
 
+/* ── Spending habits ──────────────────────────────────────────────────────
+ * Every statement you have uploaded, read together: how the months compare,
+ * which categories are growing, where the money goes, which weekdays cost
+ * most, what repeats every month, what the small things add up to, and what
+ * went out as card payments, transfers and fees.
+ *
+ * Worked out here, from lines already in the account — nothing is sent
+ * anywhere and it costs nothing to look at. Only statement lines count:
+ * a receipt typed in by hand is a different kind of record and mixing the
+ * two would double-count the months a statement also covers.
+ *
+ * Overlapping statements (October uploaded twice, or a card statement that
+ * runs 15th to 15th) are de-duplicated line by line: the same date, amount
+ * and description counts as many times as it appears in any ONE statement,
+ * never the sum across them.
+ * ====================================================================== */
+const Habits = {
+  async load() {
+    const list = await Statement.list();
+    const out = [];
+    for (const x of list) { const f = await Statement.get(x.id); if (f && Array.isArray(f.tx)) out.push(f); }
+    return out;
+  },
+
+  merge(statements) {
+    const best = {};
+    statements.forEach((st) => {
+      const cnt = {};
+      (st.tx || []).forEach((t) => {
+        const k = t.date + '|' + Number(t.amount).toFixed(2) + '|' + norm(t.merchant).toLowerCase().slice(0, 24) + '|' + (t.currency || st.currency || '');
+        (cnt[k] = cnt[k] || []).push(Object.assign({ currency: st.currency }, t));
+      });
+      Object.keys(cnt).forEach((k) => { if (!best[k] || cnt[k].length > best[k].length) best[k] = cnt[k]; });
+    });
+    const all = [];
+    Object.values(best).forEach((rows) => rows.forEach((r) => all.push(r)));
+    return all.sort((a, b) => a.date.localeCompare(b.date));
+  },
+
+  /* Days of each month that some statement actually covers. */
+  coverage(statements) {
+    const days = {};
+    statements.forEach((st) => {
+      const dates = (st.tx || []).map((t) => t.date).sort();
+      const from = st.from || dates[0], to = st.to || dates[dates.length - 1];
+      if (!from || !to) return;
+      const d = parseISO(from), end = parseISO(to);
+      for (let i = 0; i < 400 && d <= end; i++, d.setDate(d.getDate() + 1)) days[Habits.iso(d)] = 1;
+    });
+    const per = {};
+    Object.keys(days).forEach((k) => { const m = k.slice(0, 7); per[m] = (per[m] || 0) + 1; });
+    return per;
+  },
+  iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
+  monthLen(ym) { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); },
+  monthName(ym, long) { const [y, m] = ym.split('-').map(Number); return MON[m - 1] + (long ? ' ' + y : ''); },
+  key(t) { return norm(t.merchant).toLowerCase().replace(/\s+\d+\/\d+$/, '').slice(0, 40); },
+
+  analyse(statements, home) {
+    home = home || 'TRY';
+    const all = Habits.merge(statements);
+    const mine = all.filter((t) => (t.currency || home) === home);
+    const other = all.length - mine.length;
+    const spend = mine.filter((t) => t.amount < 0 && (t.kind === 'spend' || t.kind === 'fee'));
+    if (!spend.length) return { empty: true, statements: statements.length, other };
+
+    const cov = Habits.coverage(statements);
+    const months = Object.keys(cov).sort();
+    const full = months.filter((m) => cov[m] >= Habits.monthLen(m) - 3);
+    const byMonth = {};
+    months.forEach((m) => { byMonth[m] = { m, spend: 0, income: 0, fees: 0, cardPay: 0, transfersOut: 0, n: 0, full: full.indexOf(m) >= 0, days: cov[m] }; });
+    const bucket = (t) => byMonth[t.date.slice(0, 7)] || (byMonth[t.date.slice(0, 7)] = { m: t.date.slice(0, 7), spend: 0, income: 0, fees: 0, cardPay: 0, transfersOut: 0, n: 0, full: false, days: 0 });
+    mine.forEach((t) => {
+      const b = bucket(t);
+      if (t.amount < 0 && (t.kind === 'spend' || t.kind === 'fee')) { b.spend -= t.amount; b.n++; if (t.kind === 'fee') b.fees -= t.amount; }
+      else if (t.amount > 0 && (t.kind === 'income' || t.kind === 'refund')) b.income += t.amount;
+      else if (t.kind === 'card-payment') b.cardPay += Math.abs(t.amount);
+      else if (t.kind === 'transfer' && t.amount < 0) b.transfersOut -= t.amount;
+    });
+    const series = Object.values(byMonth).sort((a, b) => a.m.localeCompare(b.m));
+    const fullRows = series.filter((r) => r.full);
+    const avgMonth = fullRows.length ? fullRows.reduce((a, r) => a + r.spend, 0) / fullRows.length : null;
+    const totalSpend = spend.reduce((a, t) => a - t.amount, 0);
+    const coveredDays = Object.values(cov).reduce((a, n) => a + n, 0) || 1;
+    const perDay = totalSpend / coveredDays;
+    const last = fullRows[fullRows.length - 1] || null, prev = fullRows[fullRows.length - 2] || null;
+
+    /* Categories: the latest full month against the average of the ones before it. */
+    const catMonth = {};
+    spend.forEach((t) => { const m = t.date.slice(0, 7), c = t.category || 'Other'; (catMonth[c] = catMonth[c] || {})[m] = (catMonth[c][m] || 0) - t.amount; });
+    const catTotals = Object.keys(catMonth).map((c) => ({ label: c, value: Object.values(catMonth[c]).reduce((a, v) => a + v, 0) })).sort((a, b) => b.value - a.value);
+    const movers = [];
+    if (last && fullRows.length >= 2) {
+      const before = fullRows.slice(0, -1);
+      Object.keys(catMonth).forEach((c) => {
+        const now = catMonth[c][last.m] || 0;
+        const was = before.reduce((a, r) => a + (catMonth[c][r.m] || 0), 0) / before.length;
+        const diff = now - was;
+        if (Math.abs(diff) >= Math.max(avgMonth * 0.03, 1) && (was === 0 || Math.abs(diff) / was >= 0.15)) movers.push({ cat: c, now, was, diff });
+      });
+      movers.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+    }
+
+    /* Merchants. */
+    const merch = {};
+    spend.forEach((t) => {
+      const k = Habits.key(t);
+      const m = merch[k] || (merch[k] = { name: t.merchant.replace(/\s+\d+\/\d+$/, ''), total: 0, n: 0, months: {}, amounts: [], cat: t.category, last: t.date });
+      m.total -= t.amount; m.n++; m.months[t.date.slice(0, 7)] = (m.months[t.date.slice(0, 7)] || 0) - t.amount; m.amounts.push(-t.amount);
+      if (t.date > m.last) m.last = t.date;
+    });
+    const merchants = Object.values(merch).sort((a, b) => b.total - a.total);
+
+    /* Recurring: in two or more different months at much the same price. */
+    /* "Not seen lately" is judged against the newest month a statement covers
+       well — a half month at the end must not make everything look stopped. */
+    const wellCovered = series.filter((r) => r.days >= 20);
+    const refMonth = wellCovered.length ? wellCovered[wellCovered.length - 1].m : null;
+    /* Bills and subscriptions, not habits: at most about twice a month. The
+       weekly shop and the daily coffee repeat too, but they belong under
+       where the money goes, not in a list of things to cancel. */
+    const recurring = merchants.filter((m) => {
+      const ms = Object.keys(m.months);
+      if (ms.length < 2 || m.n / ms.length > 2) return false;
+      const per = ms.map((k) => m.months[k]);
+      const lo = Math.min.apply(null, per), hi = Math.max.apply(null, per);
+      return hi <= lo * 1.25 + 1;
+    }).map((m) => {
+      const ms = Object.keys(m.months).sort();
+      const monthly = ms.reduce((a, k) => a + m.months[k], 0) / ms.length;
+      return { name: m.name, monthly, yearly: monthly * 12, months: ms.length, cat: m.cat, stopped: !!(refMonth && ms[ms.length - 1] < refMonth) };
+    }).sort((a, b) => b.monthly - a.monthly);
+    const recurringMonthly = recurring.filter((r) => !r.stopped).reduce((a, r) => a + r.monthly, 0);
+
+    /* Weekdays: average spend on each weekday that was covered. */
+    /* Everyday spending only: rent, bills and the few biggest charges land on
+       whatever weekday the 1st happens to be, and would decide the answer. */
+    const amts = spend.map((t) => -t.amount).sort((a, b) => a - b);
+    const med = amts[Math.floor(amts.length / 2)] || 0;
+    const everyday = spend.filter((t) => t.category !== 'Rent & Bills' && -t.amount <= Math.max(med * 10, 1));
+    const everydayTotal = everyday.reduce((a, t) => a - t.amount, 0);
+    const wdSum = [0, 0, 0, 0, 0, 0, 0], wdDays = [0, 0, 0, 0, 0, 0, 0];
+    everyday.forEach((t) => { wdSum[parseISO(t.date).getDay()] -= t.amount; });
+    const covDays = {};
+    statements.forEach((st) => {
+      const dates = (st.tx || []).map((t) => t.date).sort();
+      const from = st.from || dates[0], to = st.to || dates[dates.length - 1];
+      if (!from || !to) return;
+      const d = parseISO(from), end = parseISO(to);
+      for (let i = 0; i < 400 && d <= end; i++, d.setDate(d.getDate() + 1)) covDays[Habits.iso(d)] = d.getDay();
+    });
+    Object.values(covDays).forEach((w) => { wdDays[w]++; });
+    const weekdays = [1, 2, 3, 4, 5, 6, 0].map((w) => ({ label: DOW[w], value: wdDays[w] ? wdSum[w] / wdDays[w] : 0 }));
+    const wkend = (wdSum[0] + wdSum[6]), wkendShare = everydayTotal ? wkend / everydayTotal : 0;
+    const wkendDays = wdDays[0] + wdDays[6], wkDays = coveredDays - wkendDays;
+    const wkendPerDay = wkendDays ? wkend / wkendDays : 0, wkPerDay = wkDays ? (everydayTotal - wkend) / wkDays : 0;
+
+    /* Small purchases: at or under a quarter of the typical transaction. */
+    const sorted = spend.map((t) => -t.amount).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] || 0;
+    const smallCap = Math.max(1, Math.round(median));
+    const small = spend.filter((t) => -t.amount <= smallCap && t.kind === 'spend' && t.category !== 'Subscriptions' && t.category !== 'Rent & Bills');
+    const smallTotal = small.reduce((a, t) => a - t.amount, 0);
+    const smallMerch = {};
+    small.forEach((t) => { const k = Habits.key(t); const m = smallMerch[k] || (smallMerch[k] = { name: t.merchant, total: 0, n: 0 }); m.total -= t.amount; m.n++; });
+    const smallTop = Object.values(smallMerch).sort((a, b) => b.total - a.total).slice(0, 4);
+
+    /* Big one-offs: the largest purchases from somewhere seen in one month
+       only — not rent, not the weekly shop, not a fee. */
+    const oneOffs = spend.filter((t) => t.kind === 'spend' && Object.keys((merch[Habits.key(t)] || { months: {} }).months).length === 1)
+      .sort((a, b) => a.amount - b.amount).slice(0, 5);
+
+    const fees = series.reduce((a, r) => a + r.fees, 0);
+    const cardPay = series.reduce((a, r) => a + r.cardPay, 0);
+    const transfersOut = series.reduce((a, r) => a + r.transfersOut, 0);
+    const income = series.reduce((a, r) => a + r.income, 0);
+
+    return {
+      empty: false, home, statements: statements.length, other, lines: all.length,
+      from: all[0].date, to: all[all.length - 1].date, coveredDays,
+      series, fullCount: fullRows.length, avgMonth, perDay, totalSpend, income,
+      last, prev, change: last && prev ? last.spend - prev.spend : null,
+      catTotals, movers: movers.slice(0, 5), merchants: merchants.slice(0, 8),
+      recurring, recurringMonthly,
+      weekdays, wkendShare, wkendPerDay, wkPerDay,
+      small: { cap: smallCap, n: small.length, total: smallTotal, perMonth: smallTotal / Math.max(1, coveredDays / 30.4), top: smallTop },
+      oneOffs, fees, cardPay, transfersOut
+    };
+  },
+
+  html(a) {
+    if (!a) return '<p class="flow-empty">Working it out…</p>';
+    if (a.empty) return `<p class="flow-empty">${a.statements ? 'The statements you uploaded have no spending in ' + esc(Ledger.home()) + ' yet.' : 'Upload a bank statement above and your spending habits appear here. Two or more months show how they change.'}</p>`;
+    const m = (v) => money(v, a.home);
+    const mm = (v) => moneyCompact(v, a.home);
+    const signed = (v) => (v >= 0 ? '+' : '−') + m(Math.abs(v));
+    const pct = (v) => (v > 0 && v < 0.01 ? (v * 100).toFixed(1) : String(Math.round(v * 100))) + '%';
+    const maxMonth = Math.max.apply(null, a.series.map((r) => r.spend)) || 1;
+    const maxWd = Math.max.apply(null, a.weekdays.map((w) => w.value)) || 1;
+    const topWd = a.weekdays.slice().sort((x, y) => y.value - x.value)[0];
+    const list = (rows, f) => rows.length ? '<ol class="fx-rlist">' + rows.map(f).join('') + '</ol>' : '<p class="flow-empty">Nothing yet.</p>';
+    const span = Statement.period({ from: a.from, to: a.to });
+    const wkMore = a.wkPerDay ? a.wkendPerDay / a.wkPerDay - 1 : 0;
+
+    return `
+      <p class="flow-sub" style="margin-top:0">${a.statements} statement${a.statements === 1 ? '' : 's'} · ${esc(span)} · ${a.lines} lines${a.other ? ` · ${a.other} in other currencies left out` : ''}</p>
+      <div class="fx-tiles">
+        <div class="fx-tile"><span>${a.avgMonth != null ? 'Average month' : 'Spent'}</span><b>${esc(m(a.avgMonth != null ? a.avgMonth : a.totalSpend))}</b></div>
+        <div class="fx-tile"><span>Per day</span><b>${esc(m(a.perDay))}</b></div>
+        ${a.change != null ? `<div class="fx-tile"><span>${esc(Habits.monthName(a.last.m))} vs ${esc(Habits.monthName(a.prev.m))}</span><b class="${a.change > 0 ? 'fx-neg' : 'fx-pos'}">${esc(signed(a.change))}</b></div>` : ''}
+        <div class="fx-tile"><span>Repeats monthly</span><b>${esc(m(a.recurringMonthly))}</b></div>
+      </div>
+
+      <div class="hb-grid">
+        <section>
+          <div class="flow-label">Month by month</div>
+          <div class="hb-months">${a.series.map((r) => `<div class="hb-mo${r.full ? '' : ' hb-part'}" title="${esc(Habits.monthName(r.m, true) + ': ' + m(r.spend) + (r.full ? '' : ' (part of the month)'))}">
+              <b>${esc(mm(r.spend))}</b><i style="height:${Math.max(4, Math.round(r.spend / maxMonth * 100))}%"></i><span>${esc(Habits.monthName(r.m))}</span></div>`).join('')}</div>
+          ${a.series.some((r) => !r.full) ? '<p class="hb-note">Paler months are only partly covered by a statement.</p>' : ''}
+          ${a.fullCount < 2 ? '<p class="hb-note">Upload another month to see what is changing.</p>' : ''}
+        </section>
+
+        <section>
+          <div class="flow-label">${a.movers.length ? 'What changed in ' + esc(Habits.monthName(a.last.m)) : 'Where it goes'}</div>
+          ${a.movers.length
+            ? list(a.movers, (x) => `<li><span>${esc(x.cat)} <small>usually ${esc(m(x.was))}</small></span><b class="${x.diff > 0 ? 'fx-neg' : 'fx-pos'}">${esc(signed(x.diff))}</b></li>`)
+            : list(a.catTotals.slice(0, 6), (c) => `<li><span>${esc(c.label)}</span><b>${esc(m(c.value))} <small>${pct(c.value / a.totalSpend)}</small></b></li>`)}
+        </section>
+
+        <section>
+          <div class="flow-label">Recurring payments</div>
+          ${list(a.recurring.slice(0, 8), (r) => `<li><span>${esc(r.name)} <small>${r.months} months${r.stopped ? ' · not seen lately' : ''}</small></span><b>${esc(m(r.monthly))}<small>/mo</small></b></li>`)}
+          ${a.recurring.length ? `<p class="hb-note">About ${esc(m(a.recurringMonthly * 12))} a year if they all carry on.</p>` : '<p class="hb-note">Needs two or more months to spot.</p>'}
+        </section>
+
+        <section>
+          <div class="flow-label">Where the money goes most</div>
+          ${list(a.merchants.slice(0, 6), (x) => `<li><span>${esc(x.name)} <small>×${x.n}</small></span><b>${esc(m(x.total))}</b></li>`)}
+        </section>
+
+        <section>
+          <div class="flow-label">Everyday spending by day</div>
+          <div class="hb-wd">${a.weekdays.map((w) => `<div><i style="height:${Math.max(3, Math.round(w.value / maxWd * 100))}%" class="${w === topWd ? 'hb-top' : ''}"></i><span>${esc(w.label.slice(0, 2))}</span></div>`).join('')}</div>
+          <p class="hb-note">${esc(topWd.label)} is your most expensive day (${esc(m(topWd.value))} on average, leaving out rent, bills and the biggest charges). Weekends are ${pct(a.wkendShare)} of it${a.wkPerDay ? ` — ${wkMore >= 0 ? pct(wkMore) + ' more' : pct(-wkMore) + ' less'} per day than weekdays` : ''}.</p>
+        </section>
+
+        <section>
+          <div class="flow-label">Small purchases</div>
+          <p class="hb-big">${esc(m(a.small.perMonth))}<small> a month</small></p>
+          <p class="hb-note">${a.small.n} purchases of ${esc(m(a.small.cap))} or less, ${esc(m(a.small.total))} in all.</p>
+          ${list(a.small.top, (x) => `<li><span>${esc(x.name)} <small>×${x.n}</small></span><b>${esc(m(x.total))}</b></li>`)}
+        </section>
+
+        <section>
+          <div class="flow-label">Payments, transfers &amp; fees</div>
+          <ol class="fx-rlist">
+            <li><span>Paid off cards</span><b>${esc(m(a.cardPay))}</b></li>
+            <li><span>Transfers out</span><b>${esc(m(a.transfersOut))}</b></li>
+            <li><span>Fees &amp; interest</span><b class="${a.fees ? 'fx-neg' : ''}">${esc(m(a.fees))}</b></li>
+            <li><span>Money in</span><b>${esc(m(a.income))}</b></li>
+          </ol>
+          ${a.fees ? `<p class="hb-note">Fees and interest were ${pct(a.fees / a.totalSpend)} of what you spent.</p>` : ''}
+        </section>
+
+        <section>
+          <div class="flow-label">Biggest one-offs</div>
+          ${list(a.oneOffs, (t) => `<li><span>${esc(t.merchant)} <small>${esc(prettyDate(t.date))}</small></span><b>${esc(m(-t.amount))}</b></li>`)}
+        </section>
+      </div>`;
+  },
+
+  async paint(wrap) {
+    const box = wrap.querySelector('#fx-habits');
+    if (!box) return;
+    let a = null;
+    try { a = Habits.analyse(await Habits.load(), Ledger.home()); } catch (e) { console.warn('[Flow] habits', e); a = { empty: true, statements: 0 }; }
+    Habits.last = a;
+    box.innerHTML = Habits.html(a);
+  }
+};
+window.FlowHabits = Habits;
+/* Opening Finances shows the habits as they are now — statements uploaded on
+   another device included — not as they were when the tab was first drawn. */
+Habits.boot = function () {
+  if (Habits._booted || typeof Nav === 'undefined' || typeof Nav.go !== 'function') return;
+  Habits._booted = true;
+  const orig = Nav.go;
+  Nav.go = function (t) {
+    const r = orig.apply(this, arguments);
+    if (/financ/i.test(String(t))) setTimeout(() => {
+      const w = document.querySelector('[data-flow-finance]');
+      if (w) { try { FinanceUI.paintPast(w); } catch (e) {} Habits.paint(w); }
+    }, 60);
+    return r;
+  };
+};
+
 /* ── One ledger ───────────────────────────────────────────────────────────
  * There were two expense stores. The first Finances form (budget, the Spend
  * tile on Today) writes `ld_finance` — amounts per month, a category id, no
@@ -3111,6 +3408,12 @@ const FinanceUI = {
         </details>
       </div>
 
+      <div class="flow-card" id="fx-habitcard">
+        <h3>📊 Spending habits</h3>
+        <p class="flow-sub">Every statement you have uploaded, read together — worked out on this screen, nothing sent anywhere.</p>
+        <div id="fx-habits"><p class="flow-empty">Working it out…</p></div>
+      </div>
+
       <div class="flow-grid c2">
         <div class="flow-card">
           <h3>Where ${esc(MON[now.getMonth()])} went</h3>
@@ -3152,6 +3455,7 @@ const FinanceUI = {
     FinanceUI.bind(section, wrap);
     Chart.hydrate(wrap);
     FinanceUI.paintPast(wrap);
+    Habits.paint(wrap);
     if (FinanceUI.state.openStatement) {
       Statement.get(FinanceUI.state.openStatement).then(full => { if (full) FinanceUI.showStatement(wrap, full); });
     }
@@ -3259,6 +3563,7 @@ const FinanceUI = {
         await Statement.remove(id);
         if (FinanceUI.state.openStatement === id) { FinanceUI.state.openStatement = null; const box = wrap.querySelector('#fx-csvresult'); if (box) box.innerHTML = ''; }
         FinanceUI.paintPast(wrap);
+        Habits.paint(wrap);
       }
       else if (a === 'stmtClose') { FinanceUI.state.openStatement = null; const box = wrap.querySelector('#fx-csvresult'); if (box) box.innerHTML = ''; }
       else if (a === 'confirmCsv') {
@@ -3403,6 +3708,7 @@ const FinanceUI = {
       FinanceUI.state.openStatement = full.id;
       FinanceUI.showStatement(wrap, full);
       FinanceUI.paintPast(wrap);
+      Habits.paint(wrap);
     } catch (e) {
       /* With no assistant on this Flow, a CSV can still be read the old way. */
       if (isText && (e.status === 503 || e.status === 401 || /not switched on|Sign in/i.test(e.message || ''))) {
@@ -12639,6 +12945,7 @@ async function boot() {
   if (Auth.user && !Auth.user.guest) { try { WeekPlan.boot(); } catch (e) { console.warn('[Flow] week', e); } }
   try { HealthMirror.boot(); } catch (e) { console.warn('[Flow] health mirror', e); }
   try { HealthNight.boot(); } catch (e) { console.warn('[Flow] last night', e); }
+  try { Habits.boot(); } catch (e) { console.warn('[Flow] habits', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
