@@ -9142,6 +9142,117 @@ const HealthNight = {
 };
 window.FlowHealthNight = HealthNight;
 
+/* ── Today, the new look ──────────────────────────────────────────────────
+ * The Signature theme's Today screen: a greeting instead of a page title,
+ * the week as a strip of days, one plain sentence about what is left to do,
+ * Big Rocks on a solid colour card, and the numbers as bento tiles. The
+ * pieces added here are small and read the same data the feed already
+ * shows; other themes hide them and keep the page as it was.
+ *
+ * The feed is redrawn whenever anything changes, so this re-adds its parts
+ * after each redraw rather than holding on to nodes that no longer exist.
+ * ====================================================================== */
+const TodayLook = {
+  name() {
+    let n = '';
+    try { n = (Auth && Auth.user && (Auth.user.name || '')) || ''; } catch (e) {}
+    if (!n) { try { n = Settings.get('displayName') || ''; } catch (e) {} }
+    return String(n).trim().split(/\s+/)[0] || '';
+  },
+  greeting(h) { return h < 5 ? 'Good night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening'; },
+  wid(d) { try { return typeof weekId === 'function' ? weekId(d) : null; } catch (e) { return null; } },
+  rocks() {
+    try { const w = TodayLook.wid(new Date()); return (w && typeof cData !== 'undefined' && cData.rocks && cData.rocks[w]) || []; } catch (e) { return []; }
+  },
+
+  strip() {
+    const now = new Date();
+    const todayIdx = (now.getDay() + 6) % 7;            // 0 = Monday
+    const mon = new Date(now); mon.setDate(now.getDate() - todayIdx);
+    const busy = {};
+    TodayLook.rocks().forEach((r) => { if (r && typeof r.day === 'number' && r.day >= 0) busy[r.day] = (busy[r.day] || 0) + (r.done ? 0 : 1); });
+    let html = '';
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mon); d.setDate(mon.getDate() + i);
+      const on = i === todayIdx;
+      html += `<button type="button" class="lk-day${on ? ' on' : ''}${i < todayIdx ? ' past' : ''}${busy[i] ? ' busy' : ''}" data-lk-day="${i}"${on ? ' aria-current="date"' : ''}>
+        <span>${esc(DOW[d.getDay()])}</span><b>${d.getDate()}</b><i${busy[i] ? '' : ' class="none"'}></i></button>`;
+    }
+    return html;
+  },
+
+  hero(feed) {
+    const rocks = TodayLook.rocks();
+    const open = rocks.filter((r) => !r.done);
+    const late = feed.querySelectorAll('.td-rock .rk-late').length;
+    const firstEl = feed.querySelector('.td-rock:not(.done) .rk-title');
+    let first = '';
+    if (firstEl) { const c = firstEl.cloneNode(true); c.querySelectorAll('.td-rk-note').forEach((n) => n.remove()); first = c.textContent.trim(); }
+    if (first.length > 90) first = first.slice(0, 88).trim() + '…';
+    let line;
+    if (!rocks.length) line = 'Nothing set for this week. <em>Pick your Big Rocks.</em>';
+    else if (!open.length) line = 'All ' + rocks.length + ' Big Rocks done. <em>Good week.</em>';
+    else line = open.length + ' Big Rock' + (open.length === 1 ? '' : 's') + ' to move' + (late ? ', <em>' + late + ' overdue.</em>' : '.');
+    const wkEl = feed.querySelector('.td-wk');
+    const wk = wkEl ? wkEl.textContent.replace(/^.*WK\s*/i, '').trim() : '';
+    const pct = rocks.length ? Math.round((rocks.length - open.length) / rocks.length * 100) : 0;
+    const meetTile = document.querySelector('.flow-td-pulse [data-jump="meetings"] .v');
+    const meets = meetTile && /^\d+$/.test(meetTile.textContent.trim()) ? +meetTile.textContent.trim() : 0;
+    return `<div class="lk-k">Today</div><h2 class="lk-line">${line}</h2>${open.length && first ? `<div class="lk-next"><b>Next</b><span>${esc(first)}</span></div>` : ''}
+      <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>`;
+  },
+
+  paint() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    const head = feed.querySelector('.td-head');
+    if (!head) return;
+    const left = head.firstElementChild;
+    let hello = feed.querySelector('.lk-hello');
+    if (!hello && left) {
+      hello = document.createElement('div');
+      hello.className = 'lk-hello';
+      left.insertBefore(hello, left.firstChild);
+    }
+    if (hello) {
+      const now = new Date(), nm = TodayLook.name();
+      hello.innerHTML = `<div class="lk-date">${esc(now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+        <div class="lk-greet">${esc(TodayLook.greeting(now.getHours()))}${nm ? ', ' + esc(nm) : ''}</div>`;
+    }
+    let strip = feed.querySelector('.lk-strip');
+    if (!strip) { strip = document.createElement('div'); strip.className = 'lk-strip'; head.after(strip); }
+    strip.innerHTML = TodayLook.strip();
+    let hero = feed.querySelector('.lk-hero');
+    if (!hero) { hero = document.createElement('button'); hero.type = 'button'; hero.className = 'lk-hero'; strip.after(hero); }
+    hero.innerHTML = TodayLook.hero(feed);
+  },
+
+  boot() {
+    const feed = document.getElementById('today-feed');
+    if (!feed) return;
+    let queued = false;
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { TodayLook.paint(); } catch (e) { console.warn('[Flow] today look', e); } }); };
+    new MutationObserver((muts) => {
+      /* Only react to changes that are not our own. */
+      if (muts.every((m) => [...m.addedNodes, ...m.removedNodes].every((n) => n.nodeType !== 1 || (n.className && /\blk-/.test(String(n.className)))))) return;
+      later();
+    }).observe(feed, { childList: true, subtree: true });
+    feed.addEventListener('click', (e) => {
+      const day = e.target.closest('[data-lk-day]');
+      if (day) { try { Nav.go('compass'); } catch (e2) {} return; }
+      if (e.target.closest('.lk-hero')) {
+        const r = feed.querySelector('.td-rocks');
+        if (!TodayLook.rocks().length) { try { Nav.go('compass'); } catch (e2) {} }
+        else if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+    TodayLook.paint();
+    /* The greeting changes with the hour; the strip with the day. */
+    setInterval(() => { if (document.visibilityState === 'visible') TodayLook.paint(); }, 5 * 60 * 1000);
+  }
+};
+window.FlowTodayLook = TodayLook;
+
 const TodayFix = {
   find(id) {
     const all = (typeof cData !== 'undefined' && cData.rocks) || {};
@@ -10571,7 +10682,10 @@ const Nav = {
         Nav.go(want);
       });
     });
-    document.getElementById('fn-capbtn').addEventListener('click', () => Nav.openCapture());
+    /* The + also closes the menu it opened — it turns into × while open. */
+    document.getElementById('fn-capbtn').addEventListener('click', () => {
+      if (Nav.capEl && Nav.capEl.classList.contains('on')) Nav.closeCapture(); else Nav.openCapture();
+    });
   },
 
   /* ---- the segment row (second level) ---------------------------------- */
@@ -13038,6 +13152,7 @@ async function boot() {
   try { HealthNight.boot(); } catch (e) { console.warn('[Flow] last night', e); }
   try { Habits.boot(); } catch (e) { console.warn('[Flow] habits', e); }
   try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
+  try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }
