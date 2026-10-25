@@ -22,6 +22,23 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.fill('#fa-email', process.env.FLOW_OWNER_EMAIL); await p.fill('#fa-name', 'Artur Abacilar'); await p.fill('#fa-pw', 'a properly long password');
   await submitAuth(p); await p.waitForTimeout(4500);
 
+  console.log('\n— off unless you switch it on —');
+  await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(800);
+  const before = await p.evaluate(() => ({
+    look: document.documentElement.getAttribute('data-flow-look'),
+    pieces: [...document.querySelectorAll('.lk-hello, .lk-strip, .lk-hero')].every((e) => getComputedStyle(e).display === 'none'),
+    title: getComputedStyle(document.querySelector('#today-feed .td-title')).display,
+    fab: getComputedStyle(document.querySelector('#flow-tabbar .fn-cap .fn-knob')).borderRadius
+  }));
+  ok('a new account gets the previous design', before.look === 'classic' && before.pieces && before.title !== 'none', before);
+  ok('including the old square + button', before.fab === '16px', before.fab);
+  await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(900);
+  ok('Settings → Appearance has the switch, off', await p.evaluate(() => { const i = document.querySelector('#newLookRow input[data-s="newLook"]'); return !!i && !i.checked; }));
+  await p.evaluate(() => { const i = document.querySelector('#newLookRow input[data-s="newLook"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(700);
+  ok('switching it on takes effect straight away', await p.evaluate(() => document.documentElement.getAttribute('data-flow-look') === 'new'));
+  ok('and is saved to the account', await p.evaluate(() => Flow.Settings.get('newLook') === true));
+
   /* A known week: one rock yesterday (overdue unless today is Monday), two today, one done. */
   const setup = await p.evaluate(async () => {
     const now = new Date(), t = (now.getDay() + 6) % 7, w = weekId(now);
@@ -105,6 +122,22 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('the added pieces disappear', paper.hidden, paper);
   ok('and the page title comes back', paper.title !== 'none', paper);
   await p.evaluate(async () => { Flow.Theme.apply('signature', false); });
+
+  console.log('\n— and back —');
+  await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(900);
+  await p.evaluate(() => { const i = document.querySelector('#newLookRow input[data-s="newLook"]'); i.checked = false; i.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(600);
+  await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(800);
+  const back = await p.evaluate(() => ({
+    look: document.documentElement.getAttribute('data-flow-look'),
+    pieces: [...document.querySelectorAll('.lk-hello, .lk-strip, .lk-hero')].every((e) => getComputedStyle(e).display === 'none'),
+    rocksBg: getComputedStyle(document.querySelector('#today-feed .td-rocks')).backgroundColor,
+    fab: getComputedStyle(document.querySelector('#flow-tabbar .fn-cap .fn-knob')).borderRadius
+  }));
+  ok('turning it off restores the previous Today', back.look === 'classic' && back.pieces && back.rocksBg !== 'rgb(200, 242, 107)', back);
+  ok('and the previous tab bar', back.fab === '16px', back.fab);
+  await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(4500);
+  ok('it stays off after a reload', await p.evaluate(() => document.documentElement.getAttribute('data-flow-look') === 'classic'));
 
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
