@@ -302,6 +302,9 @@ const SETTINGS_DEFAULTS = {
   weekStart: 1,
   defaultDurationMin: 60,
   showTimeChips: true,
+  /* The new look (Today, tab bar, + menu) is a preview you switch on; off
+     is the design as it was before 25 October. */
+  newLook: false,
   chipTabs: '',                  // blank = all tabs
   gcalClientId: '',
   gcalCalendarId: 'primary',
@@ -4072,7 +4075,9 @@ const SettingsUI = {
             <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
           </button>`).join('')}
         </div>
-        <div class="flow-switch" style="margin-top:14px"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
+        <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>New look (preview)</b><span>The redesigned Today, floating tab bar and + menu, on the Signature theme. Turn it off to go straight back to the previous design — nothing you wrote changes either way.</span></div>
+          <input type="checkbox" data-s="newLook" data-type="bool" ${s.newLook ? 'checked' : ''}></div>
+        <div class="flow-switch"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
           <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
         <div class="flow-switch"><div class="t"><b>Sharper breakdown charts</b><span>Cards headed “Visual breakdown” are redrawn as a crisp ring or bars. The original widget is hidden, never deleted.</span></div>
           <input type="checkbox" data-s="upgradeVisuals" data-type="bool" ${s.upgradeVisuals !== false ? 'checked' : ''}></div>
@@ -4307,6 +4312,7 @@ const SettingsUI = {
         await Settings.set(key, v);
         if (key === 'upgradeVisuals') { if (v) Visuals.upgradeAll(); else Visuals.restoreAll(); }
         if (key === 'pushRemindRocks') Notify.syncMac();
+        if (key === 'newLook') { try { TodayLook.applyLook(); } catch (e) {} }
         if (key === 'todayMarkets') {
           const pick = section.querySelector('#mktPick');
           if (pick) pick.hidden = !v;
@@ -9153,6 +9159,12 @@ window.FlowHealthNight = HealthNight;
  * after each redraw rather than holding on to nodes that no longer exist.
  * ====================================================================== */
 const TodayLook = {
+  /* Off unless switched on in Settings → Appearance. */
+  on() { try { return !!Settings.get('newLook'); } catch (e) { return false; } },
+  applyLook() {
+    document.documentElement.setAttribute('data-flow-look', TodayLook.on() ? 'new' : 'classic');
+    if (TodayLook.on()) { try { TodayLook.paint(); } catch (e) {} }
+  },
   name() {
     let n = '';
     try { n = (Auth && Auth.user && (Auth.user.name || '')) || ''; } catch (e) {}
@@ -9246,6 +9258,7 @@ const TodayLook = {
         else if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
+    TodayLook.applyLook();
     TodayLook.paint();
     /* The greeting changes with the hour; the strip with the day. */
     setInterval(() => { if (document.visibilityState === 'visible') TodayLook.paint(); }, 5 * 60 * 1000);

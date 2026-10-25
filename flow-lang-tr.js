@@ -1853,6 +1853,8 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Week {} · {}%": "{}. hafta · %{}",
   "{} meetings": "{} toplantı",
   "{} meeting": "{} toplantı",
+  "New look (preview)": "Yeni görünüm (ön izleme)",
+  "The redesigned Today, floating tab bar and + menu, on the Signature theme. Turn it off to go straight back to the previous design — nothing you wrote changes either way.": "Yeniden tasarlanan Bugün ekranı, yüzen sekme çubuğu ve + menüsü (Signature temasında). Kapatınca hemen önceki tasarıma dönersin — yazdığın hiçbir şey değişmez.",
 /* DICT-END */
 }, RULES);
 
