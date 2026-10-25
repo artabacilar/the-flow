@@ -22,7 +22,7 @@ const iso = (off) => { const d = new Date(); d.setDate(d.getDate() - off); retur
     window.Capacitor = { Plugins: { FlowBridge: {
       healthStatus: async () => ({ available: true, asked: true }),
       healthRequest: async () => ({ available: true, asked: true }),
-      healthRead: async () => JSON.parse(JSON.stringify(window.__healthReply))
+      healthRead: async () => { window.__reads = (window.__reads || 0) + 1; return JSON.parse(JSON.stringify(window.__healthReply)); }
     } } };
   }, [iso(0), iso(1), iso(2)]);
   const p = await ctx.newPage();
@@ -61,6 +61,48 @@ const iso = (off) => { const d = new Date(); d.setDate(d.getDate() - off); retur
   ok('sleep, HRV and resting HR each name their day', /sleep 7\.6 h \(/.test(pr.foot) && /HRV 51 ms \(/.test(pr.foot) && /resting HR 56 \(/.test(pr.foot), pr.foot);
   const wd = await p.evaluate(() => whoopData.dates);
   ok('the panel keeps a date per figure', wd && wd.hrv && wd.rhr && wd.hours && wd.rhr !== wd.hrv, wd);
+
+  console.log('\n— last night, first —');
+  const t = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const bedIso = (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(23, 40, 0, 0); return d.toISOString(); })();
+  await p.evaluate(() => Flow.Nav.go('sleep')); await p.waitForTimeout(700);
+  const night = await p.evaluate(async ([d0, bed, wake, older]) => {
+    window.__healthReply = { available: true, read: 8, days: older.map((d) => ({ date: d, hours: 7 })).concat([
+      { date: d0, hours: 7.5, bedAt: bed, sleepAt: wake, deepMin: 70, coreMin: 250, remMin: 100, awakeMin: 20, hrv: 51, rhr: 55 }]) };
+    await syncHealth(true);
+    const box = document.getElementById('healthNight');
+    const row = slData.find((e) => e.date === d0);
+    return { text: box ? box.textContent.replace(/\s+/g, ' ') : '', bars: box ? box.querySelectorAll('.hn-bar i').length : 0, visible: !!(box && box.offsetHeight), bed: row && row.bed, wake: row && row.wake };
+  }, [iso(0), bedIso, t(7, 10), [iso(3), iso(4), iso(5), iso(6), iso(7), iso(8), iso(9)]]);
+  if (process.env.SHOT) await p.locator('#healthPanel').screenshot({ path: process.env.SHOT + '-health.png' });
+  ok('the panel leads with last night', /Last night/.test(night.text) && night.visible, night.text);
+  ok('hours asleep, written as hours and minutes', /7h 30m asleep/.test(night.text), night.text);
+  ok('when sleep started and ended', /23:40\s*→\s*07:10/.test(night.text), night.text);
+  ok('the stages, as a bar and in words', night.bars === 4 && /Deep 1h 10m/.test(night.text) && /REM 1h 40m/.test(night.text) && /Awake 20m/.test(night.text), night);
+  /* The seven nights before: 7.8, 9.9 and five of 7.0 — an average of 7h 32m. */
+  ok('compared with the week before', /−02m vs your 7-night average of 7h 32m/.test(night.text), night.text);
+  ok('with that morning\'s HRV and resting heart rate', /HRV 51 ms/.test(night.text) && /resting HR 55/.test(night.text), night.text);
+  ok('the Sleep log gets the bed and wake times too', night.bed === '23:40' && night.wake === '07:10', night);
+
+  const stale = await p.evaluate(([d1, d2]) => FlowHealthNight.html([{ date: d2, hours: 6 }, { date: d1, hours: 6.2 }], false), [iso(1), iso(2)]);
+  ok('a night that is not last night is named for what it is', /The night before last/.test(stale) && /6h 12m/.test(stale), stale.slice(0, 200));
+  ok('and on a Mac it says how to get last night in', /Open The Flow on your iPhone/.test(stale));
+  ok('no stages recorded means no empty bar', !/hn-bar/.test(stale));
+
+  console.log('\n— coming back to the app reads again —');
+  const fg = await p.evaluate(async () => {
+    const r0 = window.__reads;
+    healthData.updated = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 400));
+    const r1 = window.__reads;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 400));
+    return { stale: r1 - r0, fresh: window.__reads - r1 };
+  });
+  ok('after a while away, Health is read again', fg.stale === 1, fg);
+  ok('but not again straight after', fg.fresh === 0, fg);
+
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
