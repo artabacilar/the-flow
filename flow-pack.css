@@ -2446,3 +2446,28 @@ html{touch-action:manipulation;}
 .fx-cats li{display:grid;grid-template-columns:1fr auto;row-gap:5px;border-bottom:0;padding:5px 0}
 .fx-cats li i{grid-column:1 / -1;display:block;height:6px;border-radius:99px;background:var(--f-accent,var(--accent));opacity:.85}
 .fx-report > .flow-sub{font-size:12.5px;margin:8px 0 0}
+
+/* ── Last night, from Apple Health ─────────────────────────────────────── */
+#healthNight:empty{display:none}
+.hn-card{margin-top:12px;padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--card2,rgba(255,255,255,.03))}
+.hn-card.hn-old{opacity:.92}
+.hn-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hn-lbl{font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.hn-big{font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.15;margin-top:2px}
+.hn-big small{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:0}
+.hn-times{display:flex;align-items:baseline;gap:7px;font-size:15px;color:var(--muted)}
+.hn-times b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+.hn-bar{display:flex;height:10px;border-radius:99px;overflow:hidden;margin-top:12px;gap:2px}
+.hn-bar i{display:block;height:100%}
+.hn-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--muted)}
+.hn-legend span{display:inline-flex;align-items:center;gap:5px}
+.hn-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.hn-deep{background:#4f46e5}
+.hn-core{background:#38bdf8}
+.hn-rem{background:#a78bfa}
+.hn-awake{background:#f5a623}
+.hn-foot{margin-top:10px;font-size:12.5px;color:var(--muted)}
+.hn-foot:empty{display:none}
+.hn-up{color:#00c27a;font-weight:700}
+.hn-down{color:#f5a623;font-weight:700}
+.hn-hint{margin-top:8px;font-size:12px;color:var(--muted);font-style:italic}

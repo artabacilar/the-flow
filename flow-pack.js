@@ -8636,6 +8636,115 @@ const HealthMirror = {
   }
 };
 
+/* ── Last night, from Apple Health ───────────────────────────────────────
+ * The panel used to say how many days were on record and, in a footnote,
+ * the newest sleep figure. What somebody opens it for is one question — how
+ * did I sleep last night — so that is now the first thing in it: hours
+ * asleep, when it started and ended, the stages if a watch or ring recorded
+ * them, and how it compares with the week before.
+ *
+ * The iPhone only reads Health when The Flow is opened or comes back to the
+ * front. An app left in the background used to sit on yesterday's read all
+ * morning, so coming back after twenty minutes away reads again.
+ * ====================================================================== */
+const HealthNight = {
+  STALE_MS: 20 * 60 * 1000,
+  STAGES: [['deep', 'Deep'], ['core', 'Core'], ['rem', 'REM'], ['awake', 'Awake']],
+
+  days() {
+    try {
+      const v = (typeof healthData !== 'undefined' && healthData && Array.isArray(healthData.days)) ? healthData : S.get('health', null);
+      return v && Array.isArray(v.days) ? v.days : [];
+    } catch (e) { return []; }
+  },
+  iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
+  hm(h) { const m = Math.round(h * 60); return Math.floor(m / 60) + 'h ' + pad(m % 60) + 'm'; },
+  clock(s) { try { const d = new Date(s); return isNaN(d) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } },
+
+  /* The newest night with a sleep total, and what to call it. */
+  night(days) {
+    const list = (days || []).filter(d => d && d.date && d.hours != null).sort((a, b) => a.date.localeCompare(b.date));
+    if (!list.length) return null;
+    const n = list[list.length - 1];
+    const now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+    const fresh = n.date === HealthNight.iso(now);
+    const before = list.filter(d => d.date < n.date).slice(-7);
+    const avg = before.length >= 3 ? before.reduce((a, d) => a + Number(d.hours), 0) / before.length : null;
+    let label;
+    if (fresh) label = 'Last night';
+    else if (n.date === HealthNight.iso(y)) label = 'The night before last';
+    else { const d = parseISO(n.date); label = 'Night to ' + DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; }
+    return { n, fresh, avg, label };
+  },
+
+  html(days, native) {
+    const x = HealthNight.night(days);
+    if (!x) return '';
+    const n = x.n;
+    const bed = n.bedAt ? HealthNight.clock(n.bedAt) : '', wake = n.sleepAt ? HealthNight.clock(n.sleepAt) : '';
+    const stages = HealthNight.STAGES.map(([k, l]) => ({ k, l, m: Number(n[k + 'Min']) || 0 })).filter(s => s.m > 0);
+    const total = stages.reduce((a, s) => a + s.m, 0);
+    const diff = x.avg != null ? Math.round((Number(n.hours) - x.avg) * 60) : null;
+    const extra = [];
+    if (n.hrv != null) extra.push('HRV ' + n.hrv + ' ms');
+    if (n.rhr != null) extra.push('resting HR ' + n.rhr);
+    if (n.resp != null) extra.push('breathing ' + n.resp + '/min');
+    return `<div class="hn-card${x.fresh ? '' : ' hn-old'}">
+      <div class="hn-top">
+        <div><div class="hn-lbl">${esc(x.label)}</div><div class="hn-big">${esc(HealthNight.hm(Number(n.hours)))} <small>asleep</small></div></div>
+        ${bed && wake ? `<div class="hn-times"><b>${esc(bed)}</b><span>→</span><b>${esc(wake)}</b></div>` : (wake ? `<div class="hn-times"><span>woke</span><b>${esc(wake)}</b></div>` : '')}
+      </div>
+      ${total ? `<div class="hn-bar" role="img" aria-label="${esc(stages.map(s => s.l + ' ' + s.m + ' minutes').join(', '))}">${stages.map(s => `<i class="hn-${s.k}" style="width:${(s.m / total * 100).toFixed(1)}%"></i>`).join('')}</div>
+        <div class="hn-legend">${stages.map(s => `<span><i class="hn-${s.k}"></i>${esc(s.l)} ${esc(HealthNight.hm(s.m / 60).replace(/^0h /, ''))}</span>`).join('')}</div>` : ''}
+      <div class="hn-foot">${diff != null ? `<span class="${diff >= 0 ? 'hn-up' : 'hn-down'}">${diff >= 0 ? '+' : '−'}${esc(HealthNight.hm(Math.abs(diff) / 60).replace(/^0h /, ''))}</span> vs your 7-night average of ${esc(HealthNight.hm(x.avg))}` : ''}${diff != null && extra.length ? ' · ' : ''}${esc(extra.join(' · '))}</div>
+      ${x.fresh ? '' : `<div class="hn-hint">${native ? 'Health has nothing for last night yet — a watch or ring may still be syncing.' : 'Last night is not in yet. Open The Flow on your iPhone after you wake up and it reads Health again.'}</div>`}
+    </div>`;
+  },
+
+  paint() {
+    const panel = document.getElementById('healthPanel');
+    if (!panel) return;
+    let box = document.getElementById('healthNight');
+    const foot = document.getElementById('healthFoot');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'healthNight';
+      if (foot) panel.insertBefore(box, foot); else panel.appendChild(box);
+    }
+    box.innerHTML = HealthNight.html(HealthNight.days(), HealthMirror.native());
+  },
+
+  /* Read again when the app comes back after a while — iPhone only. */
+  maybeRead() {
+    if (!HealthMirror.native() || document.visibilityState !== 'visible') return;
+    const last = (typeof healthData !== 'undefined' && healthData && healthData.updated) ? Date.parse(healthData.updated) : 0;
+    if (last && Date.now() - last < HealthNight.STALE_MS) return;
+    if (HealthNight._reading) return;
+    HealthNight._reading = true;
+    Promise.resolve().then(() => (typeof window.syncHealth === 'function' ? window.syncHealth(true) : null))
+      .catch(() => {}).then(() => { HealthNight._reading = false; HealthNight.paint(); });
+  },
+
+  boot() {
+    try {
+      const orig = window.syncHealth;
+      if (typeof orig === 'function' && !orig.__flowNight) {
+        const wrapped = async function () { try { await orig.apply(this, arguments); } finally { HealthNight.paint(); } };
+        wrapped.__flowNight = 1;
+        if (orig.__flowMirror) wrapped.__flowMirror = 1;
+        window.syncHealth = wrapped;
+      }
+    } catch (e) {}
+    document.addEventListener('visibilitychange', () => HealthNight.maybeRead());
+    try {
+      const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+      if (App && typeof App.addListener === 'function') App.addListener('appStateChange', (s) => { if (s && s.isActive) HealthNight.maybeRead(); });
+    } catch (e) {}
+    HealthNight.paint();
+  }
+};
+window.FlowHealthNight = HealthNight;
+
 const TodayFix = {
   find(id) {
     const all = (typeof cData !== 'undefined' && cData.rocks) || {};
@@ -12529,6 +12638,7 @@ async function boot() {
   if (Auth.user && !Auth.user.guest) Sections.migrate().catch((e) => console.warn('[Flow] sections', e));
   if (Auth.user && !Auth.user.guest) { try { WeekPlan.boot(); } catch (e) { console.warn('[Flow] week', e); } }
   try { HealthMirror.boot(); } catch (e) { console.warn('[Flow] health mirror', e); }
+  try { HealthNight.boot(); } catch (e) { console.warn('[Flow] last night', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }

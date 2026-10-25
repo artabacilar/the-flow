@@ -2973,6 +2973,8 @@ function healthLine(days){
    one somebody wrote themselves. */
 function healthFillSleepLog(days){
   if(!Array.isArray(days) || !days.length) return;
+  /* Bed and wake times, when the phone's reader sends them, as HH:MM. */
+  const hhmm=s=>{ if(!s) return ''; const d=new Date(s); return isNaN(d)?'':String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
   const byDate={}; slData.forEach(e=>{ if(e&&e.date) byDate[e.date]=e; });
   let added=0;
   for(const d of days){
@@ -2984,10 +2986,12 @@ function healthFillSleepLog(days){
     if(have){
       if(have.src==='health' || (have.note==='from Apple Health' && !have.edited)){
         if(Number(have.hrs)!==Number(d.hours)){ have.hrs=d.hours; have.src='health'; added++; }
+        if(d.bedAt && hhmm(d.bedAt) && have.bed!==hhmm(d.bedAt)){ have.bed=hhmm(d.bedAt); added++; }
+        if(d.sleepAt && hhmm(d.sleepAt) && have.wake!==hhmm(d.sleepAt)){ have.wake=hhmm(d.sleepAt); added++; }
       }
       continue;
     }
-    slData.push({date:d.date, bed:'', wake:'', hrs:d.hours, quality:null, note:'from Apple Health', src:'health'});
+    slData.push({date:d.date, bed:hhmm(d.bedAt), wake:hhmm(d.sleepAt), hrs:d.hours, quality:null, note:'from Apple Health', src:'health'});
     added++;
   }
   if(!added) return;
