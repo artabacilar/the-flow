@@ -74,6 +74,7 @@ const SUITES = [
   ['contrast', 'test-contrast.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['ledger',   'test-ledger.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['health',   'test-health.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['statement','test-statement.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['chat',     'test-chat.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['prices',   'test-prices.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['direction','test-direction.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
