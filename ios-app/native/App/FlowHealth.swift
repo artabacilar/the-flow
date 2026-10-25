@@ -122,25 +122,36 @@ final class FlowHealth {
                 /// their samples together counted it twice. Overlapping
                 /// intervals are merged first; separate ones still add up.
                 var spans: [String: [(Date, Date)]] = [:]
-                var latest: [String: Date] = [:]
+                /// The same night split by stage, for the "last night" card:
+                /// deep, REM and core from a watch or ring, and the minutes
+                /// awake in between. Each stage is merged on its own, so a
+                /// phone and a watch recording the same stretch count it once.
+                var stages: [String: [String: [(Date, Date)]]] = [:]
                 for s in samples {
                     guard let v = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
-                    switch v {
-                    case .asleepCore, .asleepDeep, .asleepREM, .asleepUnspecified: break
-                    default: continue
-                    }
                     /// Attributed to the day the night ended, which is the day
                     /// a person means when they say "I slept badly".
                     let day = fmt.string(from: s.endDate)
+                    let stage: String?
+                    switch v {
+                    case .asleepCore: stage = "core"
+                    case .asleepDeep: stage = "deep"
+                    case .asleepREM: stage = "rem"
+                    case .asleepUnspecified: stage = nil
+                    case .awake:
+                        stages[day, default: [:]]["awake", default: []].append((s.startDate, s.endDate))
+                        continue
+                    default: continue
+                    }
                     spans[day, default: []].append((s.startDate, s.endDate))
-                    if latest[day].map({ s.endDate > $0 }) ?? true { latest[day] = s.endDate }
+                    if let st = stage { stages[day, default: [:]][st, default: []].append((s.startDate, s.endDate)) }
                 }
-                let iso = ISO8601DateFormatter()
-                for (day, list) in spans {
-                    let sorted = list.sorted { $0.0 < $1.0 }
+
+                /// Overlapping intervals merged, separate ones added up.
+                func merged(_ list: [(Date, Date)]) -> TimeInterval {
                     var secs: TimeInterval = 0
                     var cur: (Date, Date)? = nil
-                    for span in sorted {
+                    for span in list.sorted(by: { $0.0 < $1.0 }) {
                         if let c = cur, span.0 <= c.1 {
                             cur = (c.0, max(c.1, span.1))
                         } else {
@@ -149,11 +160,24 @@ final class FlowHealth {
                         }
                     }
                     if let c = cur { secs += c.1.timeIntervalSince(c.0) }
-                    if secs > 0 {
-                        put(day, "hours", (secs / 3600 * 100).rounded() / 100)
-                        /// When the night's last sample ended — the page shows
-                        /// each figure with its own time, not one shared date.
-                        if let l = latest[day] { put(day, "sleepAt", iso.string(from: l)) }
+                    return secs
+                }
+
+                let iso = ISO8601DateFormatter()
+                for (day, list) in spans {
+                    let secs = merged(list)
+                    guard secs > 0 else { continue }
+                    put(day, "hours", (secs / 3600 * 100).rounded() / 100)
+                    /// When the night's first sleep began and its last ended —
+                    /// the card shows "23:40 → 07:05", and the Sleep log gets
+                    /// its bed and wake times filled in.
+                    if let first = list.map({ $0.0 }).min() { put(day, "bedAt", iso.string(from: first)) }
+                    if let last = list.map({ $0.1 }).max() { put(day, "sleepAt", iso.string(from: last)) }
+                    if let byStage = stages[day] {
+                        for (st, l) in byStage {
+                            let m = Int((merged(l) / 60).rounded())
+                            if m > 0 { put(day, st + "Min", m) }
+                        }
                     }
                 }
             }
