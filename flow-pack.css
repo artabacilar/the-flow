@@ -2489,3 +2489,15 @@ html{touch-action:manipulation;}
 .hb-wd i{display:block;width:100%;max-width:30px;border-radius:5px 5px 2px 2px;background:var(--f-accent,var(--accent));opacity:.45}
 .hb-wd i.hb-top{opacity:1}
 .hb-wd span{font-size:11px;color:var(--f-muted,var(--muted))}
+
+/* ── Hide the numbers (Finances) ───────────────────────────────────────── */
+.fl-mask-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.fl-mask-btn{margin-left:auto;display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--text);font:inherit;font-size:13px;font-weight:600;letter-spacing:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.fl-mask-btn:hover{border-color:var(--accent)}
+.fl-mask-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.fl-mask-btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+html.fl-hide-money [data-flm]{filter:blur(9px);-webkit-user-select:none;user-select:none;transition:filter .15s ease}
+html.fl-hide-money input[data-flm]{color:transparent;text-shadow:0 0 9px rgba(127,127,127,.9);filter:none}
+@media print{ html.fl-hide-money [data-flm]{filter:blur(9px)} }
+html.fl-hide-money svg [data-flm]{filter:none;fill:transparent}
+html.fl-hide-money input[data-flm]::placeholder{color:transparent;text-shadow:0 0 9px rgba(127,127,127,.9)}

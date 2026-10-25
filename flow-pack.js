@@ -1969,6 +1969,97 @@ Habits.boot = function () {
   };
 };
 
+/* ── Hide the numbers ─────────────────────────────────────────────────────
+ * One button on Finances blurs every figure on that screen — amounts,
+ * counts, percentages, the budget, the statement reports, the habits — and
+ * the Spend tile on Today, so the app can be shown on a projector or across
+ * a table without showing what anyone spends. Labels and dates stay
+ * readable, so it still makes sense while hidden.
+ *
+ * It is a choice for THIS device (a laptop on a projector), not the account,
+ * and it stays on until it is turned off. Screens repaint all the time, so
+ * a watcher tags figures as they appear rather than relying on class names.
+ * ====================================================================== */
+const MoneyMask = {
+  KEY: 'flow:hideMoney',
+  DIGIT: /\d/,
+  /* Text that is only a date or a month keeps its digits visible. */
+  DATEISH: /^\s*(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?(?:\d{1,2}\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?(?:\s+\d{1,2})?(?:,?\s+\d{4})?\s*(?:[–—-]\s*(?:\d{1,2}\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)?[a-z]*\.?(?:\s+\d{1,2})?(?:,?\s+\d{4})?)?\s*(?:·\s*today)?\s*$|^\s*\d{4}-\d{2}(?:-\d{2})?\s*$|^\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*$/i,
+  on: false,
+
+  scopes() {
+    return [document.getElementById('tab-finance'), document.querySelector('.flow-td-pulse [data-jump="spend"]')].filter(Boolean);
+  },
+
+  tag(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-flm]').forEach((el) => { if (!MoneyMask.hides(el.textContent)) el.removeAttribute('data-flm'); });
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walk.nextNode())) {
+      const t = n.nodeValue;
+      if (!t || !MoneyMask.DIGIT.test(t) || !MoneyMask.hides(t)) continue;
+      const el = n.parentElement;
+      if (!el || el.closest('#fl-mask-btn, option, script, style')) continue;
+      if (!el.hasAttribute('data-flm')) el.setAttribute('data-flm', '');
+    }
+    root.querySelectorAll('input[type="number"], input[inputmode="decimal"]').forEach((i) => i.setAttribute('data-flm', ''));
+  },
+  hides(t) { return MoneyMask.DIGIT.test(t || '') && !MoneyMask.DATEISH.test(t); },
+
+  tagAll() { MoneyMask.scopes().forEach((r) => MoneyMask.tag(r)); },
+
+  set(on) {
+    MoneyMask.on = !!on;
+    try { localStorage.setItem(MoneyMask.KEY, on ? '1' : '0'); } catch (e) {}
+    if (on) MoneyMask.tagAll();
+    document.documentElement.classList.toggle('fl-hide-money', MoneyMask.on);
+    MoneyMask.paintBtn();
+  },
+
+  paintBtn() {
+    const b = document.getElementById('fl-mask-btn');
+    if (!b) return;
+    b.setAttribute('aria-pressed', MoneyMask.on ? 'true' : 'false');
+    b.innerHTML = (MoneyMask.on
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10.4 10.4 0 0112 5c5 0 9 4.5 10 7a13.6 13.6 0 01-3.2 4.3M6.2 6.2C3.9 7.6 2.5 9.8 2 12c1 2.5 5 7 10 7a10 10 0 004.4-1"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c1-2.5 5-7 10-7s9 4.5 10 7c-1 2.5-5 7-10 7S3 14.5 2 12z"/><circle cx="12" cy="12" r="3"/></svg>') +
+      '<span>' + (MoneyMask.on ? 'Show numbers' : 'Hide numbers') + '</span>';
+    b.title = MoneyMask.on ? 'Show the numbers again' : 'Hide every number on this screen, for showing it to someone';
+  },
+
+  mountBtn() {
+    const head = document.querySelector('#tab-finance > .section-header');
+    if (!head || document.getElementById('fl-mask-btn')) return;
+    head.classList.add('fl-mask-head');
+    const b = document.createElement('button');
+    b.type = 'button'; b.id = 'fl-mask-btn'; b.className = 'fl-mask-btn';
+    b.addEventListener('click', () => MoneyMask.set(!MoneyMask.on));
+    head.appendChild(b);
+    MoneyMask.paintBtn();
+  },
+
+  boot() {
+    let saved = false;
+    try { saved = localStorage.getItem(MoneyMask.KEY) === '1'; } catch (e) {}
+    MoneyMask.mountBtn();
+    /* Retag as screens repaint. Cheap when hidden is off: nothing to do. */
+    let queued = false;
+    const obs = new MutationObserver(() => {
+      if (!MoneyMask.on || queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; MoneyMask.tagAll(); });
+    });
+    const watch = () => MoneyMask.scopes().forEach((r) => { if (!r.__flmWatched) { r.__flmWatched = true; obs.observe(r, { childList: true, subtree: true, characterData: true }); } });
+    watch();
+    /* The Spend tile is rebuilt with Today; keep watching whatever is current. */
+    const today = document.getElementById('tab-today');
+    if (today) new MutationObserver(() => { watch(); if (MoneyMask.on) MoneyMask.tagAll(); }).observe(today, { childList: true, subtree: true });
+    MoneyMask.set(saved);
+  }
+};
+window.FlowMoneyMask = MoneyMask;
+
 /* ── One ledger ───────────────────────────────────────────────────────────
  * There were two expense stores. The first Finances form (budget, the Spend
  * tile on Today) writes `ld_finance` — amounts per month, a category id, no
@@ -12946,6 +13037,7 @@ async function boot() {
   try { HealthMirror.boot(); } catch (e) { console.warn('[Flow] health mirror', e); }
   try { HealthNight.boot(); } catch (e) { console.warn('[Flow] last night', e); }
   try { Habits.boot(); } catch (e) { console.warn('[Flow] habits', e); }
+  try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }

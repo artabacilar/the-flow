@@ -1829,6 +1829,10 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Last night": "Dün gece",
   "The night before last": "Önceki gece",
   "asleep": "uyku",
+  "Hide numbers": "Rakamları gizle",
+  "Show numbers": "Rakamları göster",
+  "Hide every number on this screen, for showing it to someone": "Bu ekrandaki tüm rakamları gizle — birine gösterirken",
+  "Show the numbers again": "Rakamları yeniden göster",
 /* DICT-END */
 }, RULES);
 
