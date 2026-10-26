@@ -8868,6 +8868,88 @@ const Meetings = {
  * only if something actually changed. Coming back to the app after a long
  * time away still syncs quietly, as it always did — but not after a short
  * one, so flicking between apps never costs a reload. */
+/* ── Slide a sheet down to close it ─────────────────────────────────────
+ * Every phone sheet has the grab bar on top — the sign that it can be pulled
+ * away — and none of them could be. Now each one follows the finger down and
+ * closes past a third of its height or on a quick flick; anything less and it
+ * springs back. Only from the top of the sheet's own scroll, so reading a
+ * long sheet still scrolls it, and never from inside a field being typed in. */
+const SheetDrag = {
+  MAX_W: 760,
+  overlayOpen() {
+    return !!document.querySelector('.fn-sheetwrap.on, .moresheet.open, #flow-pal.on');
+  },
+  /* Every scroller between the finger and the sheet has to be at its top. */
+  atTop(target, sheet) {
+    for (let el = target; el && el !== sheet.parentNode; el = el.parentNode) {
+      if (el.nodeType === 1 && el.scrollTop > 0) {
+        const oy = getComputedStyle(el).overflowY;
+        if (oy === 'auto' || oy === 'scroll' || el === sheet) return false;
+      }
+    }
+    return true;
+  },
+  close(sheet) {
+    if (sheet.classList.contains('moresheet')) { const x = document.getElementById('moreBackdrop'); if (x) x.click(); return; }
+    const wrap = sheet.closest('.fn-sheetwrap');
+    const c = sheet.querySelector('.fn-grab, .fn-capture-close') || (wrap && wrap.querySelector('.fn-scrim'));
+    if (c) c.click();
+  },
+  boot() {
+    if (SheetDrag._on) return; SheetDrag._on = true;
+    let s = null;
+    document.addEventListener('touchstart', (e) => {
+      s = null;
+      if (innerWidth > SheetDrag.MAX_W || e.touches.length !== 1) return;
+      const t = e.target;
+      const sheet = t && t.closest && t.closest('.fn-sheetwrap.on .fn-sheet, .moresheet.open');
+      if (!sheet) return;
+      if (t.closest('input, textarea, select, [contenteditable], [contenteditable=""], .flow-scroll-x')) return;
+      if (!SheetDrag.atTop(t, sheet)) return;
+      s = { sheet, y0: e.touches[0].clientY, x0: e.touches[0].clientX, t0: Date.now(), dy: 0, on: false, last: e.touches[0].clientY, lt: Date.now(), v: 0 };
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!s) return;
+      const y = e.touches[0].clientY, x = e.touches[0].clientX;
+      const dy = y - s.y0;
+      if (!s.on) {
+        /* Up, or sideways first: that is a scroll or a swipe, not a pull. */
+        if (dy < -4 || Math.abs(x - s.x0) > Math.abs(dy) + 6) { s = null; return; }
+        if (dy < 8) return;
+        s.on = true;
+        s.sheet.style.transition = 'none';
+        s.sheet.style.animation = 'none';
+      }
+      if (e.cancelable) e.preventDefault();
+      const now = Date.now();
+      s.v = (y - s.last) / Math.max(1, now - s.lt); s.last = y; s.lt = now;
+      s.dy = Math.max(0, dy);
+      s.sheet.style.transform = 'translateY(' + s.dy + 'px)';
+    }, { passive: false });
+    const end = () => {
+      if (!s) return;
+      const st = s; s = null;
+      if (!st.on) return;
+      const sheet = st.sheet, h = sheet.getBoundingClientRect().height || 400;
+      const go = st.dy > Math.min(160, h * 0.33) || (st.v > 0.6 && st.dy > 30);
+      sheet.style.transition = 'transform .22s cubic-bezier(.2,.9,.3,1)';
+      if (go) {
+        sheet.style.transform = 'translateY(' + (h + 40) + 'px)';
+        setTimeout(() => {
+          SheetDrag.close(sheet);
+          setTimeout(() => { sheet.style.transform = ''; sheet.style.transition = ''; sheet.style.animation = ''; }, 60);
+        }, 200);
+      } else {
+        sheet.style.transform = '';
+        setTimeout(() => { sheet.style.transition = ''; sheet.style.animation = ''; }, 240);
+      }
+    };
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+};
+window.FlowSheetDrag = SheetDrag;
+
 const Refresh = {
   QUIET_MS: 10 * 60 * 1000,
   PULL_PX: 84,
@@ -9028,6 +9110,8 @@ const Refresh = {
     let y0 = null, pulling = false;
     document.addEventListener('touchstart', (e) => {
       if (Refresh.busy || !Refresh.atTop() || e.touches.length !== 1) { y0 = null; return; }
+      /* A finger on an open sheet is moving the sheet, not the page under it. */
+      if (SheetDrag.overlayOpen()) { y0 = null; return; }
       y0 = e.touches[0].clientY; pulling = false;
     }, { passive: true });
     document.addEventListener('touchmove', (e) => {
@@ -9295,36 +9379,64 @@ const TodayLook = {
     return html;
   },
 
-  hero(feed) {
-    const rocks = TodayLook.rocks();
-    const open = rocks.filter((r) => !r.done);
-    /* Big Rocks only — the calendar card uses the same row markup. */
-    const late = feed.querySelectorAll('.td-rocks:not(#td-cal) .td-rock .rk-late').length;
-    const firstEl = feed.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title');
+  /* The card is headed "Today", so it counts today: the Big Rocks set for
+     today that are still open, and the ones from earlier days that slipped.
+     The rest of the week is a pill, not the headline — ten rocks across seven
+     days is not ten things to do before tonight. */
+  heroPick(rocks, t) {
+    const open = rocks.filter((r) => r && !r.done);
+    const byTime = (a, b) => (a.day - b.day) || String(a.time || '99:99').localeCompare(String(b.time || '99:99'));
+    const today = open.filter((r) => r.day === t).sort(byTime);
+    const late = open.filter((r) => typeof r.day === 'number' && r.day >= 0 && r.day < t).sort(byTime);
+    const ahead = open.filter((r) => typeof r.day === 'number' && r.day > t).sort(byTime);
+    const loose = open.filter((r) => !(typeof r.day === 'number' && r.day >= 0));
+    const next = today[0] || late[0] || ahead[0] || loose[0] || null;
+    const when = !next ? '' : next === today[0] ? (next.time ? 'Today ' + next.time : 'Today')
+      : next === late[0] ? 'Overdue · ' + (DOW[(next.day + 1) % 7] || '')
+      : next === ahead[0] ? (next.day === t + 1 ? 'Tomorrow' : (DOW[(next.day + 1) % 7] || '')) + (next.time ? ' ' + next.time : '')
+      : 'No day set';
+    return { open, today, late, doneToday: rocks.filter((r) => r && r.done && r.day === t).length, next, when };
+  },
+  heroTitle(feed, r) {
+    if (!r) return '';
+    const el = feed.querySelector('.td-rocks:not(#td-cal) .td-rock[data-rockid="' + String(r.id).replace(/["\\]/g, '') + '"] .rk-title');
     /* The title only: the text and inline links, not the note, the meeting
        it came from or any other line the row carries under it. */
-    let first = '';
-    if (firstEl) {
-      first = [...firstEl.childNodes].map((n) => {
+    let t = '';
+    if (el) {
+      t = [...el.childNodes].map((n) => {
         if (n.nodeType === 3) return n.textContent;
         if (n.nodeType !== 1) return '';
         const d = getComputedStyle(n).display;
         return (d === 'inline' && !/note|chip|src|meet|time/.test(String(n.className))) ? n.textContent : '';
       }).join('').replace(/\s+/g, ' ').trim();
     }
-    if (first.length > 90) first = first.slice(0, 88).trim() + '…';
+    if (!t) t = String(r.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim();
+    return t.length > 90 ? t.slice(0, 88).trim() + '…' : t;
+  },
+  hero(feed) {
+    const rocks = TodayLook.rocks();
+    const t = (new Date().getDay() + 6) % 7;
+    const k = TodayLook.heroPick(rocks, t);
+    const n = k.today.length, late = k.late.length;
+    const lateEm = late ? '<em>' + late + ' overdue.</em>' : '';
     let line;
     if (!rocks.length) line = 'Nothing set for this week. <em>Pick your Big Rocks.</em>';
-    else if (!open.length) line = 'All ' + rocks.length + ' Big Rocks done. <em>Good week.</em>';
-    else line = open.length + ' Big Rock' + (open.length === 1 ? '' : 's') + ' to move' + (late ? ', <em>' + late + ' overdue.</em>' : '.');
+    else if (!k.open.length) line = 'All ' + rocks.length + ' Big Rocks done. <em>Good week.</em>';
+    else if (n) line = n + ' Big Rock' + (n === 1 ? '' : 's') + ' for today' + (late ? ', ' + lateEm : '.');
+    else if (late) line = 'Nothing left for today, ' + lateEm;
+    else if (k.doneToday) line = 'Today\u2019s Big Rocks are done.';
+    else line = 'Nothing due today.';
+    const first = TodayLook.heroTitle(feed, k.next);
     const wkEl = feed.querySelector('.td-wk');
     const wk = wkEl ? wkEl.textContent.replace(/^.*WK\s*/i, '').trim() : '';
-    const pct = rocks.length ? Math.round((rocks.length - open.length) / rocks.length * 100) : 0;
+    const pct = rocks.length ? Math.round((rocks.length - k.open.length) / rocks.length * 100) : 0;
     const meetTile = document.querySelector('.flow-td-pulse [data-jump="meetings"] .v');
     const meets = meetTile && /^\d+$/.test(meetTile.textContent.trim()) ? +meetTile.textContent.trim() : 0;
-    return `<div class="lk-k">Today</div><h2 class="lk-line">${line}</h2>${open.length && first ? `<div class="lk-next"><b>Next</b><span>${esc(first)}</span></div>` : ''}
-      <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>
-      ${rocks.length ? `<div class="lk-prog" role="progressbar" aria-label="Big Rocks done this week" aria-valuemin="0" aria-valuemax="${rocks.length}" aria-valuenow="${rocks.length - open.length}"><i style="width:${pct}%"></i></div>` : ''}`;
+    const rest = k.open.length - n - late;
+    return `<div class="lk-k">Today</div><h2 class="lk-line">${line}</h2>${k.next && first ? `<div class="lk-next"><b>Next</b><span>${esc(first)}</span><small>${esc(k.when)}</small></div>` : ''}
+      <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${rest > 0 ? `<span class="lk-pill">${rest} more this week</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>
+      ${rocks.length ? `<div class="lk-prog" role="progressbar" aria-label="Big Rocks done this week" aria-valuemin="0" aria-valuemax="${rocks.length}" aria-valuenow="${rocks.length - k.open.length}"><i style="width:${pct}%"></i></div>` : ''}`;
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -11703,6 +11815,7 @@ const Nav = {
       '<button type="button" class="fn-avatar" id="fn-avatar" aria-label="You">' + esc(Nav.initial()) + '</button>';
     host.appendChild(wrap);
     try { Refresh.boot(); } catch (e) {}
+    try { SheetDrag.boot(); } catch (e) {}
     document.getElementById('fn-search').addEventListener('click', () => Nav.openPalette());
     document.getElementById('fn-avatar').addEventListener('click', () => Nav.openMenu());
   },
