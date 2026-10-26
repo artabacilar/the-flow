@@ -12,12 +12,12 @@ const ASSISTANT_OFF = 'The assistant is not switched on for this app yet.';
 const ASSISTANT_UNAVAILABLE = 'The assistant could not be reached just now. Try again shortly.';
 
 /* The detail the person must not see, kept where I will. */
-function logUpstream(where, status) {
+function logUpstream(where, status, detail) {
   const why = (status === 401 || status === 403)
     ? 'ANTHROPIC_API_KEY was rejected'
     : status === 404
       ? 'model "' + CHAT_MODEL + '" is not available on this key — set FLOW_CHAT_MODEL'
-      : 'upstream ' + status;
+      : 'upstream ' + status + (detail ? ' — ' + detail : '');
   console.error('[flow/assistant] ' + where + ': ' + why);
 }
 
@@ -225,9 +225,15 @@ const CHAT_DAILY_CAP = (() => {
 })();
 const CHAT_MAX_CONTEXT = 24000;   /* characters of the user's own data */
 
+/* Text cut at a fixed length can split an emoji in half; a lone half
+   (a surrogate) is not valid Unicode, and the API refuses the whole request
+   with a 400. Every string sent is made whole first. */
+const wellFormed = (s) => (typeof s.toWellFormed === 'function' ? s.toWellFormed()
+  : s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1\uFFFD'));
+
 function postJSON(url, headers, payload, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const body = Buffer.from(JSON.stringify(payload, (k, v) => (typeof v === 'string' ? wellFormed(v) : v)), 'utf8');
     const u = new URL(url);
     const req = https.request({
       method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
@@ -1520,6 +1526,11 @@ async function handleBrief(p, req, res, ctx) {
  * it, GET polls) because a phone does not hold a request open for 20s.
  * ========================================================================== */
 
+/* The API's own reason, short, for a request it refused — so a 400 says why. */
+function upstreamWhy(r) {
+  try { const m = r && r.body && r.body.error && r.body.error.message; return m ? String(m).replace(/\s+/g, ' ').slice(0, 140) : ''; } catch (e) { return ''; }
+}
+
 const PAT_DAILY_CAP = (() => {
   const n = parseInt(process.env.FLOW_PATTERNS_DAILY_CAP || '6', 10);
   return Number.isFinite(n) && n >= 0 ? n : 6;
@@ -1641,7 +1652,7 @@ async function writePatterns(body, key, mine) {
   }, { model: CHAT_MODEL, max_tokens: 1200, system, messages: [{ role: 'user', content: 'Write today\'s patterns.' }] }, 90000);
   if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('patterns', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
   if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
-  if (r.status < 200 || r.status >= 300) throw new Error('Patterns could not be read just now (upstream ' + r.status + ').');
+  if (r.status < 200 || r.status >= 300) { logUpstream('patterns', r.status, upstreamWhy(r)); throw new Error('Patterns could not be read just now (upstream ' + r.status + (upstreamWhy(r) ? ': ' + upstreamWhy(r) : '') + ').'); }
   const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
   const out = parsePatterns(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'));
   if (!out) throw new Error('Patterns came back in a shape the app could not read. Try Rewrite.');
@@ -1770,7 +1781,7 @@ async function writeAhead(body, key, mine) {
   }, { model: CHAT_MODEL, max_tokens: 1200, system, messages: [{ role: 'user', content: '# The next 30 days\n\n' + aheadList(items) }] }, 90000);
   if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('ahead', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
   if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
-  if (r.status < 200 || r.status >= 300) throw new Error('Coming up could not be read just now (upstream ' + r.status + ').');
+  if (r.status < 200 || r.status >= 300) { logUpstream('ahead', r.status, upstreamWhy(r)); throw new Error('Coming up could not be read just now (upstream ' + r.status + (upstreamWhy(r) ? ': ' + upstreamWhy(r) : '') + ').'); }
   const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
   const out = parseAhead(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), items.length);
   if (!out) throw new Error('The read came back in a shape the app could not use. Try Rewrite.');
@@ -1868,3 +1879,4 @@ module.exports._internals.ahead = {
   parseAhead, aheadList, AHEAD_SYSTEM, jobs: aheadJobs,
   setPoster(fn) { aheadPost = fn || ((...a) => postJSON(...a)); }
 };
+module.exports._internals.wellFormed = wellFormed;

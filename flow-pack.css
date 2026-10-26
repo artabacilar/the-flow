@@ -3047,3 +3047,5 @@ html[data-flow-theme="signature"][data-flow-look="new"] .ah-bell b{background:va
 html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu{background:var(--lk-s2);border-color:var(--lk-line);border-radius:16px}
 html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button:hover{background:var(--lk-s1)}
 html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button.on{color:var(--lk-lime)}
+.ah-more{padding:6px 0 8px 68px;font-size:13px}
+@media (max-width:620px){ .ah-more{padding-left:60px} }

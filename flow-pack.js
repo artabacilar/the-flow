@@ -8892,7 +8892,8 @@ const Refresh = {
           const mine = window.FLOW_PACK_V;
           if (j && j.v && mine && mine !== '__PACK_V__' && j.v !== mine && j.v !== 'missing' && j.v !== 'dev') {
             Refresh.say('Updating to the new version…');
-            setTimeout(() => location.reload(), 500);
+            await Refresh.freshShell();
+            location.reload();
             return;
           }
         } catch (e) {}
@@ -8993,8 +8994,17 @@ const Refresh = {
     if (!Refresh.calm() || !(await Refresh.newer()) || !Refresh.calm()) return false;
     try { sessionStorage.setItem('flow:autoUpd', String(now)); } catch (e) {}
     Refresh.say('Updating to the new version…');
-    setTimeout(() => location.reload(), 600);
+    await Refresh.freshShell();
+    location.reload();
     return true;
+  },
+  /* The installed app answers the page from its own copy first (the
+     service worker), and refreshes that copy in the background. Asking for
+     the page once and giving that refresh a moment means the reload that
+     follows gets the new build, not the old copy a second time. */
+  async freshShell() {
+    try { await fetch('/', { cache: 'no-store', credentials: 'same-origin' }); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 1500));
   },
   watchVersion() {
     ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((t) => document.addEventListener(t, () => { Refresh.lastInput = Date.now(); }, { passive: true, capture: true }));
@@ -9732,6 +9742,7 @@ const Ahead = {
   read: null,        // { day, sig, items:[titles], ahead:{headline,prep,watch,remind} }
   busy: false, error: '', off: false, tried: '',
   menu: null,        // item key whose reminder menu is open
+  more: {},          // days whose Big Rocks are unfolded
   span() { let v = 7; try { v = +localStorage.getItem('flow:aheadSpan') || 7; } catch (e) {} return [7, 14, 30].indexOf(v) >= 0 ? v : 7; },
   setSpan(v) { try { localStorage.setItem('flow:aheadSpan', String(v)); } catch (e) {} },
   iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
@@ -9894,8 +9905,20 @@ const Ahead = {
     } else if (Ahead.busy) readHtml = '<div class="ah-read"><p class="pt-wait"><i class="eb-spin"></i>Reading the weeks ahead…</p></div>';
     else if (Ahead.error) readHtml = '<div class="ah-read"><p class="pt-wait">' + esc(Ahead.error) + ' <button type="button" class="pt-link" data-ah="rewrite">Try again</button></p></div>';
 
-    let rows = '', last = '';
+    let rows = '', last = '', rocksToday = 0;
+    /* A day with many Big Rocks shows two and folds the rest — the list is
+       for seeing what is coming, not re-reading the week's plan. */
+    const rockCount = {}; list.forEach((x) => { if (x.kind === 'rock') rockCount[x.date] = (rockCount[x.date] || 0) + 1; });
     list.forEach((it) => {
+      if (it.date !== last) rocksToday = 0;
+      if (it.kind === 'rock') {
+        rocksToday++;
+        const n = rockCount[it.date];
+        if (n > 3 && rocksToday > 2 && !Ahead.more[it.date]) {
+          if (rocksToday === 3) rows += '<li class="ah-more"><button type="button" class="pt-link" data-ah="more" data-d="' + esc(it.date) + '">+ ' + (n - 2) + ' more Big Rocks</button></li>';
+          return;
+        }
+      }
       if (it.date !== last) {
         last = it.date;
         const d = new Date(it.date + 'T00:00:00');
@@ -9940,6 +9963,7 @@ const Ahead = {
       const row = b.closest('[data-ahk]');
       const it = row && Ahead.items().find((x) => x.key === row.getAttribute('data-ahk'));
       if (what === 'span') { Ahead.setSpan(+b.getAttribute('data-n')); Ahead.paint(); return; }
+      if (what === 'more') { Ahead.more[b.getAttribute('data-d')] = true; Ahead.paint(); return; }
       if (what === 'rewrite') { Ahead.ensure(true); return; }
       if (what === 'menu' && it) { Ahead.menu = Ahead.menu === it.key ? null : it.key; Ahead.paint(); return; }
       if (what === 'opt' && it) { const o = Ahead.options(it).find((x) => x.id === b.getAttribute('data-o')); if (o) Ahead.toggle(it, o); Ahead.menu = null; return; }
