@@ -106,50 +106,43 @@ struct TodayView: View {
     @State private var adding = false
     @State private var askUnlink = false
 
+    /// A plain scroll view, not a List: the Digital Crown scrolls it on
+    /// every watch, rows keep their own look, and nothing depends on List's
+    /// section chrome, which differs between watchOS versions.
     var body: some View {
         NavigationStack {
-            List {
-                if let day = day {
-                    Section {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(day.weekday.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                            Text(day.headline).font(.headline).fixedSize(horizontal: false, vertical: true)
-                            if let n = day.next {
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text("Next").font(.caption2.weight(.heavy)).foregroundStyle(.green)
-                                    Text(n.title).font(.footnote).lineLimit(2)
-                                }
-                                Text(n.when).font(.caption2).foregroundStyle(.secondary)
-                            }
-                            if day.week.total > 0 {
-                                ProgressView(value: day.progress).tint(.green)
-                                    .accessibilityLabel("Week \(day.week.done) of \(day.week.total) done")
-                            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let day = day {
+                        header(day)
+                        if let note = note {
+                            Text(note).font(.footnote).foregroundStyle(.orange)
                         }
-                        .listRowBackground(Color.clear)
-                    }
-                    if let note = note {
-                        Text(note).font(.footnote).foregroundStyle(.orange)
-                    }
-                    Section(day.rocks.isEmpty ? "No Big Rocks today" : "Big Rocks") {
+                        label(day.rocks.isEmpty ? "No Big Rocks today" : "Big Rocks")
                         ForEach(day.rocks) { r in rockRow(r) }
-                    }
-                    if !day.habits.isEmpty {
-                        Section("Habits") {
+                        if !day.habits.isEmpty {
+                            label("Habits")
                             ForEach(day.habits) { h in habitRow(h) }
                         }
+                        Button { adding = true } label: {
+                            Label("Add by voice", systemImage: "mic.fill").frame(maxWidth: .infinity)
+                        }
+                        .tint(.green)
+                        .padding(.top, 6)
+                        Button(role: .destructive) { askUnlink = true } label: {
+                            Text("Unlink this watch").font(.footnote).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                    } else {
+                        HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 20)
+                        if let note = note { Text(note).font(.footnote) }
                     }
-                    Section {
-                        Button { adding = true } label: { Label("Add by voice", systemImage: "mic.fill") }
-                        Button(role: .destructive) { askUnlink = true } label: { Text("Unlink this watch").font(.footnote) }
-                    }
-                } else {
-                    HStack { Spacer(); ProgressView(); Spacer() }
-                    if let note = note { Text(note).font(.footnote) }
                 }
+                .padding(.horizontal, 4)
             }
             .navigationTitle("The Flow")
-            .refreshable { await load() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add")
@@ -160,8 +153,41 @@ struct TodayView: View {
                 Button("Unlink", role: .destructive) { WatchStore.unlink(); onUnlinked() }
             }
         }
-        .task { await load() }
+        /* Read now, then every five minutes while the app is on screen — a
+           watch left open past midnight should show the new day. */
+        .task {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 300 * 1_000_000_000)
+            }
+        }
         .onChange(of: phase) { p in if p == .active { Task { await load() } } }
+    }
+
+    private func header(_ day: WatchDay) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(day.weekday.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Text(day.headline).font(.headline).fixedSize(horizontal: false, vertical: true)
+            if let n = day.next {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text("NEXT").font(.caption2.weight(.heavy)).foregroundStyle(.green)
+                        Text(n.when).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(n.title).font(.footnote).lineLimit(2)
+                }
+                .padding(.top, 2)
+            }
+            if day.week.total > 0 {
+                ProgressView(value: day.progress).tint(.green)
+                    .accessibilityLabel("Week \(day.week.done) of \(day.week.total) done")
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 6)
     }
 
     private func rockRow(_ r: WatchDay.Rock) -> some View {
@@ -176,8 +202,12 @@ struct TodayView: View {
                     else if let t = r.time, !t.isEmpty { Text(t).font(.caption2).foregroundStyle(.secondary) }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8).padding(.horizontal, 10)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)))
             .opacity(busy.contains(r.id) ? 0.5 : 1)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel((r.done ? "Done: " : "") + r.title)
         .accessibilityHint(r.done ? "Mark not done" : "Mark done")
     }
@@ -189,8 +219,12 @@ struct TodayView: View {
                     .foregroundStyle(h.done ? .green : .primary).font(.title3)
                 Text(h.name).lineLimit(2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8).padding(.horizontal, 10)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)))
             .opacity(busy.contains("h:" + h.id) ? 0.5 : 1)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel((h.done ? "Done: " : "") + h.name)
     }
 
@@ -248,15 +282,9 @@ struct AddView: View {
                 /// Tapping the field offers dictation first, then Scribble or
                 /// the keyboard on the watches that have one.
                 TextField(kind == "rock" ? "Say the Big Rock" : "Say the note", text: $text)
-                Picker("Kind", selection: $kind) {
-                    Text("Big Rock").tag("rock")
-                    Text("Note").tag("note")
-                }
+                choice([("rock", "Big Rock"), ("note", "Note")], $kind)
                 if kind == "rock" {
-                    Picker("When", selection: $when) {
-                        Text("Today").tag("today")
-                        Text("Tomorrow").tag("tomorrow")
-                    }
+                    choice([("today", "Today"), ("tomorrow", "Tomorrow")], $when)
                 }
                 if let e = error { Text(e).font(.footnote).foregroundStyle(.orange) }
                 Button {
@@ -266,6 +294,23 @@ struct AddView: View {
                 }
                 .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || saving)
                 .tint(.green)
+            }
+        }
+    }
+
+    /// Two side-by-side choices. A wheel picker is unreadable this small.
+    private func choice(_ options: [(String, String)], _ sel: Binding<String>) -> some View {
+        HStack(spacing: 6) {
+            ForEach(options.indices, id: \.self) { i in
+                let o = options[i]
+                Button { sel.wrappedValue = o.0 } label: {
+                    Text(o.1).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity).padding(.vertical, 7)
+                        .background(Capsule().fill(sel.wrappedValue == o.0 ? Color.green : Color.white.opacity(0.12)))
+                        .foregroundStyle(sel.wrappedValue == o.0 ? Color.black : Color.white)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(sel.wrappedValue == o.0 ? .isSelected : [])
             }
         }
     }
