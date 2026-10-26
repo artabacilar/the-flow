@@ -75,6 +75,18 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     ok('Plan today opens', await p.evaluate(() => !!document.querySelector('.td-plan, #td-plan, .fn-sheetwrap.on, [id*="plan"].on')));
     await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 
+    for (const [name, sel] of [['Diet', '[data-diet]'], ['Sharpen the Blade', '[data-saw]']]) {
+      await T();
+      const G = '#today-feed .td-group:has(' + sel + ')';
+      if (!(await p.evaluate((g) => document.querySelector(g).classList.contains('is-open'), G))) { await p.click(G + ' .td-group-head'); await p.waitForTimeout(350); }
+      const c0 = await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G);
+      await p.click('#today-feed ' + sel + ':not(.done)'); await p.waitForTimeout(700);
+      const c1 = await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G);
+      ok(name + ' opens and a tick counts', parseInt(c1, 10) === parseInt(c0, 10) + 1 && await p.evaluate((g) => document.querySelector(g).classList.contains('is-open'), G), { c0, c1 });
+      await p.click('#today-feed ' + sel + '.done'); await p.waitForTimeout(700);
+      ok(name + ' unticks', (await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G)) === c0);
+    }
+
     console.log('— + / Add —');
     const openAdd = async () => { if (kind === 'phone') await p.click('#fn-capbtn'); else await p.click('#fn-sideadd'); await p.waitForTimeout(350); };
     await T(); await openAdd();
