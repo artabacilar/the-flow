@@ -4077,7 +4077,7 @@ const SettingsUI = {
             <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
           </button>`).join('')}
         </div>
-        <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>Simple interface</b><span>The new design with fewer places: Today, Week, Sleep, Habits, Journal and Money. Off is Advanced — every page, as before. Nothing you wrote changes either way, and ⌘K still finds everything.</span></div>
+        <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>Simple interface</b><span>The new design — every page and every function, cleaner and bigger. Off is Advanced, the classic design. Nothing you wrote changes either way.</span></div>
           <input type="checkbox" data-s="newLook" data-type="bool" ${s.newLook ? 'checked' : ''}></div>
         <div class="flow-switch"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
           <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
@@ -9162,11 +9162,12 @@ window.FlowHealthNight = HealthNight;
  * ====================================================================== */
 const TodayLook = {
   /* Two interfaces, one switch. Advanced is the app as it has always been
-     and stays the default. Simple is the new design with fewer places in
-     the menu. The setting keeps its old name, newLook, so anyone who had
-     the preview on lands in Simple. Hidden places are only out of the menu:
-     their data stays, ⌘K still reaches them, and Advanced brings them back. */
-  SIMPLE_HIDE: ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'],
+     and stays the default. Simple is the new design. Both have every page
+     and every function — Simple is how it looks and reads, never what it
+     can do. The setting keeps its old name, newLook, so anyone who had the
+     preview on lands in Simple. SIMPLE_HIDE stays as the one place to leave
+     a page out of Simple's menu, should that ever be wanted again. */
+  SIMPLE_HIDE: [],
   on() { try { return !!Settings.get('newLook'); } catch (e) { return false; } },
   hides() { return TodayLook.on() ? TodayLook.SIMPLE_HIDE.slice() : []; },
   applyLook() {
@@ -9191,7 +9192,7 @@ const TodayLook = {
     if (v === TodayLook.on()) return;
     await Settings.set('newLook', v);
     TodayLook.applyLook();
-    try { toast(v ? 'Simple interface — fewer places, bigger type.' : 'Advanced interface — everything is back.', null, 1800); } catch (e) {}
+    try { toast(v ? 'Simple interface — the new design.' : 'Advanced interface — the classic design.', null, 1800); } catch (e) {}
   },
   name() {
     let n = '';
@@ -9227,8 +9228,17 @@ const TodayLook = {
     /* Big Rocks only — the calendar card uses the same row markup. */
     const late = feed.querySelectorAll('.td-rocks:not(#td-cal) .td-rock .rk-late').length;
     const firstEl = feed.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title');
+    /* The title only: the text and inline links, not the note, the meeting
+       it came from or any other line the row carries under it. */
     let first = '';
-    if (firstEl) { const c = firstEl.cloneNode(true); c.querySelectorAll('.td-rk-note').forEach((n) => n.remove()); first = c.textContent.trim(); }
+    if (firstEl) {
+      first = [...firstEl.childNodes].map((n) => {
+        if (n.nodeType === 3) return n.textContent;
+        if (n.nodeType !== 1) return '';
+        const d = getComputedStyle(n).display;
+        return (d === 'inline' && !/note|chip|src|meet|time/.test(String(n.className))) ? n.textContent : '';
+      }).join('').replace(/\s+/g, ' ').trim();
+    }
     if (first.length > 90) first = first.slice(0, 88).trim() + '…';
     let line;
     if (!rocks.length) line = 'Nothing set for this week. <em>Pick your Big Rocks.</em>';
@@ -11067,7 +11077,7 @@ const Nav = {
     html += row('data-fn-menu="settings"', Nav.ICON.settings || 'gear', 'Settings', 'Look, Today, connections, notifications');
     html += TodayLook.on()
       ? row('data-fn-act="ui-advanced"', 'compass', 'Switch to Advanced', 'Every page, as before')
-      : row('data-fn-act="ui-simple"', 'today', 'Switch to Simple', 'The new design, fewer places, bigger type');
+      : row('data-fn-act="ui-simple"', 'today', 'Switch to Simple', 'The new design — every page, cleaner and bigger');
     if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="privacy"', 'lock', 'Privacy & security', 'Password, recovery codes, your data');
     html += row('data-fn-act="help"', 'note', 'Send feedback', 'What is confusing, missing or annoying');
     if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="signout"', 'out', 'Sign out', '', 'fn-m-danger');
@@ -11329,7 +11339,11 @@ const Nav = {
       Nav.svg(Nav.ICON[t] || 'note') + '<span class="fn-txt">' + esc(Nav.label(t)) + '</span></button>';
 
     let html =
-      '<div class="fn-brand"><span class="fn-mark"></span><span class="fn-nm">The Flow</span></div>' +
+      '<div class="fn-brand"><span class="fn-mark"></span><span class="fn-nm">The Flow</span>' +
+        /* One click between the two interfaces, where it costs no height. */
+        '<div class="fn-ui" role="group" aria-label="Interface">' +
+        '<button type="button" data-fn-ui="advanced" title="Advanced interface">Advanced</button>' +
+        '<button type="button" data-fn-ui="simple" title="Simple interface">Simple</button></div></div>' +
       '<button type="button" class="fn-k" id="fn-kbtn">' + Nav.svg('search') +
         '<span>Search</span><span class="fn-kbd">⌘K</span></button>' +
       '<button type="button" class="fn-sideadd" id="fn-sideadd">' + Nav.svg('plus') + '<span>Add</span></button>';
@@ -11342,10 +11356,6 @@ const Nav = {
     });
 
     html += '<div class="fn-spacer"></div>';
-    /* One click between the two interfaces. */
-    html += '<div class="fn-ui" role="group" aria-label="Interface">' +
-      '<button type="button" data-fn-ui="advanced">Advanced</button>' +
-      '<button type="button" data-fn-ui="simple">Simple</button></div>';
     html += Nav.SIDE_FOOT.filter(t => Nav.pill(t)).map(link).join('');
 
     side.innerHTML = html;

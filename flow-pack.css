@@ -2649,16 +2649,20 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td
  * out is decided in TodayLook.SIMPLE_HIDE; this is only how it looks.
  * ══════════════════════════════════════════════════════════════════════════ */
 #flow-side .fn-sideadd{display:none}
-.fn-ui{display:flex;gap:2px;padding:3px;margin:0 2px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border)}
-.fn-ui button{flex:1;min-height:30px;border:0;border-radius:999px;background:none;color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:0 6px}
+/* The switch takes the brand row: the mark stays, the name gives way
+   (the window title already says The Flow). */
+#flow-side .fn-brand:has(.fn-ui) .fn-nm{display:none}
+.fn-ui{display:flex;gap:1px;padding:2px;flex:1;min-width:0;border-radius:999px;background:var(--card);border:1px solid var(--border)}
+.fn-ui button{flex:1;min-height:26px;border:0;border-radius:999px;background:none;color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;padding:0 6px;white-space:nowrap}
 .fn-ui button:hover{color:var(--text)}
 .fn-ui button.on{background:var(--text);color:var(--bg,#0b0d10)}
 @media (min-width:761px) and (max-width:1180px){
-  .fn-ui{flex-direction:column;border-radius:12px;margin:0 0 8px}
-  .fn-ui button{font-size:9.5px;min-height:26px;padding:0}
+  #flow-side .fn-brand{flex-direction:column;gap:8px}
+  .fn-ui{flex-direction:column;border-radius:10px;margin:0;width:100%}
+  .fn-ui button{font-size:8.5px;min-height:22px;padding:0 2px}
 }
 @media (min-width:761px){
-  html[data-flow-look="new"] #flow-side .fn-sideadd{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:42px;margin:2px 0 10px;border:0;border-radius:999px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:800;cursor:pointer}
+  html[data-flow-look="new"] #flow-side .fn-sideadd{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:38px;margin:0 0 8px;border:0;border-radius:999px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:800;cursor:pointer}
   html[data-flow-look="new"] #flow-side .fn-sideadd .fn-i{width:17px;height:17px;stroke-width:2.6}
 }
 @media (min-width:761px) and (max-width:1180px){
@@ -2688,7 +2692,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-k{border-radius:999px;background:var(--lk-s1);border-color:var(--lk-line)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-sideadd{background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(255,107,61,.28)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-sideadd:hover{background:#ff7d55}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link{font-size:14.5px;font-weight:650;color:var(--lk-ink);border-radius:12px;padding:9px 12px}
+  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link{font-size:14px;font-weight:650;color:var(--lk-ink);border-radius:12px;padding:6px 12px}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link:hover{background:var(--lk-s1)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link.on{background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-grouplbl{color:var(--lk-dim)}
@@ -2696,21 +2700,27 @@ html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border
   html[data-flow-theme="signature"][data-flow-look="new"] .fn-ui button.on{background:var(--lk-ink);color:var(--lk-bg)}
 }
 
+@media (min-width:1181px){
+  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-grouplbl{padding-top:10px}
+}
+
 /* Today as a bento: greeting and actions on one line, the week strip, then
    the summary beside the tiles and Big Rocks beside the calendar. */
 @media (min-width:1100px){
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:16px;align-items:stretch}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > *{grid-column:1 / -1;order:5;min-width:0}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > *{grid-column:1 / -1;order:6;min-width:0}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #td-weekplan{order:2}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #flow-markets{order:3;margin-top:12px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-head{grid-column:span 7;order:0}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions{grid-column:span 5;order:0;align-self:end;justify-content:flex-end;margin:0 0 14px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > button{min-height:44px;flex:0 0 auto}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > .flow-today-primary{min-height:46px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-strip{order:1}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:2;margin:0;display:flex;flex-direction:column;justify-content:center;padding:24px 26px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:2;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:3;margin:0;display:flex;flex-direction:column;justify-content:center;padding:24px 26px}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:3;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> .flow-td-pulse)) > .lk-hero{grid-column:1 / -1}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-rocks:not(#td-cal){grid-column:span 7;order:3;margin-top:16px;align-self:start}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #td-cal{grid-column:span 5;order:4;margin-top:16px;align-self:start}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-rocks:not(#td-cal){grid-column:span 7;order:4;margin-top:16px;align-self:start}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #td-cal{grid-column:span 5;order:5;margin-top:16px;align-self:start}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> #td-cal)) > .td-rocks{grid-column:1 / -1}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .lk-line{font-size:36px}
 }
@@ -2720,6 +2730,10 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head .td
 @media (min-width:761px){
   html[data-flow-theme="signature"][data-flow-look="new"] .header :is(h1,.sub){display:none !important}
 }
+
+/* Prices as tiles like the others. */
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-mkt-tile{background:var(--lk-s1);border:0;border-radius:20px}
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-mkt-row{gap:8px}
 
 /* The calendar is its own card, not a second lime one. Events have no
    tick box; your own planned items keep theirs. */
