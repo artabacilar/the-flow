@@ -27,6 +27,8 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   const lst = A.aheadList([{ date: '2026-10-27', allDay: true, kind: 'event', title: 'Vibe Show', where: 'Antalya' }, { date: '2026-10-28', time: '15:30', hours: 0.5, kind: 'rock', title: 'Set' }]);
   ok('the list the model sees is numbered, dated, and short', /^0\. \[2026-10-27 · all day · event\] Vibe Show — Antalya\n1\. \[2026-10-28 · 15:30 · 0\.5h · rock\] Set$/.test(lst), lst);
   ok('the prompt forbids inventing and keeps prep before the item', /Never invent/.test(A.AHEAD_SYSTEM) && /never after/.test(A.AHEAD_SYSTEM));
+  const W = extras._internals.wellFormed;
+  ok('text cut through an emoji is made whole before it is sent (a lone half is a 400)', W('ab\ud83d') === 'ab\ufffd' && W('🎧 set') === '🎧 set');
 
   console.log('\n— the server sends reminders —');
   const list = [{ id: 'a', at: '2026-10-27T18:00', title: 'Pack' }, { id: 'b', at: '2026-10-27T18:30', title: 'Later' }, { id: 'c', at: '2026-10-28T18:00', title: 'Tomorrow' }, { id: 'd', at: '2026-10-27T18:00', title: 'Off', off: true }];
@@ -114,6 +116,13 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   ok('2 weeks adds the flight', await p.evaluate(() => /Flight to Hong Kong/.test(document.getElementById('flow-td-ahead').textContent) && !/Quarter review/.test(document.getElementById('flow-td-ahead').textContent)));
   await p.click('#flow-td-ahead [data-ah="span"][data-n="30"]'); await p.waitForTimeout(300);
   ok('Month adds the quarter review, and the choice is kept', await p.evaluate(() => /Quarter review/.test(document.getElementById('flow-td-ahead').textContent) && localStorage.getItem('flow:aheadSpan') === '30'));
+
+  await p.evaluate(async () => { const w = window.FlowTodayLook.wid(new Date(Date.now() + 2 * 864e5)); const d = new Date(Date.now() + 2 * 864e5); const dow = (d.getDay() + 6) % 7; for (let i = 0; i < 5; i++) addRock('Extra rock ' + i, '', dow, '', w, { prio: 'med' }); window.FlowAhead.paint(); });
+  await p.waitForTimeout(400);
+  const fold = await p.evaluate(() => ({ more: (document.querySelector('#flow-td-ahead [data-ah="more"]') || {}).textContent || '', shown: [...document.querySelectorAll('#flow-td-ahead .ah-row .ah-t')].filter((x) => /Extra rock/.test(x.textContent)).length }));
+  ok('a day with many Big Rocks shows two and folds the rest', fold.shown >= 1 && fold.shown <= 2 && /\+ \d+ more Big Rocks/.test(fold.more), fold);
+  await p.click('#flow-td-ahead [data-ah="more"]'); await p.waitForTimeout(300);
+  ok('and opens them with one tap', await p.evaluate(() => [...document.querySelectorAll('#flow-td-ahead .ah-row .ah-t')].filter((x) => /Extra rock/.test(x.textContent)).length === 5));
 
   console.log('\n— reminders —');
   await p.click('#flow-td-ahead .ah-row:has-text("Flight to Hong Kong") [data-ah="menu"]'); await p.waitForTimeout(300);
