@@ -150,6 +150,10 @@ $XCODE_KEYS
 	<string>NSApplication</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>The Flow uses notifications to remind you about your Big Rocks and habits.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The Flow listens only while you hold the mic in a field, to type what you say.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>The Flow turns what you say into text in the field you are writing in. On-device where your Mac supports it.</string>
 </dict>
 </plist>
 PLIST
@@ -177,6 +181,8 @@ cat > "$ENT" <<ENTS
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
 	<true/>
 $STORE_KEYS
 </dict>
