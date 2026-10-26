@@ -12,7 +12,7 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     console.log('\n===== ' + kind + ' =====');
     /* android: Chrome on a Pixel, as the Play Store app runs it — every
        press is a real tap (touch events first), not a mouse click. */
-    const ctx = await b.newContext(kind === 'android' ? Object.assign({}, devices['Pixel 7']) : kind !== 'desktop' ? { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
+    const ctx = await b.newContext(kind === 'android' ? Object.assign({}, devices['Pixel 7'], process.env.LOCALE ? { locale: process.env.LOCALE } : {}) : kind !== 'desktop' ? { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
     const p = await ctx.newPage();
     if (kind === 'android') { const click = p.click.bind(p); p.click = (sel, o) => (/^#fa-/.test(sel) ? click(sel, o) : p.tap(sel, o)); }
     const errs = []; p.on('pageerror', (e) => errs.push(e.message));

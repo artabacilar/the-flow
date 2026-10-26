@@ -11,7 +11,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, console.log('  ✗ ' + n + (d !== undefined ? '  → ' + JSON.stringify(d).slice(0, 300) : ''))); };
 (async () => {
   const b = await chromium.launch();
-  const ctx = await b.newContext(Object.assign({}, devices['Pixel 7']));
+  const ctx = await b.newContext(Object.assign({}, devices['Pixel 7'], process.env.LOCALE ? { locale: process.env.LOCALE } : {}));
   /* The Play Store app is a Trusted Web Activity: Chrome, full screen, in
      standalone display mode — which the page reads to pick its bottom bar. */
   await ctx.addInitScript(() => {
