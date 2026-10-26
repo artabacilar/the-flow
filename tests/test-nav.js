@@ -177,7 +177,7 @@ const TEST_PASSWORD = randomUUID();
      one. What is left is genuinely outside the daily loop. */
   ok('with the planner and Settings', menu.join(',') === 'artur,settings', menu);
   const acts = await p.evaluate(() => [...document.querySelectorAll('[data-fn-act]')].map(b => b.getAttribute('data-fn-act')));
-  ok('and Privacy, Feedback and Sign out', acts.join(',') === 'privacy,help,signout', acts);
+  ok('the interface switch, then Privacy, Feedback and Sign out', acts.join(',') === 'ui-simple,privacy,help,signout', acts);
   ok('it says who is signed in', /artur\.abacilar@abko\.com\.tr/.test(await p.textContent('#fn-me')));
   await p.click('[data-fn-act="privacy"]'); await p.waitForTimeout(900);
   ok('Privacy opens Settings on the account', await activeTab(p) === 'settings' && await p.isVisible('[data-act2="changepw"]') && await p.isVisible('#dataCard'));
