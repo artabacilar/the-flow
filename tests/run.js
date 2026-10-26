@@ -80,6 +80,8 @@ const SUITES = [
   ['look',     'test-look.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['brief',    'test-brief.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['ui',       'test-ui.js',       { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['patterns', 'test-patterns.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['ahead',    'test-ahead.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['simple',   'test-simple.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', KINDS: 'desktop' }],
   ['simplephone','test-simple.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', KINDS: 'phone' }],
   ['chat',     'test-chat.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],

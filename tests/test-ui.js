@@ -104,6 +104,18 @@ const controls = (p) => p.evaluate(() => {
   ok('what you hid yourself stays hidden in both', own.indexOf('journal') < 0 && own.indexOf('training') >= 0, own);
   await p.evaluate(async () => { await Flow.Settings.set('hiddenTabs', []); });
 
+  console.log('\n— Simple without the decoration —');
+  await p.click('[data-fn-ui="simple"]'); await p.waitForTimeout(500);
+  await p.evaluate(() => Flow.Nav.go('finance')); await p.waitForTimeout(600);
+  const head = await p.evaluate(() => { const h = document.querySelector('#tab-finance .section-header'); return { text: h.innerText.split('\n')[0].trim(), emo: !!h.querySelector('.lk-emo') }; });
+  ok('page titles lose the emoji in Simple', head.emo && head.text === 'Finances', head);
+  ok('an emoji-only button keeps its emoji', await p.evaluate(() => [...document.querySelectorAll('.section.active button')].filter((b) => b.offsetParent && /^\p{Extended_Pictographic}/u.test(b.textContent.trim()) && !/\p{L}{2}/u.test(b.textContent)).every((b) => !b.querySelector('.lk-emo'))));
+  await p.evaluate(async () => { await Flow.Lang.set('tr', false); }); await p.waitForTimeout(800);
+  ok('and still translate — "Finances" reads "Finans"', await p.evaluate(() => document.querySelector('#tab-finance .section-header').innerText.split('\n')[0].trim()) === 'Finans', await p.evaluate(() => document.querySelector('#tab-finance .section-header').innerText));
+  await p.evaluate(async () => { await Flow.Lang.set('en', false); }); await p.waitForTimeout(500);
+  await p.click('[data-fn-ui="advanced"]'); await p.waitForTimeout(400);
+  ok('Advanced shows the emoji as before', await p.evaluate(() => document.querySelector('#tab-finance .section-header').innerText.trim().startsWith('💰')));
+
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');

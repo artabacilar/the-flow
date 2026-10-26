@@ -79,7 +79,7 @@ console.log('\n— the bridge has two ends —');
    the Swift switch does not know falls to `default` and answers
    {supported:false} — so a typo here reads as "not on this platform". */
 const posted = [...bridgeSrc.matchAll(/call\('(\w+)'/g)].map((m) => m[1]);
-const handled = [...notesSrc.matchAll(/case\s+"(\w+)"/g)].map((m) => m[1]);
+const handled = [...notesSrc.matchAll(/case\s+"(\w+)"/g), ...webSrc.matchAll(/case\s+"(\w+)"/g)].map((m) => m[1]);
 ok('the page side posts actions', posted.length >= 5, posted);
 const unhandled = posted.filter((a) => !handled.includes(a));
 ok('every one of them has a case on the native side', unhandled.length === 0, unhandled);
@@ -88,6 +88,17 @@ ok('the message channel is registered under the name the page posts to',
    && /messageHandlers\.\\\(channel\)/.test(bridgeSrc));
 ok('the standalone shim is injected before the page runs',
    /FlowMacBridge\.standaloneShim,\s*injectionTime:\s*\.atDocumentStart/.test(webSrc));
+
+console.log('\n— the same functions as the iPhone app —');
+const speechPath = path.join(MAC, 'native', 'FlowSpeech.swift');
+const speechSrc = fs.existsSync(speechPath) ? read(speechPath) : '';
+ok('dictation: the Mac has its own recogniser', /SFSpeechRecognizer/.test(speechSrc) && /AVCaptureDevice\.requestAccess\(for: \.audio\)/.test(speechSrc));
+ok('with no iPhone-only audio session in it', !/AVAudioSession/.test(speechSrc));
+ok('the page reaches it through the same FlowBridge calls as on iPhone', ['voiceStart', 'voiceStop', 'voiceCancel', 'voicePermission', 'voiceRequest'].every((m) => new RegExp(m + ':\\s*function').test(bridgeSrc)));
+ok('and results come back through the same event', /__flowVoiceEvent/.test(webSrc));
+ok('the Mac asks for the microphone and speech, with reasons', /NSMicrophoneUsageDescription/.test(build) && /NSSpeechRecognitionUsageDescription/.test(build) && /com\.apple\.security\.device\.audio-input/.test(build));
+ok('clicking a reminder opens what it is about', /didReceive response: UNNotificationResponse/.test(notesSrc) && /__flowOpen/.test(notesSrc) && /rem:/.test(notesSrc));
+ok('iPhone-only parts answer "not here" instead of throwing', /setToken:\s*function \(\)\s*\{ return Promise\.resolve\(\{ supported: false \}\)/.test(bridgeSrc));
 
 console.log('\n— it joins the iOS app instead of becoming a second one —');
 const cap = JSON.parse(read(ROOT, 'ios-app', 'capacitor.config.json'));
@@ -351,7 +362,9 @@ console.log('\n— reminders on the Mac, and the iPhone switch that never worked
   ok('tomorrow and next week are queued too', !!w['rock:' + wk + ':e'] && !!w['rock:' + nextWk + ':f'], Object.keys(w));
   ok('a rock without a note says the time', (w['rock:' + wk + ':e'] || {}).body === 'It is 11:30.');
   ok('switching Big Rock reminders off empties the queue', Object.keys(N.wanted(compass, now, false)).length === 0);
-  ok('only rock: ids are ever cancelled', /id\.indexOf\('rock:'\)\s*===\s*0\s*&&\s*!want\[id\]/.test(pack));
+  /* The queue the page owns is rock: and rem: (Coming up). Anything else — a
+     notification somebody else scheduled — is never touched. */
+  ok('only the page\'s own rock: and rem: ids are ever cancelled', /\(id\.indexOf\('rock:'\)\s*===\s*0\s*\|\|\s*id\.indexOf\('rem:'\)\s*===\s*0\)\s*&&\s*!want\[id\]/.test(pack));
   ok('the Mac card uses the Mac bridge, not "iPhone only"',
      /mac\.request\(\)/.test(pack) && !/'iPhone only'/.test(pack));
   ok('the Mac schedules in the bridge shape it implements',

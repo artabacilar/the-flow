@@ -350,7 +350,7 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
     const bad = send();
     await conn.handle({ method: 'GET', headers: {} }, bad, { path: '/api/connect/gcal/events',
       query: new URLSearchParams({ from: '2026-01-01T00:00:00Z', to: '2026-03-01T00:00:00Z' }), me: meX, raw: st2, json, fetch: gFetch });
-    ok('more than eight days at once is refused', bad.status === 400);
+    ok('more than a month at once is refused', bad.status === 400);
 
     const r2 = JSON.parse(raw2.get(I.KEY('u9', 'gcal'))); r2.accounts[0].tok.exp = Date.now() - 1000; raw2.set(I.KEY('u9', 'gcal'), JSON.stringify(r2));
     calls = [];
