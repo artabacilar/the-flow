@@ -1,15 +1,26 @@
 /* Two interfaces: Advanced and Simple.
  *
  * What would make it wrong: someone landing in Simple without asking for it,
- * a page they need vanishing for good, the switch taking more than a click,
- * the choice not surviving a reload, or Simple stranding someone on a page
- * it leaves out. Advanced must be exactly the menu it always was. */
+ * the switch taking more than a click, the choice not surviving a reload, or
+ * Simple being able to do less than Advanced — a page, a button, a field
+ * that one has and the other does not. Simple is a design, not a cut. */
 const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, console.log('  ✗ ' + n + (d !== undefined ? '  → ' + JSON.stringify(d).slice(0, 300) : ''))); };
-const SIMPLE_OUT = ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'];
+const ALL = ['today', 'northstar', 'quad', 'compass', 'abko', 'dtc', 'training', 'sleep', 'habits', 'journal', 'finance', 'ask'];
+/* Every control a page shows, by what it is and what it says. */
+const controls = (p) => p.evaluate(() => {
+  const sec = document.querySelector('.section.active, .flow-section.active') || document.body;
+  const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return (e.offsetParent || cs.position === 'fixed') && r.width > 2 && r.height > 2 && cs.visibility !== 'hidden' && +cs.opacity > 0.05; };
+  const out = new Set();
+  sec.querySelectorAll('button, a, input, select, textarea, [role=button], [data-jump]').forEach((e) => {
+    if (!vis(e) || e.closest('.lk-strip, .lk-hero')) return;
+    out.add(e.tagName.toLowerCase() + '|' + (e.getAttribute('data-s') || e.getAttribute('data-jump') || '') + '|' + (e.placeholder || e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40));
+  });
+  return [...out].sort();
+});
 
 (async () => {
   const b = await chromium.launch();
@@ -32,7 +43,9 @@ const SIMPLE_OUT = ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'];
   const adv = await side();
   const s0 = await state();
   ok('a new account is in Advanced', s0.look === 'classic' && s0.adv === 'true' && s0.simple === 'false' && !s0.saved, s0);
-  ok('with every page in the sidebar', SIMPLE_OUT.every((t) => adv.indexOf(t) >= 0), adv);
+  ok('with every page in the sidebar', ALL.every((t) => adv.indexOf(t) >= 0), adv);
+  const before = {};
+  for (const t of ALL) { await p.evaluate((t) => Flow.Nav.go(t), t); await p.waitForTimeout(350); before[t] = await controls(p); }
   ok('and no extra Add button', !s0.add);
 
   console.log('\n— one click to Simple —');
@@ -40,14 +53,22 @@ const SIMPLE_OUT = ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'];
   await p.click('[data-fn-ui="simple"]'); await p.waitForTimeout(800);
   const s1 = await state(); const simp = await side();
   ok('the switch flips it and saves it to the account', s1.look === 'new' && s1.simple === 'true' && s1.adv === 'false' && s1.saved === true, s1);
-  ok('Simple leaves six places out of the menu', SIMPLE_OUT.every((t) => simp.indexOf(t) < 0), simp);
-  ok('and keeps Today, Week, Sleep, Habits, Journal and Money', ['today', 'compass', 'sleep', 'habits', 'journal', 'finance'].every((t) => simp.indexOf(t) >= 0), simp);
-  ok('switching while on a page Simple leaves out goes to Today', await p.evaluate(() => document.querySelector('.tab.active').getAttribute('data-tab')) === 'today');
+  ok('Simple has the same sidebar, every page', simp.join(',') === adv.join(','), simp);
+  ok('and stays on the page you were on', await p.evaluate(() => document.querySelector('.tab.active').getAttribute('data-tab')) === 'training');
+  const gaps = {};
+  for (const t of ALL) {
+    await p.evaluate((t) => Flow.Nav.go(t), t); await p.waitForTimeout(350);
+    const now = new Set(await controls(p));
+    const miss = before[t].filter((x) => !now.has(x));
+    if (miss.length) gaps[t] = miss.slice(0, 6);
+  }
+  ok('every page has every control it has in Advanced', !Object.keys(gaps).length, gaps);
+  await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(300);
   ok('the coral Add is there and opens the + menu', s1.add && await p.click('#fn-sideadd').then(() => p.waitForTimeout(300)).then(() => p.evaluate(() => document.getElementById('flow-capture').classList.contains('on'))));
   await p.keyboard.press('Escape'); await p.evaluate(() => Flow.Nav.closeCapture && Flow.Nav.closeCapture()); await p.waitForTimeout(200);
   await p.evaluate(() => Flow.Nav.openPalette()); await p.waitForTimeout(200);
   await p.fill('#fn-palin', 'train'); await p.waitForTimeout(200);
-  ok('⌘K still reaches what Simple hides', await p.evaluate(() => /Training/.test(document.getElementById('flow-pal').textContent)));
+  ok('⌘K finds pages the same way', await p.evaluate(() => /Training/.test(document.getElementById('flow-pal').textContent)));
   await p.keyboard.press('Escape'); await p.evaluate(() => Flow.Nav.closePalette()); await p.waitForTimeout(200);
   ok('Settings shows the same choice', await p.evaluate(() => { Flow.Nav.go('settings'); const i = document.querySelector('#newLookRow input[data-s="newLook"]'); return !!i && i.checked && /Simple interface/.test(document.getElementById('newLookRow').textContent); }));
   await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(400);
@@ -55,7 +76,16 @@ const SIMPLE_OUT = ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'];
   console.log('\n— it stays chosen —');
   await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(5000);
   const s2 = await state(); const simp2 = await side();
-  ok('after a reload it is still Simple', s2.look === 'new' && s2.simple === 'true' && SIMPLE_OUT.every((t) => simp2.indexOf(t) < 0), { s2, simp2 });
+  ok('after a reload it is still Simple', s2.look === 'new' && s2.simple === 'true' && simp2.join(',') === adv.join(','), { s2, simp2 });
+  ok('the summary\'s Next is the rock\'s title, not the lines under it', await p.evaluate(() => {
+    const t = (document.querySelector('.lk-next span') || {}).textContent || '';
+    const el = document.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title');
+    const note = el && el.querySelector('.td-rk-note');
+    return !!t && (!note || t.indexOf(note.textContent.trim().slice(0, 12)) < 0);
+  }));
+  await p.setViewportSize({ width: 1440, height: 766 }); await p.waitForTimeout(300);
+  ok('the whole sidebar fits a 766px-high window', await p.evaluate(() => { const s = document.getElementById('flow-side'); return s.scrollHeight <= s.clientHeight + 1; }));
+  await p.setViewportSize({ width: 1440, height: 900 }); await p.waitForTimeout(300);
 
   console.log('\n— the phone menu has it too —');
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(500);
@@ -64,14 +94,14 @@ const SIMPLE_OUT = ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'];
   await p.click('[data-fn-act="ui-advanced"]'); await p.waitForTimeout(700);
   await p.setViewportSize({ width: 1440, height: 900 }); await p.waitForTimeout(500);
   const s3 = await state(); const back = await side();
-  ok('one tap and it is Advanced again, every page back', s3.look === 'classic' && s3.adv === 'true' && s3.saved === false && back.join(',') === adv.join(','), { s3, back });
+  ok('one tap and it is Advanced again', s3.look === 'classic' && s3.adv === 'true' && s3.saved === false && back.join(',') === adv.join(','), { s3, back });
 
   console.log('\n— your own hidden pages are yours —');
   await p.evaluate(async () => { await Flow.Settings.set('hiddenTabs', ['journal']); Flow.Sections && Flow.Sections.apply ? Flow.Sections.apply() : null; });
   await p.click('[data-fn-ui="simple"]'); await p.waitForTimeout(500);
   await p.click('[data-fn-ui="advanced"]'); await p.waitForTimeout(500);
   const own = await side();
-  ok('leaving Simple does not bring back what you hid yourself', own.indexOf('journal') < 0 && own.indexOf('training') >= 0, own);
+  ok('what you hid yourself stays hidden in both', own.indexOf('journal') < 0 && own.indexOf('training') >= 0, own);
   await p.evaluate(async () => { await Flow.Settings.set('hiddenTabs', []); });
 
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
