@@ -9216,7 +9216,8 @@ const TodayLook = {
     for (let i = 0; i < 7; i++) {
       const d = new Date(mon); d.setDate(mon.getDate() + i);
       const on = i === todayIdx;
-      html += `<button type="button" class="lk-day${on ? ' on' : ''}${i < todayIdx ? ' past' : ''}${busy[i] ? ' busy' : ''}" data-lk-day="${i}"${on ? ' aria-current="date"' : ''}>
+      const sel = TodayLook.sel === i;
+      html += `<button type="button" class="lk-day${on ? ' on' : ''}${sel ? ' sel' : ''}${i < todayIdx ? ' past' : ''}${busy[i] ? ' busy' : ''}" data-lk-day="${i}"${on ? ' aria-current="date"' : ''} aria-pressed="${sel}">
         <span>${esc(DOW[d.getDay()])}</span><b>${d.getDate()}</b><i${busy[i] ? '' : ' class="none"'}></i></button>`;
     }
     return html;
@@ -9253,6 +9254,64 @@ const TodayLook = {
       <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>`;
   },
 
+  /* A day in the strip opens that day right here: its Big Rocks, ticked off
+     or added to in place, and the way into the week. Tapping it again — or
+     the × — closes it. */
+  sel: null,
+  dayDate(i) {
+    const now = new Date(); const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7) + i); return d;
+  },
+  dayHtml(i) {
+    const d = TodayLook.dayDate(i);
+    const todayIdx = (new Date().getDay() + 6) % 7;
+    const name = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    const short = DOW[d.getDay()];
+    const list = TodayLook.rocks().filter((r) => r && r.day === i)
+      .sort((a, b) => (a.done - b.done) || String(a.time || '99').localeCompare(String(b.time || '99')));
+    const open = list.filter((r) => !r.done).length;
+    const rows = list.length ? list.map((r) => `<li class="lk-dv-row${r.done ? ' done' : ''}">
+        <button type="button" class="lk-dv-bx" data-dv="tick" data-dvid="${esc(r.id)}" aria-pressed="${!!r.done}" aria-label="${r.done ? 'Mark not done' : 'Mark done'}"></button>
+        <span class="lk-dv-t">${esc(r.title)}${r.note ? `<small>${esc(String(r.note).split('\n')[0].slice(0, 120))}</small>` : ''}</span>
+        ${r.time ? `<span class="lk-dv-tm">${esc(r.time)}</span>` : ''}</li>`).join('')
+      : `<li class="lk-dv-empty">${i < todayIdx ? 'Nothing was planned for ' + esc(short) + '.' : 'Nothing on ' + esc(short) + ' yet.'}</li>`;
+    return `<div class="lk-dv-head"><div><div class="lk-dv-k">${i === todayIdx ? 'Today' : i < todayIdx ? 'Earlier this week' : 'Coming up'}</div>
+        <div class="lk-dv-n">${esc(name)}</div></div>
+        <span class="lk-dv-c">${list.length ? open + ' open · ' + (list.length - open) + ' done' : 'free'}</span>
+        <button type="button" class="lk-dv-x" data-dv="close" aria-label="Close">×</button></div>
+      <ul class="lk-dv-list">${rows}</ul>
+      <form class="lk-dv-add" data-dvday="${i}"><input type="text" maxlength="200" placeholder="Add a Big Rock to ${esc(short)}…" aria-label="Add a Big Rock to ${esc(name)}"><button type="submit">Add</button></form>
+      <button type="button" class="lk-dv-week" data-dv="week">Open the whole week →</button>`;
+  },
+  dayAct(btn) {
+    const what = btn.getAttribute('data-dv');
+    if (what === 'close') { TodayLook.sel = null; TodayLook.paint(); return; }
+    if (what === 'week') { try { Nav.go('compass'); } catch (e) {} return; }
+    if (what === 'tick') {
+      const r = TodayLook.rocks().find((x) => String(x.id) === btn.getAttribute('data-dvid'));
+      if (!r) return;
+      r.done = !r.done;
+      try { cSave(); } catch (e) {}
+      try { if (r.done && typeof J === 'function') J('planning', '🪨 Big rock done: ' + r.title); } catch (e) {}
+      try { renderToday(); } catch (e) {}
+      try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
+      TodayLook.paint();
+    }
+  },
+  dayAdd(form) {
+    const inp = form.querySelector('input');
+    const title = String(inp.value || '').trim();
+    if (!title) { inp.focus(); return; }
+    const i = +form.getAttribute('data-dvday');
+    const wid = TodayLook.wid(new Date());
+    if (typeof addRock !== 'function' || !wid) { toast('Open the Week Compass once, then try again.', 'warn'); return; }
+    const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
+    addRock(title.slice(0, 200), roles[0] || '', i, '', wid, { prio: 'med' });
+    try { renderToday(); } catch (e) {}
+    TodayLook.refocus = true;
+    TodayLook.paint();
+    toast('Added to ' + DOW[TodayLook.dayDate(i).getDay()] + '.', null, 1400);
+  },
+
   paint() {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
@@ -9273,8 +9332,23 @@ const TodayLook = {
     let strip = feed.querySelector('.lk-strip');
     if (!strip) { strip = document.createElement('div'); strip.className = 'lk-strip'; head.after(strip); }
     strip.innerHTML = TodayLook.strip();
+    let dv = feed.querySelector('.lk-dayview');
+    if (TodayLook.sel == null) { if (dv) dv.remove(); }
+    else {
+      const typed = dv ? (dv.querySelector('.lk-dv-add input') || {}).value || '' : '';
+      const had = TodayLook.refocus || (dv && dv.contains(document.activeElement) && document.activeElement.tagName === 'INPUT');
+      if (!dv) { dv = document.createElement('div'); dv.className = 'lk-dayview'; }
+      if (dv.previousElementSibling !== strip) strip.after(dv);
+      dv.innerHTML = TodayLook.dayHtml(TodayLook.sel);
+      const inp = dv.querySelector('.lk-dv-add input');
+      if (inp && !TodayLook.refocus) inp.value = typed;
+      if (inp && had) inp.focus({ preventScroll: true });
+      TodayLook.refocus = false;
+    }
     let hero = feed.querySelector('.lk-hero');
-    if (!hero) { hero = document.createElement('button'); hero.type = 'button'; hero.className = 'lk-hero'; strip.after(hero); }
+    if (!hero) { hero = document.createElement('button'); hero.type = 'button'; hero.className = 'lk-hero'; }
+    const above = (dv && dv.isConnected) ? dv : strip;
+    if (hero.previousElementSibling !== above) above.after(hero);
     hero.innerHTML = TodayLook.hero(feed);
   },
 
@@ -9290,12 +9364,27 @@ const TodayLook = {
     }).observe(feed, { childList: true, subtree: true });
     feed.addEventListener('click', (e) => {
       const day = e.target.closest('[data-lk-day]');
-      if (day) { try { Nav.go('compass'); } catch (e2) {} return; }
+      if (day) {
+        const i = +day.getAttribute('data-lk-day');
+        TodayLook.sel = TodayLook.sel === i ? null : i;
+        TodayLook.paint();
+        const v = feed.querySelector('.lk-dayview');
+        if (v && v.getBoundingClientRect().bottom > innerHeight) v.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+      const dvb = e.target.closest('[data-dv]');
+      if (dvb) { TodayLook.dayAct(dvb); return; }
       if (e.target.closest('.lk-hero')) {
         const r = feed.querySelector('.td-rocks');
         if (!TodayLook.rocks().length) { try { Nav.go('compass'); } catch (e2) {} }
         else if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
+    });
+    feed.addEventListener('submit', (e) => {
+      const f = e.target.closest('.lk-dv-add');
+      if (!f) return;
+      e.preventDefault();
+      TodayLook.dayAdd(f);
     });
     TodayLook.applyLook();
     TodayLook.paint();

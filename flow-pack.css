@@ -2536,6 +2536,39 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-quo
 .lk-day.on b{color:var(--lk-coral-ink)}
 .lk-day.on i{background:var(--lk-coral-ink)}
 .lk-day.on i.none{background:transparent}
+/* The day you opened: a ring, so today keeps its fill. */
+.lk-day.sel{box-shadow:inset 0 0 0 2px var(--lk-ink)}
+.lk-day.on.sel{box-shadow:inset 0 0 0 2px var(--lk-coral-ink)}
+.lk-day:focus-visible{outline:2px solid var(--lk-coral);outline-offset:2px}
+
+/* ---- the day, opened from the strip ---- */
+.lk-dayview{background:var(--lk-s1);color:var(--lk-ink);border-radius:24px;padding:16px 16px 12px;margin:0 0 12px;animation:lkdv .18s ease-out}
+@keyframes lkdv{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.lk-dayview{animation:none}}
+.lk-dv-head{display:flex;align-items:flex-start;gap:10px}
+.lk-dv-head > div{flex:1;min-width:0}
+.lk-dv-k{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-mute)}
+.lk-dv-n{font-size:20px;font-weight:800;letter-spacing:-.025em;margin-top:2px}
+.lk-dv-c{font-size:12px;font-weight:700;color:var(--lk-mute);background:var(--lk-s2);border-radius:99px;padding:5px 10px;margin-top:3px;white-space:nowrap}
+.lk-dv-x{appearance:none;border:0;background:var(--lk-s2);color:var(--lk-ink);width:32px;height:32px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer;flex:none}
+.lk-dv-list{list-style:none;margin:10px 0 0;padding:0}
+.lk-dv-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid var(--lk-line)}
+.lk-dv-row:first-child{border-top:0}
+.lk-dv-bx{appearance:none;flex:none;width:22px;height:22px;border-radius:7px;border:2px solid var(--lk-dim);background:none;cursor:pointer;position:relative;margin-top:1px;padding:0}
+.lk-dv-row.done .lk-dv-bx{background:var(--lk-lime);border-color:var(--lk-lime)}
+.lk-dv-row.done .lk-dv-bx::after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid var(--lk-lime-ink);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.lk-dv-t{flex:1;min-width:0;font-size:15px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.lk-dv-t small{display:block;font-size:12.5px;font-weight:500;color:var(--lk-mute);margin-top:2px}
+.lk-dv-row.done .lk-dv-t{color:var(--lk-mute);text-decoration:line-through}
+.lk-dv-tm{font-size:12.5px;font-weight:700;color:var(--lk-mute);font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:2px}
+.lk-dv-empty{padding:12px 0 6px;color:var(--lk-mute);font-size:14px}
+.lk-dv-add{display:flex;gap:8px;margin-top:8px}
+.lk-dv-add input{flex:1;min-width:0;min-height:44px;border-radius:14px;border:1px solid var(--lk-line);background:var(--lk-bg);color:var(--lk-ink);font:inherit;font-size:16px;padding:0 14px}
+.lk-dv-add input:focus{outline:none;border-color:var(--lk-coral)}
+.lk-dv-add button{appearance:none;border:0;border-radius:14px;min-height:44px;padding:0 18px;background:var(--lk-coral);color:var(--lk-coral-ink);font:inherit;font-size:14px;font-weight:800;cursor:pointer}
+.lk-dv-week{appearance:none;border:0;background:none;color:var(--lk-mute);font:inherit;font-size:13px;font-weight:700;padding:12px 2px 2px;cursor:pointer}
+.lk-dv-week:hover{color:var(--lk-ink)}
+html:not([data-flow-theme="signature"][data-flow-look="new"]) .lk-dayview{display:none !important}
 
 /* ---- one sentence about the day ---- */
 .lk-hero{appearance:none;border:0;cursor:pointer;font:inherit;text-align:left;width:100%;display:block;background:var(--lk-s1);color:var(--lk-ink);border-radius:28px;padding:18px 18px 16px;margin:0 0 12px;-webkit-tap-highlight-color:transparent}
@@ -2716,6 +2749,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > button{min-height:44px;flex:0 0 auto}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > .flow-today-primary{min-height:46px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-strip{order:1}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-dayview{order:1;margin-bottom:16px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:3;margin:0;display:flex;flex-direction:column;justify-content:center;padding:24px 26px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:3;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> .flow-td-pulse)) > .lk-hero{grid-column:1 / -1}

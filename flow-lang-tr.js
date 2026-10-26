@@ -1878,6 +1878,16 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Simple interface — the new design.": "Sade arayüz — yeni tasarım.",
   "Advanced interface — the classic design.": "Gelişmiş arayüz — klasik tasarım.",
   "Advanced interface": "Gelişmiş arayüz",
+  "Earlier this week": "Bu haftanın başında",
+  "Coming up": "Yaklaşan",
+  "free": "boş",
+  "{} open · {} done": "{} açık · {} bitti",
+  "Nothing on {} yet.": "{} için henüz bir şey yok.",
+  "Nothing was planned for {}.": "{} için bir şey planlanmamıştı.",
+  "Add a Big Rock to {}…": "{} gününe bir Büyük Taş ekle…",
+  "Added to {}.": "{} gününe eklendi.",
+  "Open the whole week →": "Tüm haftayı aç →",
+  "Mark not done": "Bitmedi olarak işaretle",
 /* DICT-END */
 }, RULES);
 
