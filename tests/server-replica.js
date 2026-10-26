@@ -65,6 +65,8 @@ const server=http.createServer(async(req,res)=>{
        has resolved the bearer token. A replica that skipped this would let the
        suite pass against a server the real one does not resemble. */
     if(p==='/mcp'||p==='/mcp/'){ if(!mcp) return json(res,503,{error:'no mcp module'}); return mcp.handle(req,res,store); }
+    if(p==='/watch'||p==='/watch/'){ res.writeHead(302,{Location:'/?go=watch'}); return res.end(); }
+    if(p==='/api/watch'){ const w=require('../flow-watch'); return w.handle(req,res,store,{readBody}); }
     if(p==='/api/widget'){
       if(!mcp||!mcp.widgetToday) return json(res,503,{error:'no widget feed'});
       if(req.method!=='GET'){ res.setHeader('Allow','GET'); return json(res,405,{error:'GET only'}); }
