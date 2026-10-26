@@ -1957,6 +1957,19 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Dropped": "Vazgeçildi",
   "Delegated to {}": "{} kişisine devredildi",
   "More for {}": "{} için seçenekler",
+  "⌚ Watch": "⌚ Saat",
+  "Today on your wrist: your Big Rocks and habits to tick, what is next, and a Big Rock or a note added by voice. Apple Watch and Wear OS.": "Bugün bileğinde: işaretlenecek Büyük Taşların ve alışkanlıkların, sıradaki iş, sesle eklenen bir Büyük Taş ya da not. Apple Watch ve Wear OS.",
+  "Open The Flow on the watch. It shows a code of six letters and numbers.": "Saatte The Flow'u aç. Altı harf ve rakamdan oluşan bir kod gösterir.",
+  "Type it here. The watch picks it up by itself.": "Kodu buraya yaz. Saat gerisini kendisi halleder.",
+  "Link watch": "Saati bağla",
+  "Code shown on the watch": "Saatte görünen kod",
+  "Linked": "Bağlı",
+  "Unlink": "Bağlantıyı kes",
+  "Unlinked ✓": "Bağlantı kesildi ✓",
+  "Linking…": "Bağlanıyor…",
+  "The code on the watch has six letters and numbers.": "Saatteki kod altı harf ve rakamdan oluşur.",
+  "Linked ✓ — {} will show your day in a moment.": "Bağlandı ✓ — {} birazdan gününü gösterecek.",
+  "Unlink this watch? It stops showing your day straight away.": "Bu saatin bağlantısı kesilsin mi? Gününü hemen göstermeyi bırakır.",
 /* DICT-END */
 }, RULES);
 

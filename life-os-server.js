@@ -444,6 +444,8 @@ try { whoop = require('./flow-whoop'); } catch (e) { whoop = null; }
    the file simply does not offer the route, rather than failing to boot. */
 let mcp = null;
 try { mcp = require('./flow-mcp'); } catch (e) { mcp = null; }
+let watch = null;
+try { watch = require('./flow-watch'); } catch (e) { watch = null; }
 /* Push. Optional the same way, and for the same reason: a checkout without
    the file, or a deploy without APNs credentials, still boots and still
    serves everything else. The routes answer honestly instead of 404ing. */
@@ -777,6 +779,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
       return res.end(DELETE_HTML);
     }
+    /* What a watch asks you to open: the app, at the box for its code. */
+    if (p === '/watch' || p === '/watch/') { res.writeHead(302, { Location: '/?go=watch' }); return res.end(); }
     if (p === '/support' || p === '/help') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
       return res.end(SUPPORT_HTML);
@@ -798,6 +802,12 @@ const server = http.createServer(async (req, res) => {
        resolved the bearer, so `store` is this person's, and all this can do is
        read today. The short cache is for the system, which redraws a widget
        far more often than a day changes. */
+    /* ── A watch ── gate() resolved its token, so `store` is its person's. */
+    if (p === '/api/watch') {
+      if (!watch) return json(res, 503, { error: 'This build has no watch module.' });
+      return watch.handle(req, res, store, { readBody });
+    }
+
     if (p === '/api/widget') {
       if (!mcp || !mcp.widgetToday) return json(res, 503, { error: 'This build has no widget feed.' });
       if (req.method !== 'GET') {

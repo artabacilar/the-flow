@@ -4182,6 +4182,21 @@ const SettingsUI = {
         </details>
       </div>
 
+      <div class="flow-card" id="watchCard">
+        <h3>⌚ Watch</h3>
+        <p class="flow-sub">Today on your wrist: your Big Rocks and habits to tick, what is next, and a Big Rock or a note added by voice. Apple Watch and Wear OS.</p>
+        <ol class="flow-ol">
+          <li>Open The Flow on the watch. It shows a code of six letters and numbers.</li>
+          <li>Type it here. The watch picks it up by itself.</li>
+        </ol>
+        <form class="mcp-acts" id="watchForm" autocomplete="off">
+          <input class="flow-in" id="watchCode" placeholder="ABC-123" maxlength="9" autocapitalize="characters" spellcheck="false" aria-label="Code shown on the watch">
+          <button type="submit" class="flow-btn primary">Link watch</button>
+        </form>
+        <div class="flow-sub" id="watchOut" role="status"></div>
+        <div id="watchList" class="mcp-list"></div>
+      </div>
+
       <div class="flow-card" id="pushCard">
         <h3>📣 Notifications</h3>
         <p class="flow-sub">Reminders that arrive whether or not the app is open — on iPhone, Mac, Android, and in Chrome, Edge or Firefox on a computer.</p>
@@ -4347,6 +4362,7 @@ const SettingsUI = {
 
     /* ---- Connect to Claude ---- */
     SettingsUI.mcpWire(section);
+    try { SettingsUI.watchWire(section); } catch (e) {}
 
     /* ---- Connections (Google, and whatever follows it) ---- */
     try { Connect.wire(section); } catch (e) { console.warn('[Flow] connections', e); }
@@ -4682,6 +4698,54 @@ const SettingsUI = {
     });
 
     await show();
+  },
+
+  /* A watch is linked with the code it shows; a linked one is an access
+     token named after it, listed and removed here like any other. */
+  async watchPaint(section) {
+    const box = section.querySelector('#watchList'); if (!box) return;
+    try {
+      const r = await SettingsUI.mcpFetch('/api/flow/tokens');
+      const list = (r.tokens || []).filter((t) => /^(Apple Watch|Wear OS watch)/.test(t.name || ''));
+      box.innerHTML = list.length ? '<div class="flow-label" style="margin-bottom:2px">Linked</div>' + list.map((t) => SettingsUI.mcpRow(t).replace('>Revoke<', '>Unlink<')).join('') : '';
+      box.querySelectorAll('[data-mcp="revoke"]').forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Unlink this watch? It stops showing your day straight away.')) return;
+        b.disabled = true;
+        try {
+          await SettingsUI.mcpFetch('/api/flow/tokens/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.getAttribute('data-id') }) });
+          toast('Unlinked ✓'); SettingsUI.watchPaint(section); try { SettingsUI.mcpPaint(section); } catch (e) {}
+        } catch (e) { b.disabled = false; toast(e.message, 'err'); }
+      }));
+    } catch (e) { box.innerHTML = ''; }
+  },
+  watchWire(section) {
+    const f = section.querySelector('#watchForm'); if (!f || f.__w) return; f.__w = 1;
+    const inp = section.querySelector('#watchCode'), out = section.querySelector('#watchOut');
+    inp.addEventListener('input', () => {
+      const v = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      const nv = v.length > 3 ? v.slice(0, 3) + '-' + v.slice(3) : v;
+      if (nv !== inp.value) inp.value = nv;
+    });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = inp.value.trim();
+      if (code.replace(/[^A-Z0-9]/gi, '').length !== 6) { out.textContent = 'The code on the watch has six letters and numbers.'; inp.focus(); return; }
+      const btn = f.querySelector('button'); btn.disabled = true; out.textContent = 'Linking…';
+      try {
+        const r = await SettingsUI.mcpFetch('/api/flow/watch/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+        out.textContent = 'Linked ✓ — ' + r.name + ' will show your day in a moment.';
+        inp.value = '';
+        SettingsUI.watchPaint(section); try { SettingsUI.mcpPaint(section); } catch (e2) {}
+      } catch (err) { out.textContent = err.message || 'That did not work.'; }
+      btn.disabled = false;
+    });
+    SettingsUI.watchPaint(section);
+    try {
+      if (window.__flowGoWatch) {
+        window.__flowGoWatch = false;
+        setTimeout(() => { section.querySelector('#watchCard').scrollIntoView({ block: 'center' }); inp.focus(); }, 300);
+      }
+    } catch (e) {}
   },
 
   mcpWire(section) {
@@ -14526,6 +14590,15 @@ async function boot() {
   try { SheetKB.boot(); } catch (e) {}
   try { LeadFirst.boot(); } catch (e) {}
   try { OpenRock.boot(); } catch (e) {}
+  /* theflow.today/watch — what a watch tells you to open — lands on the box
+     the code goes in. */
+  try {
+    if (new URLSearchParams(location.search).get('go') === 'watch') {
+      window.__flowGoWatch = true;
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      let n = 0; const t = setInterval(() => { if (document.documentElement.classList.contains('flow-ready') || ++n > 40) { clearInterval(t); try { Nav.go('settings'); } catch (e) {} } }, 250);
+    }
+  } catch (e) {}
   try { BudgetFold.boot(); } catch (e) {}
   try { EmptyStat.boot(); } catch (e) {}
   if (Auth.user && !Auth.user.guest) Photo.load();

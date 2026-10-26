@@ -124,6 +124,24 @@ const PAT = (hash) => '__auth:pat:' + hash;
 const PAT_INDEX = (uid) => '__auth:pats:' + uid;
 const PAT_MAX = 10;
 const DIAG_KEY = '__diag:client';
+/* Watch pairing. The watch asks for a short code and shows it; the person
+   types it into the app where they are signed in; the watch, polling with an
+   id only it knows, receives a token of its own. Ten minutes, single use. */
+const WPAIR = (id) => '__watch:pair:' + id;
+const WPAIR_CODE = (code) => '__watch:code:' + code;
+const WPAIR_TRY = (uid, day) => '__watch:try:' + uid + ':' + day;
+const WPAIR_MIN = 10;
+const WPAIR_HITS = new Map();
+function newWatchCode() {
+  const b = crypto.randomBytes(6);
+  let out = '';
+  for (let i = 0; i < 6; i++) out += FR_ALPHABET[b[i] % FR_ALPHABET.length];
+  return out.slice(0, 3) + '-' + out.slice(3);
+}
+function normWatchCode(v) {
+  const s = String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s.length === 6 ? s.slice(0, 3) + '-' + s.slice(3) : '';
+}
 const DIAG_HITS = new Map();
 const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
 /* Stamped the first and only time a starter week is written into an account.
@@ -938,6 +956,95 @@ async function gate(req, res) {
     if (!me || !me.owner) { json(res, 403, { error: 'Only the owner can read device reports.' }); return true; }
     json(res, 200, { reports: ((await getJSON(DIAG_KEY, [])) || []).slice().reverse() });
     return true;
+  }
+
+  /* ---- linking a watch ----
+     Apple Watch and Wear OS both pair the same way, because neither can be
+     signed into with a password on a 40 mm screen, and the Android app is a
+     web app that has no native side to hand a token across. */
+  if (p === '/api/watch/pair' && req.method === 'POST') {
+    const ip = String((req.headers['x-forwarded-for'] || '').split(',')[0] || (req.socket && req.socket.remoteAddress) || '').trim();
+    const hour = Math.floor(Date.now() / 3600e3);
+    WPAIR_HITS.forEach((v, k) => { if (v.h !== hour) WPAIR_HITS.delete(k); });
+    const hit = WPAIR_HITS.get(ip) || { h: hour, n: 0 };
+    hit.n++; WPAIR_HITS.set(ip, hit);
+    if (hit.n > 12) { json(res, 429, { error: 'Too many codes from here. Try again in an hour.' }); return true; }
+    const b = safeParse(await readBody(req));
+    const device = /wear|android/i.test(String(b.device || '')) ? 'wearos' : 'watchos';
+    let code = '';
+    for (let i = 0; i < 6 && !code; i++) { const c = newWatchCode(); if (!(await getJSON(WPAIR_CODE(c), null))) code = c; }
+    if (!code) { json(res, 503, { error: 'Could not make a code just now. Try again.' }); return true; }
+    const id = crypto.randomBytes(24).toString('base64url');
+    const exp = Date.now() + WPAIR_MIN * 60e3;
+    await setJSON(WPAIR(id), { code, device, model: String(b.model || '').slice(0, 40), exp, status: 'waiting' });
+    await setJSON(WPAIR_CODE(code), { id, exp });
+    json(res, 200, { ok: true, id, code, expiresIn: WPAIR_MIN * 60, poll: 3,
+      url: (ORIGIN() || '') + '/watch' });
+    return true;
+  }
+  if (p === '/api/watch/pair' && req.method !== 'POST') {
+    const id = String(u.searchParams.get('id') || '');
+    const rec = id && id.length < 80 ? await getJSON(WPAIR(id), null) : null;
+    if (!rec || rec.exp < Date.now() && rec.status !== 'linked') { json(res, 404, { status: 'expired', error: 'That code has expired. Ask the watch for a new one.' }); return true; }
+    if (rec.status !== 'linked') { json(res, 200, { status: 'waiting', expiresIn: Math.max(0, Math.round((rec.exp - Date.now()) / 1000)) }); return true; }
+    /* Handed over once, then forgotten. */
+    await raw.set(WPAIR(id), '');
+    json(res, 200, { status: 'linked', token: rec.token, name: rec.name, who: rec.who || '' });
+    return true;
+  }
+  if (p === '/api/flow/watch/link' && req.method === 'POST') {
+    const me0 = await currentUser(req);
+    if (!me0) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const day = new Date().toISOString().slice(0, 10);
+    const tries = (await getJSON(WPAIR_TRY(me0.id, day), 0)) || 0;
+    if (tries >= 20) { json(res, 429, { error: 'Too many tries today.' }); return true; }
+    await setJSON(WPAIR_TRY(me0.id, day), tries + 1);
+    const b = safeParse(await readBody(req));
+    const code = normWatchCode(b.code);
+    const ref = code ? await getJSON(WPAIR_CODE(code), null) : null;
+    const rec = ref ? await getJSON(WPAIR(ref.id), null) : null;
+    if (!rec || rec.code !== code) { json(res, 404, { error: 'That code is not right. Check the watch — it shows six letters and numbers.' }); return true; }
+    if (rec.exp < Date.now()) { json(res, 410, { error: 'That code has expired. Ask the watch for a new one.' }); return true; }
+    if (rec.status === 'linked') { json(res, 409, { error: 'That watch is already linked.' }); return true; }
+    const name = (rec.device === 'wearos' ? 'Wear OS watch' : 'Apple Watch') + (rec.model ? ' · ' + rec.model : '');
+    /* The same watch paired again replaces its old token rather than piling
+       up beside it. */
+    const idx = await getJSON(PAT_INDEX(me0.id), []);
+    const live = [];
+    for (const h of idx) {
+      const r = await getJSON(PAT(h), null);
+      if (!r || r.revoked) continue;
+      if (r.name === name) { r.revoked = Date.now(); await setJSON(PAT(h), r); continue; }
+      live.push(h);
+    }
+    if (live.length >= PAT_MAX) { json(res, 400, { error: 'There are already ' + PAT_MAX + ' connections on this account. Remove one in Settings → Assistant connections first.' }); return true; }
+    const secret = newPatSecret();
+    const h = patHash(secret);
+    await setJSON(PAT(h), { uid: me0.id, name, created: Date.now(), lastUsed: null, watch: rec.device, hint: secret.slice(0, 9) + '…' + secret.slice(-4) });
+    live.push(h);
+    await setJSON(PAT_INDEX(me0.id), live);
+    rec.status = 'linked'; rec.token = secret; rec.name = name; rec.who = (me0.name || '').split(/\s+/)[0] || '';
+    rec.exp = Date.now() + 5 * 60e3;   /* the watch has five minutes to collect it */
+    await setJSON(WPAIR(ref.id), rec);
+    await raw.set(WPAIR_CODE(code), '');
+    json(res, 200, { ok: true, name, id: h.slice(0, 12) });
+    return true;
+  }
+
+  /* ---- the watch itself ----
+     Same bearer rules as the widget below, but it may also tick and add —
+     a deliberate tap on a wrist, not a stray one on a home screen. */
+  if (p === '/api/watch') {
+    if (req.method === 'OPTIONS') return false;
+    const wt = bearerOf(req);
+    const ww = wt ? await userForToken(wt) : null;
+    if (!ww) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
+      json(res, 401, { error: 'This watch is not linked any more. Link it again from the watch.' });
+      return true;
+    }
+    req.__flowUid = ww.id;
+    return false;
   }
 
   /* ---- the home-screen widget ----
