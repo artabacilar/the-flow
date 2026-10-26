@@ -10,6 +10,8 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     private var webView: WKWebView!
     private let notes = FlowNotifications()
+    /* Held here so a recognition that is running survives the call that started it. */
+    private let speech = FlowSpeech()
     private var themeObservation: NSKeyValueObservation?
 
     /// Called with the page's theme colour whenever it changes — the
@@ -175,6 +177,46 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
               let action = body["action"] as? String else { return }
-        notes.handle(action: action, body: body, id: body["id"] as? String)
+        let id = body["id"] as? String
+        switch action {
+        case "voiceStart":
+            let tag = (body["locale"] as? String) ?? "en-GB"
+            if let problem = speech.start(locale: tag, emit: { [weak self] type, payload in self?.emitVoice(type, payload) }) {
+                answer(id, ["ok": false, "error": problem])
+            } else {
+                answer(id, ["ok": true])
+            }
+        case "voiceStop":
+            speech.stop(); answer(id, ["ok": true])
+        case "voiceCancel":
+            speech.cancel(); emitVoice("end", [:]); answer(id, ["ok": true])
+        case "voicePermission":
+            answer(id, FlowSpeech.permissions())
+        case "voiceRequest":
+            FlowSpeech.request { [weak self] state in self?.answer(id, state) }
+        default:
+            notes.handle(action: action, body: body, id: id)
+        }
+    }
+
+    /* Replies go back through the same door the notification calls use. */
+    private func answer(_ id: String?, _ payload: [String: Any]) {
+        guard let id,
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let q = try? String(data: JSONSerialization.data(withJSONObject: [id]), encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript("window.__flowMacReply(\(q.dropFirst().dropLast()), \(json))")
+        }
+    }
+
+    /* Recognition is a stream: results are pushed, not answered. */
+    private func emitVoice(_ type: String, _ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let q = try? String(data: JSONSerialization.data(withJSONObject: [type]), encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript("window.__flowVoiceEvent && window.__flowVoiceEvent(\(q.dropFirst().dropLast()), \(json))")
+        }
     }
 }

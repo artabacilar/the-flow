@@ -78,6 +78,24 @@ enum FlowMacBridge {
           pending: function ()      { return call('notifyPending'); }
         }
       };
+      /* Dictation, with the same calls the iPhone app answers, so the mic in
+         every field works here too. The rest of the iPhone bridge (widget
+         token, Health, push) has no Mac counterpart and answers
+         {supported:false} rather than throwing. */
+      window.Capacitor = window.Capacitor || {};
+      window.Capacitor.Plugins = window.Capacitor.Plugins || {};
+      if (!window.Capacitor.Plugins.FlowBridge) {
+        window.Capacitor.Plugins.FlowBridge = {
+          voiceStart:      function (a) { return call('voiceStart', a); },
+          voiceStop:       function ()  { return call('voiceStop'); },
+          voiceCancel:     function ()  { return call('voiceCancel'); },
+          voicePermission: function ()  { return call('voicePermission'); },
+          voiceRequest:    function ()  { return call('voiceRequest'); },
+          setToken:        function ()  { return Promise.resolve({ supported: false }); },
+          status:          function ()  { return Promise.resolve({ supported: false }); },
+          clear:           function ()  { return Promise.resolve({ supported: false }); }
+        };
+      }
     })();
     """
 }

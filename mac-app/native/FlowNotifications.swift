@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import UserNotifications
 import WebKit
 
@@ -32,6 +33,27 @@ final class FlowNotifications: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent n: UNNotification,
                                 withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
         done([.banner, .sound, .list])
+    }
+
+    /* A click on a reminder brings the window forward and opens what it was
+       about — the Big Rock it names, or Today's Coming up for a reminder set
+       there — the same as tapping one on the iPhone. */
+    func userNotificationCenter(_ c: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler done: @escaping () -> Void) {
+        let id = response.notification.request.identifier
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+            var js = ""
+            if id.hasPrefix("rock:"), let rock = id.split(separator: ":").last {
+                js = "if (window.__flowOpen) window.__flowOpen({ rock: \(FlowNotifications.quote(String(rock))) }); else window.__flowPendingRock = \(FlowNotifications.quote(String(rock)));"
+            } else if id.hasPrefix("rem:") {
+                js = "try { Flow.Nav.go('today'); setTimeout(function () { var a = document.getElementById('flow-td-ahead'); if (a) a.scrollIntoView({ block: 'start' }); }, 400); } catch (e) {}"
+            }
+            if !js.isEmpty { self.web?.evaluateJavaScript(js) }
+            done()
+        }
     }
 
     func handle(action: String, body: [String: Any], id: String?) {
