@@ -1531,6 +1531,13 @@ function upstreamWhy(r) {
   try { const m = r && r.body && r.body.error && r.body.error.message; return m ? String(m).replace(/\s+/g, ' ').slice(0, 140) : ''; } catch (e) { return ''; }
 }
 
+/* The one upstream refusal the owner can fix in a minute, said plainly. */
+function friendlyUpstream(e) {
+  const m = (e && e.message) || '';
+  if (/credit balance is too low/i.test(m)) return 'The assistant is out of credit. Add credit to the Anthropic account (console.anthropic.com → Plans & Billing), then press Rewrite.';
+  return m.length < 260 ? m : '';
+}
+
 const PAT_DAILY_CAP = (() => {
   const n = parseInt(process.env.FLOW_PATTERNS_DAILY_CAP || '6', 10);
   return Number.isFinite(n) && n >= 0 ? n : 6;
@@ -1693,7 +1700,9 @@ async function handlePatterns(p, req, res, ctx) {
   const counter = ctx.counter;
   writePatterns(body, key, ctx.mine)
     .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(patDayKey(), out); } catch (e) {} })
-    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'Patterns could not be read just now.'; });
+    .catch(async (e) => { job.status = 'error'; job.error = friendlyUpstream(e) || 'Patterns could not be read just now.';
+      /* a read that failed did not cost anything, so it does not count */
+      try { const n = (await counter.get(patCountKey())) || 0; if (n > 0) await counter.set(patCountKey(), n - 1); } catch (x) {} });
   ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: PAT_DAILY_CAP });
   return true;
 }
@@ -1828,7 +1837,8 @@ async function handleAhead(p, req, res, ctx) {
   const counter = ctx.counter;
   writeAhead(body, key, ctx.mine)
     .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(aheadDayKey(), out); } catch (e) {} })
-    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'Coming up could not be read just now.'; });
+    .catch(async (e) => { job.status = 'error'; job.error = friendlyUpstream(e) || 'Coming up could not be read just now.';
+      try { const n = (await counter.get(aheadCountKey())) || 0; if (n > 0) await counter.set(aheadCountKey(), n - 1); } catch (x) {} });
   ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: AHEAD_DAILY_CAP });
   return true;
 }
