@@ -1866,6 +1866,17 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Writing the brief from your email…": "Özet e-postalarından yazılıyor…",
   "Connect Gmail or Outlook in Settings to get a brief for this event from your email.": "Bu etkinlik için e-postalarından bir özet almak üzere Ayarlar'dan Gmail ya da Outlook'u bağla.",
   "↻ Brief failed — try again": "↻ Özet oluşturulamadı — tekrar dene",
+  "Interface": "Arayüz",
+  "Advanced": "Gelişmiş",
+  "Simple": "Sade",
+  "Simple interface": "Sade arayüz",
+  "The new design with fewer places: Today, Week, Sleep, Habits, Journal and Money. Off is Advanced — every page, as before. Nothing you wrote changes either way, and ⌘K still finds everything.": "Daha az bölümle yeni tasarım: Bugün, Hafta, Uyku, Alışkanlıklar, Günlük ve Para. Kapalıyken Gelişmiş — her sayfa eskisi gibi. Yazdığın hiçbir şey değişmez ve ⌘K hâlâ her şeyi bulur.",
+  "Switch to Advanced": "Gelişmiş arayüze geç",
+  "Switch to Simple": "Sade arayüze geç",
+  "Every page, as before": "Her sayfa, eskisi gibi",
+  "The new design, fewer places, bigger type": "Yeni tasarım, daha az bölüm, daha büyük yazı",
+  "Simple interface — fewer places, bigger type.": "Sade arayüz — daha az bölüm, daha büyük yazı.",
+  "Advanced interface — everything is back.": "Gelişmiş arayüz — her şey geri geldi.",
 /* DICT-END */
 }, RULES);
 

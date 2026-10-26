@@ -353,6 +353,8 @@ const Settings = {
     /* The Today header is built by its own render and a general repaint does
        not reach it, so it is asked for by name. */
     each(() => TodayPlus.apply());
+    /* Simple or Advanced, as last chosen on any device. */
+    each(() => TodayLook.applyLook());
     each(() => { if (typeof window.flowRepaintAll === 'function') window.flowRepaintAll(); });
   },
   async load() {
@@ -4075,7 +4077,7 @@ const SettingsUI = {
             <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
           </button>`).join('')}
         </div>
-        <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>New look (preview)</b><span>The redesigned Today, floating tab bar and + menu, on the Signature theme. Turn it off to go straight back to the previous design — nothing you wrote changes either way.</span></div>
+        <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>Simple interface</b><span>The new design with fewer places: Today, Week, Sleep, Habits, Journal and Money. Off is Advanced — every page, as before. Nothing you wrote changes either way, and ⌘K still finds everything.</span></div>
           <input type="checkbox" data-s="newLook" data-type="bool" ${s.newLook ? 'checked' : ''}></div>
         <div class="flow-switch"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
           <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
@@ -9159,11 +9161,37 @@ window.FlowHealthNight = HealthNight;
  * after each redraw rather than holding on to nodes that no longer exist.
  * ====================================================================== */
 const TodayLook = {
-  /* Off unless switched on in Settings → Appearance. */
+  /* Two interfaces, one switch. Advanced is the app as it has always been
+     and stays the default. Simple is the new design with fewer places in
+     the menu. The setting keeps its old name, newLook, so anyone who had
+     the preview on lands in Simple. Hidden places are only out of the menu:
+     their data stays, ⌘K still reaches them, and Advanced brings them back. */
+  SIMPLE_HIDE: ['northstar', 'quad', 'abko', 'dtc', 'training', 'ask'],
   on() { try { return !!Settings.get('newLook'); } catch (e) { return false; } },
+  hides() { return TodayLook.on() ? TodayLook.SIMPLE_HIDE.slice() : []; },
   applyLook() {
-    document.documentElement.setAttribute('data-flow-look', TodayLook.on() ? 'new' : 'classic');
-    if (TodayLook.on()) { try { TodayLook.paint(); } catch (e) {} }
+    const on = TodayLook.on();
+    document.documentElement.setAttribute('data-flow-look', on ? 'new' : 'classic');
+    try { Sections.apply(); } catch (e) {}
+    document.querySelectorAll('[data-fn-ui]').forEach((b) => {
+      const mine = b.getAttribute('data-fn-ui') === (on ? 'simple' : 'advanced');
+      b.classList.toggle('on', mine); b.setAttribute('aria-pressed', String(mine));
+    });
+    document.querySelectorAll('input[data-s="newLook"]').forEach((i) => { i.checked = on; });
+    /* Switching to Simple while on a page it leaves out goes to Today. */
+    try {
+      const cur = document.querySelector('.tab.active[data-tab]');
+      const t = cur && cur.getAttribute('data-tab');
+      if (on && t && TodayLook.SIMPLE_HIDE.indexOf(t) >= 0) Nav.go('today');
+    } catch (e) {}
+    if (on) { try { TodayLook.paint(); } catch (e) {} }
+  },
+  async setSimple(v) {
+    v = !!v;
+    if (v === TodayLook.on()) return;
+    await Settings.set('newLook', v);
+    TodayLook.applyLook();
+    try { toast(v ? 'Simple interface — fewer places, bigger type.' : 'Advanced interface — everything is back.', null, 1800); } catch (e) {}
   },
   name() {
     let n = '';
@@ -9196,8 +9224,9 @@ const TodayLook = {
   hero(feed) {
     const rocks = TodayLook.rocks();
     const open = rocks.filter((r) => !r.done);
-    const late = feed.querySelectorAll('.td-rock .rk-late').length;
-    const firstEl = feed.querySelector('.td-rock:not(.done) .rk-title');
+    /* Big Rocks only — the calendar card uses the same row markup. */
+    const late = feed.querySelectorAll('.td-rocks:not(#td-cal) .td-rock .rk-late').length;
+    const firstEl = feed.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title');
     let first = '';
     if (firstEl) { const c = firstEl.cloneNode(true); c.querySelectorAll('.td-rk-note').forEach((n) => n.remove()); first = c.textContent.trim(); }
     if (first.length > 90) first = first.slice(0, 88).trim() + '…';
@@ -9368,6 +9397,13 @@ const TodayFix = {
 const Sections = {
   FIXED: ['today', 'settings'],
   hidden() { const v = Settings.get('hiddenTabs'); return Array.isArray(v) ? v : []; },
+  /* What is out of the menu right now: your own choice plus, in the Simple
+     interface, the places it leaves out. */
+  hiddenNow() {
+    const out = Sections.hidden().slice();
+    try { TodayLook.hides().forEach((t) => { if (out.indexOf(t) < 0) out.push(t); }); } catch (e) {}
+    return out;
+  },
 
   /* Fewer sections by default. A new account starts without Finances and
      Priorities in the menu; an account that already exists loses only the
@@ -9406,7 +9442,7 @@ const Sections = {
   apply() {
     let st = document.getElementById('fn-hide');
     if (!st) { st = document.createElement('style'); st.id = 'fn-hide'; document.head.appendChild(st); }
-    st.textContent = Sections.hidden().filter((t) => /^[a-z0-9_-]+$/i.test(t))
+    st.textContent = Sections.hiddenNow().filter((t) => /^[a-z0-9_-]+$/i.test(t))
       .map((t) => '[data-fn-side="' + t + '"],[data-fn-seg="' + t + '"]{display:none!important}').join('\n');
   },
   wire(section) {
@@ -10892,7 +10928,7 @@ const Nav = {
         if (!g) return;
         /* Returning to a group lands you where you left it — never on a
            section that has been hidden from the menu. */
-        let hid = []; try { hid = Sections.hidden(); } catch (e) {}
+        let hid = []; try { hid = Sections.hiddenNow(); } catch (e) {}
         const ok = (t) => !!Nav.pill(t) && hid.indexOf(t) < 0;
         let want = g.tabs.length > 1 ? Nav.last[g.id] : g.tabs[0];
         if (!ok(want)) want = g.tabs.find(ok) || g.tabs[0];
@@ -11029,6 +11065,9 @@ const Nav = {
     let html = '';
     if (Nav.pill('artur')) html += row('data-fn-menu="artur"', Nav.ICON.artur || 'user', 'Profile', 'Your page — mission, roles, the long view');
     html += row('data-fn-menu="settings"', Nav.ICON.settings || 'gear', 'Settings', 'Look, Today, connections, notifications');
+    html += TodayLook.on()
+      ? row('data-fn-act="ui-advanced"', 'compass', 'Switch to Advanced', 'Every page, as before')
+      : row('data-fn-act="ui-simple"', 'today', 'Switch to Simple', 'The new design, fewer places, bigger type');
     if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="privacy"', 'lock', 'Privacy & security', 'Password, recovery codes, your data');
     html += row('data-fn-act="help"', 'note', 'Send feedback', 'What is confusing, missing or annoying');
     if (typeof Auth !== 'undefined' && Auth.installed) html += row('data-fn-act="signout"', 'out', 'Sign out', '', 'fn-m-danger');
@@ -11042,6 +11081,7 @@ const Nav = {
     grid.querySelectorAll('[data-fn-act]').forEach(b => b.addEventListener('click', async () => {
       const a = b.getAttribute('data-fn-act');
       close();
+      if (a === 'ui-simple' || a === 'ui-advanced') { TodayLook.setSimple(a === 'ui-simple').catch(() => {}); return; }
       if (a === 'signout') {
         if (!confirm('Sign out of The Flow on this device?')) return;
         try { await Auth.signOut(); } catch (e) {}
@@ -11291,7 +11331,8 @@ const Nav = {
     let html =
       '<div class="fn-brand"><span class="fn-mark"></span><span class="fn-nm">The Flow</span></div>' +
       '<button type="button" class="fn-k" id="fn-kbtn">' + Nav.svg('search') +
-        '<span>Search</span><span class="fn-kbd">⌘K</span></button>';
+        '<span>Search</span><span class="fn-kbd">⌘K</span></button>' +
+      '<button type="button" class="fn-sideadd" id="fn-sideadd">' + Nav.svg('plus') + '<span>Add</span></button>';
 
     Nav.SIDE.forEach(sec => {
       const tabs = sec.tabs.filter(t => Nav.pill(t));
@@ -11301,6 +11342,10 @@ const Nav = {
     });
 
     html += '<div class="fn-spacer"></div>';
+    /* One click between the two interfaces. */
+    html += '<div class="fn-ui" role="group" aria-label="Interface">' +
+      '<button type="button" data-fn-ui="advanced">Advanced</button>' +
+      '<button type="button" data-fn-ui="simple">Simple</button></div>';
     html += Nav.SIDE_FOOT.filter(t => Nav.pill(t)).map(link).join('');
 
     side.innerHTML = html;
@@ -11316,6 +11361,12 @@ const Nav = {
       b.addEventListener('click', () => (t === 'artur' ? Nav.openMenu() : Nav.go(t)));
     });
     document.getElementById('fn-kbtn').addEventListener('click', () => Nav.openPalette());
+    document.getElementById('fn-sideadd').addEventListener('click', () => {
+      if (Nav.capEl && Nav.capEl.classList.contains('on')) Nav.closeCapture(); else Nav.openCapture();
+    });
+    side.querySelectorAll('[data-fn-ui]').forEach((b) => b.addEventListener('click', () => {
+      TodayLook.setSimple(b.getAttribute('data-fn-ui') === 'simple').catch(() => {});
+    }));
 
     document.body.classList.add('fn-on');
     Nav.sideEl = side;
