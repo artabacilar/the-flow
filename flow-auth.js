@@ -953,7 +953,10 @@ async function gate(req, res) {
       return true;
     }
     const me = await currentUser(req);
-    if (!me || !me.owner) { json(res, 403, { error: 'Only the owner can read device reports.' }); return true; }
+    /* The owner flag, or the address this Flow is configured for — an
+       account that predates the flag is still its owner's. */
+    const isOwner = !!me && (me.owner || (OWNER_EMAIL && String(me.email || '').toLowerCase() === OWNER_EMAIL));
+    if (!isOwner) { json(res, 403, { error: 'Only the owner can read device reports.' }); return true; }
     json(res, 200, { reports: ((await getJSON(DIAG_KEY, [])) || []).slice().reverse() });
     return true;
   }
