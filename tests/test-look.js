@@ -74,12 +74,43 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('the page title is replaced, not doubled', v.titleHidden);
   ok('the strip is the seven days of this week, today marked', v.days === 7 && v.on === setup.t, v);
   ok('days with an open Big Rock carry a dot, a day with only a done one does not', v.busy[setup.t] === true && v.busy.filter(Boolean).length === (setup.t > 0 ? 2 : 1), v.busy);
-  ok('the summary counts the open rocks', /^3 Big Rocks to move/.test(v.line), v.line);
+  ok('the summary counts today\'s open rocks, not the week\'s', setup.overdueExpected ? /^2 Big Rocks for today/.test(v.line) : /^3 Big Rocks for today/.test(v.line), v.line);
   ok('and the overdue one', setup.overdueExpected ? /1 overdue/.test(v.line) : !/overdue/.test(v.line), v.line);
-  ok('next is the first open rock the feed lists', /^Next\s*/.test(v.next) && /(Send the Q4 plan|Record the DJ set demo|Leg day)/.test(v.next), v.next);
+  ok('next is today\'s first open rock', /^Next\s*/.test(v.next) && (setup.overdueExpected ? /Record the DJ set demo/ : /Send the Q4 plan/).test(v.next) && /Today/.test(v.next), v.next);
   ok('the week pill shows how much is done', /Week \d+ · 25%/.test(v.pills), v.pills);
   ok('Big Rocks sit on the lime card', v.rocksBg === 'rgb(200, 242, 107)', v.rocksBg);
   ok('the + is coral', v.fab === 'rgb(255, 107, 61)', v.fab);
+
+  console.log('\n— a week with most of it still ahead —');
+  const ahead = await p.evaluate(async () => {
+    const now = new Date(), t = (now.getDay() + 6) % 7, w = weekId(now);
+    const saved = cData.rocks[w];
+    /* Ten open rocks, none of them today: the week is busy, today is not. */
+    const later = t < 6 ? t + 1 : -1;
+    cData.rocks[w] = Array.from({ length: 10 }, (_, i) => ({ id: 'a' + i, title: 'Later thing ' + i, day: later, time: i === 0 ? '09:00' : '', prio: 'med', done: false }));
+    cSave(); renderToday(); await new Promise((r) => setTimeout(r, 700));
+    const txt = (s) => ((document.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+    const out = { t, line: txt('.lk-line'), next: txt('.lk-next'), pills: txt('.lk-pills') };
+    /* Two today, one of them done, plus eight later. */
+    cData.rocks[w] = cData.rocks[w].slice(0, 8).concat([
+      { id: 'b1', title: 'Today first', day: t, time: '08:00', prio: 'med', done: true },
+      { id: 'b2', title: 'Today second', day: t, time: '15:30', prio: 'med', done: false }
+    ]);
+    cSave(); renderToday(); await new Promise((r) => setTimeout(r, 700));
+    out.line2 = txt('.lk-line'); out.next2 = txt('.lk-next'); out.pills2 = txt('.lk-pills');
+    cData.rocks[w].forEach((r) => { if (r.day === t) r.done = true; });
+    cSave(); renderToday(); await new Promise((r) => setTimeout(r, 700));
+    out.line3 = txt('.lk-line');
+    cData.rocks[w] = saved; cSave(); renderToday(); await new Promise((r) => setTimeout(r, 400));
+    return out;
+  });
+  ok('ten rocks later in the week are not ten for today', /^Nothing due today\./.test(ahead.line) && !/10 Big Rocks/.test(ahead.line), ahead.line);
+  ok('they show as more this week', /10 more this week/.test(ahead.pills), ahead.pills);
+  ok('next is the earliest one, with its day', ahead.t < 6 ? /Later thing 0/.test(ahead.next) && /Tomorrow 09:00/.test(ahead.next) : /No day set/.test(ahead.next), ahead.next);
+  ok('one open today is one for today', /^1 Big Rock for today\.$/.test(ahead.line2), ahead.line2);
+  ok('next is today\'s, at its time', /Today second/.test(ahead.next2) && /Today 15:30/.test(ahead.next2), ahead.next2);
+  ok('the rest of the week is the pill', /8 more this week/.test(ahead.pills2), ahead.pills2);
+  ok('today finished says so', /^Today’s Big Rocks are done\./.test(ahead.line3), ahead.line3);
 
   console.log('\n— it follows a change —');
   const after = await p.evaluate(async () => {

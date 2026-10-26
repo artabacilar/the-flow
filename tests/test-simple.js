@@ -1,7 +1,7 @@
 /* Click-through of the Simple interface: every control it adds or restyles
    must do its job, on a desktop and on a phone. */
 const submitAuth = require('./submit-auth.js');
-const { chromium } = require('playwright');
+const { chromium, devices } = require('playwright');
 const H = 'http://localhost:' + (process.env.PORT || 4222);
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, console.log('  ✗ ' + n + (d !== undefined ? '  → ' + JSON.stringify(d).slice(0, 300) : ''))); };
@@ -10,8 +10,11 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
   const b = await chromium.launch();
   for (const kind of (process.env.KINDS || 'desktop,phone').split(',')) {
     console.log('\n===== ' + kind + ' =====');
-    const ctx = await b.newContext(kind === 'phone' ? { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
+    /* android: Chrome on a Pixel, as the Play Store app runs it — every
+       press is a real tap (touch events first), not a mouse click. */
+    const ctx = await b.newContext(kind === 'android' ? Object.assign({}, devices['Pixel 7']) : kind !== 'desktop' ? { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
     const p = await ctx.newPage();
+    if (kind === 'android') { const click = p.click.bind(p); p.click = (sel, o) => (/^#fa-/.test(sel) ? click(sel, o) : p.tap(sel, o)); }
     const errs = []; p.on('pageerror', (e) => errs.push(e.message));
     p.on('dialog', (d) => d.accept());
     await p.goto(H + '/', { waitUntil: 'load' }); await p.waitForTimeout(2500);
@@ -48,14 +51,16 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     await p.evaluate(() => window.scrollTo(0, 0));
     await p.click('.lk-hero'); await p.waitForTimeout(900);
     ok('the summary card takes you to the Big Rocks', await p.evaluate(() => { const r = document.querySelector('.td-rocks:not(#td-cal)').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }));
-    const nextOk = await p.evaluate(() => { const n = (document.querySelector('.lk-next span') || {}).textContent || ''; const t = document.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title'); return n.length > 3 && t && t.textContent.indexOf(n.replace('…', '').slice(0, 20)) === 0; });
-    ok('Next names the first open rock', nextOk);
+    const nextOk = await p.evaluate(() => { const n = (document.querySelector('.lk-next span') || {}).textContent || ''; const L = window.FlowTodayLook; const k = L.heroPick(L.rocks(), (new Date().getDay() + 6) % 7); return n.length > 3 && !!k.next && String(k.next.title).indexOf(n.replace('…', '').slice(0, 20)) === 0; });
+    ok('Next names today\'s first open rock, else the one that slipped, else the next one', nextOk);
+    const prog = () => p.evaluate(() => +((document.querySelector('.lk-prog') || { getAttribute: () => -1 }).getAttribute('aria-valuenow')));
+    const p0 = await prog();
     const before = await p.evaluate(() => document.querySelectorAll('.td-rocks:not(#td-cal) .td-rock.done').length);
     await p.evaluate(() => { const d = document.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .dot'); d.scrollIntoView({ block: 'center' }); });
     await p.click('.td-rocks:not(#td-cal) .td-rock:not(.done) .dot'); await p.waitForTimeout(900);
     const after = await p.evaluate(() => document.querySelectorAll('.td-rocks:not(#td-cal) .td-rock.done').length);
     ok('ticking a Big Rock marks it done', after === before + 1, { before, after });
-    ok('and the summary counts one fewer', await p.evaluate(() => /(\d+) Big Rocks? to move/.test(document.querySelector('.lk-line').textContent) && +RegExp.$1 === 5), await p.evaluate(() => document.querySelector('.lk-line').textContent));
+    ok('and the summary counts one more done', (await prog()) === p0 + 1, { p0, now: await prog() });
     const hb = await p.evaluate(() => { const r = document.querySelector('#flow-td-habits .flow-td-row:not(.done)'); return r ? r.textContent.trim().slice(0, 30) : null; });
     if (hb) {
       await p.evaluate(() => document.querySelector('#flow-td-habits .flow-td-row:not(.done) .flow-today-check').scrollIntoView({ block: 'center' }));
@@ -88,12 +93,12 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     }
 
     console.log('— + / Add —');
-    const openAdd = async () => { if (kind === 'phone') await p.click('#fn-capbtn'); else await p.click('#fn-sideadd'); await p.waitForTimeout(350); };
+    const openAdd = async () => { if (kind !== 'desktop') await p.click('#fn-capbtn'); else await p.click('#fn-sideadd'); await p.waitForTimeout(350); };
     await T(); await openAdd();
     ok('the + opens the add menu', await p.evaluate(() => document.getElementById('flow-capture').classList.contains('on')));
     const items = await p.evaluate(() => [...document.querySelectorAll('#flow-capture [data-fn-cap]')].map((x) => x.getAttribute('data-fn-cap')));
     ok('with every kind of entry', ['note', 'quad', 'finance', 'training', 'habits', 'diet', 'sleep'].every((x) => items.includes(x)), items);
-    if (kind === 'phone') { await p.click('#fn-capbtn'); await p.waitForTimeout(300); ok('and the same + closes it', await p.evaluate(() => !document.getElementById('flow-capture').classList.contains('on'))); await openAdd(); }
+    if (kind !== 'desktop') { await p.click('#fn-capbtn'); await p.waitForTimeout(300); ok('and the same + closes it', await p.evaluate(() => !document.getElementById('flow-capture').classList.contains('on'))); await openAdd(); }
     await p.click('#flow-capture [data-fn-cap="note"]'); await p.waitForTimeout(300);
     const nJ = await p.evaluate(() => Flow.Journal.entries.length);
     await p.fill('#fn-noteinput', 'A quick note from Simple');
