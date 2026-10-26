@@ -539,6 +539,10 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
         habit ticks, sleep, mood, training, short excerpts of your journal, and spending as totals
         by category and day (never card numbers or merchants) — and writes a few patterns and what
         to do next. The read is kept in your account until the next one; nothing else is stored.</li>
+    <li><b>Device reports</b>, only when something goes wrong. If the app fails to start on a
+        device, or taps do not register, the app sends a short technical report: the browser
+        version, the screen size, the error message, and which part of the page was under the
+        finger. Never anything you wrote. The last hundred are kept so the problem can be fixed.</li>
     <li><b>Apple Health figures</b>, on iPhone, only if you allow it. The app reads — never
         writes — sleep, resting heart rate, heart-rate variability and similar daily values, and
         copies them into your Body log so they appear on your other devices. You choose which

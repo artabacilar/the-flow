@@ -9,6 +9,8 @@
  * ========================================================================== */
 (function () {
 'use strict';
+/* The device report in the shell asks this: did the pack at least run? */
+try { window.__flowPackRan = true; } catch (e) {}
 
 if (window.__FLOW_UPGRADE__) { console.warn('[Flow] upgrade pack already loaded'); return; }
 window.__FLOW_UPGRADE__ = '1.6.1';

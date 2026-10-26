@@ -123,6 +123,8 @@ const SEED = (uid) => '__auth:seed:' + uid;
 const PAT = (hash) => '__auth:pat:' + hash;
 const PAT_INDEX = (uid) => '__auth:pats:' + uid;
 const PAT_MAX = 10;
+const DIAG_KEY = '__diag:client';
+const DIAG_HITS = new Map();
 const PACK_CLAIMED = (uid) => '__auth:packclaimed:' + uid;
 /* Stamped the first and only time a starter week is written into an account.
    Without it, somebody who signed up and then deliberately cleared everything
@@ -896,6 +898,46 @@ async function gate(req, res) {
     }
     req.__flowUid = who.id;
     return false;
+  }
+
+  /* ---- device reports ----
+     Before sign-in on purpose: the device that needs to report is often the
+     one where signing in is what does not work. Public, so it is narrow —
+     a small body, a few per address per hour, the last hundred kept, and
+     only the owner can read them back. What is kept is technical: versions,
+     sizes, error messages, element names. */
+  if (p === '/api/diag/client') {
+    if (req.method === 'POST') {
+      const ip = String((req.headers['x-forwarded-for'] || '').split(',')[0] || (req.socket && req.socket.remoteAddress) || '').trim();
+      const hour = Math.floor(Date.now() / 3600e3);
+      DIAG_HITS.forEach((v, k) => { if (v.h !== hour) DIAG_HITS.delete(k); });
+      const hit = DIAG_HITS.get(ip) || { h: hour, n: 0 };
+      hit.n++; DIAG_HITS.set(ip, hit);
+      if (hit.n > 20) { json(res, 429, { error: 'Enough reports for now.' }); return true; }
+      const body = await readBody(req);
+      if (!body || body.length > 6000) { json(res, 413, { error: 'Too big.' }); return true; }
+      const b = safeParse(body);
+      const s = (v, n) => String(v == null ? '' : v).slice(0, n);
+      const list = (a, n, f) => (Array.isArray(a) ? a.slice(0, n).map(f) : []);
+      let who = null;
+      try { const me = await currentUser(req); who = me ? (me.owner ? 'owner' : 'user:' + crypto.createHash('sha256').update(me.id).digest('hex').slice(0, 8)) : null; } catch (e) {}
+      const rec = {
+        at: new Date().toISOString(), who, why: s(b.why, 30), ua: s(b.ua, 180), v: s(b.v, 20),
+        flow: !!b.flow, ready: !!b.ready, look: s(b.look, 10), lang: s(b.lang, 8), sa: !!b.sa,
+        w: +b.w || 0, h: +b.h || 0, dpr: +b.dpr || 0,
+        errs: list(b.errs, 8, (e) => ({ m: s(e && e.m, 160), s: s(e && e.s, 70) })),
+        taps: list(b.taps, 8, (t) => ({ at: s(t && t.at, 200), tg: s(t && t.tg, 80), c: !!(t && t.c), dp: !!(t && t.dp), x: +(t && t.x) || 0, y: +(t && t.y) || 0 }))
+      };
+      const log = (await getJSON(DIAG_KEY, [])) || [];
+      log.push(rec);
+      await setJSON(DIAG_KEY, log.slice(-100));
+      json(res, 200, { ok: true });
+      return true;
+    }
+    const me = await currentUser(req);
+    if (!me || !me.owner) { json(res, 403, { error: 'Only the owner can read device reports.' }); return true; }
+    json(res, 200, { reports: ((await getJSON(DIAG_KEY, [])) || []).slice().reverse() });
+    return true;
   }
 
   /* ---- the home-screen widget ----

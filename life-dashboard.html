@@ -22,6 +22,26 @@
      early to avoid a bare-layout flash; it exists purely so a pack that DIES
      mid-boot cannot leave the splash up forever. Hence a long, safe window. -->
 <script>setTimeout(function(){document.documentElement.classList.add('flow-ready')},40000)</script>
+<!-- Device report. A phone where the app will not start, or where taps do
+     not land, cannot tell anyone why — the person only sees "nothing works".
+     This keeps a few technical facts from the first minute (errors, whether
+     the pack arrived, and for the first taps which element was under the
+     finger and whether a click followed) and sends them once, only when
+     something is wrong. Never text anybody typed. -->
+<script>(function(){try{
+var D=window.__flowDiag={errs:[],taps:[],sent:0};
+function el(e){if(!e||!e.tagName)return'';var c=typeof e.className==='string'?e.className.trim().split(/\s+/).slice(0,3).join('.'):'';return e.tagName.toLowerCase()+(e.id?'#'+e.id:'')+(c?'.'+c:'');}
+function path(e){var o=[];for(var i=0;e&&e.tagName&&i<4;i++,e=e.parentElement)o.push(el(e));return o.join(' < ');}
+window.addEventListener('error',function(e){var tg=e.target&&e.target.tagName;if(tg&&tg!=='SCRIPT')return;if(D.errs.length<8)D.errs.push({m:String(e.message||(e.target&&e.target.src)||'').slice(0,160),s:String(e.filename||(e.target&&(e.target.src||e.target.href))||'').split('/').pop().slice(0,60)+':'+(e.lineno||0)});},true);
+window.addEventListener('unhandledrejection',function(e){if(D.errs.length<8)D.errs.push({m:'promise: '+String(e.reason&&e.reason.message||e.reason).slice(0,160)});});
+var pend=null;
+document.addEventListener('touchend',function(e){if(D.taps.length>=8)return;var t=e.changedTouches&&e.changedTouches[0];if(!t)return;var x=t.clientX,y=t.clientY,top=document.elementFromPoint(x,y);if(pend)D.taps.push(pend);pend={at:path(top),tg:el(e.target),c:0,dp:!!e.defaultPrevented,x:Math.round(x),y:Math.round(y)};var me=pend;setTimeout(function(){if(pend===me){D.taps.push(me);pend=null;}},900);},true);
+document.addEventListener('click',function(){if(pend)pend.c=1;},true);
+D.send=function(why){if(D.sent>1)return;D.sent++;try{var de=document.documentElement,b=JSON.stringify({why:why,ua:navigator.userAgent.slice(0,180),v:window.FLOW_PACK_V||'',flow:!!(window.Flow||window.__flowPackRan),ready:de.classList.contains('flow-ready'),look:de.getAttribute('data-flow-look')||'',lang:de.lang||'',sa:!!(window.matchMedia&&matchMedia('(display-mode: standalone)').matches),w:innerWidth,h:innerHeight,dpr:window.devicePixelRatio||1,errs:D.errs,taps:D.taps});if(navigator.sendBeacon)navigator.sendBeacon('/api/diag/client',new Blob([b],{type:'application/json'}));else fetch('/api/diag/client',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});}catch(e){}};
+function check(){var dead=D.taps.filter(function(t){return !t.c;}).length;var why=!(window.Flow||window.__flowPackRan)?'no-pack':D.errs.length?'errors':(D.taps.length>=3&&dead>=3)?'taps-without-clicks':'';if(why)D.send(why);}
+D.check=check;setTimeout(check,20000);setTimeout(check,60000);
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')check();});
+}catch(e){}})();</script>
 <!-- Apply the saved colour theme before first paint, so a returning visitor
      never sees the default flash before their theme loads. The pack reconciles
      this against the account value once it boots. -->
