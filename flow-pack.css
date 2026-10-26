@@ -2642,3 +2642,49 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td
   /* The bar stays above the menu, so the turned + closes it. */
   html[data-flow-theme="signature"][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar{z-index:970}
 }
+
+/* ── Event brief (Today · Calendar) ────────────────────────────────────── */
+.eb{margin-top:8px}
+.eb-tg{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 13px;border-radius:99px;background:var(--card2);border:1px solid var(--border);color:var(--text);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.eb-tg[aria-expanded="true"] .eb-chev{display:inline-block;transform:rotate(180deg)}
+.eb-chev{color:var(--muted);transition:transform .2s}
+.eb-dot{width:8px;height:8px;border-radius:50%;background:var(--green,#00e88a);box-shadow:0 0 0 3px rgba(0,232,138,.18)}
+.eb-busy{cursor:default;color:var(--muted)}
+.eb-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent,#0093e7);animation:ebspin .8s linear infinite}
+@keyframes ebspin{to{transform:rotate(360deg)}}
+.eb-hint{font-size:12px;color:var(--muted)}
+.eb-body{margin-top:12px;padding:2px 0 4px 14px;border-left:2px solid var(--border);color:var(--text)}
+.eb-head{font-size:14.5px;font-weight:650;margin:0 0 8px;line-height:1.4}
+.eb-meta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px}
+.eb-meta button{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--accent,#0093e7);cursor:pointer}
+.eb-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.eb-tabs button{min-height:32px;padding:0 12px;border-radius:99px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.eb-tabs button.on{background:var(--text);color:var(--bg,#0b0d10);border-color:var(--text)}
+.eb-pane h5{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
+.eb-pane h5:first-child{margin-top:2px}
+.eb-pane ul{list-style:none;margin:0;padding:0}
+.eb-pane li{position:relative;padding:5px 0 5px 14px;font-size:14px;line-height:1.5;font-weight:400}
+.eb-pane li::before{content:"";position:absolute;left:1px;top:13px;width:5px;height:5px;border-radius:50%;background:var(--muted)}
+.eb-pane li.eb-t{padding-left:0;display:grid;grid-template-columns:96px 1fr;gap:10px}
+.eb-pane li.eb-t::before{display:none}
+.eb-tm{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;padding-top:1px}
+.eb-tbc{color:var(--orange,#f5b301)}
+.eb-pane li.eb-you{background:rgba(0,232,138,.07);border-radius:10px;padding:6px 8px;margin:2px -8px}
+.eb-me{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#062b1c;background:var(--green,#00e88a);border-radius:99px;padding:1px 7px;margin-left:4px;vertical-align:2px}
+.eb-pane li.eb-warn{color:var(--orange,#f5b301)}
+.eb-open li{display:flex;gap:10px;padding-left:0}
+.eb-open li::before{display:none}
+.eb-bx{appearance:none;width:20px;height:20px;border-radius:6px;border:1.5px solid var(--muted);background:none;flex:none;margin-top:2px;position:relative;cursor:pointer;padding:0}
+.eb-open li.done .eb-bx{background:var(--green,#00e88a);border-color:var(--green,#00e88a)}
+.eb-open li.done .eb-bx::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid #062b1c;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.eb-open li.done span{opacity:.45;text-decoration:line-through}
+.eb-src{margin-top:10px;font-size:12px;color:var(--muted)}
+.eb-src summary{cursor:pointer;font-weight:700}
+.eb-src li{font-size:12px;padding:3px 0 3px 14px}
+@media (max-width:620px){ .eb-body{padding-left:0;border-left:0} .eb-pane li.eb-t{grid-template-columns:82px 1fr} }
+@media (max-width:760px){
+  #td-cal .td-rock:has(.eb-body){flex-wrap:wrap;align-items:flex-start}
+  #td-cal .td-rock:has(.eb-body) .rk-title{flex-basis:calc(100% - 24px);order:1}
+  #td-cal .td-rock:has(.eb-body) .rk-meta{order:0;margin-left:auto}
+  #td-cal .td-rock:has(.eb-body) > .dot{margin-top:8px}
+}

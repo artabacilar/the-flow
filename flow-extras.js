@@ -1365,6 +1365,147 @@ async function handleStatement(p, req, res, ctx) {
   return true;
 }
 
+
+/* ==========================================================================
+ * Event brief — the emails about a calendar event, turned into its plan
+ * --------------------------------------------------------------------------
+ * The page finds the emails (through the person's own mail connection, with
+ * ID numbers and birth dates already taken out) and sends them here with the
+ * event. This writes the brief: the timetable day by day, where, what is
+ * the person's own part, who to call, and what the emails left unsettled.
+ * Only the brief goes back; nothing here is stored. Like the statement
+ * reader it runs as a job, because a long thread takes longer to read than
+ * a phone holds a request open.
+ * ========================================================================== */
+
+const BRIEF_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_BRIEF_DAILY_CAP || '16', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 16;
+})();
+const briefCountKey = () => 'brief:' + new Date().toISOString().slice(0, 10);
+const briefJobs = new Map();
+let briefPost = (...a) => postJSON(...a);
+
+const BRIEF_SYSTEM = [
+  'You write the working brief for ONE calendar event, from the emails about it. The reader is the person whose calendar it is; they will glance at it on their phone on the day.',
+  '',
+  'Reply with ONE JSON object and nothing else:',
+  '{"headline":"","days":[{"date":"YYYY-MM-DD","label":"","items":[{"time":"15:30–16:00","text":"","you":false,"tbc":false}]}],',
+  ' "where":[""],"you":[""],"people":[{"name":"","role":"","phone":""}],"open":[""],"warnings":[""]}',
+  '',
+  '· days: every scheduled item the emails give, grouped by date, in time order. time is "HH:MM–HH:MM", "HH:MM", or "" when the emails give no time. tbc:true when the time or the item is not confirmed. label is a short name for the day ("Arrivals", "Show day").',
+  '· you:true on an item that involves the reader personally (they appear by name, nickname or email address — you are told how they are called).',
+  '· where: venue, rooms, stage and technical set-up, as short bullets.',
+  '· you (the list): the reader\'s own part — what they do, what they bring, their travel and room. Empty if the emails say nothing about them.',
+  '· people: organisers and coordinators only, with the phone number the emails give for them. Never list guests\', models\' or attendees\' phone numbers.',
+  '· open: questions asked in the emails that no later email answers, things still waiting for approval, and anything the reader must check. Be specific.',
+  '· warnings: contradictions between emails (say both versions and which is newer), and changes the reader might have missed (a flight moved, a room changed).',
+  '· When information changed, the newest email wins; say what changed.',
+  '· Short bullets, at most about 30 words each. Keep people\'s names as written. No ID numbers, passport numbers or birth dates, ever.',
+  '· Write in the language you are told to. Dates in "days" are ISO; infer the year from the event.',
+  '· If the emails are not about this event at all, reply {"none":true}.'
+].join('\n');
+
+function parseBrief(text) {
+  const s = String(text || '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let o; try { o = JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+  if (!o || typeof o !== 'object') return null;
+  if (o.none) return { none: true };
+  const str = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n || 300) : '');
+  const list = (v, n) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean).slice(0, n || 12) : []);
+  const days = (Array.isArray(o.days) ? o.days : []).map((d) => ({
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(d && d.date)) ? d.date : '',
+    label: str(d && d.label, 40),
+    items: (Array.isArray(d && d.items) ? d.items : []).map((i) => ({
+      time: str(i && i.time, 24), text: str(i && i.text), you: !!(i && i.you), tbc: !!(i && i.tbc)
+    })).filter((i) => i.text).slice(0, 20)
+  })).filter((d) => d.items.length).sort((x, y) => String(x.date).localeCompare(String(y.date))).slice(0, 10);
+  const people = (Array.isArray(o.people) ? o.people : []).map((p) => ({
+    name: str(p && p.name, 80), role: str(p && p.role, 120), phone: str(p && p.phone, 32)
+  })).filter((p) => p.name).slice(0, 10);
+  const out = { headline: str(o.headline, 160), days, where: list(o.where), you: list(o.you), people, open: list(o.open), warnings: list(o.warnings, 8) };
+  if (!out.days.length && !out.where.length && !out.you.length && !out.open.length) return null;
+  return out;
+}
+
+async function writeBrief(job, body, key) {
+  const ev = body.event || {};
+  const who = body.me || {};
+  const threads = (Array.isArray(body.threads) ? body.threads : []).slice(0, 10);
+  let mail = '';
+  for (const t of threads) {
+    mail += '\n\n### Thread: ' + String(t.subject || '').slice(0, 200) + '\n';
+    for (const m of (Array.isArray(t.messages) ? t.messages : []).slice(-40)) {
+      mail += '\n--- ' + String(m.date || '').slice(0, 25) + ' · ' + String(m.from || '').slice(0, 120) + '\n' + String(m.text || '').slice(0, 4000) + '\n';
+    }
+    if (mail.length > 70000) break;
+  }
+  mail = mail.slice(0, 70000);
+  const brief = [
+    '# The event',
+    'Title: ' + String(ev.title || '').slice(0, 200),
+    'When: ' + String(ev.start || '').slice(0, 25) + ' → ' + String(ev.end || '').slice(0, 25) + (ev.allDay ? ' (all day)' : ''),
+    'Where: ' + String(ev.location || '').slice(0, 200),
+    '',
+    '# The reader',
+    'Called: ' + [who.name, who.alias, who.email].filter(Boolean).map((x) => String(x).slice(0, 120)).join(' / '),
+    'Today is ' + String(body.today || new Date().toISOString().slice(0, 10)).slice(0, 10) + '. Write in: ' + (body.lang === 'tr' ? 'Turkish' : 'English') + '.',
+    '',
+    '# The emails (newest thread first; quoted history and personal numbers already removed)',
+    mail
+  ].join('\n');
+  const r = await briefPost('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, { model: CHAT_MODEL, max_tokens: 4000, system: BRIEF_SYSTEM, messages: [{ role: 'user', content: brief }] }, 150000);
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('brief', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status < 200 || r.status >= 300) throw new Error('The brief could not be written just now (upstream ' + r.status + ').');
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const out = parseBrief(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'));
+  if (!out) throw new Error('The brief came back in a shape the app could not read. Try Refresh.');
+  return out;
+}
+
+async function handleBrief(p, req, res, ctx) {
+  if (p !== '/api/flow/event-brief') return false;
+  const uid = (ctx.user && ctx.user.id) || 'anon';
+  const now = Date.now();
+  for (const [id, j] of briefJobs) if (now - j.at > 20 * 60 * 1000) briefJobs.delete(id);
+
+  if (req.method === 'GET') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const j = briefJobs.get(String(q.get('job') || ''));
+    if (!j || j.uid !== uid) { ctx.json(res, 404, { error: 'That brief has expired. Try Refresh.' }); return true; }
+    if (j.status === 'working') { ctx.json(res, 200, { ok: true, status: 'working' }); return true; }
+    if (j.status === 'error') { ctx.json(res, 200, { ok: false, status: 'error', error: j.error }); return true; }
+    ctx.json(res, 200, { ok: true, status: 'done', brief: j.result });
+    return true;
+  }
+  if (req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  const spent = (await ctx.counter.get(briefCountKey())) || 0;
+  if (BRIEF_DAILY_CAP > 0 && spent >= BRIEF_DAILY_CAP) {
+    ctx.json(res, 429, { error: 'Today\'s event briefs are used up (' + spent + '). They reset at midnight UTC.', used: spent, cap: BRIEF_DAILY_CAP });
+    return true;
+  }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  if (!body.event || !body.event.title) { ctx.json(res, 400, { error: 'No event came through.' }); return true; }
+  if (!Array.isArray(body.threads) || !body.threads.length) { ctx.json(res, 400, { error: 'No emails to read.' }); return true; }
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = { uid, status: 'working', at: now };
+  briefJobs.set(id, job);
+  await ctx.counter.set(briefCountKey(), spent + 1);
+  writeBrief(job, body, key)
+    .then((out) => { job.result = out; job.status = 'done'; })
+    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'The brief could not be written just now.'; });
+  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: BRIEF_DAILY_CAP });
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -1374,6 +1515,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleDirection(p, req, res, ctx)) return true;
   if (await handlePlanWeek(p, req, res, ctx)) return true;
   if (await handleStatement(p, req, res, ctx)) return true;
+  if (await handleBrief(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.parsePlan = parsePlan;
@@ -1395,4 +1537,8 @@ module.exports._internals.statement = {
   jobs: stmtJobs, config: () => ({ cap: STMT_DAILY_CAP, maxBytes: STMT_MAX_BYTES }),
   handle: handleStatement, STMT_SYSTEM,
   setPoster(fn) { stmtPost = fn || ((...a) => postJSON(...a)); }
+};
+module.exports._internals.brief = {
+  parseBrief, handle: handleBrief, BRIEF_SYSTEM, jobs: briefJobs,
+  setPoster(fn) { briefPost = fn || ((...a) => postJSON(...a)); }
 };

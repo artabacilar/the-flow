@@ -1855,6 +1855,17 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "{} meeting": "{} toplantı",
   "New look (preview)": "Yeni görünüm (ön izleme)",
   "The redesigned Today, floating tab bar and + menu, on the Signature theme. Turn it off to go straight back to the previous design — nothing you wrote changes either way.": "Yeniden tasarlanan Bugün ekranı, yüzen sekme çubuğu ve + menüsü (Signature temasında). Kapatınca hemen önceki tasarıma dönersin — yazdığın hiçbir şey değişmez.",
+  "Whole event": "Tüm etkinlik",
+  "Your part": "Senin kısmın",
+  "People & open items": "Kişiler ve açık konular",
+  "Where": "Nerede",
+  "Who to call": "Kimi aramalı",
+  "Still open": "Hâlâ açık",
+  "Check": "Kontrol et",
+  "Looking for related email…": "İlgili e-postalar aranıyor…",
+  "Writing the brief from your email…": "Özet e-postalarından yazılıyor…",
+  "Connect Gmail or Outlook in Settings to get a brief for this event from your email.": "Bu etkinlik için e-postalarından bir özet almak üzere Ayarlar'dan Gmail ya da Outlook'u bağla.",
+  "↻ Brief failed — try again": "↻ Özet oluşturulamadı — tekrar dene",
 /* DICT-END */
 }, RULES);
 

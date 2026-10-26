@@ -10297,6 +10297,205 @@ const Connect = {
  * devices press the button. Everything lands through the app's own functions
  * — addRock(), J() — so it is saved and synced exactly as if typed.
  */
+/* ── Event brief ──────────────────────────────────────────────────────────
+ * Under a big event on Today — all day, three hours or more, or anything
+ * with three or more related emails — a brief written from those emails:
+ * the timetable by day, where, your own part, who to call and what is
+ * still open. Built automatically once a day per event, rebuilt only when
+ * the emails changed (or on Refresh), so an unchanged thread costs nothing.
+ *
+ * The emails are found through the person's own Gmail or Outlook
+ * connection; only the brief is kept (flow:briefs), never the emails.
+ * ====================================================================== */
+const EventBrief = {
+  KEY: 'flow:briefs',
+  AUTO_PER_DAY: 4,
+  STOP: new Set(('the a an and or of for with at in on to from by meeting call sync weekly daily standup stand up toplantı toplantısı ' +
+    'görüşme ile ve ve de da bir için review catch up 1:1 one on one lunch dinner breakfast').split(' ')),
+  data: null, busy: {}, open: {}, tab: {},
+
+  async load() {
+    if (EventBrief.data) return EventBrief.data;
+    const v = await DB.get(EventBrief.KEY, {});
+    EventBrief.data = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+    return EventBrief.data;
+  },
+  async save() {
+    /* Keep the last 40 events; a brief is for the days around an event. */
+    const d = EventBrief.data || {};
+    const keys = Object.keys(d).sort((a, b) => String(d[b].at || '').localeCompare(String(d[a].at || '')));
+    keys.slice(40).forEach((k) => delete d[k]);
+    await DB.set(EventBrief.KEY, d);
+  },
+  key(e) { return String(e.id || '') || (String(e.title || '').toLowerCase() + '|' + String(e.start || '').slice(0, 10)); },
+  day() { return today(); },
+  terms(title) {
+    const words = String(title || '').normalize('NFC').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/)
+      .map((w) => w.trim()).filter((w) => w.length >= 3 && !EventBrief.STOP.has(w.toLocaleLowerCase('tr')));
+    return words.slice(0, 4).join(' ');
+  },
+  hours(e) { return e.allDay ? 24 : Math.max(0, (Date.parse(e.end) - Date.parse(e.start)) / 3600000) || 0; },
+  big(e) { return !!e.allDay || EventBrief.hours(e) >= 3; },
+  mailIds() {
+    try {
+      return ['gmail', 'outlook'].filter((id) => {
+        const c = (Connect.list || []).find((x) => x.id === id);
+        return c && (c.accounts || []).some((a) => !a.broken);
+      });
+    } catch (e) { return []; }
+  },
+  me() {
+    let u = {};
+    try { u = (Auth && Auth.user) || {}; } catch (e) {}
+    const name = u.name || (Settings.get && Settings.get('displayName')) || '';
+    return { name, alias: String(name).split(/\s+/)[0] || '', email: u.email || '' };
+  },
+  sig(threads) { return threads.map((t) => t.id + ':' + t.total).sort().join(','); },
+
+  /* Find, decide, write. force = Refresh. */
+  async run(e, force) {
+    const k = EventBrief.key(e);
+    if (EventBrief.busy[k]) return;
+    await EventBrief.load();
+    const have = EventBrief.data[k];
+    if (!force && have && have.day === EventBrief.day()) return;
+    const terms = EventBrief.terms(e.title);
+    const ids = EventBrief.mailIds();
+    if (!terms || !ids.length) return;
+    EventBrief.busy[k] = 'search';
+    ConnectApps.calendarPaint();
+    try {
+      const got = await Promise.all(ids.map((id) => ConnectApps.get('/api/connect/' + id + '/related?' + new URLSearchParams({ q: terms }))
+        .then((j) => j.threads || []).catch(() => [])));
+      const threads = [].concat.apply([], got);
+      const msgs = threads.reduce((n, t) => n + (t.total || (t.messages || []).length), 0);
+      const base = { day: EventBrief.day(), at: new Date().toISOString(), title: e.title, threads: threads.length, mails: msgs,
+        sources: threads.map((t) => ({ subject: t.subject, total: t.total, link: t.link,
+          first: (t.messages[0] || {}).date, last: (t.messages[t.messages.length - 1] || {}).date })) };
+      if (!msgs || !(EventBrief.big(e) || msgs >= 3)) {
+        EventBrief.data[k] = Object.assign({}, have || {}, base, { brief: (have && have.brief) || null, skipped: true });
+        await EventBrief.save(); return;
+      }
+      const sig = EventBrief.sig(threads);
+      if (!force && have && have.brief && have.sig === sig) {
+        EventBrief.data[k] = Object.assign({}, have, { day: base.day, checked: base.at });
+        await EventBrief.save(); return;
+      }
+      if (!force) {
+        const autoToday = Object.values(EventBrief.data).filter((x) => x && x.autoDay === base.day).length;
+        if (autoToday >= EventBrief.AUTO_PER_DAY) return;
+      }
+      EventBrief.busy[k] = 'write';
+      ConnectApps.calendarPaint();
+      const start = await ConnectApps.post('/api/flow/event-brief', {
+        event: { title: e.title, start: e.start, end: e.end, allDay: !!e.allDay, location: e.location || '' },
+        threads, me: EventBrief.me(), today: base.day, lang: (typeof Lang !== 'undefined' && Lang.current) || 'en'
+      });
+      let res = null;
+      for (let i = 0; i < 90 && !res; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const j = await ConnectApps.get('/api/flow/event-brief?job=' + encodeURIComponent(start.job)).catch(() => null);
+        if (j && j.status === 'done') res = j.brief;
+        else if (j && j.status === 'error') throw new Error(j.error);
+      }
+      if (!res) throw new Error('The brief is taking too long. Try Refresh.');
+      EventBrief.data[k] = Object.assign(base, { brief: res.none ? null : res, none: !!res.none, sig, done: [],
+        autoDay: force ? (have && have.autoDay) : base.day });
+      await EventBrief.save();
+    } catch (err) {
+      EventBrief.data[k] = Object.assign({}, have || {}, { error: (err && err.message) || 'The brief could not be built.', errDay: EventBrief.day() });
+      if (force) toast(EventBrief.data[k].error, 'warn');
+    } finally {
+      delete EventBrief.busy[k];
+      ConnectApps.calendarPaint();
+    }
+  },
+
+  /* After the day's events load: each one, one at a time. */
+  async auto(events) {
+    if (EventBrief._running || !EventBrief.mailIds().length) return;
+    EventBrief._running = true;
+    try { for (const e of (events || [])) await EventBrief.run(e, false); }
+    finally { EventBrief._running = false; }
+  },
+
+  fmtWhen(iso) {
+    const d = new Date(iso); if (isNaN(d)) return '';
+    return DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()].slice(0, 3) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  },
+
+  /* The fold under an event row. */
+  rowHtml(e) {
+    const k = EventBrief.key(e);
+    const rec = EventBrief.data && EventBrief.data[k];
+    const busy = EventBrief.busy[k];
+    if (busy) return '<div class="eb"><span class="eb-tg eb-busy" data-i18n="off"><i class="eb-spin"></i>' + (busy === 'write' ? 'Writing the brief from your email…' : 'Looking for related email…') + '</span></div>';
+    if (!rec || !rec.brief) {
+      if (rec && rec.error && rec.errDay === EventBrief.day() && EventBrief.big(e)) return '<div class="eb"><button type="button" class="eb-tg" data-eb="refresh" data-ebk="' + esc(k) + '">↻ Brief failed — try again</button></div>';
+      if (!EventBrief.mailIds().length && EventBrief.big(e)) return '<div class="eb"><span class="eb-hint">Connect Gmail or Outlook in Settings to get a brief for this event from your email.</span></div>';
+      return '';
+    }
+    const open = !!EventBrief.open[k];
+    return '<div class="eb"><button type="button" class="eb-tg" data-eb="toggle" data-ebk="' + esc(k) + '" aria-expanded="' + open + '"><span class="eb-dot"></span>' +
+      (open ? 'Hide brief' : 'Show brief') + ' · ' + rec.threads + ' thread' + (rec.threads === 1 ? '' : 's') + ', ' + rec.mails + ' email' + (rec.mails === 1 ? '' : 's') + ' <span class="eb-chev">▾</span></button>' +
+      (open ? EventBrief.bodyHtml(k, rec) : '') + '</div>';
+  },
+
+  bodyHtml(k, rec) {
+    const b = rec.brief;
+    const t0 = today();
+    const todayDay = b.days.find((d) => d.date === t0) || b.days.find((d) => d.date > t0) || b.days[b.days.length - 1];
+    const tabs = [];
+    if (todayDay) tabs.push(['day', todayDay.date === t0 ? 'Today · ' + DOW[parseISO(t0).getDay()] + ' ' + parseISO(t0).getDate() : (todayDay.label || prettyDate(todayDay.date))]);
+    if (b.days.length > 1) tabs.push(['all', 'Whole event']);
+    if (b.you.length) tabs.push(['you', 'Your part']);
+    if (b.people.length || b.open.length || b.warnings.length) tabs.push(['ops', 'People & open items']);
+    const cur = tabs.some((x) => x[0] === EventBrief.tab[k]) ? EventBrief.tab[k] : (tabs[0] || [''])[0];
+    const item = (i) => '<li class="eb-t' + (i.you ? ' eb-you' : '') + '"><span class="eb-tm' + (i.tbc ? ' eb-tbc' : '') + '">' + esc(i.time || (i.tbc ? 'TBC' : '—')) + '</span><span>' + esc(i.text) +
+      (i.you ? ' <b class="eb-me">You</b>' : '') + '</span></li>';
+    const dayHtml = (d, head) => '<h5>' + esc(head || ((d.label ? d.label + ' — ' : '') + prettyDate(d.date))) + '</h5><ul>' + d.items.map(item).join('') + '</ul>';
+    const bullets = (arr, cls) => '<ul>' + arr.map((x) => '<li' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(x) + '</li>').join('') + '</ul>';
+    const done = rec.done || [];
+    let pane = '';
+    if (cur === 'day' && todayDay) pane = dayHtml(todayDay) + (b.where.length ? '<h5>Where</h5>' + bullets(b.where) : '');
+    else if (cur === 'all') pane = b.days.map((d) => dayHtml(d)).join('') + (b.where.length ? '<h5>Where</h5>' + bullets(b.where) : '');
+    else if (cur === 'you') pane = '<h5>Your part</h5>' + bullets(b.you);
+    else if (cur === 'ops') pane =
+      (b.warnings.length ? '<h5>Check</h5>' + bullets(b.warnings, 'eb-warn') : '') +
+      (b.people.length ? '<h5>Who to call</h5><ul>' + b.people.map((p) => '<li><b>' + esc(p.name) + '</b>' + (p.role ? ' — ' + esc(p.role) : '') +
+        (p.phone ? ' · <a class="flow-link" href="tel:' + esc(p.phone.replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>' : '') + '</li>').join('') + '</ul>' : '') +
+      (b.open.length ? '<h5>Still open</h5><ul class="eb-open">' + b.open.map((x, i) => '<li class="' + (done.indexOf(i) >= 0 ? 'done' : '') + '"><button type="button" class="eb-bx" data-eb="tick" data-ebk="' + esc(k) + '" data-i="' + i + '" aria-label="Done"></button><span>' + esc(x) + '</span></li>').join('') + '</ul>' : '');
+    const newest = rec.sources.map((s) => s.last).filter(Boolean).sort().pop();
+    return '<div class="eb-body">' +
+      (b.headline ? '<p class="eb-head">' + esc(b.headline) + '</p>' : '') +
+      '<div class="eb-meta"><span>Updated ' + esc(EventBrief.fmtWhen(rec.at)) + '</span><button type="button" data-eb="refresh" data-ebk="' + esc(k) + '">↻ Refresh</button></div>' +
+      (tabs.length > 1 ? '<div class="eb-tabs">' + tabs.map(([id, l]) => '<button type="button" data-eb="tab" data-ebk="' + esc(k) + '" data-t="' + id + '" class="' + (id === cur ? 'on' : '') + '">' + esc(l) + '</button>').join('') + '</div>' : '') +
+      '<div class="eb-pane">' + pane + '</div>' +
+      '<details class="eb-src"><summary>Built from ' + rec.threads + ' thread' + (rec.threads === 1 ? '' : 's') + ' · ' + rec.mails + ' emails' + (newest ? ' · newest ' + esc(EventBrief.fmtWhen(newest)) : '') + '</summary><ul>' +
+        rec.sources.map((s) => '<li>' + (s.link ? '<a class="flow-link" href="' + esc(s.link) + '" target="_blank" rel="noopener">' + esc(s.subject) + '</a>' : esc(s.subject)) + ' · ' + s.total + '</li>').join('') + '</ul></details>' +
+      '</div>';
+  },
+
+  async click(e, el) {
+    const k = el.getAttribute('data-ebk');
+    const a = el.getAttribute('data-eb');
+    e.preventDefault(); e.stopPropagation();
+    if (a === 'toggle') { EventBrief.open[k] = !EventBrief.open[k]; ConnectApps.calendarPaint(); return; }
+    if (a === 'tab') { EventBrief.tab[k] = el.getAttribute('data-t'); ConnectApps.calendarPaint(); return; }
+    if (a === 'tick') {
+      const rec = EventBrief.data[k]; if (!rec) return;
+      const i = +el.getAttribute('data-i'); rec.done = rec.done || [];
+      const at = rec.done.indexOf(i); if (at >= 0) rec.done.splice(at, 1); else rec.done.push(i);
+      await EventBrief.save(); ConnectApps.calendarPaint(); return;
+    }
+    if (a === 'refresh') {
+      const ev = (ConnectApps.cal || []).find((x) => EventBrief.key(x) === k);
+      if (ev) { EventBrief.open[k] = true; await EventBrief.run(ev, true); }
+    }
+  }
+};
+window.FlowEventBrief = EventBrief;
+
 const ConnectApps = {
   seen() {
     let v = {};
@@ -10465,7 +10664,9 @@ const ConnectApps = {
       seen[k] = 1; return true;
     }).sort((a, b) => (b.allDay - a.allDay) || (Date.parse(a.start) - Date.parse(b.start)));
     ConnectApps.many = ids.reduce((n, id) => n + ((Connect.list.find((x) => x.id === id) || {}).accounts || []).length, 0) > 1;
+    try { await EventBrief.load(); } catch (e) {}
     ConnectApps.calendarPaint();
+    EventBrief.auto(ConnectApps.cal).catch(() => {});
   },
   /* What "Plan today" put on the day: timed items of your own, shown on the
      same list as the meetings, in time order. */
@@ -10493,6 +10694,7 @@ const ConnectApps = {
         (go ? '<a href="' + esc(go) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a>' : esc(e.title)) +
         (e.location ? '<div class="td-rk-note">📍 ' + esc(e.location) + '</div>' : '') +
         (ConnectApps.many && e.account ? '<div class="td-rk-note">' + esc(e.account) + '</div>' : '') +
+        EventBrief.rowHtml(e) +
         '</div><div class="rk-meta">' + esc(when) + '</div></div>';
     }).join('') : '<div class="td-rocks-empty">No meetings today.</div>';
     return '<div class="td-rocks" id="td-cal"><div class="td-rocks-head"><span class="lbl">Today · Calendar</span><span class="cnt">' +
@@ -10512,6 +10714,8 @@ const ConnectApps = {
     box.innerHTML = html;
     const card = box.firstElementChild;
     card.addEventListener('click', async (e) => {
+      const eb = e.target.closest('[data-eb]');
+      if (eb) { EventBrief.click(e, eb); return; }
       const b = e.target.closest('[data-plan]');
       if (!b) return;
       e.preventDefault(); e.stopPropagation();

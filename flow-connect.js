@@ -146,7 +146,7 @@ const PROVIDERS = {
     kind: 'oauth',
     via: 'google',
     name: 'Gmail',
-    blurb: 'Emails you star become Big Rocks. The Flow reads only starred mail\u2019s sender and subject.',
+    blurb: 'Emails you star become Big Rocks. For big calendar events, the emails about them are read to write a brief on Today.',
     clientId: () => process.env.GOOGLE_CLIENT_ID || '',
     secret: () => process.env.GOOGLE_CLIENT_SECRET || '',
     fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
@@ -157,7 +157,7 @@ const PROVIDERS = {
     needWhy: 'Tick the box that lets The Flow read your email, then try again.',
     extra: { response_type: 'code', access_type: 'offline', prompt: 'consent select_account' },
     finish: finishCode,
-    actions: { starred: gmailStarred }
+    actions: { starred: gmailStarred, related: gmailRelated }
   },
 
   /* Outlook and Microsoft 365, through Microsoft Graph: personal and work
@@ -168,7 +168,7 @@ const PROVIDERS = {
     id: 'outlook',
     kind: 'oauth',
     name: 'Outlook',
-    blurb: 'Your Outlook calendar on Today; flagged emails as Big Rocks.',
+    blurb: 'Your Outlook calendar on Today; flagged emails as Big Rocks; a brief for big events from the emails about them.',
     clientId: () => process.env.MS_CLIENT_ID || '',
     secret: () => process.env.MS_CLIENT_SECRET || '',
     fixedRedirect: () => process.env.MS_REDIRECT_URI || '',
@@ -179,7 +179,7 @@ const PROVIDERS = {
     needWhy: 'Allow The Flow to read your calendar and mail, then try again.',
     extra: { response_type: 'code', response_mode: 'query', prompt: 'select_account' },
     finish: finishCode,
-    actions: { events: outlookEvents, flagged: outlookFlagged }
+    actions: { events: outlookEvents, flagged: outlookFlagged, related: outlookRelated }
   },
 
   /* Fathom and Notion are connected with a key the person makes in that
@@ -495,6 +495,136 @@ async function outlookFlagged(pv, rec, ctx) {
     link: String(m.webLink || '')
   }));
   return { status: 200, body: { messages } };
+}
+
+
+/* ---------------------------------------------------------------------
+ * Mail about a calendar event — for the event brief on Today
+ *
+ * The page asks with the event's own words (?q=vibe show antalya). What
+ * comes back is the text of the matching threads, newest first, with three
+ * things taken out before it leaves this server: the quoted history every
+ * reply drags along (it is the same email again), and anything that looks
+ * like an identity number, a passport number or a date of birth — event
+ * emails are full of them (flight bookings, room lists), and a brief never
+ * needs them. Phone numbers stay: "who to call" is half the point.
+ * ------------------------------------------------------------------ */
+
+const RELATED_MAX_THREADS = 8;
+const RELATED_MAX_MSGS = 40;
+const RELATED_MSG_CHARS = 3500;
+const RELATED_TOTAL_CHARS = 60000;
+
+function relatedTerms(q) {
+  return String(q || '').normalize('NFC').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+
+function fromB64url(s) {
+  try { return Buffer.from(String(s || '').replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'); } catch (e) { return ''; }
+}
+
+function htmlToText(h) {
+  return String(h || '')
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<\/t[dh]>/gi, '\t')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, '\n');
+}
+
+/* The part of an email that is new: everything above the first quoted reply. */
+function newPart(text) {
+  let t = String(text || '').replace(/\r/g, '');
+  const cut = t.search(/\n\s*(?:On .{4,200}wrote:|.{4,160}tarihinde .{0,160}şunu yazdı:|-{2,}\s*Original Message|_{8,}|\*?(?:From|Kimden|Gönderen):\*?\s|Le .{4,120} a écrit\s*:)/i);
+  if (cut > 0) t = t.slice(0, cut);
+  t = t.split('\n').filter((l) => !/^\s*>/.test(l)).join('\n');
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* Identity numbers, passport numbers, birth dates and card numbers out. */
+function maskPersonal(text, now) {
+  const year = new Date(now || Date.now()).getFullYear();
+  return String(text || '')
+    .replace(/\bTR\s?\d{2}(?:\s?\d{4}){5}\s?\d{2}\b/gi, '[IBAN]')
+    .replace(/\b\d(?:[ -]?\d){12,18}\b/g, (m) => /\s/.test(m) && m.replace(/\D/g, '').length <= 13 && /^\+?\d{2,4}\s/.test(m) ? m : '[number]')
+    .replace(/\b[1-9]\d{10}\b/g, '[ID]')
+    .replace(/\b\d{9,10}\b/g, '[ID]')
+    .replace(/\b[A-Z]{1,2}\d{6,9}\b/g, '[ID]')
+    .replace(/\b(\d{1,2})[./-](\d{1,2})[./-]((?:19|20)\d\d)\b/g, (m, d, mo, y) => (+y <= year - 10 ? '[DOB]' : m));
+}
+
+function relatedPack(threads, now) {
+  /* Newest threads first, newest messages kept when the budget runs out. */
+  threads.forEach((t) => t.messages.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)));
+  threads.sort((a, b) => (Date.parse((b.messages[b.messages.length - 1] || {}).date) || 0) - (Date.parse((a.messages[a.messages.length - 1] || {}).date) || 0));
+  let total = 0, count = 0;
+  const out = [];
+  for (const t of threads) {
+    const keep = [];
+    for (let i = t.messages.length - 1; i >= 0; i--) {
+      const m = t.messages[i];
+      const text = maskPersonal(newPart(m.text), now).slice(0, RELATED_MSG_CHARS);
+      if (!text) continue;
+      if (total + text.length > RELATED_TOTAL_CHARS || count >= RELATED_MAX_MSGS) break;
+      total += text.length; count++;
+      keep.unshift({ from: String(m.from || '').slice(0, 120), date: m.date, text });
+    }
+    if (keep.length) out.push({ id: t.id, subject: String(t.subject || '(no subject)').slice(0, 200), link: t.link || '', total: t.messages.length, messages: keep });
+  }
+  return out;
+}
+
+async function gmailRelated(pv, rec, ctx) {
+  const terms = relatedTerms(ctx.query.get('q'));
+  if (terms.length < 3) return { status: 400, body: { error: 'q is required' } };
+  const days = Math.max(7, Math.min(365, parseInt(ctx.query.get('days') || '120', 10) || 120));
+  const words = terms.split(' ');
+  /* "Vibe Show" is also written "VibeShow". */
+  const joined = words.length >= 2 ? ' OR (' + words[0] + words[1] + (words.length > 2 ? ' ' + words.slice(2).join(' ') : '') + ')' : '';
+  const q = '((' + terms + ')' + joined + ') newer_than:' + days + 'd -in:chats -in:spam -in:trash';
+  const base = 'https://gmail.googleapis.com/gmail/v1/users/me/threads';
+  const list = await googleGet(pv, rec, ctx, base + '?' + new URLSearchParams({ q, maxResults: String(RELATED_MAX_THREADS) }));
+  const threads = [];
+  for (const t of (list.threads || []).slice(0, RELATED_MAX_THREADS)) {
+    let full;
+    try { full = await googleGet(pv, rec, ctx, base + '/' + encodeURIComponent(t.id) + '?format=full'); }
+    catch (e) { if (e instanceof Refused) throw e; continue; }
+    const messages = (full.messages || []).map((m) => {
+      const h = {};
+      ((m.payload || {}).headers || []).forEach((x) => { h[String(x.name).toLowerCase()] = String(x.value || ''); });
+      let plain = '', html = '';
+      const walk = (part) => {
+        if (!part) return;
+        if (part.mimeType === 'text/plain' && part.body && part.body.data && !plain) plain = fromB64url(part.body.data);
+        else if (part.mimeType === 'text/html' && part.body && part.body.data && !html) html = fromB64url(part.body.data);
+        (part.parts || []).forEach(walk);
+      };
+      walk(m.payload);
+      return {
+        from: (h.from || '').replace(/\s*<[^>]*>\s*$/, '').replace(/^"|"$/g, '') || h.from || '',
+        date: m.internalDate ? new Date(+m.internalDate).toISOString() : (h.date || ''),
+        subject: h.subject || '',
+        text: plain || htmlToText(html)
+      };
+    });
+    threads.push({ id: String(t.id), subject: (messages[0] || {}).subject || '', messages,
+      link: 'https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(String(t.id)) });
+  }
+  return { status: 200, body: { threads: relatedPack(threads, ctx.now) } };
+}
+
+async function outlookRelated(pv, rec, ctx) {
+  const terms = relatedTerms(ctx.query.get('q'));
+  if (terms.length < 3) return { status: 400, body: { error: 'q is required' } };
+  const q = new URLSearchParams({ $search: '"' + terms + '"', $top: '30', $select: 'subject,from,receivedDateTime,uniqueBody,conversationId,webLink' });
+  const j = await googleGet(pv, rec, ctx, GRAPH + '/me/messages?' + q, { Prefer: 'outlook.body-content-type="text"' });
+  const by = {};
+  (j.value || []).forEach((m) => {
+    const k = String(m.conversationId || m.id);
+    const t = by[k] || (by[k] = { id: k, subject: String(m.subject || '').replace(/^(re|fw|fwd|ynt|ilt)\s*:\s*/i, ''), link: String(m.webLink || ''), messages: [] });
+    t.messages.push({ from: String((((m.from || {}).emailAddress) || {}).name || ''), date: utc(m.receivedDateTime), text: String(((m.uniqueBody || {}).content) || '') });
+  });
+  return { status: 200, body: { threads: relatedPack(Object.values(by).slice(0, RELATED_MAX_THREADS), ctx.now) } };
 }
 
 /* ---------------------------------------------------------------------
@@ -954,6 +1084,6 @@ module.exports = {
   handle,
   purgeUser,
   PROVIDERS,
-  _internals: { notionBlocks, Refused, readAccounts, upsertAccount, utc, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
+  _internals: { relatedTerms, newPart, maskPersonal, relatedPack, htmlToText, notionBlocks, Refused, readAccounts, upsertAccount, utc, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
                 resetKeys: () => { jwksCache = { at: 0, ttl: 0, keys: [] }; } }
 };
