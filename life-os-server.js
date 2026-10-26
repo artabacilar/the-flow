@@ -535,6 +535,10 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
         email for the event's name and has the matching emails read to write a brief — the
         timetable, your part, who to call, what is still open. Identity numbers, passport numbers,
         birth dates and card numbers are removed first. Only the brief is kept, not the emails.</li>
+    <li><b>Patterns</b>, on Today. Once a day the assistant reads your own record — Big Rocks,
+        habit ticks, sleep, mood, training, short excerpts of your journal, and spending as totals
+        by category and day (never card numbers or merchants) — and writes a few patterns and what
+        to do next. The read is kept in your account until the next one; nothing else is stored.</li>
     <li><b>Apple Health figures</b>, on iPhone, only if you allow it. The app reads — never
         writes — sleep, resting heart rate, heart-rate variability and similar daily values, and
         copies them into your Body log so they appear on your other devices. You choose which
@@ -592,7 +596,8 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
     <li><b>The assistant inside the app</b>, if the operator has switched it on. Questions you
         ask it, and the parts of your record needed to answer, are sent to Anthropic's API for
         that answer and are not used to train anything. A bank statement you upload is read the
-        same way, to turn it into transactions, and so are the emails behind an event brief.</li>
+        same way, to turn it into transactions, and so are the emails behind an event brief
+        and the record behind the daily Patterns read.</li>
     <li><b>Hosting providers</b> — Render and Upstash — who necessarily hold the data at rest
         and in transit in the course of running the server, under their own terms.</li>
   </ul>

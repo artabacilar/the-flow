@@ -409,8 +409,9 @@ async function gcalEvents(pv, rec, ctx) {
   const from = ctx.query.get('from'), to = ctx.query.get('to');
   if (!isoOk(from) || !isoOk(to)) return { status: 400, body: { error: 'from and to are required' } };
   const span = Date.parse(to) - Date.parse(from);
-  if (!(span > 0 && span <= 8 * 86400000)) return { status: 400, body: { error: 'at most eight days at a time' } };
-  const q = new URLSearchParams({ singleEvents: 'true', orderBy: 'startTime', maxResults: '50', timeMin: from, timeMax: to });
+  /* Up to a month ahead, for Coming up; Today asks for one day. */
+  if (!(span > 0 && span <= 32 * 86400000)) return { status: 400, body: { error: 'at most 32 days at a time' } };
+  const q = new URLSearchParams({ singleEvents: 'true', orderBy: 'startTime', maxResults: span > 8 * 86400000 ? '250' : '50', timeMin: from, timeMax: to });
   const j = await googleGet(pv, rec, ctx, 'https://www.googleapis.com/calendar/v3/calendars/primary/events?' + q);
   const events = (j.items || []).filter((e) => e && e.status !== 'cancelled').map((e) => {
     const video = e.hangoutLink || (((e.conferenceData || {}).entryPoints || []).find((x) => x.entryPointType === 'video') || {}).uri || '';
@@ -463,9 +464,9 @@ async function outlookEvents(pv, rec, ctx) {
   const from = ctx.query.get('from'), to = ctx.query.get('to');
   if (!isoOk(from) || !isoOk(to)) return { status: 400, body: { error: 'from and to are required' } };
   const span = Date.parse(to) - Date.parse(from);
-  if (!(span > 0 && span <= 8 * 86400000)) return { status: 400, body: { error: 'at most eight days at a time' } };
+  if (!(span > 0 && span <= 32 * 86400000)) return { status: 400, body: { error: 'at most 32 days at a time' } };
   const q = new URLSearchParams({
-    startDateTime: from, endDateTime: to, $top: '50', $orderby: 'start/dateTime',
+    startDateTime: from, endDateTime: to, $top: span > 8 * 86400000 ? '250' : '50', $orderby: 'start/dateTime',
     $select: 'id,subject,start,end,isAllDay,isCancelled,location,webLink,onlineMeeting'
   });
   const j = await googleGet(pv, rec, ctx, GRAPH + '/me/calendarView?' + q, { Prefer: 'outlook.timezone="UTC"' });

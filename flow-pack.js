@@ -6569,6 +6569,7 @@ const TodayPlus = {
              </div>`).join('')
         : `<div class="flow-td-empty">No habits yet. Add them in ✅ Habits and they show up here.</div>`);
 
+    try { Patterns.decorate(hblock); } catch (e) { console.warn('[Flow] patterns', e); }
     const groups = $$('.td-group', feed);
     const trainGroup = groups.find(g => /train/i.test((($('.g-lbl', g) || {}).textContent) || ''));
     if (trainGroup && trainGroup.nextSibling) feed.insertBefore(hblock, trainGroup.nextSibling);
@@ -7913,6 +7914,7 @@ const Profile = {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 const NAV_ICONS = {
+  bell:     '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   today:    '<path d="M3 5h18v16H3z"/><path d="M8 3v4M16 3v4M3 11h18"/>',
   target:   '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
   compass:  '<circle cx="12" cy="12" r="9"/><path d="M15.8 8.2l-2 5.6-5.6 2 2-5.6z"/>',
@@ -8127,10 +8129,22 @@ const Notify = {
       let compass = {};
       try { compass = (typeof S !== 'undefined' && S.get('compass', {})) || {}; } catch (e) {}
       const want = Notify.wanted(compass, new Date(), Settings.get('pushRemindRocks'));
+      /* Reminders set from Coming up, inside the same eight days. */
+      try {
+        if (Settings.get('pushRemindRocks') !== false) {
+          const rem = (typeof Ahead !== 'undefined' && Ahead.rem) || (await DB.get('flow:reminders', [])) || [];
+          const now = Date.now(), edge = now + 8 * 864e5;
+          rem.forEach((r) => {
+            const at = new Date(String(r.at) + ':00');
+            if (!r || r.off || isNaN(at) || at - now < 30000 || at > edge) return;
+            want['rem:' + r.id] = { title: String(r.title || 'Reminder').slice(0, 120), body: String(r.body || '').slice(0, 160), at: Notify.iso(at) };
+          });
+        }
+      } catch (e) {}
       const have = {};
       try { ((await N.pending()).pending || []).forEach((p) => { have[p.id] = p; }); } catch (e) {}
       for (const id of Object.keys(have)) {
-        if (id.indexOf('rock:') === 0 && !want[id]) await N.cancel(id);
+        if ((id.indexOf('rock:') === 0 || id.indexOf('rem:') === 0) && !want[id]) await N.cancel(id);
       }
       for (const id of Object.keys(want)) {
         const w = want[id], h = have[id];
@@ -8946,9 +8960,56 @@ const Refresh = {
     } catch (e) {}
     if (why.held || (window.__FLOW_SYNC && window.__FLOW_SYNC.held)) { try { Refresh.say('Changes from another device are waiting — pull down to refresh.'); } catch (e) {} }
   },
+  /* ── Same version everywhere ──────────────────────────────────────────
+   * A Mac app left open for days kept running the build it opened with, so
+   * the phone had a feature the Mac did not. A new build is now picked up on
+   * its own — but only at a moment nothing can be lost: when you come back
+   * to the app, or after a minute of not touching it, with no sheet open,
+   * nothing being typed in, and never twice in ten minutes. Data never
+   * depends on it; it is on the server already. */
+  VER_EVERY_MS: 5 * 60 * 1000,
+  lastInput: Date.now(),
+  async newer() {
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store', credentials: 'same-origin' });
+      const j = r.ok ? await r.json() : null;
+      const mine = window.FLOW_PACK_V;
+      return !!(j && j.v && mine && mine !== '__PACK_V__' && j.v !== mine && j.v !== 'missing' && j.v !== 'dev');
+    } catch (e) { return false; }
+  },
+  calm() {
+    if (Refresh.busy || document.visibilityState !== 'visible') return false;
+    if (document.querySelector('.fn-sheetwrap.on, #flow-pal.on, #flow-capture.on, dialog[open]')) return false;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox'))) return false;
+    /* anything half-typed anywhere on the page waits for you */
+    const typed = [...document.querySelectorAll('textarea, input[type=text], input:not([type])')].some((e) => e.offsetParent && e.value && e.value !== e.defaultValue);
+    return !typed;
+  },
+  async autoUpdate(why) {
+    const now = Date.now();
+    let last = 0; try { last = +sessionStorage.getItem('flow:autoUpd') || 0; } catch (e) {}
+    if (now - last < 10 * 60 * 1000) return false;
+    if (!Refresh.calm() || !(await Refresh.newer()) || !Refresh.calm()) return false;
+    try { sessionStorage.setItem('flow:autoUpd', String(now)); } catch (e) {}
+    Refresh.say('Updating to the new version…');
+    setTimeout(() => location.reload(), 600);
+    return true;
+  },
+  watchVersion() {
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((t) => document.addEventListener(t, () => { Refresh.lastInput = Date.now(); }, { passive: true, capture: true }));
+    let away = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') { away = Date.now(); return; }
+      if (away && Date.now() - away > 60 * 1000) setTimeout(() => Refresh.autoUpdate('return'), 1500);
+    });
+    window.addEventListener('focus', () => { if (away && Date.now() - away > 60 * 1000) setTimeout(() => Refresh.autoUpdate('focus'), 1500); });
+    setInterval(() => { if (Date.now() - Refresh.lastInput > 60 * 1000) Refresh.autoUpdate('idle'); }, Refresh.VER_EVERY_MS);
+  },
   boot() {
     /* A long time away is worth a quiet sync on return; a short one is not. */
     try { window.__FLOW_SYNC_GAP_MS = Refresh.QUIET_MS; } catch (e) {}
+    try { Refresh.watchVersion(); } catch (e) {}
     try { Refresh.errors(); } catch (e) {}
     (async () => { try { if (window.__FLOW_ALL_READY) await window.__FLOW_ALL_READY; } catch (e) {} await new Promise((r) => setTimeout(r, 800)); Refresh.diag().catch(() => {}); })();
     const ind = Refresh.indicator();
@@ -9174,6 +9235,7 @@ const TodayLook = {
     const on = TodayLook.on();
     document.documentElement.setAttribute('data-flow-look', on ? 'new' : 'classic');
     try { Sections.apply(); } catch (e) {}
+    try { SimpleSkin.sync(); } catch (e) {}
     document.querySelectorAll('[data-fn-ui]').forEach((b) => {
       const mine = b.getAttribute('data-fn-ui') === (on ? 'simple' : 'advanced');
       b.classList.toggle('on', mine); b.setAttribute('aria-pressed', String(mine));
@@ -9251,7 +9313,8 @@ const TodayLook = {
     const meetTile = document.querySelector('.flow-td-pulse [data-jump="meetings"] .v');
     const meets = meetTile && /^\d+$/.test(meetTile.textContent.trim()) ? +meetTile.textContent.trim() : 0;
     return `<div class="lk-k">Today</div><h2 class="lk-line">${line}</h2>${open.length && first ? `<div class="lk-next"><b>Next</b><span>${esc(first)}</span></div>` : ''}
-      <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>`;
+      <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>
+      ${rocks.length ? `<div class="lk-prog" role="progressbar" aria-label="Big Rocks done this week" aria-valuemin="0" aria-valuemax="${rocks.length}" aria-valuenow="${rocks.length - open.length}"><i style="width:${pct}%"></i></div>` : ''}`;
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -9271,7 +9334,7 @@ const TodayLook = {
     const open = list.filter((r) => !r.done).length;
     const rows = list.length ? list.map((r) => `<li class="lk-dv-row${r.done ? ' done' : ''}">
         <button type="button" class="lk-dv-bx" data-dv="tick" data-dvid="${esc(r.id)}" aria-pressed="${!!r.done}" aria-label="${r.done ? 'Mark not done' : 'Mark done'}"></button>
-        <span class="lk-dv-t">${esc(r.title)}${r.note ? `<small>${esc(String(r.note).split('\n')[0].slice(0, 120))}</small>` : ''}</span>
+        <span class="lk-dv-t">${esc(r.title)}${TodayLook.noteLine(r.note) ? `<small>${esc(TodayLook.noteLine(r.note))}</small>` : ''}</span>
         ${r.time ? `<span class="lk-dv-tm">${esc(r.time)}</span>` : ''}</li>`).join('')
       : `<li class="lk-dv-empty">${i < todayIdx ? 'Nothing was planned for ' + esc(short) + '.' : 'Nothing on ' + esc(short) + ' yet.'}</li>`;
     return `<div class="lk-dv-head"><div><div class="lk-dv-k">${i === todayIdx ? 'Today' : i < todayIdx ? 'Earlier this week' : 'Coming up'}</div>
@@ -9281,6 +9344,11 @@ const TodayLook = {
       <ul class="lk-dv-list">${rows}</ul>
       <form class="lk-dv-add" data-dvday="${i}"><input type="text" maxlength="200" placeholder="Add a Big Rock to ${esc(short)}…" aria-label="Add a Big Rock to ${esc(name)}"><button type="submit">Add</button></form>
       <button type="button" class="lk-dv-week" data-dv="week">Open the whole week →</button>`;
+  },
+  /* The first line of a rock's note, without the link it may carry
+     ("From Fathom: … — https://…") — a URL is noise in a list. */
+  noteLine(note) {
+    return String(note || '').split('\n')[0].replace(/https?:\/\/\S+/g, '').replace(/[\s—–-]+$/, '').replace(/^📝\s*/, '').trim().slice(0, 120);
   },
   dayAct(btn) {
     const what = btn.getAttribute('data-dv');
@@ -9296,6 +9364,36 @@ const TodayLook = {
       try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
       TodayLook.paint();
     }
+  },
+  /* Keys on a keyboard, in Simple: N adds, / searches, T goes to Today,
+     1–7 open a day of the week, Esc closes it. Never while typing, never
+     with a modifier held, so nothing the browser or a field owns is taken. */
+  key(e) {
+    if (!TodayLook.on() || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const cap = document.getElementById('flow-capture');
+    const capOpen = cap && cap.classList.contains('on');
+    if (capOpen && !cap.classList.contains('note')) {
+      const map = { n: 'note', t: 'quad', e: 'finance', s: 'training', h: 'habits', m: 'diet', l: 'sleep' };
+      const id = map[e.key.toLowerCase()];
+      const b = id && cap.querySelector('[data-fn-cap="' + id + '"]');
+      if (b) { e.preventDefault(); b.click(); }
+      return;
+    }
+    if (document.querySelector('.fn-sheetwrap.on, #flow-pal.on')) return;
+    const k = e.key;
+    if (k === 'n' || k === 'N') { e.preventDefault(); try { Nav.openCapture(); } catch (e2) {} return; }
+    if (k === '/') { e.preventDefault(); try { Nav.openPalette(); } catch (e2) {} return; }
+    if (k === 't' || k === 'T') { e.preventDefault(); try { Nav.go('today'); } catch (e2) {} return; }
+    const onToday = !!document.querySelector('#tab-today.active');
+    if (onToday && /^[1-7]$/.test(k)) {
+      e.preventDefault();
+      const i = +k - 1; TodayLook.sel = TodayLook.sel === i ? null : i; TodayLook.paint();
+      const v = document.querySelector('.lk-dayview'); if (v && v.getBoundingClientRect().bottom > innerHeight) v.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (onToday && k === 'Escape' && TodayLook.sel != null) { TodayLook.sel = null; TodayLook.paint(); }
   },
   dayAdd(form) {
     const inp = form.querySelector('input');
@@ -9331,7 +9429,7 @@ const TodayLook = {
     }
     let strip = feed.querySelector('.lk-strip');
     if (!strip) { strip = document.createElement('div'); strip.className = 'lk-strip'; head.after(strip); }
-    strip.innerHTML = TodayLook.strip();
+    TodayLook.put(strip, TodayLook.strip());
     let dv = feed.querySelector('.lk-dayview');
     if (TodayLook.sel == null) { if (dv) dv.remove(); }
     else {
@@ -9339,7 +9437,7 @@ const TodayLook = {
       const had = TodayLook.refocus || (dv && dv.contains(document.activeElement) && document.activeElement.tagName === 'INPUT');
       if (!dv) { dv = document.createElement('div'); dv.className = 'lk-dayview'; }
       if (dv.previousElementSibling !== strip) strip.after(dv);
-      dv.innerHTML = TodayLook.dayHtml(TodayLook.sel);
+      TodayLook.put(dv, TodayLook.dayHtml(TodayLook.sel));
       const inp = dv.querySelector('.lk-dv-add input');
       if (inp && !TodayLook.refocus) inp.value = typed;
       if (inp && had) inp.focus({ preventScroll: true });
@@ -9349,14 +9447,26 @@ const TodayLook = {
     if (!hero) { hero = document.createElement('button'); hero.type = 'button'; hero.className = 'lk-hero'; }
     const above = (dv && dv.isConnected) ? dv : strip;
     if (hero.previousElementSibling !== above) above.after(hero);
-    hero.innerHTML = TodayLook.hero(feed);
+    TodayLook.put(hero, TodayLook.hero(feed));
+    /* A tile with nothing in it reads as a quiet dash, not a headline. */
+    feed.querySelectorAll('.flow-td-pulse .flow-td-tile').forEach((t) => {
+      const v = t.querySelector('.v'); const empty = !!v && /^[—–-]?$/.test(v.textContent.trim());
+      if (t.classList.contains('lk-empty') !== empty) t.classList.toggle('lk-empty', empty);
+    });
+  },
+  /* Rewriting identical markup still costs a layout and drops focus and
+     hover, and the feed's observer fires this often — so only write a part
+     whose markup actually changed. */
+  put(el, html) {
+    if (el.__lkHtml === html) return false;
+    el.__lkHtml = html; el.innerHTML = html; return true;
   },
 
   boot() {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
     let queued = false;
-    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { TodayLook.paint(); } catch (e) { console.warn('[Flow] today look', e); } }); };
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { TodayLook.paint(); } catch (e) { console.warn('[Flow] today look', e); } try { Ahead.paint(); } catch (e) {} }); };
     new MutationObserver((muts) => {
       /* Only react to changes that are not our own. */
       if (muts.every((m) => [...m.addedNodes, ...m.removedNodes].every((n) => n.nodeType !== 1 || (n.className && /\blk-/.test(String(n.className)))))) return;
@@ -9380,6 +9490,7 @@ const TodayLook = {
         else if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
+    document.addEventListener('keydown', (e) => TodayLook.key(e));
     feed.addEventListener('submit', (e) => {
       const f = e.target.closest('.lk-dv-add');
       if (!f) return;
@@ -9393,6 +9504,466 @@ const TodayLook = {
   }
 };
 window.FlowTodayLook = TodayLook;
+
+/* ── Simple: the same pages, without the decoration ─────────────────────
+ * Every page in Simple is the page Advanced has — same markup, same
+ * controls. Two things the stylesheet cannot do alone are done here:
+ *
+ *  - Emoji at the start of headings, labels and buttons ("💰 Finances",
+ *    "📝 Notes for Today") are wrapped so Simple can hide them. A control
+ *    that is only an emoji (✏️, the mood faces, the mic) is left alone, and
+ *    the text itself is never changed, so Advanced looks exactly as before.
+ *  - Long introductions under a page title fold to two lines; a tap opens
+ *    them.
+ *
+ * New content is picked up as it arrives: one observer, batched to a frame,
+ * looking only at the nodes that were added. */
+const SimpleSkin = {
+  SEL: 'h1,h2,h3,h4,h5,.section-header,.panel-title,.flow-td-head .l,.td-group-head .g-lbl,summary,label,button,.btn,a.flow-btn,.flow-btn,.td-rk-note,.flow-chip,.chip,.fn-txt,.tag,.pill,legend,th,.lbl,.g-lbl,.l',
+  EMO: /^\s*(?:(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\uFE0F|\u200D\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*\s*)+/u,
+  on: false,
+  obs: null,
+  queue: new Set(),
+  sync() {
+    const want = TodayLook.on();
+    if (want === SimpleSkin.on) return;
+    SimpleSkin.on = want;
+    if (!want) { if (SimpleSkin.obs) SimpleSkin.obs.disconnect(); SimpleSkin.obs = null; return; }
+    SimpleSkin.clean(document.body);
+    SimpleSkin.obs = new MutationObserver((muts) => {
+      for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) SimpleSkin.queue.add(n);
+      if (SimpleSkin.queue.size && !SimpleSkin.raf) SimpleSkin.raf = requestAnimationFrame(SimpleSkin.flush);
+    });
+    SimpleSkin.obs.observe(document.body, { childList: true, subtree: true });
+  },
+  flush() {
+    SimpleSkin.raf = 0;
+    const list = [...SimpleSkin.queue]; SimpleSkin.queue.clear();
+    for (const n of list) if (n.isConnected && !(n.classList && n.classList.contains('lk-emo'))) SimpleSkin.clean(n);
+  },
+  clean(root) {
+    const els = root.matches && root.matches(SimpleSkin.SEL) ? [root] : [];
+    root.querySelectorAll && root.querySelectorAll(SimpleSkin.SEL).forEach((e) => els.push(e));
+    for (const el of els) SimpleSkin.strip(el);
+    root.querySelectorAll && root.querySelectorAll('.section-sub, .section > p.flow-sub, .flow-section > p.flow-sub, .flow-card > p.flow-sub, .panel > p.flow-sub').forEach((p) => {
+      if (p.__lkIntro) return; p.__lkIntro = 1;
+      if ((p.textContent || '').trim().length > 140) p.classList.add('lk-intro');
+    });
+  },
+  strip(el) {
+    if (el.__lkEmo || el.closest('.lk-emo, input, textarea, select, [contenteditable="true"], .lk-dayview, .eb-body')) return;
+    /* the first piece of text, if it is the first thing in the element */
+    let n = el.firstChild;
+    while (n && ((n.nodeType === 3 && !n.textContent.trim()) || n.nodeType === 8)) n = n.nextSibling;
+    if (!n || n.nodeType !== 3) return;
+    const m = n.textContent.match(SimpleSkin.EMO);
+    if (!m) return;
+    const rest = (el.textContent || '').replace(m[0], '');
+    if (!/\p{L}{2,}/u.test(rest)) return;          // an emoji-only control stays as it is
+    el.__lkEmo = 1;
+    const after = n.splitText(m[0].length);
+    const span = document.createElement('span');
+    span.className = 'lk-emo'; span.setAttribute('aria-hidden', 'true');
+    n.parentNode.insertBefore(span, after);
+    span.appendChild(n);
+  },
+  boot() {
+    document.addEventListener('click', (e) => {
+      const p = e.target.closest && e.target.closest('.lk-intro');
+      if (p && TodayLook.on() && !e.target.closest('a,button')) p.classList.toggle('lk-open');
+    });
+    SimpleSkin.sync();
+  }
+};
+window.FlowSimpleSkin = SimpleSkin;
+
+/* ── Patterns: the habit card reads you instead of asking you ──────────────
+ * The Habits card on Today opens with a short read of how you have actually
+ * been living — written once a day by the assistant from what is already in
+ * your account (Big Rocks, habit ticks, sleep, mood, training, journal,
+ * spending, focus) — and what to do about it. The habits you tick by hand
+ * are still there, folded under it, and tick exactly as before.
+ *
+ * Kept on the account (`flow:patterns`), so a reload, the phone and the Mac
+ * all show the same read without asking again; a new one is asked for once
+ * a day, or when Rewrite is pressed. */
+const Patterns = {
+  KEY: 'flow:patterns',
+  data: null,       // { day, read: { headline, patterns[], next[], missing, generatedAt } }
+  busy: false,
+  error: '',
+  off: false,       // the assistant is not set up on this server
+  tried: '',
+  day() { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
+  async load() {
+    if (Patterns.data) return Patterns.data;
+    const v = await DB.get(Patterns.KEY, null);
+    Patterns.data = (v && v.read) ? v : null;
+    return Patterns.data;
+  },
+  open() { try { return localStorage.getItem('flow:ptHabits') === '1'; } catch (e) { return false; } },
+  setOpen(v) { try { localStorage.setItem('flow:ptHabits', v ? '1' : '0'); } catch (e) {} },
+  extra() {
+    const out = {};
+    try { out.nights = HealthNight.days().filter((d) => d && d.date && d.hours != null).slice(-21).map((d) => ({ date: d.date, hours: d.hours, bedAt: d.bedAt || null, sleepAt: d.sleepAt || null })); } catch (e) {}
+    try { out.meetingsToday = (ConnectApps.cal || []).length; } catch (e) {}
+    return out;
+  },
+  /* Once a day on its own; Rewrite asks again. */
+  async ensure(force) {
+    if (Patterns.busy || Patterns.off) return;
+    if (typeof Auth !== 'undefined' && (!Auth.user || Auth.user.guest)) return;
+    await Patterns.load();
+    const today = Patterns.day();
+    if (!force && Patterns.data && Patterns.data.day === today) return;
+    if (!force && Patterns.tried === today) return;
+    Patterns.tried = today;
+    Patterns.busy = true; Patterns.error = ''; Patterns.repaint();
+    try {
+      let r = await fetch('/api/flow/patterns', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: !!force, today, lang: (typeof Lang !== 'undefined' && Lang.current) || 'en', extra: Patterns.extra() }) });
+      let j = await r.json().catch(() => ({}));
+      if (r.status === 503) { Patterns.off = true; throw new Error(''); }
+      if (!r.ok && r.status !== 202) throw new Error(j.error || 'Patterns could not be read just now.');
+      if (r.status === 202 && j.job) {
+        for (let i = 0; i < 60; i++) {
+          await new Promise((ok) => setTimeout(ok, i < 4 ? 1500 : 2500));
+          r = await fetch('/api/flow/patterns?job=' + encodeURIComponent(j.job), { credentials: 'same-origin' });
+          const k = await r.json().catch(() => ({}));
+          if (k.status === 'working') continue;
+          if (k.status === 'done') { j = k; break; }
+          throw new Error(k.error || 'Patterns could not be read just now.');
+        }
+      }
+      if (!j.patterns) throw new Error('Patterns took too long. Try Rewrite.');
+      Patterns.data = { day: today, read: j.patterns };
+      await DB.set(Patterns.KEY, Patterns.data);
+    } catch (e) {
+      Patterns.error = (e && e.message) || '';
+    }
+    Patterns.busy = false;
+    Patterns.repaint();
+  },
+  html() {
+    const d = Patterns.data && Patterns.data.read;
+    if (Patterns.busy && !d) return '<div class="pt"><p class="pt-wait"><i class="eb-spin"></i>Reading how your last few weeks actually went…</p></div>';
+    if (!d) {
+      if (Patterns.off) return '';
+      return Patterns.error ? '<div class="pt"><p class="pt-wait">' + esc(Patterns.error) + ' <button type="button" class="pt-link" data-pt="rewrite">Try again</button></p></div>' : '';
+    }
+    const when = d.generatedAt ? new Date(d.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+    const stale = Patterns.data.day !== Patterns.day();
+    return '<div class="pt">' +
+      (d.headline ? '<p class="pt-head">' + esc(d.headline) + '</p>' : '') +
+      (d.patterns && d.patterns.length ? '<ul class="pt-list">' + d.patterns.map((x) =>
+        '<li class="pt-' + esc(x.tone) + '"><span class="pt-area">' + esc(x.area) + '</span><span class="pt-tx">' + esc(x.text) + '</span></li>').join('') + '</ul>' : '') +
+      (d.next && d.next.length ? '<div class="pt-next"><b>Do next</b><ul>' + d.next.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      (d.missing ? '<p class="pt-miss">' + esc(d.missing) + '</p>' : '') +
+      '<p class="pt-foot">' + (stale ? 'From ' + esc(Patterns.data.day) : 'Read from your record' + (when ? ' at ' + esc(when) : '')) +
+        ' · <button type="button" class="pt-link" data-pt="rewrite"' + (Patterns.busy ? ' disabled' : '') + '>' + (Patterns.busy ? 'Rewriting…' : 'Rewrite') + '</button>' +
+        (Patterns.error ? ' <span class="pt-err">' + esc(Patterns.error) + '</span>' : '') + '</p>' +
+    '</div>';
+  },
+  /* Called each time Today draws the Habits card. */
+  decorate(block) {
+    if (!block) return;
+    const head = block.querySelector('.flow-td-head');
+    const rows = [...block.querySelectorAll('.flow-td-row.hb')];
+    const empty = block.querySelector('.flow-td-empty');
+    const html = Patterns.html();
+    if (!html) { Patterns.later(); return; }
+    block.classList.add('pt-card');
+    const lbl = head && head.querySelector('.l');
+    if (lbl) lbl.textContent = 'Patterns';
+    const cnt = head && head.querySelector('.c');
+    if (cnt) cnt.style.display = 'none';
+    const box = document.createElement('div'); box.className = 'pt-box'; box.innerHTML = html;
+    if (head) head.after(box); else block.prepend(box);
+    /* the habits you tick yourself, folded under the read */
+    const done = rows.filter((r) => r.classList.contains('done')).length;
+    const fold = document.createElement('div');
+    fold.className = 'pt-hb' + (Patterns.open() ? ' open' : '');
+    fold.innerHTML = '<button type="button" class="pt-hb-t" data-pt="habits" aria-expanded="' + Patterns.open() + '">' +
+      (rows.length ? 'Habits you tick · ' + done + ' / ' + rows.length : 'Habits you tick') + '<span class="pt-chev" aria-hidden="true">▾</span></button><div class="pt-hb-b"></div>';
+    const b = fold.querySelector('.pt-hb-b');
+    rows.forEach((r) => b.appendChild(r));
+    if (empty) b.appendChild(empty);
+    box.after(fold);
+    Patterns.later();
+  },
+  later() { if (!Patterns.busy && !Patterns.queued) { Patterns.queued = true; setTimeout(() => { Patterns.queued = false; Patterns.ensure(false); }, 1200); } },
+  repaint() {
+    const block = document.getElementById('flow-td-habits');
+    if (!block) return;
+    const box = block.querySelector('.pt-box');
+    if (box) { const html = Patterns.html(); if (html) box.innerHTML = html; else box.remove(); return; }
+    try { TodayPlus.apply(); } catch (e) {}
+  },
+  boot() {
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-pt]');
+      if (!b) return;
+      const what = b.getAttribute('data-pt');
+      if (what === 'rewrite') { Patterns.ensure(true); return; }
+      if (what === 'habits') {
+        const f = b.closest('.pt-hb'); const on = !f.classList.contains('open');
+        f.classList.toggle('open', on); b.setAttribute('aria-expanded', String(on)); Patterns.setOpen(on);
+      }
+    });
+    Patterns.load().then(() => Patterns.repaint()).catch(() => {});
+  }
+};
+window.FlowPatterns = Patterns;
+
+/* ── Coming up: the next week, two weeks or month, with reminders ───────────
+ * One list of what is ahead — calendar events for the next month, the Big
+ * Rocks already placed on coming days, and dated tasks — grouped by day and
+ * cut to 7, 14 or 30 days. Each item can be given a reminder (the morning
+ * of, the day before, a week before, two hours before); reminders are kept
+ * on the account, so the server sends them to the phone and the Mac
+ * schedules them itself. Above the list, once a day, the assistant reads
+ * the stretch ahead: one line, what to get ready and by when, and the
+ * reminders worth setting — one tap each. */
+const Ahead = {
+  REM_KEY: 'flow:reminders',
+  READ_KEY: 'flow:ahead',
+  cal: null, calAt: 0, calBusy: false,
+  rem: null,
+  read: null,        // { day, sig, items:[titles], ahead:{headline,prep,watch,remind} }
+  busy: false, error: '', off: false, tried: '',
+  menu: null,        // item key whose reminder menu is open
+  span() { let v = 7; try { v = +localStorage.getItem('flow:aheadSpan') || 7; } catch (e) {} return [7, 14, 30].indexOf(v) >= 0 ? v : 7; },
+  setSpan(v) { try { localStorage.setItem('flow:aheadSpan', String(v)); } catch (e) {} },
+  iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
+  plus(n) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; },
+  hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); },
+
+  async load() {
+    if (Ahead.rem == null) { const v = await DB.get(Ahead.REM_KEY, []); Ahead.rem = Array.isArray(v) ? v : []; }
+    if (Ahead.read == null) { const v = await DB.get(Ahead.READ_KEY, null); Ahead.read = (v && v.ahead) ? v : false; }
+  },
+  calIds() {
+    try { return ['gcal', 'outlook'].filter((id) => { const c = Connect.list.find((x) => x.id === id); return c && (c.accounts || []).some((a) => !a.broken); }); } catch (e) { return []; }
+  },
+  async loadCal(force) {
+    const ids = Ahead.calIds();
+    if (!ids.length) { Ahead.cal = null; return; }
+    if (Ahead.calBusy || (!force && Ahead.cal && Date.now() - Ahead.calAt < 30 * 60 * 1000)) return;
+    Ahead.calBusy = true;
+    try {
+      const from = Ahead.plus(0), to = Ahead.plus(31);
+      const q = '?' + new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+      const got = await Promise.all(ids.map((id) => ConnectApps.get('/api/connect/' + id + '/events' + q).then((j) => j.events || []).catch(() => null)));
+      if (got.every((x) => x === null)) return;
+      const seen = {};
+      Ahead.cal = [].concat.apply([], got.filter(Boolean)).filter((e) => {
+        const k = String(e.title).trim().toLowerCase() + '|' + String(e.start).slice(0, 16);
+        if (seen[k]) return false; seen[k] = 1; return true;
+      });
+      Ahead.calAt = Date.now();
+    } finally { Ahead.calBusy = false; }
+  },
+
+  /* Everything ahead, as one sorted list. */
+  items() {
+    const out = [];
+    const today = Ahead.iso(new Date()), end = Ahead.iso(Ahead.plus(31));
+    (Ahead.cal || []).forEach((e) => {
+      const s0 = e.allDay ? new Date(String(e.start).slice(0, 10) + 'T00:00:00') : new Date(e.start);
+      if (isNaN(s0)) return;
+      const date = Ahead.iso(s0);
+      if (date < today || date > end) return;
+      if (!e.allDay && date === today && Date.parse(e.end) < Date.now()) return;
+      const hours = e.allDay ? 24 : Math.max(0, (Date.parse(e.end) - Date.parse(e.start)) / 36e5);
+      let brief = false; try { brief = !!(EventBrief.data && EventBrief.data[EventBrief.key(e)] && EventBrief.data[EventBrief.key(e)].brief); } catch (x) {}
+      out.push({ key: 'ev:' + (e.id || e.title + date), kind: 'event', date, time: e.allDay ? '' : Ahead.hm(s0), allDay: !!e.allDay, hours: Math.round(hours * 10) / 10,
+        title: e.title, where: e.location || '', link: e.link || '', big: !!e.allDay || hours >= 3 || brief, brief });
+    });
+    try {
+      const all = (typeof cData !== 'undefined' && cData.rocks) || {};
+      /* from tomorrow: today's Big Rocks are on the card right above */
+      for (let i = 1; i <= 31; i++) {
+        const d = Ahead.plus(i), wid = TodayLook.wid(d), dow = (d.getDay() + 6) % 7;
+        (all[wid] || []).forEach((r) => {
+          if (!r || r.done || r.day !== dow) return;
+          out.push({ key: 'rk:' + r.id, kind: 'rock', date: Ahead.iso(d), time: r.time || '', title: r.title, where: '', big: r.prio === 'high', rockId: r.id });
+        });
+      }
+    } catch (e) {}
+    try {
+      Schedule.between(today, end).forEach((r) => {
+        if (!r || r.done || r.source === 'today' && r.date === today) return;
+        out.push({ key: 'sc:' + r.key, kind: 'task', date: r.date, time: r.time || '', title: r.text || r.title || String(r.key).split('::').pop(), where: '', big: !!r.alert });
+      });
+    } catch (e) {}
+    return out.sort((a, b) => (a.date + (a.time || (a.allDay ? '00:00' : '99:99'))).localeCompare(b.date + (b.time || (b.allDay ? '00:00' : '99:99'))));
+  },
+  sig(items) { return items.map((x) => x.date + (x.time || '') + x.title).join('|').length + ':' + items.length + ':' + (items[0] ? items[0].date : '') + ':' + items.slice(0, 12).map((x) => x.title.length).join('.'); },
+
+  /* ---- reminders ---- */
+  options(it) {
+    const now = Date.now();
+    const day = new Date(it.date + 'T00:00:00');
+    const at = (d, hh, mm) => { const x = new Date(d); x.setHours(hh, mm || 0, 0, 0); return x; };
+    const opts = [];
+    const start = it.time ? new Date(it.date + 'T' + it.time + ':00') : at(day, 9);
+    if (it.time) opts.push({ id: '2h', label: '2 hours before', at: new Date(start.getTime() - 2 * 36e5) });
+    opts.push({ id: 'morning', label: 'Morning of · 08:30', at: at(day, 8, 30) });
+    const prev = new Date(day); prev.setDate(prev.getDate() - 1);
+    opts.push({ id: 'eve', label: 'Day before · 18:00', at: at(prev, 18) });
+    const wk = new Date(day); wk.setDate(wk.getDate() - 7);
+    opts.push({ id: 'week', label: 'A week before · 10:00', at: at(wk, 10) });
+    return opts.filter((o) => o.at.getTime() > now + 60000 && (!it.time || o.at < start));
+  },
+  remFor(key) { return (Ahead.rem || []).filter((r) => r.key === key); },
+  localAt(d) { return Ahead.iso(d) + 'T' + Ahead.hm(d); },
+  async toggle(it, opt, why) {
+    const id = it.key.replace(/[^\w:.-]/g, '').slice(0, 80) + '@' + opt.id;
+    const list = (Ahead.rem || []).filter((r) => r.at >= Ahead.localAt(new Date(Date.now() - 864e5)));   // drop old ones as we go
+    const i = list.findIndex((r) => r.id === id);
+    if (i >= 0) list.splice(i, 1);
+    else list.push({ id, key: it.key, at: Ahead.localAt(opt.at), title: it.title, when: Ahead.whenText(it), body: why || ('Coming up ' + Ahead.whenText(it) + (it.where ? ' · ' + it.where : '')) });
+    Ahead.rem = list;
+    await DB.set(Ahead.REM_KEY, list);
+    try { Notify.later(); } catch (e) {}
+    toast(i >= 0 ? 'Reminder removed.' : 'Reminder set for ' + new Date(opt.at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + '.', null, 2000);
+    Ahead.paint();
+  },
+  whenText(it) {
+    const d = new Date(it.date + 'T00:00:00');
+    const diff = Math.round((d - Ahead.plus(0)) / 864e5);
+    const day = diff === 0 ? 'today' : diff === 1 ? 'tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return day + (it.time ? ' at ' + it.time : '');
+  },
+
+  /* ---- the assistant's read ---- */
+  async ensure(force) {
+    if (Ahead.busy || Ahead.off) return;
+    if (typeof Auth !== 'undefined' && (!Auth.user || Auth.user.guest)) return;
+    await Ahead.load();
+    const items = Ahead.items().slice(0, 80);
+    if (!items.length) return;
+    const today = Ahead.iso(new Date()), sig = Ahead.sig(items);
+    if (!force && Ahead.read && Ahead.read.day === today && Ahead.read.sig === sig) return;
+    if (!force && Ahead.tried === today + sig) return;
+    Ahead.tried = today + sig;
+    Ahead.busy = true; Ahead.error = ''; Ahead.paint();
+    try {
+      const body = { refresh: !!force, today, sig, lang: (typeof Lang !== 'undefined' && Lang.current) || 'en',
+        items: items.map((x) => ({ date: x.date, time: x.time, allDay: x.allDay, hours: x.hours, kind: x.kind, title: x.title, where: x.where })) };
+      let r = await fetch('/api/flow/ahead', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      let j = await r.json().catch(() => ({}));
+      if (r.status === 503) { Ahead.off = true; throw new Error(''); }
+      if (!r.ok && r.status !== 202) throw new Error(j.error || 'Coming up could not be read just now.');
+      if (r.status === 202 && j.job) {
+        for (let i = 0; i < 60; i++) {
+          await new Promise((ok) => setTimeout(ok, i < 4 ? 1500 : 2500));
+          r = await fetch('/api/flow/ahead?job=' + encodeURIComponent(j.job), { credentials: 'same-origin' });
+          const k = await r.json().catch(() => ({}));
+          if (k.status === 'working') continue;
+          if (k.status === 'done') { j = k; break; }
+          throw new Error(k.error || 'Coming up could not be read just now.');
+        }
+      }
+      if (!j.ahead) throw new Error('The read took too long. Try Rewrite.');
+      Ahead.read = { day: today, sig, items: items.map((x) => ({ key: x.key, title: x.title, date: x.date, time: x.time, kind: x.kind, where: x.where })), ahead: j.ahead };
+      await DB.set(Ahead.READ_KEY, Ahead.read);
+    } catch (e) { Ahead.error = (e && e.message) || ''; }
+    Ahead.busy = false;
+    Ahead.paint();
+  },
+
+  /* ---- drawing ---- */
+  html() {
+    const span = Ahead.span();
+    const all = Ahead.items();
+    const until = Ahead.iso(Ahead.plus(span));
+    const list = all.filter((x) => x.date <= until);
+    const today = Ahead.iso(new Date()), tomorrow = Ahead.iso(Ahead.plus(1));
+    const rd = Ahead.read && Ahead.read.ahead;
+    const ritems = (Ahead.read && Ahead.read.items) || [];
+    const byKey = {}; all.forEach((x) => { byKey[x.key] = x; });
+    let readHtml = '';
+    if (rd) {
+      const ref = (n) => { const r = ritems[n]; return r ? (byKey[r.key] || r) : null; };
+      readHtml = '<div class="ah-read">' + (rd.headline ? '<p class="ah-head">' + esc(rd.headline) + '</p>' : '') +
+        (rd.prep && rd.prep.length ? '<ul class="ah-prep">' + rd.prep.map((p) => { const it = ref(p.ref); return it ? '<li><span class="ah-by">' + (p.by ? esc(new Date(p.by + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })) : '') + '</span><span class="ah-what">' + esc(p.what) + '<small>' + esc(it.title) + '</small></span></li>' : ''; }).join('') + '</ul>' : '') +
+        (rd.watch && rd.watch.length ? '<ul class="ah-watch">' + rd.watch.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '') +
+        (rd.remind && rd.remind.length ? '<div class="ah-sugg">' + rd.remind.map((r, i) => { const it = ref(r.ref); if (!it || !byKey[it.key]) return ''; const at = new Date(r.at + ':00'); if (isNaN(at) || at.getTime() < Date.now()) return ''; const on = (Ahead.rem || []).some((x) => x.id.indexOf(it.key.replace(/[^\w:.-]/g, '').slice(0, 80) + '@ai' + i) === 0); return '<button type="button" class="ah-chip' + (on ? ' on' : '') + '" data-ah="sugg" data-i="' + i + '">' + (on ? '✓ ' : '+ ') + esc(r.why || it.title) + ' · ' + esc(at.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })) + '</button>'; }).join('') + '</div>' : '') +
+        '<p class="ah-foot">' + (Ahead.busy ? 'Reading…' : 'Read at ' + esc(new Date((rd.generatedAt || Date.now())).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))) + ' · <button type="button" class="pt-link" data-ah="rewrite"' + (Ahead.busy ? ' disabled' : '') + '>Rewrite</button>' + (Ahead.error ? ' <span class="pt-err">' + esc(Ahead.error) + '</span>' : '') + '</p></div>';
+    } else if (Ahead.busy) readHtml = '<div class="ah-read"><p class="pt-wait"><i class="eb-spin"></i>Reading the weeks ahead…</p></div>';
+    else if (Ahead.error) readHtml = '<div class="ah-read"><p class="pt-wait">' + esc(Ahead.error) + ' <button type="button" class="pt-link" data-ah="rewrite">Try again</button></p></div>';
+
+    let rows = '', last = '';
+    list.forEach((it) => {
+      if (it.date !== last) {
+        last = it.date;
+        const d = new Date(it.date + 'T00:00:00');
+        const label = it.date === today ? 'Today' : it.date === tomorrow ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+        rows += '<li class="ah-day"><span>' + esc(label) + '</span></li>';
+      }
+      const rem = Ahead.remFor(it.key);
+      const open = Ahead.menu === it.key;
+      rows += '<li class="ah-row' + (it.big ? ' big' : '') + '" data-ahk="' + esc(it.key) + '">' +
+        '<span class="ah-tm">' + (it.time ? esc(it.time) : it.allDay ? 'All day' : '') + '</span>' +
+        '<span class="ah-t">' + esc(it.title) + '<small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : 'Calendar') + (it.where ? ' · ' + esc(it.where) : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
+        '<button type="button" class="ah-bell' + (rem.length ? ' on' : '') + '" data-ah="menu" aria-expanded="' + open + '" aria-label="' + (rem.length ? 'Reminders set: ' + rem.length : 'Remind me') + '">' + Nav.svg('bell') + (rem.length ? '<b>' + rem.length + '</b>' : '') + '</button>' +
+        (open ? '<div class="ah-menu" role="menu">' + Ahead.options(it).map((o) => { const on = rem.some((r) => r.id.endsWith('@' + o.id)); return '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" data-ah="opt" data-o="' + o.id + '"' + (on ? ' class="on"' : '') + '>' + (on ? '✓ ' : '') + esc(o.label) + '</button>'; }).join('') + (Ahead.options(it).length ? '' : '<span class="ah-none">Too soon to remind.</span>') + '</div>' : '') +
+      '</li>';
+    });
+    const count = list.length, setN = (Ahead.rem || []).filter((r) => r.at >= Ahead.localAt(new Date())).length;
+    return '<div class="flow-td-head"><span class="l">Coming up</span><span class="c">' + count + (setN ? ' · ' + setN + ' reminder' + (setN === 1 ? '' : 's') : '') + '</span></div>' +
+      '<div class="ah-tabs" role="tablist">' + [7, 14, 30].map((n) => '<button type="button" role="tab" aria-selected="' + (n === span) + '" data-ah="span" data-n="' + n + '"' + (n === span ? ' class="on"' : '') + '>' + (n === 7 ? 'Week' : n === 14 ? '2 weeks' : 'Month') + '</button>').join('') + '</div>' +
+      readHtml +
+      (count ? '<ul class="ah-list">' + rows + '</ul>' : '<p class="flow-td-empty">' + (Ahead.calIds().length ? 'Nothing in the next ' + (span === 30 ? 'month' : span + ' days') + '.' : 'Nothing planned ahead yet. Put Big Rocks on coming days, or connect your calendar in Settings.') + '</p>');
+  },
+  paint() {
+    const feed = document.getElementById('today-feed');
+    if (!feed || !feed.querySelector('.td-head')) return;
+    let box = document.getElementById('flow-td-ahead');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'flow-td-ahead'; box.className = 'flow-td flow-td-sec flow-x lk-ahead';
+    }
+    /* under whichever comes last of the calendar and the Big Rocks */
+    const cands = [feed.querySelector('#td-cal'), feed.querySelector('.td-rocks:not(#td-cal)')].filter(Boolean);
+    const after = cands.length ? cands.reduce((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) ? y : x) : feed.querySelector('.flow-td-pulse');
+    if (after && box.previousElementSibling !== after) after.after(box);
+    else if (!after && !box.isConnected) feed.appendChild(box);
+    TodayLook.put(box, Ahead.html());
+  },
+  boot() {
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-ah]');
+      if (!b) { if (Ahead.menu && !(e.target.closest && e.target.closest('.ah-menu'))) { Ahead.menu = null; Ahead.paint(); } return; }
+      const what = b.getAttribute('data-ah');
+      const row = b.closest('[data-ahk]');
+      const it = row && Ahead.items().find((x) => x.key === row.getAttribute('data-ahk'));
+      if (what === 'span') { Ahead.setSpan(+b.getAttribute('data-n')); Ahead.paint(); return; }
+      if (what === 'rewrite') { Ahead.ensure(true); return; }
+      if (what === 'menu' && it) { Ahead.menu = Ahead.menu === it.key ? null : it.key; Ahead.paint(); return; }
+      if (what === 'opt' && it) { const o = Ahead.options(it).find((x) => x.id === b.getAttribute('data-o')); if (o) Ahead.toggle(it, o); Ahead.menu = null; return; }
+      if (what === 'sugg') {
+        const i = +b.getAttribute('data-i'); const r = Ahead.read && Ahead.read.ahead.remind[i]; const ref = r && Ahead.read.items[r.ref];
+        const live = ref && Ahead.items().find((x) => x.key === ref.key);
+        if (live) Ahead.toggle(live, { id: 'ai' + i, at: new Date(r.at + ':00') }, r.why);
+      }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Ahead.menu) { Ahead.menu = null; Ahead.paint(); } });
+    const go = async () => {
+      try { await Ahead.load(); } catch (e) {}
+      Ahead.paint();
+      try { await Ahead.loadCal(false); } catch (e) {}
+      Ahead.paint();
+      setTimeout(() => Ahead.ensure(false), 1500);
+    };
+    setTimeout(go, 2500);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Ahead.loadCal(false).then(() => Ahead.paint()).catch(() => {}); });
+    setInterval(() => { if (document.visibilityState === 'visible') Ahead.loadCal(false).then(() => Ahead.paint()).catch(() => {}); }, 30 * 60 * 1000);
+  }
+};
+window.FlowAhead = Ahead;
+window.FlowNotifySync = () => Notify.syncMac();
 
 const TodayFix = {
   find(id) {
@@ -11435,7 +12006,7 @@ const Nav = {
         '<button type="button" data-fn-ui="simple" title="Simple interface">Simple</button></div></div>' +
       '<button type="button" class="fn-k" id="fn-kbtn">' + Nav.svg('search') +
         '<span>Search</span><span class="fn-kbd">⌘K</span></button>' +
-      '<button type="button" class="fn-sideadd" id="fn-sideadd">' + Nav.svg('plus') + '<span>Add</span></button>';
+      '<button type="button" class="fn-sideadd" id="fn-sideadd" aria-keyshortcuts="N">' + Nav.svg('plus') + '<span>Add</span><kbd>N</kbd></button>';
 
     Nav.SIDE.forEach(sec => {
       const tabs = sec.tabs.filter(t => Nav.pill(t));
@@ -13520,6 +14091,9 @@ async function boot() {
   try { Habits.boot(); } catch (e) { console.warn('[Flow] habits', e); }
   try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
+  try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
+  try { Patterns.boot(); } catch (e) { console.warn('[Flow] patterns', e); }
+  try { Ahead.boot(); } catch (e) { console.warn('[Flow] ahead', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */
   try { await Theme.init(); } catch (e) { console.warn('[Flow] theme', e); }

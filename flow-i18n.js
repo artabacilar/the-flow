@@ -125,6 +125,9 @@
       .replace(/\u00A0/g, ' ');
   }
 
+  var LEAD = /^(?:(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\uFE0F|\u200D\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*\s*)+/u;
+  function bare(s) { var m = LEAD.exec(s); return m ? s.slice(m[0].length).trim() : ''; }
+
   function compile(dict, rules) {
     var exact = new Map();
     var buckets = new Map();
@@ -141,6 +144,10 @@
         if (!reverse.has(val)) reverse.set(val, key);
         var nv = norm(val);
         if (nv !== val && !reverse.has(nv)) reverse.set(nv, key);
+        /* "💰 Finances" is also "Finances" once the Simple interface has put
+           the emoji in a node of its own — both halves still translate. */
+        var bk = bare(key), bv = bare(val);
+        if (bk && bk !== key && bv && !exact.has(bk)) { exact.set(bk, bv); if (!reverse.has(bv)) reverse.set(bv, bk); }
         return;
       }
       var rule = { key: key, val: val, rx: toRegex(key), n: (key.match(/\{\}/g) || []).length,
@@ -328,7 +335,9 @@
       }
       return;
     }
-    if (isSingleWord(src) && !isChrome(parent)) return;   // somebody's own word
+    /* A label whose emoji Simple split off ("💰" + "Finances") is chrome, not a word somebody typed. */
+    var split = node.previousSibling && node.previousSibling.nodeType === 1 && node.previousSibling.classList.contains('lk-emo');
+    if (isSingleWord(src) && !isChrome(parent) && !split) return;   // somebody's own word
     if (out === text) return;
     MEM.set(node, src);
     node.nodeValue = raw.replace(text, out);

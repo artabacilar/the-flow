@@ -94,6 +94,17 @@ function dueNow(rocks, nowMinutes, windowMin) {
   });
 }
 
+/* Reminders from Coming up: { id, at: 'YYYY-MM-DDTHH:MM' (their local time), title, body }. */
+function dueReminders(list, date, nowMinutes, windowMin) {
+  return (Array.isArray(list) ? list : []).filter((r) => {
+    if (!r || r.off || !r.id) return false;
+    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(String(r.at || ''));
+    if (!m || m[1] !== date) return false;
+    const age = nowMinutes - (Number(m[2]) * 60 + Number(m[3]));
+    return age >= 0 && age < windowMin;
+  });
+}
+
 const readJSON = async (raw, key, fallback) => {
   try {
     const v = await raw.get(key);
@@ -127,9 +138,23 @@ async function tickUser(deps, uid, now) {
 
   const due = dueNow(rocks, L.minutes, WINDOW_MIN)
     .filter((r) => already.indexOf(String(r.id)) < 0);
-  if (!due.length) return { uid, skipped: 'nothing due', at: L.hhmm, tz: settings.timezone || DEFAULT_TZ };
+  /* Reminders set from Coming up: one moment each, in their own clock. */
+  const reminders = await readJSON(raw, pre + 'flow:reminders', []) || [];
+  const remDue = dueReminders(reminders, L.date, L.minutes, WINDOW_MIN)
+    .filter((r) => already.indexOf('r:' + r.id) < 0);
+  if (!due.length && !remDue.length) return { uid, skipped: 'nothing due', at: L.hhmm, tz: settings.timezone || DEFAULT_TZ };
 
   const delivered = [];
+  for (const r of remDue) {
+    const out = await sendToUser(raw, uid, {
+      title: String(r.title || 'Reminder').slice(0, 120),
+      body: String(r.body || '').slice(0, 160) || ('Coming up ' + String(r.when || '').slice(0, 40)),
+      thread: 'ahead',
+      data: { reminder: String(r.id), date: L.date }
+    });
+    delivered.push('r:' + r.id);
+    if (!out || !out.ok) deps.log && deps.log('[flow/remind] ' + uid + ': ' + ((out && out.error) || 'send failed'));
+  }
   for (const r of due) {
     const out = await sendToUser(raw, uid, {
       title: r.title || 'Big Rock',
@@ -186,5 +211,5 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 
 module.exports = {
   tick, tickUser, start, stop,
-  _internals: { localParts, weekIdFromDate, dueNow, toMinutes, WINDOW_MIN, SENT_KEY, DEFAULT_TZ }
+  _internals: { localParts, weekIdFromDate, dueNow, dueReminders, toMinutes, WINDOW_MIN, SENT_KEY, DEFAULT_TZ }
 };

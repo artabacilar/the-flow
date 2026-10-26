@@ -1506,6 +1506,322 @@ async function handleBrief(p, req, res, ctx) {
   return true;
 }
 
+/* ==========================================================================
+ * Patterns — what the record says about how you actually live
+ * --------------------------------------------------------------------------
+ * Sits where the habit list sits on Today. Instead of asking the person to
+ * tick everything by hand, it reads what is already in their account — Big
+ * Rocks and when they get done, habit ticks, sleep, mood and energy,
+ * training, the journal, spending, focus time — and writes a few patterns
+ * with the numbers behind them, and what to do about them.
+ *
+ * Same limits as Direction: reads only this account, writes nothing, written
+ * once a day and then re-read, capped per day. It runs as a job (POST starts
+ * it, GET polls) because a phone does not hold a request open for 20s.
+ * ========================================================================== */
+
+const PAT_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_PATTERNS_DAILY_CAP || '6', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+})();
+const patDayKey = () => 'pat:' + new Date().toISOString().slice(0, 10);
+const patCountKey = () => 'patn:' + new Date().toISOString().slice(0, 10);
+const patJobs = new Map();
+let patPost = (...a) => postJSON(...a);
+
+const PAT_SYSTEM = [
+  'You write the "Patterns" card on the Today screen of a personal life app called The Flow.',
+  'You get ONE person\'s own record, as JSON. Read it for patterns in how they actually live —',
+  'not what they planned, what they did: when Big Rocks get done and which ones keep moving,',
+  'which habits hold and which drop, sleep (hours, how late they go to bed), mood and energy,',
+  'training, how often they write, where money goes and on which days, focus time.',
+  '',
+  'Return ONLY a JSON object, no prose around it:',
+  '{',
+  '  "headline": "one sentence, at most 22 words — the single most useful thing the record shows",',
+  '  "patterns": [ { "area": "Sleep | Training | Plans | Habits | Money | Writing | Mood | Focus | Work",',
+  '                  "text": "one sentence with the number that shows it",',
+  '                  "tone": "good | watch | neutral" } ],      // 3 to 5',
+  '  "next": [ "a concrete thing to do today or this week" ],   // 2 or 3, each under 18 words',
+  '  "missing": "optional: one short line on what is not being logged and would make this better"',
+  '}',
+  '',
+  'Rules:',
+  '· Every pattern must come from the data. Quote the number: "4 of your last 6 Big Rocks got done on Tuesday".',
+  '· Look across areas — a pattern that connects two of them (late nights before missed training,',
+  '  spending that rises in weeks with no plan) is worth more than two separate facts.',
+  '· "good" for something holding, "watch" for something slipping, "neutral" for a plain observation.',
+  '· Nothing logged in an area is an unknown, not a failure. Do not invent; leave it out or mention it in "missing".',
+  '· If there is almost no data, say so in the headline and make "next" about what to start logging.',
+  '· Plain words, written to "you". No motivational filler, no therapy-speak, no horoscope.',
+  '· Never mention identity numbers, card numbers or anyone\'s private details.'
+].join('\n');
+
+function parsePatterns(text) {
+  const s = String(text || '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let o; try { o = JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+  if (!o || typeof o !== 'object') return null;
+  const str = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '');
+  const AREAS = ['Sleep', 'Training', 'Plans', 'Habits', 'Money', 'Writing', 'Mood', 'Focus', 'Work'];
+  const patterns = (Array.isArray(o.patterns) ? o.patterns : []).map((x) => {
+    const area = str(x && x.area, 20);
+    const hit = AREAS.find((A) => A.toLowerCase() === area.toLowerCase());
+    const tone = ['good', 'watch', 'neutral'].indexOf(x && x.tone) >= 0 ? x.tone : 'neutral';
+    return { area: hit || (area ? area.charAt(0).toUpperCase() + area.slice(1, 18) : 'Pattern'), text: str(x && x.text, 260), tone };
+  }).filter((x) => x.text).slice(0, 5);
+  const next = (Array.isArray(o.next) ? o.next : []).map((x) => str(x, 160)).filter(Boolean).slice(0, 3);
+  const out = { headline: str(o.headline, 200), patterns, next, missing: str(o.missing, 200) };
+  if (!out.headline && !out.patterns.length) return null;
+  return out;
+}
+
+async function buildPatternContext(mine, body) {
+  const built = await buildDirectionContext(mine);
+  const d = built.data || {};
+  const pick = async (k) => { try { return await mine.get(k); } catch (e) { return null; } };
+  const out = {
+    mission: d.mission || null,
+    recentBigRocks: d.recentBigRocks || null,
+    weeklyPlansInTheirOwnWords: d.weeklyPlansInTheirOwnWords || null,
+    priorities: d.priorities || null,
+    metrics: d.metrics || null,
+    habits: d.habits || null,
+    sleep: d.sleep || null,
+    moodAndEnergy: d.moodAndEnergy || null,
+    trainingWeeks: d.trainingWeeks || null,
+    activityLog: Array.isArray(d.activityLog) ? d.activityLog.slice(-60) : null,
+    writtenEntries: Array.isArray(d.writtenEntries)
+      ? d.writtenEntries.slice(-12).map((e) => ({ date: e.date || String(e.created || '').slice(0, 10), mood: e.mood, energy: e.energy, words: String(e.body || '').split(/\s+/).filter(Boolean).length, text: String(e.body || '').slice(0, 400) }))
+      : null
+  };
+  /* money: totals by category, by weekday and by week — no merchants' card data */
+  const exp = await pick('flow:expenses');
+  const fin = await pick('ld_finance');
+  const rows = [];
+  if (Array.isArray(exp)) exp.forEach((x) => x && rows.push({ date: String(x.date || '').slice(0, 10), amount: Math.abs(+x.amount || 0), cat: x.category || '' }));
+  /* the first Finances form: { monthly: { 'YYYY-MM': [{ amt, cat, date }] } } */
+  if (fin && fin.monthly && typeof fin.monthly === 'object') Object.keys(fin.monthly).forEach((ym) => (fin.monthly[ym] || []).forEach((x) => {
+    if (x) rows.push({ date: /^\d{4}-\d{2}-\d{2}$/.test(String(x.date || '')) ? x.date : ym + '-01', amount: Math.abs(+x.amt || 0), cat: x.cat || '' });
+  }));
+  const since = new Date(Date.now() - 56 * 864e5).toISOString().slice(0, 10);
+  const recent = rows.filter((r) => r.date >= since && r.amount > 0);
+  if (recent.length) {
+    const byCat = {}, byDow = {}, byWeek = {};
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    for (const r of recent) {
+      byCat[r.cat || 'Other'] = Math.round((byCat[r.cat || 'Other'] || 0) + r.amount);
+      const dt = new Date(r.date + 'T12:00:00Z');
+      if (!isNaN(dt)) {
+        byDow[DOW[dt.getUTCDay()]] = Math.round((byDow[DOW[dt.getUTCDay()]] || 0) + r.amount);
+        const wk = isoDay(mondayOf(dt));
+        byWeek[wk] = Math.round((byWeek[wk] || 0) + r.amount);
+      }
+    }
+    out.spendingLast8Weeks = { currency: 'TRY', count: recent.length, byCategory: byCat, byWeekday: byDow, byWeek };
+  }
+  const focus = await pick('flow:focus');
+  if (focus) out.focus = Array.isArray(focus) ? focus.slice(-40) : focus;
+  /* what only the page knows: Apple Health nights, today's calendar count */
+  const extra = (body && typeof body.extra === 'object' && body.extra) || {};
+  if (Array.isArray(extra.nights)) out.healthNights = extra.nights.slice(-21);
+  if (typeof extra.meetingsToday === 'number') out.meetingsToday = extra.meetingsToday;
+  return out;
+}
+
+async function writePatterns(body, key, mine) {
+  const data = await buildPatternContext(mine, body);
+  let snap = JSON.stringify(data);
+  if (snap.length > 90000) snap = snap.slice(0, 90000) + '…(truncated)';
+  const system = PAT_SYSTEM + '\n\nToday is ' + String(body.today || new Date().toISOString().slice(0, 10)).slice(0, 10) +
+    '. Write in ' + (body.lang === 'tr' ? 'Turkish' : 'English') + '.\n\n# The record\n\n' + snap;
+  const r = await patPost('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, { model: CHAT_MODEL, max_tokens: 1200, system, messages: [{ role: 'user', content: 'Write today\'s patterns.' }] }, 90000);
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('patterns', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status < 200 || r.status >= 300) throw new Error('Patterns could not be read just now (upstream ' + r.status + ').');
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const out = parsePatterns(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'));
+  if (!out) throw new Error('Patterns came back in a shape the app could not read. Try Rewrite.');
+  out.generatedAt = new Date().toISOString();
+  return out;
+}
+
+async function handlePatterns(p, req, res, ctx) {
+  if (p !== '/api/flow/patterns') return false;
+  const uid = (ctx.user && ctx.user.id) || 'anon';
+  const now = Date.now();
+  for (const [id, j] of patJobs) if (now - j.at > 20 * 60 * 1000) patJobs.delete(id);
+  if (req.method === 'GET') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const j = patJobs.get(String(q.get('job') || ''));
+    if (!j || j.uid !== uid) { ctx.json(res, 404, { error: 'That read has expired. Try Rewrite.' }); return true; }
+    if (j.status === 'working') { ctx.json(res, 200, { ok: true, status: 'working' }); return true; }
+    if (j.status === 'error') { ctx.json(res, 200, { ok: false, status: 'error', error: j.error }); return true; }
+    ctx.json(res, 200, { ok: true, status: 'done', patterns: j.result });
+    return true;
+  }
+  if (req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const cached = await ctx.counter.get(patDayKey());
+  if (cached && cached.patterns && !body.refresh) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, patterns: cached }); return true; }
+  const spent = (await ctx.counter.get(patCountKey())) || 0;
+  if (PAT_DAILY_CAP > 0 && spent >= PAT_DAILY_CAP) {
+    ctx.json(res, 429, { error: 'Patterns were rewritten ' + spent + ' times today. They reset at midnight UTC.', used: spent, cap: PAT_DAILY_CAP });
+    return true;
+  }
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = { uid, status: 'working', at: now };
+  patJobs.set(id, job);
+  await ctx.counter.set(patCountKey(), spent + 1);
+  const counter = ctx.counter;
+  writePatterns(body, key, ctx.mine)
+    .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(patDayKey(), out); } catch (e) {} })
+    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'Patterns could not be read just now.'; });
+  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: PAT_DAILY_CAP });
+  return true;
+}
+
+/* ==========================================================================
+ * Coming up — the month ahead, read by an assistant
+ * --------------------------------------------------------------------------
+ * The page gathers what is ahead (calendar events for a month, Big Rocks on
+ * coming days, dated tasks) and sends that list — titles, dates, places, not
+ * the emails behind them. This writes one line about the stretch ahead and,
+ * for the items that need it, what to get ready and by when, plus a few
+ * reminders worth setting. Once a day, Rewrite asks again, capped.
+ * ========================================================================== */
+
+const AHEAD_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_AHEAD_DAILY_CAP || '8', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 8;
+})();
+const aheadDayKey = () => 'ahead:' + new Date().toISOString().slice(0, 10);
+const aheadCountKey = () => 'aheadn:' + new Date().toISOString().slice(0, 10);
+const aheadJobs = new Map();
+let aheadPost = (...a) => postJSON(...a);
+
+const AHEAD_SYSTEM = [
+  'You are the personal assistant behind the "Coming up" card in a life app called The Flow.',
+  'You get the person\'s next 30 days as a numbered list — calendar events, Big Rocks (their',
+  'own weekly priorities, already placed on a day) and dated tasks — plus their mission and roles.',
+  '',
+  'Return ONLY a JSON object:',
+  '{',
+  '  "headline": "one sentence, at most 24 words, about the stretch ahead (busy weeks, a big event, a clash)",',
+  '  "prep": [ { "ref": <number from the list>, "what": "what to get ready, under 14 words", "by": "YYYY-MM-DD" } ],  // 0 to 6',
+  '  "watch": [ "a clash, a crowded day or something easy to forget, under 20 words" ],                           // 0 to 3',
+  '  "remind": [ { "ref": <number>, "at": "YYYY-MM-DDTHH:MM", "why": "under 10 words" } ]                          // 0 to 5',
+  '}',
+  '',
+  'Rules:',
+  '· Only things in the list. Never invent events, people, flights or places.',
+  '· prep is for items that need something done before them: travel, a performance, a deadline,',
+  '  a meeting that needs material. Not for a routine call. "by" is before the item, never after.',
+  '· remind times are in the person\'s local time, at a sensible hour (08:00–21:00), before the item.',
+  '· Plain, short, specific. No filler, no motivational lines.'
+].join('\n');
+
+function parseAhead(text, n) {
+  const s = String(text || '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let o; try { o = JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+  if (!o || typeof o !== 'object') return null;
+  const str = (v, k) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, k) : '');
+  const refOk = (r) => Number.isInteger(r) && r >= 0 && r < (n || 0);
+  const prep = (Array.isArray(o.prep) ? o.prep : []).map((x) => ({
+    ref: x && +x.ref, what: str(x && x.what, 140), by: /^\d{4}-\d{2}-\d{2}$/.test(String(x && x.by)) ? x.by : ''
+  })).filter((x) => refOk(x.ref) && x.what).slice(0, 6);
+  const remind = (Array.isArray(o.remind) ? o.remind : []).map((x) => ({
+    ref: x && +x.ref, at: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(x && x.at)) ? x.at : '', why: str(x && x.why, 80)
+  })).filter((x) => refOk(x.ref) && x.at).slice(0, 5);
+  const out = { headline: str(o.headline, 200), prep, watch: (Array.isArray(o.watch) ? o.watch : []).map((x) => str(x, 160)).filter(Boolean).slice(0, 3), remind };
+  if (!out.headline && !out.prep.length && !out.watch.length) return null;
+  return out;
+}
+
+function aheadList(items) {
+  return (Array.isArray(items) ? items : []).slice(0, 80).map((x, i) => {
+    const bits = [String(x.date || '').slice(0, 10)];
+    if (x.time) bits.push(String(x.time).slice(0, 5));
+    else if (x.allDay) bits.push('all day');
+    if (x.hours) bits.push(Math.round(+x.hours * 10) / 10 + 'h');
+    bits.push(String(x.kind || 'event').slice(0, 10));
+    return i + '. [' + bits.join(' · ') + '] ' + String(x.title || '').slice(0, 160) + (x.where ? ' — ' + String(x.where).slice(0, 100) : '');
+  }).join('\n');
+}
+
+async function writeAhead(body, key, mine) {
+  const items = Array.isArray(body.items) ? body.items.slice(0, 80) : [];
+  let mission = null, roles = null;
+  try { const c = await mine.get('ld_compass'); if (c && typeof c === 'object') { mission = c.mission || null; roles = c.roles || null; } } catch (e) {}
+  const system = AHEAD_SYSTEM + '\n\nToday is ' + String(body.today || new Date().toISOString().slice(0, 10)).slice(0, 10) +
+    '. Write in ' + (body.lang === 'tr' ? 'Turkish' : 'English') + '.' +
+    (mission ? '\n\n# Their mission\n' + String(mission).slice(0, 1200) : '') +
+    (roles ? '\n\n# Their roles\n' + JSON.stringify(roles).slice(0, 600) : '');
+  const r = await aheadPost('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, { model: CHAT_MODEL, max_tokens: 1200, system, messages: [{ role: 'user', content: '# The next 30 days\n\n' + aheadList(items) }] }, 90000);
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('ahead', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status < 200 || r.status >= 300) throw new Error('Coming up could not be read just now (upstream ' + r.status + ').');
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const out = parseAhead(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), items.length);
+  if (!out) throw new Error('The read came back in a shape the app could not use. Try Rewrite.');
+  out.generatedAt = new Date().toISOString();
+  out.sig = String(body.sig || '').slice(0, 200);
+  return out;
+}
+
+async function handleAhead(p, req, res, ctx) {
+  if (p !== '/api/flow/ahead') return false;
+  const uid = (ctx.user && ctx.user.id) || 'anon';
+  const now = Date.now();
+  for (const [id, j] of aheadJobs) if (now - j.at > 20 * 60 * 1000) aheadJobs.delete(id);
+  if (req.method === 'GET') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const j = aheadJobs.get(String(q.get('job') || ''));
+    if (!j || j.uid !== uid) { ctx.json(res, 404, { error: 'That read has expired. Try Rewrite.' }); return true; }
+    if (j.status === 'working') { ctx.json(res, 200, { ok: true, status: 'working' }); return true; }
+    if (j.status === 'error') { ctx.json(res, 200, { ok: false, status: 'error', error: j.error }); return true; }
+    ctx.json(res, 200, { ok: true, status: 'done', ahead: j.result });
+    return true;
+  }
+  if (req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  if (!Array.isArray(body.items) || !body.items.length) { ctx.json(res, 400, { error: 'Nothing coming up to read.' }); return true; }
+  /* The day's read is kept — unless what is ahead changed since (sig). */
+  const cached = await ctx.counter.get(aheadDayKey());
+  if (cached && cached.headline != null && !body.refresh && cached.sig === String(body.sig || '').slice(0, 200)) {
+    ctx.json(res, 200, { ok: true, status: 'done', cached: true, ahead: cached }); return true;
+  }
+  const spent = (await ctx.counter.get(aheadCountKey())) || 0;
+  if (AHEAD_DAILY_CAP > 0 && spent >= AHEAD_DAILY_CAP) {
+    if (cached && cached.headline != null) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, stale: true, ahead: cached }); return true; }
+    ctx.json(res, 429, { error: 'Coming up was read ' + spent + ' times today. It resets at midnight UTC.', used: spent, cap: AHEAD_DAILY_CAP });
+    return true;
+  }
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = { uid, status: 'working', at: now };
+  aheadJobs.set(id, job);
+  await ctx.counter.set(aheadCountKey(), spent + 1);
+  const counter = ctx.counter;
+  writeAhead(body, key, ctx.mine)
+    .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(aheadDayKey(), out); } catch (e) {} })
+    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'Coming up could not be read just now.'; });
+  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: AHEAD_DAILY_CAP });
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -1516,6 +1832,8 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handlePlanWeek(p, req, res, ctx)) return true;
   if (await handleStatement(p, req, res, ctx)) return true;
   if (await handleBrief(p, req, res, ctx)) return true;
+  if (await handlePatterns(p, req, res, ctx)) return true;
+  if (await handleAhead(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.parsePlan = parsePlan;
@@ -1541,4 +1859,12 @@ module.exports._internals.statement = {
 module.exports._internals.brief = {
   parseBrief, handle: handleBrief, BRIEF_SYSTEM, jobs: briefJobs,
   setPoster(fn) { briefPost = fn || ((...a) => postJSON(...a)); }
+};
+module.exports._internals.patterns = {
+  parsePatterns, buildPatternContext, PAT_SYSTEM, jobs: patJobs,
+  setPoster(fn) { patPost = fn || ((...a) => postJSON(...a)); }
+};
+module.exports._internals.ahead = {
+  parseAhead, aheadList, AHEAD_SYSTEM, jobs: aheadJobs,
+  setPoster(fn) { aheadPost = fn || ((...a) => postJSON(...a)); }
 };
