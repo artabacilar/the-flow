@@ -7916,6 +7916,7 @@ const Profile = {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 const NAV_ICONS = {
+  dots:     '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   bell:     '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   today:    '<path d="M3 5h18v16H3z"/><path d="M8 3v4M16 3v4M3 11h18"/>',
   target:   '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
@@ -9456,10 +9457,10 @@ const TodayLook = {
     const list = TodayLook.rocks().filter((r) => r && r.day === i)
       .sort((a, b) => (a.done - b.done) || String(a.time || '99').localeCompare(String(b.time || '99')));
     const open = list.filter((r) => !r.done).length;
-    const rows = list.length ? list.map((r) => `<li class="lk-dv-row${r.done ? ' done' : ''}">
+    const rows = list.length ? list.map((r) => `<li class="lk-dv-row${r.done ? ' done' : ''}" data-rid="${esc(r.id)}">
         <button type="button" class="lk-dv-bx" data-dv="tick" data-dvid="${esc(r.id)}" aria-pressed="${!!r.done}" aria-label="${r.done ? 'Mark not done' : 'Mark done'}"></button>
         <span class="lk-dv-t">${esc(r.title)}${TodayLook.noteLine(r.note) ? `<small>${esc(TodayLook.noteLine(r.note))}</small>` : ''}</span>
-        ${r.time ? `<span class="lk-dv-tm">${esc(r.time)}</span>` : ''}</li>`).join('')
+        ${r.time ? `<span class="lk-dv-tm">${esc(r.time)}</span>` : ''}${RockActions.more(r.id, r.title)}</li>`).join('')
       : `<li class="lk-dv-empty">${i < todayIdx ? 'Nothing was planned for ' + esc(short) + '.' : 'Nothing on ' + esc(short) + ' yet.'}</li>`;
     return `<div class="lk-dv-head"><div><div class="lk-dv-k">${i === todayIdx ? 'Today' : i < todayIdx ? 'Earlier this week' : 'Coming up'}</div>
         <div class="lk-dv-n">${esc(name)}</div></div>
@@ -9590,7 +9591,7 @@ const TodayLook = {
     const feed = document.getElementById('today-feed');
     if (!feed) return;
     let queued = false;
-    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { TodayLook.paint(); } catch (e) { console.warn('[Flow] today look', e); } try { Ahead.paint(); } catch (e) {} }); };
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { TodayLook.paint(); } catch (e) { console.warn('[Flow] today look', e); } try { Ahead.paint(); } catch (e) {} try { RockActions.paint(); } catch (e) {} }); };
     new MutationObserver((muts) => {
       /* Only react to changes that are not our own. */
       if (muts.every((m) => [...m.addedNodes, ...m.removedNodes].every((n) => n.nodeType !== 1 || (n.className && /\blk-/.test(String(n.className)))))) return;
@@ -10690,6 +10691,329 @@ const LeadFirst = {
     document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-tab="sleep"], [data-fn-side="sleep"], [data-fn-seg="sleep"]')) setTimeout(LeadFirst.whoop, 50); }, true);
   }
 };
+
+/* ── Drop, delegate, move ─────────────────────────────────────────────────
+ * Ticking was the only way to get a Big Rock off the list, so a rock you had
+ * decided against looked finished, and one somebody else was doing looked
+ * like yours. Each rock now has a ⋯ (and on a phone, a swipe to the left):
+ *
+ *   Move      tomorrow, next week, or any day — it goes with its time and note.
+ *   Delegate  to a person, with a day to check back. It leaves your list and
+ *             waits on Today under "Waiting on" until they have done it (tick:
+ *             it counts as done in its week) or you take it back.
+ *   Drop      not doing it. It leaves every list and count, and is kept under
+ *             "Dropped" in the week, where it can be put back.
+ *
+ * Dropped and delegated rocks are moved out of the week (`cData.aside`), not
+ * flagged inside it. That is the whole design: every screen that reads the
+ * week — Today, the strip, Coming up, the widget, reminders, the watch, an
+ * assistant — already leaves them out, without any of them having to know.
+ * Nothing is deleted, and every action can be undone for a few seconds. */
+const RockActions = {
+  el: null, cur: null, undoT: null,
+  data() { return (typeof cData !== 'undefined' && cData) ? cData : null; },
+  aside() { const c = RockActions.data(); if (!c) return []; if (!Array.isArray(c.aside)) c.aside = []; return c.aside; },
+  find(id) {
+    const c = RockActions.data(); if (!c || !c.rocks) return null;
+    for (const w of Object.keys(c.rocks)) { const i = (c.rocks[w] || []).findIndex((x) => x && String(x.id) === String(id)); if (i >= 0) return { w, i, r: c.rocks[w][i] }; }
+    return null;
+  },
+  monday(wid) {
+    const m = String(wid || '').match(/^(\d{4})-W(\d{2})$/); if (!m) return null;
+    const jan4 = new Date(+m[1], 0, 4);
+    const mon = new Date(jan4); mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (+m[2] - 1) * 7);
+    return mon;
+  },
+  dateOf(wid, day) { const m = RockActions.monday(wid); if (!m) return null; const d = new Date(m); d.setDate(m.getDate() + (day >= 0 ? day : 0)); return d; },
+  iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
+  fromIso(s) { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; },
+  label(d) {
+    if (!d) return '';
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    const x = new Date(d); x.setHours(0, 0, 0, 0);
+    const n = Math.round((x - t) / 864e5);
+    if (n === 0) return 'Today'; if (n === 1) return 'Tomorrow'; if (n === -1) return 'Yesterday';
+    return DOW[x.getDay()] + ' ' + x.getDate() + ' ' + x.toLocaleDateString('en-GB', { month: 'short' });
+  },
+  save(what) {
+    try { cSave(); } catch (e) {}
+    try { if (what && typeof J === 'function') J('planning', what); } catch (e) {}
+    RockActions.rerender();
+  },
+  rerender() {
+    try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+    try { if (typeof renderCompass === 'function') renderCompass(); } catch (e) {}
+    try { TodayLook.paint(); } catch (e) {}
+    try { RockActions.paint(); } catch (e) {}
+  },
+
+  /* ---- what the ⋯ does ---- */
+  move(id, date) {
+    const hit = RockActions.find(id); if (!hit || !date) return;
+    const c = RockActions.data();
+    const before = { w: hit.w, day: hit.r.day };
+    const to = weekId(date), day = (date.getDay() + 6) % 7;
+    c.rocks[hit.w].splice(hit.i, 1);
+    if (!c.rocks[to]) c.rocks[to] = [];
+    hit.r.day = day; hit.r.done = false;
+    c.rocks[to].push(hit.r);
+    RockActions.save('➡️ Big rock moved to ' + RockActions.label(date) + ': ' + hit.r.title);
+    RockActions.undo('Moved to ' + RockActions.label(date), () => {
+      const h2 = RockActions.find(id); if (!h2) return;
+      c.rocks[h2.w].splice(h2.i, 1);
+      if (!c.rocks[before.w]) c.rocks[before.w] = [];
+      h2.r.day = before.day; c.rocks[before.w].push(h2.r);
+      RockActions.save();
+    });
+  },
+  setAside(id, status, extra) {
+    const hit = RockActions.find(id); if (!hit) return;
+    const c = RockActions.data();
+    c.rocks[hit.w].splice(hit.i, 1);
+    const rec = Object.assign({}, hit.r, { wid: hit.w, status, at: new Date().toISOString() }, extra || {});
+    RockActions.aside().push(rec);
+    RockActions.save(status === 'dropped' ? '🗑️ Big rock dropped: ' + hit.r.title : '🤝 Big rock delegated to ' + rec.to + ': ' + hit.r.title);
+    RockActions.undo(status === 'dropped' ? 'Dropped' : 'Delegated to ' + rec.to, () => RockActions.putBack(id, { silent: true }));
+  },
+  /* Back into the week it came from — or, for one taken back from a week
+     that is over, onto today, because a rock nobody is doing is yours now. */
+  putBack(id, opts) {
+    opts = opts || {};
+    const list = RockActions.aside();
+    const i = list.findIndex((x) => String(x.id) === String(id)); if (i < 0) return;
+    const rec = list.splice(i, 1)[0];
+    const c = RockActions.data();
+    let w = rec.wid, day = rec.day;
+    const now = weekId(new Date());
+    if (!opts.done && !opts.silent && w < now) { w = now; day = (new Date().getDay() + 6) % 7; }
+    const r = Object.assign({}, rec); ['wid', 'status', 'at', 'to', 'follow'].forEach((k) => delete r[k]);
+    r.day = day; r.done = !!opts.done;
+    if (!c.rocks[w]) c.rocks[w] = [];
+    c.rocks[w].push(r);
+    RockActions.save(opts.silent ? '' : opts.done ? '✅ Delegated Big rock done (' + (rec.to || 'someone') + '): ' + rec.title : '↩️ Big rock back on the list: ' + rec.title);
+  },
+
+  /* ---- undo ---- */
+  undo(msg, fn) {
+    let bar = document.getElementById('ra-undo');
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'ra-undo'; bar.className = 'flow-x'; bar.setAttribute('role', 'status');
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = '<span>' + esc(msg) + '</span><button type="button">Undo</button>';
+    bar.classList.add('on');
+    clearTimeout(RockActions.undoT);
+    const hide = () => bar.classList.remove('on');
+    bar.querySelector('button').onclick = () => { clearTimeout(RockActions.undoT); hide(); try { fn(); } catch (e) {} };
+    RockActions.undoT = setTimeout(hide, 6500);
+  },
+
+  /* ---- the sheet ---- */
+  open(id) {
+    const hit = RockActions.find(id); if (!hit) return;
+    RockActions.cur = id;
+    if (!RockActions.el) RockActions.build();
+    const d = RockActions.dateOf(hit.w, hit.r.day);
+    const el = RockActions.el;
+    el.querySelector('h4').textContent = String(hit.r.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+    el.querySelector('.fn-sub').textContent = (hit.r.day >= 0 ? RockActions.label(d) : 'No day set') + (hit.r.time ? ' · ' + hit.r.time : '') + (hit.r.done ? ' · done' : '');
+    const t = new Date(); t.setDate(t.getDate() + 1);
+    el.querySelector('#ra-date').value = RockActions.iso(t);
+    el.querySelector('#ra-date').min = RockActions.iso(new Date());
+    el.querySelector('#ra-who').value = '';
+    el.querySelector('#ra-follow').value = RockActions.iso(t);
+    let names = [];
+    try { names = (Friends.list || []).map((f) => f && (f.name || f.byName)).filter(Boolean); } catch (e) {}
+    RockActions.aside().forEach((a) => { if (a.to && names.indexOf(a.to) < 0) names.push(a.to); });
+    el.querySelector('#ra-people').innerHTML = names.slice(0, 20).map((n) => '<option value="' + esc(n) + '">').join('');
+    RockActions.mode('main');
+    el.classList.add('on');
+    setTimeout(() => { const b = el.querySelector('[data-ra="tomorrow"]'); if (b && matchMedia('(hover:hover)').matches) b.focus(); }, 60);
+  },
+  close() { if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; },
+  mode(m) {
+    const el = RockActions.el; if (!el) return;
+    el.querySelector('.ra-main').hidden = m !== 'main';
+    el.querySelector('.ra-del').hidden = m !== 'delegate';
+    if (m === 'delegate') setTimeout(() => el.querySelector('#ra-who').focus(), 60);
+  },
+  build() {
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-ra'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-ra="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Big Rock">' +
+        '<div class="fn-grab" data-ra="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-ra="close" aria-label="Close">×</button>' +
+        '<h4></h4><div class="fn-sub"></div>' +
+        '<div class="ra-main">' +
+          '<div class="ra-k">Move</div>' +
+          '<div class="ra-row">' +
+            '<button type="button" class="flow-btn" data-ra="tomorrow">Tomorrow</button>' +
+            '<button type="button" class="flow-btn" data-ra="nextweek">Next week</button>' +
+            '<label class="ra-pick"><span>Pick a day</span><input type="date" id="ra-date" aria-label="Move to this day"></label>' +
+            '<button type="button" class="flow-btn" data-ra="moveto">Move</button>' +
+          '</div>' +
+          '<div class="ra-k">Hand it off</div>' +
+          '<button type="button" class="flow-btn ra-wide" data-ra="delegate">Delegate…<small>Someone else does it; you check back</small></button>' +
+          '<div class="ra-k">Let it go</div>' +
+          '<button type="button" class="flow-btn ra-wide ra-drop" data-ra="drop">Drop it<small>Not doing it. Leaves the list without counting as done</small></button>' +
+        '</div>' +
+        '<form class="ra-del" hidden>' +
+          '<label class="flow-label" for="ra-who">Who is doing it?</label>' +
+          '<input type="text" id="ra-who" class="flow-in" maxlength="60" list="ra-people" autocomplete="off" placeholder="A name">' +
+          '<datalist id="ra-people"></datalist>' +
+          '<label class="flow-label" for="ra-follow">Check back</label>' +
+          '<div class="ra-row">' +
+            '<button type="button" class="flow-btn sm" data-ra="f1">Tomorrow</button>' +
+            '<button type="button" class="flow-btn sm" data-ra="f3">In 3 days</button>' +
+            '<button type="button" class="flow-btn sm" data-ra="f7">Next week</button>' +
+            '<input type="date" id="ra-follow" class="flow-in" aria-label="Check back on">' +
+          '</div>' +
+          '<div class="ra-row ra-end">' +
+            '<button type="button" class="flow-btn" data-ra="back">Back</button>' +
+            '<button type="submit" class="flow-btn primary">Delegate</button>' +
+          '</div>' +
+        '</form>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    RockActions.el = wrap;
+    const plus = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ra]'); if (!b) return;
+      const a = b.getAttribute('data-ra'), id = RockActions.cur;
+      if (a === 'close') return RockActions.close();
+      if (a === 'back') return RockActions.mode('main');
+      if (a === 'delegate') return RockActions.mode('delegate');
+      if (/^f\d$/.test(a)) { wrap.querySelector('#ra-follow').value = RockActions.iso(plus(+a.slice(1))); return; }
+      if (!id) return;
+      if (a === 'tomorrow') { RockActions.close(); return RockActions.move(id, plus(1)); }
+      if (a === 'nextweek') { const d = new Date(); d.setDate(d.getDate() + (7 - (d.getDay() + 6) % 7)); RockActions.close(); return RockActions.move(id, d); }
+      if (a === 'moveto') { const d = RockActions.fromIso(wrap.querySelector('#ra-date').value); if (!d) return; RockActions.close(); return RockActions.move(id, d); }
+      if (a === 'drop') { RockActions.close(); return RockActions.setAside(id, 'dropped'); }
+    });
+    wrap.querySelector('.ra-del').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const who = wrap.querySelector('#ra-who').value.replace(/\s+/g, ' ').trim();
+      if (!who) { wrap.querySelector('#ra-who').focus(); toast('Who is doing it?', 'warn'); return; }
+      const id = RockActions.cur; RockActions.close();
+      RockActions.setAside(id, 'delegated', { to: who.slice(0, 60), follow: wrap.querySelector('#ra-follow').value || '' });
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) RockActions.close(); });
+  },
+
+  /* ---- the ⋯ on every rock ---- */
+  more(id, label) { return '<button type="button" class="ra-more" data-ra-open="' + esc(String(id)) + '" aria-label="More for ' + esc(String(label || 'this Big Rock')) + '">' + Nav.svg('dots') + '</button>'; },
+  decorate() {
+    document.querySelectorAll('#today-feed .td-rocks:not(#td-cal) .td-rock[data-rockid]').forEach((row) => {
+      if (row.querySelector('.ra-more')) return;
+      const t = row.querySelector('.rk-title');
+      row.insertAdjacentHTML('beforeend', RockActions.more(row.getAttribute('data-rockid'), t && t.textContent.trim().slice(0, 60)));
+    });
+    document.querySelectorAll('#cGrid .chip.rock[data-rid]').forEach((ch) => {
+      if (ch.querySelector('.ra-more')) return;
+      ch.insertAdjacentHTML('beforeend', RockActions.more(ch.getAttribute('data-rid'), ch.textContent.trim().slice(0, 60)));
+    });
+  },
+
+  /* ---- Waiting on (Today) and the week's set-aside list (Week Compass) ---- */
+  waitingHtml() {
+    const today = RockActions.iso(new Date());
+    const list = RockActions.aside().filter((a) => a.status === 'delegated')
+      .sort((a, b) => String(a.follow || '9').localeCompare(String(b.follow || '9')));
+    if (!list.length) return '';
+    const due = list.filter((a) => a.follow && a.follow <= today).length;
+    return '<div class="flow-td-head"><span class="l">Waiting on</span><span class="c' + (due ? ' late' : '') + '">' + list.length + (due ? ' · ' + due + ' to check' : '') + '</span></div>' +
+      list.map((a) => {
+        const f = RockActions.fromIso(a.follow);
+        const late = a.follow && a.follow <= today;
+        return '<div class="flow-td-row ra-w' + (late ? ' od' : '') + '">' +
+          '<button type="button" class="flow-today-check" role="checkbox" aria-checked="false" data-ra-done="' + esc(String(a.id)) + '" aria-label="' + esc(a.to) + ' did it: ' + esc(a.title) + '"><span class="bx" aria-hidden="true"></span></button>' +
+          '<span class="tx">' + esc(String(a.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')) +
+            '<small>' + esc(a.to) + (f ? ' · ' + (late ? 'check back ' + (a.follow === today ? 'today' : 'now') : 'check back ' + RockActions.label(f)) : '') + '</small></span>' +
+          '<button type="button" class="ra-back" data-ra-back="' + esc(String(a.id)) + '">Take back</button>' +
+        '</div>';
+      }).join('');
+  },
+  paint() {
+    const feed = document.getElementById('today-feed');
+    if (feed && feed.querySelector('.td-head')) {
+      const html = RockActions.waitingHtml();
+      let box = document.getElementById('flow-td-waiting');
+      if (!html) { if (box) box.remove(); }
+      else {
+        if (!box) { box = document.createElement('div'); box.id = 'flow-td-waiting'; box.className = 'flow-td flow-td-sec flow-x'; }
+        const after = document.getElementById('flow-td-ahead') || feed.querySelector('.td-rocks:not(#td-cal)') || feed.querySelector('.flow-td-pulse');
+        if (after && after.parentNode === feed) { if (box.previousElementSibling !== after) after.after(box); }
+        else if (!box.isConnected) feed.appendChild(box);
+        TodayLook.put(box, html);
+      }
+    }
+    RockActions.decorate();
+    RockActions.paintCompass();
+  },
+  compassWeek() {
+    try { return (typeof cOff !== 'undefined' && typeof tOffDate === 'function') ? weekId(tOffDate(cOff)) : weekId(new Date()); } catch (e) { return weekId(new Date()); }
+  },
+  paintCompass() {
+    const grid = document.getElementById('cGrid'); if (!grid) return;
+    const wid = RockActions.compassWeek();
+    const list = RockActions.aside().filter((a) => a.wid === wid);
+    let box = document.getElementById('ra-week');
+    if (!list.length) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.id = 'ra-week'; box.className = 'flow-x ra-week'; }
+    if (box.previousElementSibling !== grid) grid.after(box);
+    const dropped = list.filter((a) => a.status === 'dropped'), del = list.filter((a) => a.status === 'delegated');
+    const row = (a) => '<li class="' + a.status + '"><span class="ra-wt">' + esc(String(a.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')) + '</span>' +
+      (a.status === 'delegated' ? '<span class="ra-wm">' + esc(a.to || '') + '</span>' : '') +
+      '<button type="button" class="ra-back" data-ra-back="' + esc(String(a.id)) + '">' + (a.status === 'dropped' ? 'Put back' : 'Take back') + '</button></li>';
+    const html = (del.length ? '<div class="ra-wh">Delegated · ' + del.length + '</div><ul>' + del.map(row).join('') + '</ul>' : '') +
+      (dropped.length ? '<div class="ra-wh">Dropped · ' + dropped.length + '</div><ul>' + dropped.map(row).join('') + '</ul>' : '');
+    TodayLook.put(box, html);
+  },
+
+  install() {
+    if (RockActions._on) return; RockActions._on = true;
+    ['renderToday', 'renderCompass'].forEach((fn) => {
+      const orig = window[fn];
+      if (typeof orig !== 'function' || orig.__raWrapped) return;
+      const w = function () { const r = orig.apply(this, arguments); try { RockActions.paint(); } catch (e) {} return r; };
+      Object.keys(orig).forEach((k) => { w[k] = orig[k]; });
+      w.__raWrapped = 1;
+      window[fn] = w;
+    });
+    /* Capture, so the ⋯ inside a row that ticks on a tap opens the sheet
+       instead of ticking the rock. */
+    document.addEventListener('click', (e) => {
+      const m = e.target.closest && e.target.closest('[data-ra-open]');
+      if (m) { e.preventDefault(); e.stopPropagation(); RockActions.open(m.getAttribute('data-ra-open')); return; }
+      const d = e.target.closest && e.target.closest('[data-ra-done]');
+      if (d) { e.preventDefault(); e.stopPropagation(); RockActions.putBack(d.getAttribute('data-ra-done'), { done: true }); toast('Done ✓'); return; }
+      const bk = e.target.closest && e.target.closest('[data-ra-back]');
+      if (bk) { e.preventDefault(); e.stopPropagation(); RockActions.putBack(bk.getAttribute('data-ra-back')); }
+    }, true);
+    /* A phone: swipe a rock to the left. Stopped here so the same swipe does
+       not also turn the page to the next section. */
+    let sx = 0, sy = 0, row = null;
+    document.addEventListener('touchstart', (e) => {
+      row = null;
+      const t = e.target.closest && e.target.closest('#today-feed .td-rocks:not(#td-cal) .td-rock[data-rockid], .lk-dv-row[data-rid]');
+      if (!t || e.touches.length !== 1) return;
+      row = t; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    }, { passive: true, capture: true });
+    document.addEventListener('touchend', (e) => {
+      if (!row) return;
+      const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+      const r = row; row = null;
+      if (dx < -60 && Math.abs(dy) < 40 && Math.abs(dx) > Math.abs(dy) * 1.8) {
+        e.stopImmediatePropagation();
+        RockActions.open(r.getAttribute('data-rockid') || r.getAttribute('data-rid'));
+      }
+    }, { capture: true });
+    RockActions.paint();
+  }
+};
+window.FlowRockActions = RockActions;
 
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that
@@ -14298,6 +14622,7 @@ async function boot() {
   try { MoodChart.install(); } catch (e) { console.warn('[Flow] mood chart', e); }
   try { TodayGroups.install(); } catch (e) { console.warn('[Flow] today groups', e); }
   try { CompassPlus.install(); } catch (e) { console.warn('[Flow] compass plus', e); }
+  try { RockActions.install(); } catch (e) { console.warn('[Flow] rock actions', e); }
   try { DietPlan.mount(); } catch (e) { console.warn('[Flow] diet plan', e); }
   try { SharedUI.install(); } catch (e) { console.warn('[Flow] shared', e); }
 
