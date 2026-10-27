@@ -95,8 +95,13 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
       aheadPosts++;
       const body = JSON.parse(rt.request().postData() || '{}');
       const i = body.items.findIndex((x) => /Vibe/.test(x.title));
+      const fi = body.items.findIndex((x) => /Flight/.test(x.title));
       const remAt = iso(plus(0)) + 'T23:30';
-      return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'done', ahead: { headline: 'The show is tomorrow, the flight in ten days.', prep: [{ ref: i, what: 'Pack the CDJs and USBs', by: iso(plus(0)) }], watch: ['Dentist on the morning after the show'], remind: [{ ref: i, at: remAt, why: 'Pack tonight' }], generatedAt: new Date().toISOString() } }) });
+      const prep = [{ ref: i, what: 'Pack the CDJs and USBs', by: iso(plus(0)) }];
+      const remind = [{ ref: i, at: remAt, why: 'Pack tonight' }];
+      /* listed out of date order on purpose, and past the first week */
+      if (fi >= 0) { prep.unshift({ ref: fi, what: 'Print the boarding pass', by: iso(plus(9)) }); remind.push({ ref: fi, at: iso(plus(9)) + 'T20:00', why: 'Check in online' }); }
+      return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'done', ahead: { headline: 'The show is tomorrow, the flight in ten days.', prep, watch: ['Dentist on the morning after the show'], remind, generatedAt: new Date().toISOString() } }) });
     }
     return rt.fulfill({ status: 404 });
   });
@@ -112,10 +117,46 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   ok('grouped by day, starting Tomorrow', v.days[0] === 'Today' || v.days[0] === 'Tomorrow', v.days);
   ok('the all-day show is marked as big', v.big >= 1);
   ok('the assistant\'s read sits on top, with what to get ready', /show is tomorrow/.test(v.head) && v.prep === 1, v);
+  const readOf = () => p.evaluate(() => { const c = document.getElementById('flow-td-ahead'); return { prep: [...c.querySelectorAll('.ah-prep .ah-what')].map((x) => x.firstChild.textContent), chips: [...c.querySelectorAll('.ah-sugg [data-ah="sugg"]')].map((x) => x.textContent), tabs: [...c.querySelectorAll('.ah-tabs button')].map((x) => (x.querySelector('i') || {}).textContent || '') }; });
+  const r7 = await readOf();
+  ok('Week cuts the read too: nothing to get ready for the flight yet, no reminder for it', r7.prep.length === 1 && !r7.chips.some((x) => /Check in/.test(x)) && r7.chips.length === 1, r7);
+  ok('a suggested reminder says its own day and time', /^\+ \w{3}, \d{1,2} \w{3}, 23:30 Pack tonight/.test(r7.chips[0]), r7.chips);
+  ok('each tab says how many things it holds, more for longer', r7.tabs.length === 3 && +r7.tabs[0] > 0 && +r7.tabs[0] < +r7.tabs[1] && +r7.tabs[1] < +r7.tabs[2], r7.tabs);
   await p.click('#flow-td-ahead [data-ah="span"][data-n="14"]'); await p.waitForTimeout(300);
   ok('2 weeks adds the flight', await p.evaluate(() => /Flight to Hong Kong/.test(document.getElementById('flow-td-ahead').textContent) && !/Quarter review/.test(document.getElementById('flow-td-ahead').textContent)));
+  const r14 = await readOf();
+  ok('and what to get ready for it, in date order', r14.prep.length === 2 && /Pack/.test(r14.prep[0]) && /boarding/.test(r14.prep[1]) && r14.chips.some((x) => /Check in online/.test(x)), r14);
   await p.click('#flow-td-ahead [data-ah="span"][data-n="30"]'); await p.waitForTimeout(300);
   ok('Month adds the quarter review, and the choice is kept', await p.evaluate(() => /Quarter review/.test(document.getElementById('flow-td-ahead').textContent) && localStorage.getItem('flow:aheadSpan') === '30'));
+
+  console.log('\n— drop or delegate what is coming up —');
+  const rowsNow = () => p.evaluate(() => [...document.querySelectorAll('#flow-td-ahead .ah-row .ah-t')].map((x) => x.firstChild.textContent));
+  ok('every row has a ⋯', await p.evaluate(() => [...document.querySelectorAll('#flow-td-ahead .ah-row')].every((r) => r.querySelector('[data-ra-item]'))));
+  await p.click('#flow-td-ahead .ah-row:has-text("Quarter review") [data-ra-item]'); await p.waitForTimeout(300);
+  const sh = await p.evaluate(() => { const el = document.getElementById('flow-ra'); return { on: el.classList.contains('on'), t: el.querySelector('h4').textContent, sub: el.querySelector('.fn-sub').textContent, mv: el.querySelector('.ra-mv').hidden, drop: el.querySelector('.ra-dropsub').textContent }; });
+  ok('a calendar event opens Drop and Delegate, without Move (it lives in the calendar)', sh.on && sh.t === 'Quarter review' && /Calendar/.test(sh.sub) && sh.mv && /stays in your calendar/.test(sh.drop), sh);
+  await p.click('#flow-ra [data-ra="drop"]'); await p.waitForTimeout(400);
+  ok('dropped: Coming up stops listing it', !(await rowsNow()).includes('Quarter review'));
+  ok('with an Undo', await p.evaluate(() => document.getElementById('ra-undo').classList.contains('on') && /Dropped/.test(document.getElementById('ra-undo').textContent)));
+  await p.click('#ra-undo button'); await p.waitForTimeout(400);
+  ok('Undo brings it back', (await rowsNow()).includes('Quarter review'));
+  await p.click('#flow-td-ahead .ah-row:has-text("Quarter review") [data-ra-item]'); await p.waitForTimeout(300);
+  await p.click('#flow-ra [data-ra="drop"]'); await p.waitForTimeout(400);
+  ok('and the drop is kept with the week', await p.evaluate(async () => { const c = cData; return (c.aside || []).some((a) => a.ext && a.status === 'dropped' && a.title === 'Quarter review'); }));
+  await p.click('#flow-td-ahead .ah-row:has-text("Dentist") [data-ra-item]'); await p.waitForTimeout(300);
+  await p.click('#flow-ra [data-ra="delegate"]'); await p.waitForTimeout(200);
+  await p.fill('#ra-who', 'Selin'); await p.click('#flow-ra .ra-del [type="submit"]'); await p.waitForTimeout(500);
+  ok('delegated: off Coming up', !(await rowsNow()).includes('Dentist'));
+  const wt = await p.evaluate(() => { const w = document.getElementById('flow-td-waiting'); return w ? w.textContent : ''; });
+  ok('and under Waiting on, with who', /Waiting on/.test(wt) && /Dentist/.test(wt) && /Selin/.test(wt), wt);
+  await p.click('#flow-td-waiting .ra-w:has-text("Dentist") [data-ra-back]'); await p.waitForTimeout(500);
+  ok('Take back puts it on Coming up again', (await rowsNow()).includes('Dentist') && !(await p.evaluate(() => /Dentist/.test((document.getElementById('flow-td-waiting') || {}).textContent || ''))));
+  await p.evaluate(async () => { const w = window.FlowTodayLook.wid(new Date(Date.now() + 3 * 864e5)); const d = new Date(Date.now() + 3 * 864e5); addRock('Send the venue contract', '', (d.getDay() + 6) % 7, '', w, { prio: 'high' }); window.FlowAhead.paint(); });
+  await p.waitForTimeout(400);
+  await p.click('#flow-td-ahead .ah-row:has-text("Send the venue contract") [data-ra-item]'); await p.waitForTimeout(300);
+  ok('a Big Rock on Coming up opens the Big Rock sheet, Move included', await p.evaluate(() => { const el = document.getElementById('flow-ra'); return el.classList.contains('on') && el.querySelector('h4').textContent === 'Send the venue contract' && !el.querySelector('.ra-mv').hidden; }));
+  await p.click('#flow-ra [data-ra="tomorrow"]'); await p.waitForTimeout(400);
+  ok('and moving it moves it', await p.evaluate(() => { const r = window.FlowAhead.items().find((x) => x.title === 'Send the venue contract'); const t = new Date(); t.setDate(t.getDate() + 1); return r && r.date === t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }));
 
   await p.evaluate(async () => { const w = window.FlowTodayLook.wid(new Date(Date.now() + 2 * 864e5)); const d = new Date(Date.now() + 2 * 864e5); const dow = (d.getDay() + 6) % 7; for (let i = 0; i < 5; i++) addRock('Extra rock ' + i, '', dow, '', w, { prio: 'med' }); window.FlowAhead.paint(); });
   await p.waitForTimeout(400);

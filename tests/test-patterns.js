@@ -72,11 +72,25 @@ const READ = {
   ok('Rewrite asks the model again', c2.code === 202);
   for (let i = 0; i < 100 && calls < 2; i++) await new Promise((ok2) => setTimeout(ok2, 30));
   ok('and that is the second call', calls === 2);
+  /* three devices opening at once on a new day */
+  let slow; X.setPoster(() => new Promise((ok3) => { slow = ok3; }));
+  delete counter['__nothing'];
+  const dayKeys = Object.keys(counter).filter((k) => /^pat:/.test(k)); dayKeys.forEach((k) => delete counter[k]);
+  const before = counter[Object.keys(counter).find((k) => /^patn:/.test(k))] || 0;
+  const d1 = await call('POST', '/api/flow/patterns', {}); const d2 = await call('POST', '/api/flow/patterns', {}); const d3 = await call('POST', '/api/flow/patterns', {});
+  const after = counter[Object.keys(counter).find((k) => /^patn:/.test(k))] || 0;
+  ok('devices asking at the same moment share one read', d1.o.job && d2.o.job === d1.o.job && d3.o.job === d1.o.job && after === before + 1, { d1: d1.o, d2: d2.o, before, after });
+  slow && slow({ status: 200, body: { content: [{ type: 'text', text: JSON.stringify(READ) }] } });
+  for (let i = 0; i < 50; i++) { const g2 = await call('GET', '/api/flow/patterns?job=' + d1.o.job); if (g2.o.status !== 'working') break; await new Promise((r) => setTimeout(r, 30)); }
+  X.setPoster(async () => { calls++; return { status: 200, body: { content: [{ type: 'text', text: JSON.stringify(READ) }] } }; });
   const other = await (async () => { let out; await extras.handle('/api/flow/patterns', { method: 'GET', url: '/api/flow/patterns?job=' + c2.o.job }, {}, { user: { id: 'someone-else' }, json: (r, code, o) => { out = { code, o }; } }); return out; })();
   ok('another account cannot read your job', other.code === 404);
   for (let i = 0; i < 6; i++) await call('POST', '/api/flow/patterns', { refresh: true });
   const capped = await call('POST', '/api/flow/patterns', { refresh: true });
-  ok('rewrites are capped per day', capped.code === 429, capped);
+  ok('rewrites are capped per day — and the last read still comes back', capped.code === 200 && capped.o.capped === true && capped.o.patterns.headline === READ.headline, capped);
+  const fresh = { get: async () => 0, set: async () => {} };
+  const noLast = await (async () => { let out; await extras.handle('/api/flow/patterns', { method: 'POST', url: '/api/flow/patterns' }, {}, { user: { id: 'u2' }, mine, counter: { get: async (k) => (/^patn:/.test(k) ? 99 : null), set: async () => {} }, json: (r, code, o) => { out = { code, o }; }, readBody: async () => '{}' }); return out; })();
+  ok('with no read at all, the cap says so', noLast.code === 429, noLast);
   delete process.env.ANTHROPIC_API_KEY;
   const off = await call('POST', '/api/flow/patterns', {});
   ok('no assistant on the server says so', off.code === 503);
@@ -86,9 +100,12 @@ const READ = {
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
-  let posts = 0, mode = 'ok';
+  let posts = 0, mode = 'ok', lastBody = {};
   await p.route('**/api/flow/patterns**', (rt) => {
     if (mode === 'off') return rt.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'The assistant is not switched on for this app yet.' }) });
+    if (rt.request().method() === 'POST') lastBody = JSON.parse(rt.request().postData() || '{}');
+    if (mode === 'fail' && rt.request().method() === 'POST') { posts++; return rt.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Patterns could not be read just now.' }) }); }
+    if (mode === 'capped' && rt.request().method() === 'POST') { posts++; return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'done', cached: true, capped: true, patterns: Object.assign({}, X.parsePatterns(JSON.stringify(READ)), { generatedAt: new Date().toISOString() }) }) }); }
     if (rt.request().method() === 'POST') { posts++; return rt.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ ok: true, job: 'j' + posts }) }); }
     return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'done', patterns: Object.assign({}, X.parsePatterns(JSON.stringify(READ)), { generatedAt: new Date().toISOString() }) }) });
   });
@@ -113,6 +130,33 @@ const READ = {
   ok('after a reload the read is shown from the account, not asked again', posts === 1 && await p.evaluate(() => !!document.querySelector('#flow-td-habits .pt-head')), posts);
   await p.click('#flow-td-habits [data-pt="rewrite"]'); await p.waitForTimeout(3000);
   ok('Rewrite asks again', posts === 2, posts);
+
+  console.log('\n— from the read to a habit —');
+  const nx = await p.evaluate(() => [...document.querySelectorAll('#flow-td-habits .pt-next li')].map((li) => ({ t: li.querySelector('span').textContent, b: (li.querySelector('[data-pt="habit"]') || {}).textContent || '' })));
+  ok('everything under Do next can become a habit in one tap', nx.length === 3 && nx.every((x) => x.b === '+ habit'), nx);
+  const nHb = await p.evaluate(() => hbData.habits.length);
+  await p.click('#flow-td-habits .pt-next li:first-child [data-pt="habit"]'); await p.waitForTimeout(700);
+  ok('tapping it adds the habit', await p.evaluate(([t, n]) => hbData.habits.length === n + 1 && hbData.habits[hbData.habits.length - 1].name === t, [nx[0].t, nHb]));
+  ok('and it is ticked right there, under the read', await p.evaluate((t) => [...document.querySelectorAll('#flow-td-habits .pt-hb-b .flow-td-row.hb')].some((r) => r.textContent.includes(t)) && /✓ habit/.test(document.querySelector('#flow-td-habits .pt-next li:first-child').textContent), nx[0].t));
+  await p.evaluate(() => { hbData.habits = []; renderHabits(); renderToday(); }); await p.waitForTimeout(900);
+  const none = await p.evaluate(() => { const c = document.getElementById('flow-td-habits'); return { none: !!c.querySelector('.pt-hbnone'), form: !!c.querySelector('.pt-addhb input'), old: !!c.querySelector('.flow-td-empty') }; });
+  ok('with no habits the card says how to add one, and has a box for it — no trip to another page', none.none && none.form && !none.old, none);
+  if (!(await p.evaluate(() => document.querySelector('#flow-td-habits .pt-hb').classList.contains('open')))) await p.click('#flow-td-habits [data-pt="habits"]');
+  await p.fill('#flow-td-habits .pt-addhb input', 'Walk 20 minutes'); await p.press('#flow-td-habits .pt-addhb input', 'Enter'); await p.waitForTimeout(700);
+  ok('typing one in adds it', await p.evaluate(() => hbData.habits.length === 1 && hbData.habits[0].name === 'Walk 20 minutes' && !!document.querySelector('#flow-td-habits .pt-hb-b .flow-td-row.hb')));
+
+  console.log('\n— when the rewrites run out, or the read fails —');
+  mode = 'capped';
+  await p.click('#flow-td-habits [data-pt="rewrite"]'); await p.waitForTimeout(1500);
+  const cap = await p.evaluate(() => ({ head: !!document.querySelector('#flow-td-habits .pt-head'), err: (document.querySelector('#flow-td-habits .pt-err') || {}).textContent || '', retry: !!document.querySelector('#flow-td-habits [data-pt="retry"]') }));
+  ok('out of rewrites: the read stays, with a quiet note — not an error', cap.head && /No rewrites left/.test(cap.err) && !cap.retry, cap);
+  mode = 'fail';
+  await p.evaluate(async () => { await Flow.DB.set('flow:patterns', null); window.FlowPatterns.data = null; window.FlowPatterns.ensure(true); }); await p.waitForTimeout(1500);
+  ok('a failed read offers Try again', await p.evaluate(() => !!document.querySelector('#flow-td-habits [data-pt="retry"]')));
+  mode = 'ok'; lastBody = {};
+  await p.click('#flow-td-habits [data-pt="retry"]'); await p.waitForTimeout(3000);
+  ok('Try again asks for the day\'s read, not a paid rewrite', lastBody.refresh === false, lastBody);
+  ok('and the read is back', await p.evaluate(() => !!document.querySelector('#flow-td-habits .pt-head')));
   await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(800);
   ok('Simple shows the same card in its colours', await p.evaluate(() => { const a = document.querySelector('#flow-td-habits .pt-good .pt-area'); return !!a && getComputedStyle(a).backgroundColor === 'rgb(200, 242, 107)'; }));
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(500);
