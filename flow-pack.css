@@ -2635,6 +2635,13 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .rk
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks :is(a,.flow-link){color:var(--lk-lime-ink);text-decoration:underline}
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks-empty{color:rgba(21,25,10,.7)}
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .flow-chip{background:rgba(0,0,0,.1);color:var(--lk-lime-ink);border-color:transparent}
+/* The meeting folded under a Big Rock was still drawn in the dark theme's
+   white on the lime card — unreadable. Ink on lime, like the rock itself. */
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks :is(.td-meet,.td-meet-tg,.td-meet-people,.td-meet-acts small){color:rgba(21,25,10,.68)}
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body{background:rgba(255,255,255,.38);border-color:rgba(21,25,10,.14);color:var(--lk-lime-ink)}
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body h5{color:rgba(21,25,10,.62)}
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body :is(p,li,b,strong){color:var(--lk-lime-ink)}
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-ts{background:rgba(21,25,10,.12);color:var(--lk-lime-ink)}
 
 /* ---- every other section as a quiet card with a real heading ---- */
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-sec,.td-group){background:var(--lk-s1);border-radius:24px;padding:14px 16px 6px;margin:12px 0 0}
