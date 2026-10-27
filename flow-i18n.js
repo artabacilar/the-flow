@@ -99,7 +99,12 @@
   var CHROME = 'button,label,th,h1,h2,h3,h4,h5,h6,option,optgroup,summary,legend,' +
                'caption,nav,[role="button"],[role="tab"],[data-tab],.tab,.flow-btn,' +
                '.flow-sub,.flow-empty,.flow-chip,.fn-txt,.mg-lbl,.sw-sub,' +
-               '[class*="lbl"],[class*="label"],[data-i18n="on"]';
+               '[class*="lbl"],[class*="label"],[data-i18n="on"],' +
+               /* Simple's own furniture: card heads, kickers, pills, day
+                  headings, tile captions. One word each, and the app's. */
+               '.flow-td-head .l,.flow-td-head .c,.td-rocks-head .cnt,.lk-k,.lk-pill,.lk-next b,.lk-next small,' +
+               '.ah-day,.ah-tabs button,.ah-t small,.ah-sk,.fr-k,.plus-k,.ra-k,.rv-c span,.tg-t small,.rp-dur span,' +
+               '.flow-td-tile .k,.flow-td-tile .s,.pt-area,.pt-foot,.pt-hb-t,.fn-sub,.rk-meta';
 
   var ATTRS = ['placeholder', 'title', 'aria-label', 'aria-placeholder', 'alt', 'data-empty', 'data-ph'];
 

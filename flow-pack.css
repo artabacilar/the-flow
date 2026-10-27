@@ -3155,6 +3155,11 @@ html[data-flow-look="new"] #plusCard .flow-in{background:rgba(255,255,255,.45);c
 #flow-fr .fr-add{display:flex;gap:8px;margin:0 0 14px}
 #flow-fr .fr-add .flow-in{flex:1;min-width:0}
 #flow-fr .fr-rocks{display:flex;flex-direction:column;gap:10px;margin:0 0 14px}
+#flow-fr .fr-eg{margin:0 0 10px;padding-left:18px;font-size:14px;line-height:1.45}
+#flow-fr .fr-eg li{margin:2px 0}
+#flow-fr .fr-lbl{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(21,25,10,.62);margin:0 0 4px}
+#flow-fr .fr-rock{grid-template-areas:'l l' 'i s'}
+#flow-fr .fr-rock .fr-lbl{grid-area:l}#flow-fr .fr-rock input{grid-area:i}#flow-fr .fr-rock select{grid-area:s}
 #flow-fr .fr-rock{display:grid;grid-template-columns:1fr 140px;gap:8px}
 #flow-fr .fr-rock .flow-in{min-height:44px;font-size:16px}
 #flow-fr .fr-row{display:flex;justify-content:space-between;align-items:center;gap:10px}

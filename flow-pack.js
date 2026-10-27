@@ -10013,7 +10013,15 @@ window.FlowPlus = Plus;
 const FirstRun = {
   KEY: 'flow:firstrun',
   SUGGEST: ['Work', 'Health & Body', 'Money', 'Family', 'Relationships', 'Learning', 'Side project', 'Something creative', 'Home'],
-  EXAMPLES: { 'Work': 'Send the proposal to…', 'Health & Body': 'Train three times', 'Money': 'Pay the invoices by Friday', 'Family': 'Dinner with no phones', 'Relationships': 'Call someone I have not called', 'Learning': 'One chapter a day', 'Side project': 'Ship one small thing', 'Something creative': 'Two hours with the music', 'Home': 'Fix the thing I keep walking past' },
+  EXAMPLES: { 'Work': 'Send the proposal to Mehmet by Thursday', 'Health & Body': 'Train three times this week', 'Money': 'Pay the October invoices by Friday', 'Family': 'One dinner together, phones away', 'Relationships': 'Call the friend I keep meaning to call', 'Learning': 'Finish chapter 3 of the course', 'Side project': 'Put the first version online', 'Something creative': 'Two hours on the new track', 'Home': 'Fix the thing I keep walking past' },
+  EXAMPLES_TR: { 'Work': 'Teklifi perşembeye kadar Mehmet\'e gönder', 'Health & Body': 'Bu hafta üç antrenman', 'Money': 'Ekim faturalarını cumaya kadar öde', 'Family': 'Telefonsuz bir akşam yemeği', 'Relationships': 'Hep arayacağım dediğim arkadaşı ara', 'Learning': 'Kursun 3. bölümünü bitir', 'Side project': 'İlk sürümü yayına al', 'Something creative': 'Yeni parçaya iki saat', 'Home': 'Hep yanından geçtiğim şeyi tamir et' },
+  /* An example in the language the app is showing, for a role the app knows;
+     a role the person typed gets a general one. */
+  example(role) {
+    const tr = (typeof Lang !== 'undefined' && Lang.current === 'tr');
+    const map = tr ? FirstRun.EXAMPLES_TR : FirstRun.EXAMPLES;
+    return map[role] || (tr ? 'Bu hafta bitmesi gereken bir şey' : 'Something that must be finished this week');
+  },
   async due() {
     try {
       if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return false;
@@ -10049,7 +10057,9 @@ const FirstRun = {
         '<div class="fr-step" data-step="2" hidden>' +
           '<div class="fr-k">This week</div>' +
           '<h2 class="fr-h">Three Big Rocks.</h2>' +
-          '<p class="fr-sub">The few things that would make this week count. They go in first; everything else fits around them. One is enough to start.</p>' +
+          '<p class="fr-sub">Not a to-do list. The one, two or three things you would regret not finishing by Sunday — the kind that matter but get pushed aside by small urgent things.</p>' +
+          '<ul class="fr-eg"><li>Specific: “Send the proposal to Mehmet”, not “work on sales”.</li><li>Finishable this week: something that can be ticked off by Sunday.</li><li>Yours: something you do, not something you wait for.</li></ul>' +
+          '<p class="fr-sub">The grey text in each box is an example for that role. One is enough to start; the rest of the week fits around them.</p>' +
           '<div class="fr-rocks"></div>' +
           '<div class="fr-row"><button type="button" class="pt-link" data-fr="back">Back</button><button type="button" class="flow-btn primary" data-fr="done">Start my week</button></div>' +
         '</div>' +
@@ -10069,7 +10079,8 @@ const FirstRun = {
         const box = el.querySelector('.fr-rocks');
         box.innerHTML = [0, 1, 2].map((i) => {
           const role = roles[i % roles.length];
-          return '<div class="fr-rock"><input class="flow-in" maxlength="200" placeholder="' + esc(FirstRun.EXAMPLES[role] || 'Something that matters this week') + '" aria-label="Big Rock ' + (i + 1) + '">' +
+          const eg = FirstRun.example(role);
+          return '<div class="fr-rock"><label class="fr-lbl">' + (i === 0 ? 'Priority 1 — the most important' : i === 1 ? 'Priority 2' : 'Priority 3 (optional)') + '</label><input class="flow-in" maxlength="200" placeholder="' + esc(eg) + '" aria-label="Big Rock ' + (i + 1) + '">' +
             '<select class="flow-in" aria-label="Role for Big Rock ' + (i + 1) + '">' + roles.map((r) => '<option' + (r === role ? ' selected' : '') + '>' + esc(r) + '</option>').join('') + '</select></div>';
         }).join('');
         el.querySelector('[data-step="1"]').hidden = true; el.querySelector('[data-step="2"]').hidden = false;
