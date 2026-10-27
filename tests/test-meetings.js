@@ -202,6 +202,19 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
     });
     ok('a long timestamped bullet reads as text with a ▶ 29:22 chip, not raw markdown', !ph.raw && ph.ts === '▶ 29:22', ph);
     ok('open notes stay inside the card on a phone', ph.over <= 0 && ph.doc <= 0, ph);
+    /* In Simple the Big Rocks card is lime; the notes were still white on it. */
+    await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(900);
+    const lum = (c) => { const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(c); if (!m) return null; const a = m[4] == null ? 1 : +m[4]; const f = (v) => { v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const L = 0.2126 * f(+m[1]) + 0.7152 * f(+m[2]) + 0.0722 * f(+m[3]); return a < 1 ? L * a + 0.78 * (1 - a) : L; };
+    const sk = await p.evaluate(() => {
+      const row = document.querySelector('#today-feed .td-rock[data-rockid]:not([data-rockid="legacy1"])');
+      let tg = row && row.querySelector('.td-meet-tg'); if (!tg) { FlowMeetings.paint(); tg = row.querySelector('.td-meet-tg'); }
+      const body = row.querySelector('.td-meet-body'); if (body.hidden) tg.click();
+      const pick = (sel) => { const e = row.querySelector(sel); return e ? getComputedStyle(e).color : null; };
+      return { line: getComputedStyle(row.querySelector('.td-meet')).color, body: getComputedStyle(body).color, li: pick('.td-meet-body li'), h5: pick('.td-meet-body h5'), ts: pick('.td-ts'), card: getComputedStyle(row.closest('.td-rocks')).backgroundColor };
+    });
+    const dark = (c) => c && lum(c) !== null && lum(c) < 0.35;
+    ok('Simple: the meeting line and its notes are dark ink on the lime card, readable', dark(sk.line) && dark(sk.body) && dark(sk.li) && dark(sk.ts) && lum(sk.card) > 0.6, sk);
+    await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(600);
     await p.setViewportSize({ width: 1280, height: 900 });
 
     /* Nothing refreshes by itself: no timer, no button. A pull from the top
