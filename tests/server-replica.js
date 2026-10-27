@@ -19,6 +19,11 @@ function packVersion(){
 function shell(){
   if(SHELL) return SHELL;
   SHELL = fs.readFileSync(DASH_PATH,'utf8').split('__PACK_V__').join(packVersion());
+  /* Every suite signs the owner up fresh, which in the app is a first run —
+     roles, three Big Rocks — and that screen would sit on top of what the
+     other suites are looking at. They opt out here; the suites that test
+     the first run itself set FLOW_FIRSTRUN=1. */
+  if(!process.env.FLOW_FIRSTRUN) SHELL = SHELL.replace('<head>','<head><script>window.__flowSkipFirstRun=1</script>');
   return SHELL;
 }
 

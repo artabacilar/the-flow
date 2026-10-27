@@ -46,6 +46,17 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   ok('a reminder from Coming up reaches the phone at 18:00 their time', sent.length === 1 && sent[0].title === 'Pack the CDJs' && sent[0].thread === 'ahead', { t1, sent });
   await remind.tickUser(deps, 'u1', new Date('2026-10-27T15:02:00Z'));
   ok('once', sent.length === 1);
+  /* the evening check-in: on, at 21:00 their time */
+  store['ns:u1:flow:settings'] = JSON.stringify({ timezone: 'Europe/Istanbul', eveningCheck: true, eveningCheckAt: '21:00' });
+  await remind.tickUser(deps, 'u1', new Date('2026-10-27T17:30:00Z'));   // 20:30
+  ok('the evening check-in waits for its hour', sent.length === 1);
+  await remind.tickUser(deps, 'u1', new Date('2026-10-27T18:01:00Z'));   // 21:01
+  ok('and asks how the day went at 21:00', sent.length === 2 && /How did today go/.test(sent[1].title) && sent[1].thread === 'evening', sent[1]);
+  await remind.tickUser(deps, 'u1', new Date('2026-10-27T18:03:00Z'));
+  ok('once an evening', sent.length === 2);
+  store['ns:u1:flow:settings'] = JSON.stringify({ timezone: 'Europe/Istanbul' });
+  await remind.tickUser(deps, 'u1', new Date('2026-10-28T18:01:00Z'));
+  ok('off unless switched on', sent.length === 2);
 
   console.log('\n— the endpoint —');
   process.env.ANTHROPIC_API_KEY = 'test-key';

@@ -159,6 +159,12 @@ const READ = {
   ok('and the read is back', await p.evaluate(() => !!document.querySelector('#flow-td-habits .pt-head')));
   await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(800);
   ok('Simple shows the same card in its colours', await p.evaluate(() => { const a = document.querySelector('#flow-td-habits .pt-good .pt-area'); return !!a && getComputedStyle(a).backgroundColor === 'rgb(200, 242, 107)'; }));
+  ok('Simple: the read can be shared as a picture', await p.evaluate(() => !!document.querySelector('#flow-td-habits [data-pt="share"]')));
+  const shared = await p.evaluate(async () => { const got = []; navigator.share = async (d) => { got.push({ n: d.files.length, type: d.files[0].type, size: d.files[0].size, name: d.files[0].name }); }; navigator.canShare = () => true; await window.FlowPatterns.share(); return got; });
+  ok('the share sheet gets one PNG with the headline on it', shared.length === 1 && shared[0].type === 'image/png' && shared[0].size > 5000 && /patterns/.test(shared[0].name), shared);
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(800);
+  ok('Advanced: no Share — the card is as it was', await p.evaluate(() => !document.querySelector('#flow-td-habits [data-pt="share"]') && !!document.querySelector('#flow-td-habits [data-pt="rewrite"]')));
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); Flow.Nav.go('today'); }); await p.waitForTimeout(800);
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(500);
   ok('it fits a phone', await p.evaluate(() => { const c = document.getElementById('flow-td-habits'); return c.scrollWidth <= c.clientWidth + 2 && document.documentElement.scrollWidth <= innerWidth + 1; }));
 
