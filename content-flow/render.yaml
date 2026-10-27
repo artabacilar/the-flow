@@ -1,0 +1,18 @@
+# Render Blueprint — Content Flow as its own service.
+# In Render: New → Blueprint, this repo, root directory content-flow.
+services:
+  - type: web
+    name: content-flow
+    runtime: node
+    plan: starter
+    rootDir: content-flow
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CONTENT_MODEL
+        value: claude-sonnet-4-5
+      - key: CONTENT_HOURLY
+        value: "6"

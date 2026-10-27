@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Content Flow — profilden iki haftalık içerik planı</title>
+<meta name="description" content="Instagram profilinin ekran görüntüsünü bırak; 14 günlük Reel, carousel, post ve story planın kancalar, kareler ve şablonlarla hazır.">
+<style>
+:root{--bg:#0A0A0B;--s1:#141416;--s2:#1D1D20;--line:rgba(255,255,255,.08);--ink:#F4F4F2;--mute:#8E8E94;--dim:#5E5E64;--lime:#C8F26B;--lime-ink:#15190A;--coral:#FF6B3D;--coral-ink:#1F0A03;--sky:#7FD3FF;--sky-ink:#071A26;--rose:#F7A8D8;--rose-ink:#2A0B1F;--r:22px}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,"SF Pro Text","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit}button{font:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 18px 80px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0 18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:18px}
+.brand svg{width:34px;height:24px}
+.brand small{display:block;font-weight:500;color:var(--mute);font-size:12px;letter-spacing:0}
+.lang{display:flex;background:var(--s1);border:1px solid var(--line);border-radius:999px;padding:3px}
+.lang button{background:none;border:0;color:var(--mute);padding:6px 12px;border-radius:999px;cursor:pointer;font-weight:700;font-size:13px}
+.lang button.on{background:var(--ink);color:var(--bg)}
+h1{font-size:clamp(30px,5vw,48px);line-height:1.05;letter-spacing:-.03em;margin:8px 0 10px;max-width:14em}
+.lead{color:var(--mute);font-size:17px;max-width:40em;margin:0 0 22px}
+.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:start}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+.k{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:0 0 8px}
+.drop{border:2px dashed rgba(255,255,255,.18);border-radius:18px;padding:26px 16px;text-align:center;cursor:pointer;transition:.15s;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden}
+.drop.over{border-color:var(--lime);background:rgba(200,242,107,.06)}
+.drop img{max-height:360px;max-width:100%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.drop .big{font-size:18px;font-weight:700}.drop .sm{color:var(--mute);font-size:13px}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.chip{border:1.5px solid var(--line);background:var(--s2);color:var(--ink);border-radius:999px;padding:9px 14px;font-weight:650;font-size:14px;cursor:pointer;min-height:40px}
+.chip.on{background:var(--lime);border-color:var(--lime);color:var(--lime-ink)}
+textarea{width:100%;background:var(--s2);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:10px 12px;font:inherit;font-size:14px;resize:vertical;min-height:64px}
+.btn{border:0;border-radius:999px;padding:14px 22px;font-weight:800;font-size:16px;cursor:pointer;background:var(--coral);color:var(--coral-ink);min-height:50px}
+.btn.ghost{background:var(--s2);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.priv{color:var(--dim);font-size:12px;margin-top:10px}
+.err{background:rgba(255,107,61,.12);border:1px solid rgba(255,107,61,.35);color:#ffb59d;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:14px}
+/* loading */
+.load{display:none;align-items:center;gap:14px;padding:18px;background:var(--s1);border-radius:var(--r);margin-top:18px}
+.load.on{display:flex}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:var(--lime);animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* results */
+#out{display:none;margin-top:26px}#out.on{display:block}
+.prof{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+@media(max-width:820px){.prof{grid-template-columns:1fr}}
+.prof h2{margin:0 0 4px;font-size:24px;letter-spacing:-.02em}
+.prof .sub{color:var(--mute);margin:0 0 12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.two ul{margin:0;padding-left:18px;font-size:14px;line-height:1.5}
+.pill{display:inline-block;background:var(--s2);border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;margin:0 6px 6px 0}
+.bars{margin-top:6px}.bar{display:grid;grid-template-columns:150px 1fr 44px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar i{display:block;height:10px;border-radius:0 5px 5px 0;background:var(--lime)}.bar b{text-align:right}
+.counts{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 10px}
+.cnt{border-radius:999px;padding:8px 14px;font-weight:800;font-size:14px}
+.t-reel{background:var(--coral);color:var(--coral-ink)}.t-carousel{background:var(--lime);color:var(--lime-ink)}.t-post{background:var(--sky);color:var(--sky-ink)}.t-story{background:var(--rose);color:var(--rose-ink)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.filters button{background:var(--s1);border:1px solid var(--line);color:var(--mute);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer}
+.filters button.on{color:var(--ink);border-color:var(--ink)}
+.week{margin:0 0 8px}.week .k{margin-top:14px}
+.board{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+@media(max-width:1000px){.board{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:640px){.board{grid-template-columns:1fr 1fr}}
+.day{background:var(--s1);border:1px solid var(--line);border-radius:18px;padding:12px;min-height:168px;display:flex;flex-direction:column;gap:6px;cursor:pointer;text-align:left;color:var(--ink);transition:.12s}
+.day:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.2)}
+.day.hide{display:none}
+.day .dn{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);display:flex;justify-content:space-between}
+.day .tp{display:inline-block;border-radius:8px;padding:3px 8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;align-self:flex-start}
+.day .tt{font-weight:750;font-size:14px;line-height:1.3}
+.day .hk{color:var(--mute);font-size:12.5px;line-height:1.35;margin-top:auto}
+.day .gl{font-size:11px;color:var(--dim);font-weight:700}
+/* detail */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;z-index:50;overflow:auto;padding:20px}
+.sheet.on{display:block}
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:24px;max-width:860px;margin:0 auto;padding:22px}
+.panel .x{float:right;background:var(--s2);border:0;color:var(--ink);width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:20px}
+.panel h3{margin:0 0 4px;font-size:26px;letter-spacing:-.02em}
+.hook{background:var(--lime);color:var(--lime-ink);border-radius:14px;padding:12px 14px;font-weight:800;font-size:18px;margin:10px 0 14px}
+.hook small{display:block;font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.65;margin-bottom:3px}
+.frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 14px}
+.fr{background:var(--s2);border-radius:14px;padding:10px;min-height:120px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--line)}
+.fr .ft{font-size:11px;font-weight:800;color:var(--coral);letter-spacing:.08em}
+.fr .fx{font-size:13.5px;line-height:1.35}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr}}
+.cap{background:var(--s2);border-radius:14px;padding:12px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.tags span{display:inline-block;color:var(--sky);margin-right:8px;font-size:13px}
+.how li{font-size:14px;margin:3px 0}
+.copy{background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}
+/* template mockups */
+.tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-top:10px}
+.tpl{background:var(--s1);border:1px solid var(--line);border-radius:18px;padding:12px}
+.tpl .nm{font-weight:800;margin:8px 0 2px}.tpl .wh{color:var(--mute);font-size:12.5px;margin:0 0 6px}.tpl ol{margin:0;padding-left:18px;font-size:12.5px;color:var(--ink)}
+.ph{aspect-ratio:9/16;max-height:230px;width:100%;border-radius:14px;background:#0f0f11;border:1px solid rgba(255,255,255,.12);position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:10px}
+.ph .cap2{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.55);border-radius:8px;padding:5px 7px;font-size:10px;color:#fff}
+.ph .big{font-weight:900;font-size:18px;letter-spacing:-.02em;text-align:center;line-height:1.1}
+.ph .half{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:100%;height:60%}
+.ph .half div{border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px}
+.ph .list div{font-size:11px;font-weight:700;margin:3px 0;display:flex;gap:6px;align-items:center}
+.ph .list b{background:var(--lime);color:var(--lime-ink);border-radius:6px;width:18px;height:18px;display:inline-grid;place-items:center;font-size:11px}
+.ph .face{width:54px;height:54px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#f1c9a7 0 38%,transparent 40%),#2a2a2e;border:2px solid rgba(255,255,255,.3)}
+.ph .pollb{width:85%;background:var(--s2);border-radius:8px;padding:5px 8px;font-size:11px;font-weight:700;position:relative;overflow:hidden}
+.ph .pollb i{position:absolute;left:0;top:0;bottom:0;background:rgba(200,242,107,.35)}
+.ph .clock{display:flex;gap:4px;width:90%}.ph .clock div{flex:1;height:28px;border-radius:6px;background:var(--s2);font-size:9px;display:grid;place-items:center;color:var(--mute)}
+.ph .arrow{font-size:26px;color:var(--coral)}
+.ph .q{background:#fff;color:#111;border-radius:10px;padding:8px;font-size:11px;font-weight:800;width:85%;text-align:center}
+.tpl-mini{margin:14px 0 4px}
+.tpl-mini .ph{max-height:200px;width:120px}
+@media print{body{background:#fff;color:#000}.card,.day,.panel,.tpl,.fr,.cap{background:#fff;border-color:#ccc;color:#000}header,.lang,.btn,.filters,.copy,#setup{display:none!important}#out{display:block!important}.board{grid-template-columns:repeat(7,1fr)}.day{break-inside:avoid}}
+footer{color:var(--dim);font-size:12px;margin-top:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand"><svg viewBox="0 0 200 200"><path d="M32 100 q 34 -46 68 0 t 68 0" fill="none" stroke="#C8F26B" stroke-width="18" stroke-linecap="round"/><circle cx="66" cy="77" r="14" fill="#FF6B3D"/></svg><span>Content Flow<small data-t="brand.sub">Instagram için iki haftalık plan</small></span></div>
+  <div class="lang" role="tablist"><button type="button" data-lang="tr" class="on">TR</button><button type="button" data-lang="en">EN</button></div>
+</header>
+
+<section id="setup">
+  <h1 data-t="h1">Profilini bırak. İki haftalık içerik planın hazır.</h1>
+  <p class="lead" data-t="lead">Instagram profilinin bir ekran görüntüsü yeter. Asistan biyografini, son gönderilerini ve görsel dilini okur; 14 gün için hangi gün Reel, hangi gün carousel, her birinin kancası, kareleri, açıklaması ve nasıl çekileceğini yazar.</p>
+  <div class="grid2">
+    <div class="card">
+      <p class="k" data-t="k.shot">1 · Ekran görüntüsü</p>
+      <div class="drop" id="drop">
+        <input type="file" id="file" accept="image/png,image/jpeg,image/webp">
+        <div id="dropIn"><div class="big" data-t="drop.big">Profil ekran görüntüsünü buraya bırak</div><div class="sm" data-t="drop.sm">ya da dokun, ya da ⌘V ile yapıştır · PNG / JPG</div></div>
+      </div>
+      <p class="priv" data-t="priv">Görsel yalnızca planı yazmak için asistana gider; hiçbir yerde saklanmaz.</p>
+    </div>
+    <div class="card">
+      <p class="k" data-t="k.goal">2 · Bu iki haftada ne istiyorsun?</p>
+      <div class="chips" id="goal">
+        <button type="button" class="chip on" data-v="grow" data-t="g.grow">Takipçi büyütmek</button>
+        <button type="button" class="chip" data-v="sell" data-t="g.sell">Satış / müşteri</button>
+        <button type="button" class="chip" data-v="brand" data-t="g.brand">Marka bilinirliği</button>
+        <button type="button" class="chip" data-v="community" data-t="g.community">Topluluk / etkileşim</button>
+      </div>
+      <p class="k" data-t="k.tone">3 · Ton</p>
+      <div class="chips" id="tone">
+        <button type="button" class="chip on" data-v="warm" data-t="t.warm">Samimi</button>
+        <button type="button" class="chip" data-v="pro" data-t="t.pro">Profesyonel</button>
+        <button type="button" class="chip" data-v="fun" data-t="t.fun">Eğlenceli</button>
+        <button type="button" class="chip" data-v="bold" data-t="t.bold">İddialı</button>
+      </div>
+      <p class="k" data-t="k.notes">4 · Not (isteğe bağlı)</p>
+      <textarea id="notes" maxlength="400" data-ph="notes.ph" placeholder="Örn. Kasım'da yeni koleksiyon çıkıyor; yüzümü göstermek istemiyorum; haftada en fazla 3 video."></textarea>
+      <div class="row" style="margin-top:14px">
+        <button type="button" class="btn" id="go" data-t="go">Planı oluştur</button>
+        <button type="button" class="btn ghost" id="demo" data-t="demo">Örnek planı gör</button>
+      </div>
+      <div class="err" id="err" hidden></div>
+    </div>
+  </div>
+  <div class="load" id="load"><div class="spin"></div><div><b id="loadT" data-t="load.1">Profil okunuyor…</b><div class="sm" style="color:var(--mute);font-size:13px" data-t="load.sub">30–60 saniye sürer. Sayfayı kapatma.</div></div></div>
+</section>
+
+<section id="out">
+  <div class="prof">
+    <div class="card">
+      <p class="k" data-t="k.read">Profil okuması</p>
+      <h2 id="pHandle"></h2>
+      <p class="sub" id="pNiche"></p>
+      <p id="pAud" style="font-size:14px"></p>
+      <div class="two">
+        <div><p class="k" data-t="k.strong">Güçlü yanlar</p><ul id="pStr"></ul></div>
+        <div><p class="k" data-t="k.gaps">Eksikler</p><ul id="pGaps"></ul></div>
+      </div>
+      <p class="k" style="margin-top:12px" data-t="k.cadence">Önerilen tempo</p><p id="pCad" style="font-size:14px;margin:0"></p>
+    </div>
+    <div class="card">
+      <p class="k" data-t="k.pillars">İçerik sütunları</p>
+      <div class="bars" id="pillars"></div>
+      <p class="k" style="margin-top:14px" data-t="k.mix">14 günün karışımı</p>
+      <div class="counts" id="counts" style="margin-top:6px"></div>
+      <div class="row"><button type="button" class="copy" id="print" data-t="print">Yazdır / PDF</button><button type="button" class="copy" id="copyAll" data-t="copyAll">Takvimi metin olarak kopyala</button><button type="button" class="copy" id="again" data-t="again">Yeni profil</button></div>
+    </div>
+  </div>
+
+  <div class="filters" id="filters" style="margin-top:18px">
+    <button type="button" class="on" data-f="all" data-t="f.all">Hepsi</button>
+    <button type="button" data-f="reel">Reel</button><button type="button" data-f="carousel">Carousel</button><button type="button" data-f="post">Post</button><button type="button" data-f="story">Story</button>
+    <span style="width:8px"></span>
+    <button type="button" data-f="teach" data-t="f.teach">Eğitici</button><button type="button" data-f="entertain" data-t="f.entertain">Eğlendirici</button><button type="button" data-f="sell" data-t="f.sell">Satış</button><button type="button" data-f="connect" data-t="f.connect">Topluluk</button>
+  </div>
+  <div class="week"><p class="k" data-t="w1">1. hafta</p><div class="board" id="w1"></div></div>
+  <div class="week"><p class="k" data-t="w2">2. hafta</p><div class="board" id="w2"></div></div>
+
+  <div class="card" style="margin-top:22px">
+    <p class="k" data-t="k.tpl">Şablonlar — bu planda kullanılanlar</p>
+    <div class="tpls" id="tpls"></div>
+  </div>
+</section>
+
+<div class="sheet" id="sheet"><div class="panel" id="panel"></div></div>
+<footer data-t="foot">Content Flow — The Flow ailesinden. Görseller saklanmaz; plan yalnızca bu sayfada yaşar, yazdırarak ya da kopyalayarak sakla.</footer>
+</div>
+
+<script>
+/* ---------------------------------------------------------------- words */
+const T = {
+  tr: { 'brand.sub': 'Instagram için iki haftalık plan', h1: 'Profilini bırak. İki haftalık içerik planın hazır.', lead: 'Instagram profilinin bir ekran görüntüsü yeter. Asistan biyografini, son gönderilerini ve görsel dilini okur; 14 gün için hangi gün Reel, hangi gün carousel, her birinin kancası, kareleri, açıklaması ve nasıl çekileceğini yazar.', 'k.shot': '1 · Ekran görüntüsü', 'drop.big': 'Profil ekran görüntüsünü buraya bırak', 'drop.sm': 'ya da dokun, ya da ⌘V ile yapıştır · PNG / JPG', priv: 'Görsel yalnızca planı yazmak için asistana gider; hiçbir yerde saklanmaz.', 'k.goal': '2 · Bu iki haftada ne istiyorsun?', 'g.grow': 'Takipçi büyütmek', 'g.sell': 'Satış / müşteri', 'g.brand': 'Marka bilinirliği', 'g.community': 'Topluluk / etkileşim', 'k.tone': '3 · Ton', 't.warm': 'Samimi', 't.pro': 'Profesyonel', 't.fun': 'Eğlenceli', 't.bold': 'İddialı', 'k.notes': '4 · Not (isteğe bağlı)', 'notes.ph': 'Örn. Kasım\'da yeni koleksiyon çıkıyor; yüzümü göstermek istemiyorum; haftada en fazla 3 video.', go: 'Planı oluştur', demo: 'Örnek planı gör', 'load.1': 'Profil okunuyor…', 'load.2': 'Son gönderilere bakılıyor…', 'load.3': 'İki hafta planlanıyor…', 'load.4': 'Kancalar yazılıyor…', 'load.sub': '30–60 saniye sürer. Sayfayı kapatma.', 'k.read': 'Profil okuması', 'k.strong': 'Güçlü yanlar', 'k.gaps': 'Eksikler', 'k.cadence': 'Önerilen tempo', 'k.pillars': 'İçerik sütunları', 'k.mix': '14 günün karışımı', print: 'Yazdır / PDF', copyAll: 'Takvimi metin olarak kopyala', again: 'Yeni profil', 'f.all': 'Hepsi', 'f.teach': 'Eğitici', 'f.entertain': 'Eğlendirici', 'f.sell': 'Satış', 'f.connect': 'Topluluk', w1: '1. hafta', w2: '2. hafta', 'k.tpl': 'Şablonlar — bu planda kullanılanlar', foot: 'Content Flow — The Flow ailesinden. Görseller saklanmaz; plan yalnızca bu sayfada yaşar, yazdırarak ya da kopyalayarak sakla.',
+    day: 'Gün', hook: 'Kanca — ilk 3 saniye', frames: 'Kareler', caption: 'Açıklama', cta: 'Çağrı', tags: 'Etiketler', how: 'Nasıl çekilir', time: 'En iyi saat', tpl: 'Şablon', copied: 'Kopyalandı ✓', copyCap: 'Açıklamayı kopyala', noImg: 'Önce bir ekran görüntüsü bırak.', fail: 'Olmadı. Bir daha dene.', reel: 'Reel', carousel: 'Carousel', post: 'Post', story: 'Story', teach: 'Eğitici', entertain: 'Eğlendirici', sell: 'Satış', connect: 'Topluluk', followers: 'takipçi' },
+  en: { 'brand.sub': 'Two weeks of Instagram, planned', h1: 'Drop your profile. Two weeks of content, planned.', lead: 'One screenshot of an Instagram profile is enough. The assistant reads the bio, the recent posts and the look, then writes 14 days: which day is a Reel, which a carousel, each one\'s hook, frames, caption and how to shoot it.', 'k.shot': '1 · Screenshot', 'drop.big': 'Drop the profile screenshot here', 'drop.sm': 'or tap, or paste with ⌘V · PNG / JPG', priv: 'The picture goes to the assistant once, to write the plan; it is stored nowhere.', 'k.goal': '2 · What do you want from these two weeks?', 'g.grow': 'Grow followers', 'g.sell': 'Sales / clients', 'g.brand': 'Brand awareness', 'g.community': 'Community / engagement', 'k.tone': '3 · Tone', 't.warm': 'Warm', 't.pro': 'Professional', 't.fun': 'Playful', 't.bold': 'Bold', 'k.notes': '4 · Notes (optional)', 'notes.ph': 'e.g. New collection in November; I don\'t want to show my face; max 3 videos a week.', go: 'Make the plan', demo: 'See a sample plan', 'load.1': 'Reading the profile…', 'load.2': 'Looking at recent posts…', 'load.3': 'Planning two weeks…', 'load.4': 'Writing the hooks…', 'load.sub': 'Takes 30–60 seconds. Keep the page open.', 'k.read': 'Profile read', 'k.strong': 'Strengths', 'k.gaps': 'Gaps', 'k.cadence': 'Suggested cadence', 'k.pillars': 'Content pillars', 'k.mix': 'The 14-day mix', print: 'Print / PDF', copyAll: 'Copy the calendar as text', again: 'New profile', 'f.all': 'All', 'f.teach': 'Teach', 'f.entertain': 'Entertain', 'f.sell': 'Sell', 'f.connect': 'Connect', w1: 'Week 1', w2: 'Week 2', 'k.tpl': 'Templates — the ones this plan uses', foot: 'Content Flow — from the makers of The Flow. Pictures are not stored; the plan lives on this page only — print or copy it to keep it.',
+    day: 'Day', hook: 'Hook — the first 3 seconds', frames: 'Frames', caption: 'Caption', cta: 'Call to action', tags: 'Hashtags', how: 'How to shoot it', time: 'Best time', tpl: 'Template', copied: 'Copied ✓', copyCap: 'Copy caption', noImg: 'Drop a screenshot first.', fail: 'That did not work. Try again.', reel: 'Reel', carousel: 'Carousel', post: 'Post', story: 'Story', teach: 'Teach', entertain: 'Entertain', sell: 'Sell', connect: 'Connect', followers: 'followers' }
+};
+let lang = (localStorage.getItem('cf:lang') || (navigator.language || 'tr').slice(0, 2)) === 'en' ? 'en' : 'tr';
+const t = (k) => (T[lang][k] != null ? T[lang][k] : (T.tr[k] || k));
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-t]').forEach((e) => { e.textContent = t(e.getAttribute('data-t')); });
+  document.querySelectorAll('[data-ph]').forEach((e) => { e.placeholder = t(e.getAttribute('data-ph')); });
+  document.querySelectorAll('[data-lang]').forEach((b) => b.classList.toggle('on', b.getAttribute('data-lang') === lang));
+  if (PLAN && PLAN.__sample) PLAN = SAMPLE[lang];
+  if (PLAN) render(PLAN);
+}
+document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { lang = b.getAttribute('data-lang'); localStorage.setItem('cf:lang', lang); applyLang(); }));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------------------------------------------------------------- input */
+let IMAGE = null, PLAN = null;
+const drop = document.getElementById('drop'), file = document.getElementById('file'), dropIn = document.getElementById('dropIn');
+function take(f) {
+  if (!f || !/^image\/(png|jpe?g|webp)$/.test(f.type)) return;
+  const rd = new FileReader();
+  rd.onload = () => { IMAGE = rd.result; dropIn.innerHTML = '<img alt="" src="' + IMAGE + '">'; };
+  rd.readAsDataURL(f);
+}
+file.addEventListener('change', () => take(file.files[0]));
+['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; take(f); });
+document.addEventListener('paste', (e) => { const it = [...(e.clipboardData.items || [])].find((x) => x.type.indexOf('image/') === 0); if (it) take(it.getAsFile()); });
+document.querySelectorAll('#goal .chip, #tone .chip').forEach((c) => c.addEventListener('click', () => { c.parentNode.querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); }));
+const pick = (id) => (document.querySelector('#' + id + ' .chip.on') || {}).getAttribute && document.querySelector('#' + id + ' .chip.on').getAttribute('data-v');
+
+/* ---------------------------------------------------------------- make */
+const err = document.getElementById('err'), load = document.getElementById('load'), go = document.getElementById('go');
+let loadT = null;
+document.getElementById('go').addEventListener('click', async () => {
+  err.hidden = true;
+  if (!IMAGE) { err.textContent = t('noImg'); err.hidden = false; return; }
+  go.disabled = true; load.classList.add('on');
+  let i = 1; document.getElementById('loadT').textContent = t('load.1');
+  loadT = setInterval(() => { i = i % 4 + 1; document.getElementById('loadT').textContent = t('load.' + i); }, 9000);
+  try {
+    const r = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: IMAGE, lang, brief: { goal: pick('goal'), tone: pick('tone'), notes: document.getElementById('notes').value } }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.plan) throw new Error(j.error || t('fail'));
+    PLAN = j.plan; render(PLAN);
+    document.getElementById('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { err.textContent = e.message || t('fail'); err.hidden = false; }
+  clearInterval(loadT); load.classList.remove('on'); go.disabled = false;
+});
+document.getElementById('demo').addEventListener('click', () => { PLAN = SAMPLE[lang]; render(PLAN); document.getElementById('out').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+document.getElementById('again').addEventListener('click', () => { PLAN = null; IMAGE = null; dropIn.innerHTML = '<div class="big">' + esc(t('drop.big')) + '</div><div class="sm">' + esc(t('drop.sm')) + '</div>'; document.getElementById('out').classList.remove('on'); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+document.getElementById('print').addEventListener('click', () => window.print());
+document.getElementById('copyAll').addEventListener('click', async () => {
+  if (!PLAN) return;
+  const txt = PLAN.days.map((d) => t('day') + ' ' + d.d + ' · ' + t(d.type) + ' · ' + t(d.goal) + ' · ' + d.time + '\n' + d.title + '\n' + t('hook') + ': ' + d.hook + '\n' + (d.frames || []).map((f) => '  ' + f.t + ' ' + f.text).join('\n') + '\n' + t('caption') + ': ' + d.caption + '\n' + t('cta') + ': ' + d.cta + '\n' + (d.hashtags || []).join(' ')).join('\n\n');
+  try { await navigator.clipboard.writeText(txt); toast(t('copied')); } catch (e) {}
+});
+function toast(m) { let el = document.getElementById('toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;font-size:14px;z-index:99'; document.body.appendChild(el); } el.textContent = m; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = 'none'; }, 1800); }
+
+/* ---------------------------------------------------------------- draw */
+const DN = { tr: ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'], en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] };
+function render(p) {
+  document.getElementById('out').classList.add('on');
+  document.getElementById('pHandle').textContent = (p.profile.handle ? '@' + p.profile.handle.replace(/^@/, '') : '') + (p.profile.followers ? ' · ' + p.profile.followers + ' ' + t('followers') : '');
+  document.getElementById('pNiche').textContent = [p.profile.niche, p.profile.tone].filter(Boolean).join(' · ');
+  document.getElementById('pAud').textContent = p.profile.audience || '';
+  document.getElementById('pStr').innerHTML = (p.profile.strengths || []).map((s) => '<li>' + esc(s) + '</li>').join('');
+  document.getElementById('pGaps').innerHTML = (p.profile.gaps || []).map((s) => '<li>' + esc(s) + '</li>').join('');
+  document.getElementById('pCad').textContent = p.profile.cadence || '';
+  const mx = Math.max(1, ...(p.pillars || []).map((x) => x.share));
+  document.getElementById('pillars').innerHTML = (p.pillars || []).map((x) => '<div class="bar"><span>' + esc(x.name) + '</span><span><i style="width:' + Math.round(x.share / mx * 100) + '%"></i></span><b>' + x.share + '%</b></div>').join('');
+  const cnt = {}; p.days.forEach((d) => { cnt[d.type] = (cnt[d.type] || 0) + 1; });
+  document.getElementById('counts').innerHTML = ['reel', 'carousel', 'post', 'story'].filter((k) => cnt[k]).map((k) => '<span class="cnt t-' + k + '">' + cnt[k] + ' ' + esc(t(k)) + '</span>').join('');
+  const card = (d) => '<button type="button" class="day" data-i="' + (d.d - 1) + '" data-type="' + d.type + '" data-goal="' + d.goal + '"><span class="dn"><span>' + esc(DN[lang][(d.d - 1) % 7]) + ' · ' + d.d + '</span><span>' + esc(d.time) + '</span></span><span class="tp t-' + d.type + '">' + esc(t(d.type)) + '</span><span class="tt">' + esc(d.title) + '</span><span class="hk">“' + esc(d.hook) + '”</span><span class="gl">' + esc(t(d.goal)) + '</span></button>';
+  document.getElementById('w1').innerHTML = p.days.slice(0, 7).map(card).join('');
+  document.getElementById('w2').innerHTML = p.days.slice(7, 14).map(card).join('');
+  document.getElementById('tpls').innerHTML = (p.templates || []).map((x) => '<div class="tpl">' + mock(x.id) + '<div class="nm">' + esc(x.name) + '</div><div class="wh">' + esc(x.when) + '</div><ol>' + (x.steps || []).map((s) => '<li>' + esc(s) + '</li>').join('') + '</ol></div>').join('');
+  applyFilter();
+}
+let FILTER = 'all';
+function applyFilter() { document.querySelectorAll('.day').forEach((d) => { d.classList.toggle('hide', !(FILTER === 'all' || d.getAttribute('data-type') === FILTER || d.getAttribute('data-goal') === FILTER)); }); }
+document.getElementById('filters').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (!b) return; FILTER = b.getAttribute('data-f'); document.querySelectorAll('#filters button').forEach((x) => x.classList.toggle('on', x === b)); applyFilter(); });
+document.addEventListener('click', (e) => { const d = e.target.closest('.day'); if (d && PLAN) open(PLAN.days[+d.getAttribute('data-i')]); });
+function open(d) {
+  const sheet = document.getElementById('sheet'), panel = document.getElementById('panel');
+  panel.innerHTML = '<button type="button" class="x" aria-label="Close">×</button>' +
+    '<span class="tp t-' + d.type + '" style="display:inline-block;border-radius:8px;padding:3px 8px;font-size:11px;font-weight:800;text-transform:uppercase">' + esc(t(d.type)) + '</span> <span style="color:var(--mute);font-size:13px;font-weight:700">' + esc(t('day')) + ' ' + d.d + ' · ' + esc(t(d.goal)) + ' · ' + esc(t('time')) + ' ' + esc(d.time) + '</span>' +
+    '<h3>' + esc(d.title) + '</h3><p style="color:var(--mute);margin:0 0 6px">' + esc(d.idea) + '</p>' +
+    '<div class="hook"><small>' + esc(t('hook')) + '</small>' + esc(d.hook) + '</div>' +
+    (d.frames && d.frames.length ? '<p class="k">' + esc(t('frames')) + '</p><div class="frames">' + d.frames.map((f) => '<div class="fr"><span class="ft">' + esc(f.t) + '</span><span class="fx">' + esc(f.text) + '</span></div>').join('') + '</div>' : '') +
+    '<div class="two-col"><div><p class="k">' + esc(t('caption')) + ' <button type="button" class="copy" data-copy="cap" style="margin-left:8px">' + esc(t('copyCap')) + '</button></p><div class="cap" id="capTx">' + esc(d.caption) + (d.cta ? '\n\n' + esc(d.cta) : '') + '</div><p class="tags" style="margin:8px 0 0">' + (d.hashtags || []).map((h) => '<span>' + esc(h) + '</span>').join('') + '</p></div>' +
+    '<div><p class="k">' + esc(t('how')) + '</p><ul class="how">' + (d.howto || []).map((h) => '<li>' + esc(h) + '</li>').join('') + '</ul><p class="k" style="margin-top:12px">' + esc(t('tpl')) + ' · ' + esc(tplName(d.template)) + '</p><div class="tpl-mini">' + mock(d.template) + '</div></div></div>';
+  sheet.classList.add('on');
+  panel.querySelector('.x').onclick = () => sheet.classList.remove('on');
+  panel.querySelector('[data-copy]').onclick = async () => { try { await navigator.clipboard.writeText(document.getElementById('capTx').textContent); toast(t('copied')); } catch (e) {} };
+}
+document.getElementById('sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') e.target.classList.remove('on'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.getElementById('sheet').classList.remove('on'); });
+const TPL = { tr: { 'before-after': 'Önce / Sonra', listicle: '3 madde', 'talking-head': 'Kameraya konuş', bts: 'Kamera arkası', myth: 'Mit / Gerçek', tutorial: 'Adım adım', qa: 'Soru-cevap', poll: 'Anket', 'day-in-life': 'Bir günüm', transformation: 'Dönüşüm' }, en: { 'before-after': 'Before / After', listicle: '3 things', 'talking-head': 'Talking head', bts: 'Behind the scenes', myth: 'Myth / Fact', tutorial: 'Step by step', qa: 'Q & A', poll: 'Poll', 'day-in-life': 'A day in the life', transformation: 'Transformation' } };
+const tplName = (id) => (TPL[lang][id] || id);
+function mock(id) {
+  const tr = lang === 'tr';
+  const cap = (s) => '<div class="cap2">' + esc(s) + '</div>';
+  switch (id) {
+    case 'before-after': return '<div class="ph"><div class="half"><div style="background:#2a2a2e;color:#aaa">' + (tr ? 'ÖNCE' : 'BEFORE') + '</div><div style="background:var(--lime);color:var(--lime-ink)">' + (tr ? 'SONRA' : 'AFTER') + '</div></div>' + cap(tr ? '“3 haftada ne değişti”' : '“what changed in 3 weeks”') + '</div>';
+    case 'listicle': return '<div class="ph"><div class="big">' + (tr ? '3 hata' : '3 mistakes') + '</div><div class="list"><div><b>1</b> ………</div><div><b>2</b> ………</div><div><b>3</b> ………</div></div>' + cap(tr ? 'her slayt bir madde' : 'one slide per point') + '</div>';
+    case 'talking-head': return '<div class="ph"><div class="face"></div><div class="big" style="font-size:13px">' + (tr ? 'kanca ekranda' : 'hook on screen') + '</div>' + cap(tr ? 'yüz · altyazı · 20 sn' : 'face · captions · 20 s') + '</div>';
+    case 'bts': return '<div class="ph"><div style="font-size:34px">🎬</div><div class="big" style="font-size:13px">' + (tr ? 'kamera arkası' : 'behind the scenes') + '</div>' + cap(tr ? 'ham, kurgusuz, dürüst' : 'raw, uncut, honest') + '</div>';
+    case 'myth': return '<div class="ph"><div class="half" style="height:50%"><div style="background:#3a1f1f;color:#ff9b9b">' + (tr ? 'MİT' : 'MYTH') + '</div><div style="background:var(--lime);color:var(--lime-ink)">' + (tr ? 'GERÇEK' : 'FACT') + '</div></div>' + cap(tr ? 'yanlış bilineni düzelt' : 'fix what people get wrong') + '</div>';
+    case 'tutorial': return '<div class="ph"><div class="list"><div><b>1</b> ' + (tr ? 'hazırla' : 'prepare') + '</div><div><b>2</b> ' + (tr ? 'uygula' : 'apply') + '</div><div><b>3</b> ' + (tr ? 'sonuç' : 'result') + '</div></div>' + cap(tr ? 'eller + ürün, tepeden' : 'hands + product, top-down') + '</div>';
+    case 'qa': return '<div class="ph"><div class="q">' + (tr ? '“Bunu nasıl yapıyorsun?”' : '“How do you do this?”') + '</div><div class="big" style="font-size:12px;color:var(--mute)">' + (tr ? 'cevap · 15 sn' : 'answer · 15 s') + '</div>' + cap(tr ? 'soru kutusundan gerçek soru' : 'a real question from the box') + '</div>';
+    case 'poll': return '<div class="ph"><div class="big" style="font-size:13px">' + (tr ? 'Hangisi?' : 'Which one?') + '</div><div class="pollb"><i style="width:62%"></i>A · 62%</div><div class="pollb"><i style="width:38%"></i>B · 38%</div>' + cap(tr ? 'story · 2 seçenek' : 'story · 2 options') + '</div>';
+    case 'day-in-life': return '<div class="ph"><div class="clock"><div>07:00</div><div>10:00</div><div>14:00</div><div>19:00</div></div><div class="big" style="font-size:13px">' + (tr ? 'bir günüm' : 'a day in my life') + '</div>' + cap(tr ? '4–6 kısa klip, 1 sn’lik geçişler' : '4–6 short clips, 1 s cuts') + '</div>';
+    case 'transformation': return '<div class="ph"><div class="big" style="font-size:13px">' + (tr ? 'başlangıç' : 'start') + '</div><div class="arrow">↓</div><div class="big" style="font-size:13px;color:var(--lime)">' + (tr ? 'şimdi' : 'now') + '</div>' + cap(tr ? 'aynı açı, aynı ışık' : 'same angle, same light') + '</div>';
+    default: return '<div class="ph"><div class="big">' + esc(id) + '</div></div>';
+  }
+}
+
+/* ---------------------------------------------------------------- sample */
+const SAMPLE = {};
+SAMPLE.tr = { profile: { handle: 'nailbyderya', niche: 'Tırnak tasarımı · İstanbul, Kadıköy', audience: '20–35 yaş, Kadıköy ve Anadolu yakası; düğün, mezuniyet ve sezon trendleri için gelen kadınlar.', tone: 'samimi, biraz esprili', followers: '2.340', strengths: ['Yakın çekimler temiz ve iyi ışıklı', 'Öne çıkanlarda fiyat listesi var', 'Yorumlara hızlı cevap'], gaps: ['Yüz yok, ses yok — kişi görünmüyor', 'Hep bitmiş sonuç; süreç hiç yok', 'Reels yok, hepsi fotoğraf'], cadence: 'Haftada 3 Reel + 1 carousel + her gün 1 story. Önce süreç videoları: sonuç fotoğrafları zaten var.' },
+  pillars: [{ name: 'Süreç / kamera arkası', share: 35 }, { name: 'Eğitim (bakım, trend)', share: 30 }, { name: 'Sonuçlar', share: 20 }, { name: 'Sen / salon', share: 15 }],
+  days: [
+    { d: 1, type: 'reel', goal: 'teach', title: 'Jel tırnak neden 3 günde kalkar', hook: 'Jelin 3 günde kalkmasının sebebi cilan değil.', idea: 'Hazırlık aşamasını gösteren 20 saniyelik süreç videosu; kalkma sebebi hazırlık.', frames: [{ t: '0–3s', text: 'Kanca ekranda, eller kamerada: “sebebi cilan değil”' }, { t: '3–10s', text: 'Yanlış hazırlık: ıslak tırnak, kalan yağ — hızlı kesmeler' }, { t: '10–18s', text: 'Doğru hazırlık: primer, kurutma, ince katman' }, { t: '18–22s', text: 'Sonuç + “kaydet, randevuna gelirken hatırla”' }], caption: 'Jel 3 günde kalkıyorsa sorun ürün değil, hazırlık. İşte atlanan üç adım. Bir sonraki randevunda bunlara bak — ya da bana gel, ben bakayım.', cta: 'Randevu için DM: “hazırlık” yaz.', hashtags: ['#jeltırnak', '#kadıköynail', '#nailart', '#tırnakbakımı', '#istanbulnail'], template: 'tutorial', time: '19:30', howto: ['Telefon tripodda, tepeden açı, masa lambası 45°', 'Her adım 3 saniye; konuşma yok, altyazı var', 'Son kare: bitmiş tırnak, 2 saniye sabit'] },
+    { d: 2, type: 'story', goal: 'connect', title: 'Bugün hangi renk?', hook: 'Bugün 2 müşteri var: hangisini önce göstereyim?', idea: 'Anket story: iki renk, oy ver; akşam kazananı göster.', frames: [{ t: '1', text: 'İki ojenin fotoğrafı, anket etiketi' }, { t: '2', text: 'Akşam: kazanan rengin sonucu' }], caption: '', cta: 'Oy ver, akşam sonucu paylaşıyorum.', hashtags: [], template: 'poll', time: '10:00', howto: ['Doğal ışıkta pencere önü', 'Anket etiketi ortada'] },
+    { d: 3, type: 'carousel', goal: 'teach', title: 'Tırnak uzatmada 3 hata', hook: 'Tırnağın kırılıyorsa bu 3 hatadan birini yapıyorsun.', idea: 'Beş slayt: kapak, üç hata, çözüm.', frames: [{ t: '1', text: 'Kapak: “Tırnağın kırılıyorsa…”' }, { t: '2', text: 'Hata 1: çok uzun ilk uygulama' }, { t: '3', text: 'Hata 2: su ve eldiven' }, { t: '4', text: 'Hata 3: dolgu gecikmesi' }, { t: '5', text: '“Kaydet. 3 haftada bir dolgu.”' }], caption: 'Kırılan tırnak şans değil, alışkanlık. Üç hata, üç çözüm — kaydet, lazım olacak.', cta: 'Hangisini yapıyorsun? Yoruma 1-2-3 yaz.', hashtags: ['#tırnakuzatma', '#protez', '#nailcare', '#kadıköy', '#nailtips'], template: 'listicle', time: '12:30', howto: ['Canva: koyu zemin, tek renk vurgu', 'Her slaytta 8 kelimeden az'] },
+    { d: 4, type: 'reel', goal: 'entertain', title: 'Müşteri “sade olsun” dediğinde', hook: '“Sade olsun” dedi. Sonra.', idea: 'Küçük komedi: sade istek, sonra 4 rengin sorulması — herkes tanıyacak.', frames: [{ t: '0–3s', text: 'Metin: “Sade olsun dedi”' }, { t: '3–12s', text: 'Telefon ekranı: 9 referans fotoğraf geliyor' }, { t: '12–15s', text: 'Senin yüzün: gülümseme, “tabii ki”' }], caption: 'Hepimiz oradaydık. Sade = 4 renk + taş + ombre. Ve ben hepsini seviyorum.', cta: 'Sen hangisisin? Etiketle.', hashtags: ['#nailtech', '#nailhumor', '#tırnakçı', '#kadıköy', '#reels'], template: 'talking-head', time: '20:00', howto: ['Ön kamera, göz hizası, doğal ışık', 'Trend ses kullan; 15 saniyeyi geçme'] },
+    { d: 5, type: 'post', goal: 'sell', title: 'Kasım gelin paketi', hook: 'Kasım düğünü olanlar: iki seansta tırnak + bakım.', idea: 'Tek görsel: paket içeriği ve fiyat; dürüst ve net.', frames: [{ t: '1', text: 'Paket: deneme + düğün günü, bakım dahil' }], caption: 'Düğün sabahı tırnakla uğraşmak yok. Deneme seansı + düğün günü + bakım, tek fiyat. Kasım için 6 yer var.', cta: 'DM: “gelin” yaz, takvimi gönderiyorum.', hashtags: ['#gelintırnağı', '#düğünhazırlığı', '#kadıköygelin', '#bridalnails', '#istanbuldüğün'], template: 'listicle', time: '18:00', howto: ['Gerçek gelin işinden yakın çekim', 'Fiyatı görsele yaz, yoruma değil'] },
+    { d: 6, type: 'reel', goal: 'connect', title: 'Salonda bir gün', hook: '07:30’da başlayan bir tırnakçı günü.', idea: 'Gün akışı: açılış, ilk müşteri, öğle, kapanış — 5 klip.', frames: [{ t: '0–3s', text: 'Anahtar, kapı, ışık' }, { t: '3–10s', text: 'Masayı kurma, ilk randevu' }, { t: '10–18s', text: 'Öğle: tek başına çay' }, { t: '18–25s', text: 'Son müşteri, kapanış, “yarın görüşürüz”' }], caption: 'Çoğu gün böyle. Sessiz, düzenli, bazen 11 saat. Sevmesem yapmazdım.', cta: 'Senin günün kaçta başlıyor?', hashtags: ['#dayinthelife', '#nailtechlife', '#küçükişletme', '#kadıköy', '#salon'], template: 'day-in-life', time: '21:00', howto: ['Her klip 1–2 saniye; sabit açılar', 'Sakin müzik, konuşma yok'] },
+    { d: 7, type: 'story', goal: 'sell', title: 'Haftaya 3 boş yer', hook: 'Salı 14:00, Çarşamba 11:00, Cuma 16:00 boş.', idea: 'Takvim story; boşlukları yaz, bitince güncelle.', frames: [{ t: '1', text: 'Takvim ekran görüntüsü, 3 saat işaretli' }, { t: '2', text: 'Dolanları çiz' }], caption: '', cta: 'DM ile al.', hashtags: [], template: 'poll', time: '09:30', howto: ['Takvimden ekran görüntüsü, üstüne yaz'] },
+    { d: 8, type: 'reel', goal: 'teach', title: 'Evde bakım: 1 dakika', hook: 'Tırnak bakımına günde 1 dakikan yoksa bunu izle.', idea: 'Yağ, eldiven, törpü yönü — 3 mini ipucu.', frames: [{ t: '0–3s', text: 'Kanca + kronometre' }, { t: '3–20s', text: '3 ipucu, her biri 5 saniye' }, { t: '20–24s', text: '“Kaydet, akşam yap”' }], caption: 'Dolgu arası tırnağı taşıyan şey salon değil, akşam 1 dakika. Üç şey, hepsi evde var.', cta: 'Hangisini bilmiyordun?', hashtags: ['#tırnakbakımı', '#nailcare', '#evdebakım', '#kadıköy', '#ipucu'], template: 'tutorial', time: '19:30', howto: ['Tepeden açı, eller', 'Altyazı büyük, 3 kelimelik'] },
+    { d: 9, type: 'post', goal: 'connect', title: 'Ben kimim', hook: '6 yıldır tırnak yapıyorum ve yüzümü hiç göstermedim.', idea: 'İlk yüzlü fotoğraf; kısa hikâye.', frames: [{ t: '1', text: 'Salonda, masanın arkasında, gülümseyen portre' }], caption: 'Merhaba. Derya. 6 yıl, binlerce el. Yüzümü göstermiyordum çünkü iş konuşsun istiyordum. Ama buraya gelen herkes önce “kim bu?” diyormuş. Bu benim.', cta: 'Sen de kendini bir cümleyle anlat.', hashtags: ['#nailtech', '#kadıköy', '#küçükişletme', '#tanışalım', '#istanbul'], template: 'talking-head', time: '18:30', howto: ['Pencere ışığı, yan açı', 'Masada araçlar görünsün'] },
+    { d: 10, type: 'carousel', goal: 'teach', title: 'Kış 2026: 5 trend', hook: 'Bu kış salonlarda en çok istenecek 5 tırnak.', idea: 'Trend carousel; her slayt bir örnek ve kimin için.', frames: [{ t: '1', text: 'Kapak: “Kış 2026 · 5 trend”' }, { t: '2–6', text: 'Her slaytta bir trend, bir fotoğraf, kime gider' }], caption: 'Kış geldi, mat bordo döndü. Beş trend, her biri için “sana gider mi?” notu.', cta: 'Hangisini denersin? Numarasını yaz.', hashtags: ['#kıştırnak', '#nailtrends2026', '#trend', '#kadıköynail', '#ombre'], template: 'listicle', time: '12:30', howto: ['Kendi işlerinden fotoğraf; stok kullanma'] },
+    { d: 11, type: 'reel', goal: 'entertain', title: 'Mit: jel tırnağa zarar verir', hook: 'Jel tırnağına zarar vermez. Zarar veren şey başka.', idea: 'Mit/gerçek formatı; kısa, net.', frames: [{ t: '0–3s', text: 'Ekranda “MİT”' }, { t: '3–12s', text: 'Zarar veren: yanlış çıkarma, sökme' }, { t: '12–18s', text: 'Doğru çıkarma, 10 saniye' }], caption: 'Jel değil, söküş. Doğru çıkarılınca tırnağın altında bir şey kalmaz.', cta: 'Sökmeyi bırak, bana getir.', hashtags: ['#mit', '#jeltırnak', '#nailmyths', '#kadıköy', '#nailcare'], template: 'myth', time: '20:00', howto: ['İki renk zemin: kırmızı mit, yeşil gerçek'] },
+    { d: 12, type: 'story', goal: 'connect', title: 'Soru kutusu', hook: 'Tırnakla ilgili ne sormak istersen.', idea: 'Soru kutusu; en iyi 3 soruya akşam cevap.', frames: [{ t: '1', text: 'Soru kutusu etiketi' }, { t: '2–4', text: 'Üç cevap, her biri bir story' }], caption: '', cta: 'Sor.', hashtags: [], template: 'qa', time: '11:00', howto: ['Cevapları ön kamerayla, 15 sn'] },
+    { d: 13, type: 'reel', goal: 'sell', title: 'Önce / sonra: 3 hafta', hook: 'Üç hafta önce böyleydi.', idea: 'Aynı el, aynı açı, 3 hafta arayla.', frames: [{ t: '0–3s', text: 'Önce: kırık, kısa' }, { t: '3–8s', text: 'Geçiş: trend ses' }, { t: '8–14s', text: 'Sonra: uzun, sağlıklı' }], caption: 'Üç hafta, iki seans. Aynı el. Mucize değil, program.', cta: 'Programı istiyorsan DM: “3 hafta”.', hashtags: ['#öncesonra', '#beforeafter', '#nailtransformation', '#kadıköy', '#protez'], template: 'before-after', time: '19:00', howto: ['Aynı açı, aynı ışık — ilk seansta çek'] },
+    { d: 14, type: 'post', goal: 'connect', title: 'İki haftanın özeti', hook: 'Bu iki haftada 14 şey paylaştım; en çok bunu sevdiniz.', idea: 'En çok etkileşim alan içerik + teşekkür.', frames: [{ t: '1', text: 'Kolaj: en iyi 3 kare' }], caption: 'Teşekkürler. En çok sevdiğiniz video mit/gerçek oldu; demek ki daha çok doğruyu düzeltmeliyim. Gelecek iki hafta buradan devam.', cta: 'Ne görmek istersin? Yorum.', hashtags: ['#teşekkürler', '#kadıköy', '#nailtech', '#topluluk', '#istanbul'], template: 'listicle', time: '18:00', howto: ['Üçlü kolaj, tek renk çerçeve'] }
+  ],
+  templates: [
+    { id: 'tutorial', name: 'Adım adım (eller, tepeden)', when: 'Bir şeyin nasıl yapıldığını 20 saniyede göstermek için.', steps: ['Telefon tripodda, tepeden, lamba 45°', 'Her adım 3 saniye, altyazı 3 kelime', 'Son kare 2 saniye sabit: sonuç'] },
+    { id: 'listicle', name: '3 madde carousel', when: 'Bir konuyu kaydedilecek bilgiye çevirmek için.', steps: ['Kapak: kanca cümlesi', 'Her slaytta bir madde, 8 kelimeden az', 'Son slayt: “kaydet” + soru'] },
+    { id: 'before-after', name: 'Önce / sonra', when: 'Satış haftasında; sonucu konuşturmak için.', steps: ['İlk seansta “önce”yi çek, aynı açı', 'Trend sesle geçiş', '“Sonra” 6 saniye sabit'] },
+    { id: 'talking-head', name: 'Kameraya konuş', when: 'Kişiyi göstermek, güven kurmak için.', steps: ['Ön kamera, göz hizası, pencere ışığı', 'Kanca ilk cümle, altyazı açık', '15–25 saniye, tek kesim'] },
+    { id: 'poll', name: 'Anket story', when: 'Her gün bir dokunuş; sıfır üretim maliyeti.', steps: ['İki seçenek, bir fotoğraf', 'Akşam sonucu paylaş', 'Kazananı ertesi gün içerik yap'] },
+    { id: 'myth', name: 'Mit / gerçek', when: 'Yanlış bilineni düzeltip uzmanlığı göstermek için.', steps: ['Kırmızı zemin: mit', 'Yeşil zemin: gerçek', 'Tek cümlelik kanıt'] }
+  ] };
+SAMPLE.en = JSON.parse(JSON.stringify(SAMPLE.tr));
+SAMPLE.en.profile = { handle: 'nailbyderya', niche: 'Nail design · Kadıköy, Istanbul', audience: 'Women 20–35 on the Asian side; weddings, graduations, seasonal trends.', tone: 'warm, a little playful', followers: '2,340', strengths: ['Clean, well-lit close-ups', 'A price list in the highlights', 'Fast replies to comments'], gaps: ['No face, no voice — the person is invisible', 'Only finished results; no process', 'No Reels, all photos'], cadence: '3 Reels + 1 carousel a week, a story every day. Process videos first: the result photos already exist.' };
+SAMPLE.en.pillars = [{ name: 'Process / behind the scenes', share: 35 }, { name: 'Teaching (care, trends)', share: 30 }, { name: 'Results', share: 20 }, { name: 'You / the salon', share: 15 }];
+SAMPLE.en.days = SAMPLE.en.days.map((d, i) => Object.assign(d, [
+  { title: 'Why gel lifts in 3 days', hook: 'Gel lifting in three days is not your polish.', idea: '20-second process video of the prep; lifting is a prep problem.', caption: 'If gel lifts in three days the problem is prep, not product. Three skipped steps. Check them at your next appointment — or come to me and I will.', cta: 'DM “prep” for an appointment.' },
+  { title: 'Which colour today?', hook: 'Two clients today: which one first?', idea: 'Poll story: two colours, vote; show the winner tonight.', caption: '', cta: 'Vote; the result tonight.' },
+  { title: '3 extension mistakes', hook: 'If your nails break, you are making one of these three mistakes.', idea: 'Five slides: cover, three mistakes, the fix.', caption: 'Breaking nails are a habit, not bad luck. Three mistakes, three fixes — save it, you will need it.', cta: 'Which one is yours? Comment 1, 2 or 3.' },
+  { title: 'When the client says “keep it simple”', hook: '“Keep it simple,” she said. Then.', idea: 'Small comedy: a simple request, then nine reference photos — everyone will recognise it.', caption: 'We have all been there. Simple = four colours + stones + ombre. And I love all of it.', cta: 'Which one are you? Tag her.' },
+  { title: 'November bride package', hook: 'November wedding? Two sessions: nails plus care.', idea: 'One image: what the package holds and the price; honest and clear.', caption: 'No nail panic on the wedding morning. Trial session + wedding day + care, one price. Six spots in November.', cta: 'DM “bride” and I send the calendar.' },
+  { title: 'A day at the salon', hook: 'A nail tech\'s day that starts at 07:30.', idea: 'The day in five clips: opening, first client, lunch, closing.', caption: 'Most days look like this. Quiet, orderly, sometimes eleven hours. I would not do it if I did not love it.', cta: 'What time does your day start?' },
+  { title: '3 open slots next week', hook: 'Tuesday 14:00, Wednesday 11:00, Friday 16:00 are free.', idea: 'Calendar story; cross them out as they go.', caption: '', cta: 'Book by DM.' },
+  { title: 'Home care in one minute', hook: 'If you have one minute a day for your nails, watch this.', idea: 'Oil, gloves, filing direction — three mini tips.', caption: 'What carries nails between fills is not the salon; it is one minute at night. Three things you already have at home.', cta: 'Which one did you not know?' },
+  { title: 'Who I am', hook: 'Six years of nails and I never showed my face.', idea: 'First photo with a face; a short story.', caption: 'Hi. Derya. Six years, thousands of hands. I never showed my face because I wanted the work to talk. But everyone who walks in asks “who is this?” first. This is me.', cta: 'Tell me who you are in one sentence.' },
+  { title: 'Winter 2026: 5 trends', hook: 'The five nails everyone will ask for this winter.', idea: 'Trend carousel; each slide one example and who it suits.', caption: 'Winter is here and matte burgundy is back. Five trends, each with a “would it suit you?” note.', cta: 'Which would you try? Comment the number.' },
+  { title: 'Myth: gel damages your nails', hook: 'Gel does not damage your nails. Something else does.', idea: 'Myth/fact format; short and sharp.', caption: 'Not the gel — the peeling. Removed properly, nothing is left under it.', cta: 'Stop peeling, bring it to me.' },
+  { title: 'Question box', hook: 'Anything you want to ask about nails.', idea: 'Question box; the best three answered tonight.', caption: '', cta: 'Ask.' },
+  { title: 'Before / after: 3 weeks', hook: 'Three weeks ago it looked like this.', idea: 'Same hand, same angle, three weeks apart.', caption: 'Three weeks, two sessions. Same hand. Not a miracle, a programme.', cta: 'DM “3 weeks” for the programme.' },
+  { title: 'Two weeks in review', hook: 'I posted fourteen things in two weeks; this is what you loved most.', idea: 'The best-performing piece plus a thank-you.', caption: 'Thank you. The video you loved most was myth/fact — so I should correct more myths. The next two weeks continue from here.', cta: 'What do you want to see? Comment.' }
+][i]));
+SAMPLE.en.days.forEach((d) => { d.frames = d.frames.map((f) => ({ t: f.t, text: f.text })); d.howto = d.howto.slice(); });
+SAMPLE.en.templates = [
+  { id: 'tutorial', name: 'Step by step (hands, top-down)', when: 'To show how something is done in 20 seconds.', steps: ['Phone on a tripod, top-down, lamp at 45°', 'Three seconds a step, three-word captions', 'Last frame still for 2 seconds: the result'] },
+  { id: 'listicle', name: '3-point carousel', when: 'To turn a topic into something people save.', steps: ['Cover: the hook sentence', 'One point a slide, under 8 words', 'Last slide: “save” + a question'] },
+  { id: 'before-after', name: 'Before / after', when: 'In a selling week; let the result talk.', steps: ['Shoot the “before” at the first session, same angle', 'Cut on a trending sound', '“After” still for 6 seconds'] },
+  { id: 'talking-head', name: 'Talking head', when: 'To show the person and build trust.', steps: ['Front camera, eye level, window light', 'Hook in the first sentence, captions on', '15–25 seconds, one cut'] },
+  { id: 'poll', name: 'Poll story', when: 'A daily touch at zero production cost.', steps: ['Two options, one photo', 'Share the result tonight', 'Make the winner tomorrow\'s content'] },
+  { id: 'myth', name: 'Myth / fact', when: 'To correct what people get wrong and show expertise.', steps: ['Red ground: the myth', 'Green ground: the fact', 'One sentence of proof'] }
+];
+SAMPLE.tr.__sample = true; SAMPLE.en.__sample = true;
+applyLang();
+</script>
+</body>
+</html>

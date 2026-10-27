@@ -1,0 +1,8 @@
+{
+  "name": "content-flow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A screenshot of an Instagram profile in, two weeks of content out.",
+  "scripts": { "start": "NODE_ENV=production node server.js", "test": "node tests/test.js" },
+  "engines": { "node": ">=18" }
+}
