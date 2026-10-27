@@ -45,6 +45,8 @@ const STRIPE_PRICES = { monthly: process.env.STRIPE_PRICE_MONTHLY || '', yearly:
 const RC_AUTH = process.env.REVENUECAT_WEBHOOK_AUTH || '';
 
 const KEY = (uid) => '__plus:plan:' + uid;
+const STATS = (day) => '__stats:' + day;
+const TRACKED = ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'entitlement_changed'];
 const CUST = (cid) => '__plus:cust:' + cid;
 
 /* Everything a Free account may not ask the server to do. Patterns and chat
@@ -91,6 +93,17 @@ const isoWeek = (d) => {
    "broken" with one check. */
 function refusal(feature, extra) {
   return Object.assign({ error: 'This is part of Flow Plus.', plus: true, feature }, extra || {});
+}
+
+async function countChange(uid, deps) {
+  try {
+    const key = STATS(new Date().toISOString().slice(0, 10));
+    const rec = (await deps.getJSON(key, null)) || {};
+    const slot = rec.entitlement_changed || (rec.entitlement_changed = { n: 0, s: 0, u: [] });
+    const h = crypto.createHash('sha256').update(String(uid)).digest('hex').slice(0, 10);
+    if (slot.u.indexOf(h) < 0) { slot.u.push(h); slot.n = slot.u.length; }
+    await deps.setJSON(key, rec);
+  } catch (e) {}
 }
 
 /* ---- Stripe, without an SDK ------------------------------------------- */
@@ -145,6 +158,7 @@ async function applyStripe(ev, deps) {
     });
     await deps.setJSON(KEY(uid), rec);
     if (o.customer) await deps.setJSON(CUST(o.customer), { uid });
+    await countChange(uid, deps);
     return { uid, tier: rec.tier };
   }
   return { ignored: type };
@@ -171,6 +185,7 @@ async function applyRevenueCat(body, deps) {
     return { ignored: type };
   }
   await deps.setJSON(KEY(uid), rec);
+  await countChange(uid, deps);
   return { uid, tier: rec.tier };
 }
 
@@ -240,6 +255,39 @@ async function handle(p, req, res, ctx) {
     const origin = String(b.origin || '').replace(/[^\w:./-]/g, '').replace(/\/$/, '') || '';
     try { const s = await stripe('/billing_portal/sessions', { customer: plan.customer, return_url: origin + '/?go=settings' }); ctx.json(res, 200, { ok: true, url: s.url }); }
     catch (e) { ctx.json(res, 502, { error: 'The billing page could not be opened: ' + (e.message || 'unknown') }); }
+    return true;
+  }
+  /* ---- counts, never content ----
+     A dozen named moments per day, counted once per account. The owner reads
+     them back as numbers: how many people opened the app, planned, replanned,
+     reviewed, looked at Plus. Nothing a person typed ever reaches here. */
+  if (p === '/api/flow/track' && req.method === 'POST') {
+    let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+    const ev = String(b.e || '');
+    if (TRACKED.indexOf(ev) < 0) { ctx.json(res, 400, { error: 'Not a tracked event.' }); return true; }
+    const look = b.look === 's' ? 's' : 'a';
+    const day = new Date().toISOString().slice(0, 10);
+    const key = STATS(day);
+    const rec = (await ctx.getJSON(key, null)) || {};
+    const slot = rec[ev] || (rec[ev] = { n: 0, s: 0, u: [] });
+    const h = crypto.createHash('sha256').update(String(me.id)).digest('hex').slice(0, 10);
+    if (slot.u.indexOf(h) < 0 && slot.u.length < 20000) { slot.u.push(h); slot.n = slot.u.length; if (look === 's') slot.s++; }
+    await ctx.setJSON(key, rec);
+    ctx.json(res, 200, { ok: true });
+    return true;
+  }
+  if (p === '/api/flow/stats' && req.method === 'GET') {
+    if (!me.owner) { ctx.json(res, 403, { error: 'Only the owner reads the counts.' }); return true; }
+    const days = Math.min(90, Math.max(1, parseInt(new URL(req.url, 'http://x').searchParams.get('days') || '30', 10) || 30));
+    const out = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+      const rec = (await ctx.getJSON(STATS(d), null)) || {};
+      const row = { day: d };
+      Object.keys(rec).forEach((k) => { row[k] = { people: rec[k].n || 0, simple: rec[k].s || 0 }; });
+      out.push(row);
+    }
+    ctx.json(res, 200, { ok: true, events: TRACKED, days: out });
     return true;
   }
   if (p === '/api/flow/account/export' && req.method === 'GET') {

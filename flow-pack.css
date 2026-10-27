@@ -2514,7 +2514,7 @@ html.fl-hide-money input[data-flm]::placeholder{color:transparent;text-shadow:0 
   --lk-coral:#FF6B3D; --lk-coral-ink:#1F0A03; --lk-lime:#C8F26B; --lk-lime-ink:#15190A;
   --lk-aqua:#3FD6C6; --lk-lilac:#C7B8FF; --lk-sun:#FFD25E;
 }
-html:not([data-flow-theme="signature"][data-flow-look="new"]) :is(.lk-hello,.lk-strip,.lk-hero){display:none !important}
+html:not([data-flow-theme="signature"][data-flow-look="new"]) :is(.lk-hello,.lk-strip,.lk-hero,.lk-acts){display:none !important}
 
 /* ---- head: greeting replaces the page title ---- */
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head{padding:2px 2px 14px;align-items:flex-end}
@@ -2656,11 +2656,15 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td
 /* ---- the tab bar floats; the + is the one thing that glows ---- */
 @media (max-width:760px){
   html[data-flow-theme="signature"][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 44px) !important}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));padding:6px 4px;border-radius:28px;border:1px solid var(--lk-line);background:rgba(24,24,27,.9);box-shadow:0 12px 40px rgba(0,0,0,.45);align-items:center}
+  /* The bar sits on the bottom edge, like Advanced's: a floating pill left a
+     strip of the page readable underneath it and rows sliding out below the
+     +. Rounded on top, blurred, and the page keeps room above it. */
+  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar{left:0;right:0;bottom:0;padding:8px 8px calc(10px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid var(--lk-line);border-bottom:0;background:rgba(14,14,16,.94);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 -10px 40px rgba(0,0,0,.45);align-items:center}
+  html[data-flow-theme="signature"][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 72px) !important}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button{color:var(--lk-dim);min-height:52px;justify-content:center}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button.on{color:var(--lk-ink)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button .fn-lb{font-size:10.5px;font-weight:650}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar .fn-cap .fn-knob{width:58px;height:58px;border-radius:50%;margin-top:-30px;background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 10px 28px rgba(255,107,61,.45),0 0 0 6px var(--lk-bg)}
+  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar .fn-cap .fn-knob{width:56px;height:56px;border-radius:50%;margin-top:-26px;background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(255,107,61,.4),0 0 0 5px rgba(14,14,16,.94)}
   html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar .fn-cap .fn-i{width:26px;height:26px;stroke-width:2.6}
   html[data-flow-theme="signature"][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar .fn-cap .fn-knob{transform:rotate(45deg)}
 }
@@ -2760,6 +2764,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-strip{order:1}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-dayview{order:1;margin-bottom:16px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:3;margin:0;display:flex;flex-direction:column;justify-content:center;padding:24px 26px}
+  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-acts{grid-column:span 7;order:3;margin:0}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:3;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> .flow-td-pulse)) > .lk-hero{grid-column:1 / -1}
   html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-rocks:not(#td-cal){grid-column:span 7;order:4;margin-top:16px;align-self:start}
@@ -2772,6 +2777,11 @@ html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border
 html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head .td-title{display:none !important}
 @media (min-width:761px){
   html[data-flow-theme="signature"][data-flow-look="new"] .header :is(h1,.sub){display:none !important}
+  /* The greeting already says the day; the badge said it again, in capitals,
+     on the other side of the screen. With it gone the old header holds
+     nothing in Simple, so it takes no room either. */
+  html[data-flow-theme="signature"][data-flow-look="new"] .header .datebadge{display:none !important}
+  html[data-flow-theme="signature"][data-flow-look="new"] .header{padding:0 !important;margin:0 !important;min-height:0 !important;border:0 !important}
 }
 
 /* Prices as tiles like the others. */
@@ -3160,3 +3170,41 @@ html[data-flow-look="new"] #flow-fr .flow-in{background:rgba(255,255,255,.55);co
 html[data-flow-look="new"] #flow-fr .flow-btn{background:rgba(0,0,0,.08);color:var(--lk-lime-ink,#15190A);border-color:transparent}
 html[data-flow-look="new"] #flow-fr .flow-btn.primary{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03)}
 html[data-flow-look="new"] #flow-fr .pt-link{color:rgba(21,25,10,.68)}
+
+/* ---- Under the hero in Simple: Overdue, My day changed, Review the week ---- */
+.lk-acts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+.lk-acts:empty{display:none}
+.lk-act{border:1.5px solid var(--lk-line,rgba(255,255,255,.12));background:var(--lk-s1,#141416);color:var(--lk-ink,#F4F4F2);border-radius:999px;padding:9px 14px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;min-height:40px}
+.lk-act.hot{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03);border-color:transparent}
+/* My day changed */
+#flow-replan .rp-sub{margin-bottom:10px}
+.rp-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--border,rgba(255,255,255,.08))}
+.rp-row.mv{opacity:.92}
+.rp-row .rp-t{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.rp-row .rp-t small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+.rp-dur{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+.rp-dur input{width:62px;padding:6px 6px;border-radius:8px;border:1px solid var(--border2,#333846);background:transparent;color:var(--text);font:inherit;font-size:14px;text-align:right}
+.rp-keep{border:1px solid var(--border2,#333846);background:transparent;color:var(--text);border-radius:999px;padding:6px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.rp-keep.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rp-ok{color:var(--muted);margin:8px 0}
+#flow-replan .ra-k small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:12px;margin-top:2px}
+/* Overdue */
+.tg-row{padding:10px 0;border-top:1px solid var(--border,rgba(255,255,255,.08))}
+.tg-row .tg-t{display:block;font-weight:600;margin-bottom:6px;overflow-wrap:anywhere}
+.tg-row .tg-t small{color:var(--muted);font-weight:500;margin-left:6px}
+.tg-acts{display:flex;flex-wrap:wrap;gap:6px}
+/* Review with evidence */
+.rv-ev{margin-top:12px}
+.rv-cells{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:6px 0 8px}
+.rv-c{background:rgba(255,255,255,.04);border-radius:10px;padding:8px 4px;text-align:center}
+.rv-c b{display:block;font-size:20px;line-height:1.1}
+.rv-c span{font-size:11px;color:var(--muted)}
+.rv-note{font-size:13px;color:var(--text);background:rgba(255,255,255,.04);border-radius:10px;padding:8px 10px;margin:4px 0 10px}
+.rv-next{display:flex;flex-direction:column;gap:8px}
+.rv-next .flow-in{min-height:40px}
+html[data-flow-look="new"] .rv-c{background:rgba(0,0,0,.06)}
+html[data-flow-look="new"] .rv-note{background:rgba(0,0,0,.06)}
+html[data-flow-look="new"] .rp-keep.on{background:var(--lk-coral,#FF6B3D);border-color:transparent;color:var(--lk-coral-ink,#1F0A03)}
+html[data-flow-look="new"] #plusCard .plus-day{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+html[data-flow-look="new"] #plusCard .plus-day label{display:flex;align-items:center;gap:6px;font-size:13px}
+html[data-flow-look="new"] #plusCard .plus-day .flow-in{max-width:110px}

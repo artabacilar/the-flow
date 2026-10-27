@@ -48,6 +48,24 @@
 
   var lang = DEFAULT;
   var active = null;            // compiled dictionary for `lang`, or null for English
+  /* A vocabulary: a few of the app's own terms said another way, on top of
+     whichever language is showing — "Big Rocks" as "Priorities" in the
+     Simple interface. Set by the pack, applied here so that it lands after
+     translation and is undone the same way a language is. Never touches a
+     person's own words: the same data-i18n="off" and skip rules apply, plus
+     the containers the pack names. */
+  var VOCAB = null;             // [{ rx: RegExp, to: string|function }], or null
+  var VOCAB_SKIP = '';
+  function vocab(text) {
+    if (!VOCAB || !text) return text;
+    var out = text;
+    for (var i = 0; i < VOCAB.length; i++) out = out.replace(VOCAB[i].rx, VOCAB[i].to);
+    return out;
+  }
+  function vocabSkipped(el) {
+    if (!VOCAB_SKIP) return false;
+    try { return !!(el && el.closest && el.closest(VOCAB_SKIP)); } catch (e) { return false; }
+  }
   var listeners = [];
   var observer = null;
   var started = false;
@@ -85,9 +103,11 @@
 
   var ATTRS = ['placeholder', 'title', 'aria-label', 'aria-placeholder', 'alt', 'data-empty', 'data-ph'];
 
-  function skipped(el) {
+  function skipped(el, attrsOnly) {
     for (var n = el; n && n.nodeType === 1; n = n.parentNode) {
-      if (SKIP_TAGS[n.nodeName]) return true;
+      /* A box somebody types into is never translated — but its placeholder
+         and its label for a screen reader are the app's words, not theirs. */
+      if (SKIP_TAGS[n.nodeName] && !(attrsOnly && n === el && (n.nodeName === 'INPUT' || n.nodeName === 'TEXTAREA'))) return true;
       if (n.isContentEditable) return true;
       var f = n.getAttribute && n.getAttribute('data-i18n');
       if (f === 'off') return true;
@@ -313,8 +333,9 @@
 
     /* What did this say in English? Either we remember, or it still is. */
     var src = MEM.has(node) ? MEM.get(node) : text;
+    var useVocab = !!VOCAB && !vocabSkipped(parent);
 
-    if (!active) {                                   // going back to English
+    if (!active && !useVocab) {                      // going back to English
       if (MEM.has(node)) {
         node.nodeValue = raw.replace(text, src);
         MEM.delete(node);
@@ -325,26 +346,29 @@
       return;
     }
 
-    var out = translate(src);
+    var out = active ? translate(src) : null;
     if (out == null) {
-      /* Perhaps it is already in the target language from an earlier pass. */
-      if (!MEM.has(node)) {
-        var en = untranslate(text);
-        if (en != null) return;                      // already translated, leave it
-        note(text, parent);
-      }
-      return;
+      if (active) {
+        /* Perhaps it is already in the target language from an earlier pass. */
+        if (!MEM.has(node)) {
+          var en = untranslate(text);
+          if (en != null) { out = text; }            // already translated: the vocabulary still applies
+          else { note(text, parent); out = src; }
+        } else out = src;
+      } else out = src;                              // English, with the vocabulary on top
+    } else {
+      /* A label whose emoji Simple split off ("💰" + "Finances") is chrome, not a word somebody typed. */
+      var split = node.previousSibling && node.previousSibling.nodeType === 1 && node.previousSibling.classList.contains('lk-emo');
+      if (isSingleWord(src) && !isChrome(parent) && !split) return;   // somebody's own word
     }
-    /* A label whose emoji Simple split off ("💰" + "Finances") is chrome, not a word somebody typed. */
-    var split = node.previousSibling && node.previousSibling.nodeType === 1 && node.previousSibling.classList.contains('lk-emo');
-    if (isSingleWord(src) && !isChrome(parent) && !split) return;   // somebody's own word
-    if (out === text) return;
+    if (useVocab) out = vocab(out);
+    if (out === text) { if (!active && !MEM.has(node)) return; if (out === src && !active) { MEM.delete(node); } return; }
     MEM.set(node, src);
     node.nodeValue = raw.replace(text, out);
   }
 
   function doAttrs(el) {
-    if (skipped(el)) return;
+    if (skipped(el, true)) return;
     for (var i = 0; i < ATTRS.length; i++) {
       var a = ATTRS[i];
       if (!el.hasAttribute(a)) continue;
@@ -352,14 +376,16 @@
       if (!cur || !/[A-Za-z]/.test(cur)) continue;
       var mem = AMEM.get(el);
       var src = mem && mem[a] !== undefined ? mem[a] : cur;
+      var useVocab = !!VOCAB && !vocabSkipped(el);
 
-      if (!active) {
+      if (!active && !useVocab) {
         if (mem && mem[a] !== undefined) { el.setAttribute(a, mem[a]); delete mem[a]; }
         else { var back = untranslate(cur); if (back) el.setAttribute(a, back); }
         continue;
       }
-      var out = translate(src);
-      if (out == null) { if (!mem || mem[a] === undefined) note(cur, el, a); continue; }
+      var out = active ? translate(src) : null;
+      if (out == null) { if (active && (!mem || mem[a] === undefined)) note(cur, el, a); out = src; }
+      if (useVocab) out = vocab(out);
       if (out === cur) continue;
       if (!mem) { mem = {}; AMEM.set(el, mem); }
       mem[a] = src;
@@ -393,6 +419,12 @@
     while ((n = it.nextNode())) {
       if (n.nodeType === 1) doAttrs(n);
       else doText(n);
+    }
+    /* The walker leaves inputs out so nothing typed is touched; their
+       placeholders and labels still get their words. */
+    if (root.nodeType === 1 && root.querySelectorAll) {
+      var boxes = root.querySelectorAll('input,textarea');
+      for (var i = 0; i < boxes.length; i++) doAttrs(boxes[i]);
     }
   }
 
@@ -596,6 +628,17 @@
     },
 
     on: function (fn) { if (typeof fn === 'function') listeners.push(fn); return api; },
+
+    /* The vocabulary: a list of { rx, to } applied after translation, or null
+       to take it off again. `skip` is a selector for containers it must never
+       touch (a person's own titles). Repaints the page either way. */
+    vocab: function (list, skip) {
+      VOCAB = Array.isArray(list) && list.length ? list : null;
+      VOCAB_SKIP = String(skip || '');
+      repaint();
+      return api;
+    },
+    hasVocab: function () { return !!VOCAB; },
 
     /* Every English string this page put in front of somebody that the
        dictionary had nothing for. The coverage test reads this. */

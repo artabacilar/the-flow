@@ -1585,7 +1585,7 @@ async function gate(req, res) {
   };
 
   /* ---- the plan: what it is, buying it, taking your data with you ---- */
-  if (plus && (p.indexOf('/api/flow/plan') === 0 || p === '/api/flow/account/export')) {
+  if (plus && (p.indexOf('/api/flow/plan') === 0 || p === '/api/flow/account/export' || p === '/api/flow/track' || p === '/api/flow/stats')) {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
     try {

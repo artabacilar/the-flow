@@ -318,6 +318,9 @@ const SETTINGS_DEFAULTS = {
   bankProvider: 'none',
   statementDateFormat: 'auto',
   pushRemindRocks: true,         // reminders at a rock's own time
+  workStart: '09:00',            // the working day, for My day changed
+  workEnd: '18:00',
+  bufferMin: 10,                 // room between two Big Rocks
   eveningCheck: false,           // one notification in the evening: how did today go?
   eveningCheckAt: '21:00',
   hiddenTabs: [],                // sections taken out of the menu (data kept)
@@ -6239,7 +6242,7 @@ const TodayPlus = {
     const total = (ev || []).length + mine.length;
     if (!total) return { v: '0', sub: 'none today' };
     const next = upcoming[0];
-    return { v: String(total), sub: next ? (next.t <= now ? 'now · ' : 'next ') + hm(next.t) : 'done today', tone: next && next.t <= now ? ' warn' : '' };
+    return { v: String(total), sub: next ? (next.t <= now ? 'now · ' : 'next ') + hm(next.t) : 'all finished', tone: next && next.t <= now ? ' warn' : '' };
   },
 
   /* Today's Big Rocks: the ones planned for this day of this week. */
@@ -6429,6 +6432,7 @@ const TodayPlus = {
       const sc = WeekLoop.scorecard(WeekLoop.monday(new Date()));
       wrap.querySelector('#rv-score').innerHTML = WeekLoop.scoreHtml(sc);
     } catch (e) { wrap.querySelector('#rv-score').innerHTML = ''; }
+    try { ReviewPlus.decorate(wrap); } catch (e) { console.warn('[Flow] review evidence', e); }
     /* What slipped, week by week: this week first, then last week, then
        the weeks before — each one named, so what fell off three weeks ago
        is not mixed in with what fell off yesterday. */
@@ -9404,6 +9408,7 @@ const TodayLook = {
     document.documentElement.setAttribute('data-flow-look', on ? 'new' : 'classic');
     try { Sections.apply(); } catch (e) {}
     try { SimpleSkin.sync(); } catch (e) {}
+    try { Vocab.sync(); } catch (e) {}
     document.querySelectorAll('[data-fn-ui]').forEach((b) => {
       const mine = b.getAttribute('data-fn-ui') === (on ? 'simple' : 'advanced');
       b.classList.toggle('on', mine); b.setAttribute('aria-pressed', String(mine));
@@ -9511,6 +9516,14 @@ const TodayLook = {
     return `<div class="lk-k">Today</div><h2 class="lk-line">${line}</h2>${k.next && first ? `<div class="lk-next"><b>Next</b><span>${esc(first)}</span><small>${esc(k.when)}</small></div>` : ''}
       <div class="lk-pills">${wk ? `<span class="lk-pill hot">Week ${esc(wk)} · ${pct}%</span>` : ''}${rest > 0 ? `<span class="lk-pill">${rest} more this week</span>` : ''}${meets ? `<span class="lk-pill">${meets} meeting${meets === 1 ? '' : 's'}</span>` : ''}</div>
       ${rocks.length ? `<div class="lk-prog" role="progressbar" aria-label="Big Rocks done this week" aria-valuemin="0" aria-valuemax="${rocks.length}" aria-valuenow="${rocks.length - k.open.length}"><i style="width:${pct}%"></i></div>` : ''}`;
+  },
+
+  actsHtml() {
+    let late = 0; try { late = TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7).late.length; } catch (e) {}
+    const dow = (new Date().getDay() + 6) % 7;
+    return (late ? '<button type="button" class="lk-act hot" data-lk-act="triage">Overdue · ' + late + '</button>' : '') +
+      '<button type="button" class="lk-act" data-lk-act="replan">My day changed</button>' +
+      (dow >= 4 ? '<button type="button" class="lk-act" data-lk-act="review">Review the week</button>' : '');
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -9644,6 +9657,12 @@ const TodayLook = {
     const above = (dv && dv.isConnected) ? dv : strip;
     if (hero.previousElementSibling !== above) above.after(hero);
     TodayLook.put(hero, TodayLook.hero(feed));
+    /* Under the hero: the day's three decisions — the overdue list, a
+       replan when the day changed, the week's review from Friday on. */
+    let acts = feed.querySelector('.lk-acts');
+    if (!acts) { acts = document.createElement('div'); acts.className = 'lk-acts'; }
+    if (acts.previousElementSibling !== hero) hero.after(acts);
+    TodayLook.put(acts, TodayLook.actsHtml());
     /* A tile with nothing in it reads as a quiet dash, not a headline. */
     feed.querySelectorAll('.flow-td-pulse .flow-td-tile').forEach((t) => {
       const v = t.querySelector('.v'); const empty = !!v && /^[—–-]?$/.test(v.textContent.trim());
@@ -9680,6 +9699,14 @@ const TodayLook = {
       }
       const dvb = e.target.closest('[data-dv]');
       if (dvb) { TodayLook.dayAct(dvb); return; }
+      const act = e.target.closest('[data-lk-act]');
+      if (act) {
+        const a = act.getAttribute('data-lk-act');
+        if (a === 'triage') Triage.open();
+        else if (a === 'replan') Replan.open();
+        else if (a === 'review') { try { TodayPlus.reviewSheet(); } catch (e2) {} }
+        return;
+      }
       if (e.target.closest('.lk-hero')) {
         const r = feed.querySelector('.td-rocks');
         if (!TodayLook.rocks().length) { try { Nav.go('compass'); } catch (e2) {} }
@@ -9773,6 +9800,35 @@ const SimpleSkin = {
 };
 window.FlowSimpleSkin = SimpleSkin;
 
+/* ── Vocabulary: "Big Rocks" are "Priorities" in Simple ───────────────────
+ * The method is Covey's; the word is what a new person understands at a
+ * glance. Simple says Priorities everywhere the app speaks — labels,
+ * buttons, placeholders, the assistant's lines — in English and in Turkish
+ * (Öncelik, with its suffixes). Advanced keeps Big Rocks, exactly as it was.
+ * Applied inside the language layer so it lands after translation, never on
+ * a person's own titles or notes, and comes off again with the switch. */
+const Vocab = {
+  SKIP: '[data-i18n="off"], .rk-title, .td-meet-body, .jn-text, .fn-rocktitle',
+  TR: { '': 'Öncelik', lar: 'Öncelikler', ı: 'Önceliği', a: 'Önceliğe', ın: 'Önceliğin', ta: 'Öncelikte', tan: 'Öncelikten', ları: 'Öncelikleri', lara: 'Önceliklere', larda: 'Önceliklerde', lardan: 'Önceliklerden', ların: 'Önceliklerin' },
+  list() {
+    return [
+      { rx: /\bBig Rocks\b/g, to: 'Priorities' }, { rx: /\bBig rocks\b/g, to: 'Priorities' }, { rx: /\bbig rocks\b/g, to: 'priorities' },
+      { rx: /\bBig Rock\b/g, to: 'Priority' }, { rx: /\bBig rock\b/g, to: 'Priority' }, { rx: /\bbig rock\b/g, to: 'priority' },
+      { rx: /Büyük [Tt]aş(lar)?(ı|a|ta|tan|ın|ları|lara|larda|lardan|ların)?(?![a-zçğıöşü])/g, to: (m, mid, suf) => Vocab.TR[(mid ? 'lar' : '') + (suf || '')] || 'Öncelik' },
+      { rx: /Büyük [Kk]aya(lar)?(ı|ya|da|dan|nın|ları|lara|larda|lardan|ların)?(?![a-zçğıöşü])/g, to: (m, mid, suf) => Vocab.TR[(mid ? 'lar' : '') + ({ ya: 'a', da: 'ta', dan: 'tan', nın: 'ın' }[suf] || suf || '')] || 'Öncelik' }
+    ];
+  },
+  sync() {
+    try {
+      if (typeof FlowI18n === 'undefined' || !FlowI18n.vocab) return;
+      const want = TodayLook.on();
+      if (want === !!FlowI18n.hasVocab()) return;
+      FlowI18n.vocab(want ? Vocab.list() : null, Vocab.SKIP);
+    } catch (e) { console.warn('[Flow] vocab', e); }
+  }
+};
+window.FlowVocab = Vocab;
+
 /* ── Flow Plus: the plan, and the one sheet that sells it ──────────────────
  * Free is the planner — everything a person types in, theirs for good. Plus
  * is the reading: Patterns every morning, Coming up's prep and reminders,
@@ -9795,9 +9851,10 @@ const Plus = {
     direction: ['Direction', 'Where the weeks are taking you, read from the record.'],
     'plan-week': ['The week, planned with you', 'A first draft of the week from your roles and what slipped.'],
     statement: ['Statements read into Finances', 'A bank statement becomes a month of categorised spending in one go.'],
-    brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.']
+    brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.'],
+    replan: ['My day changed — applied', 'The preview is free. Moving the Big Rocks that no longer fit, in one tap with undo, is Plus.']
   },
-  HAS: ['Patterns every morning, with Direction', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you'],
+  HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you'],
   async load() {
     try { if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return null; } catch (e) { return null; }
     try {
@@ -9864,6 +9921,7 @@ const Plus = {
     el.querySelector('[data-plus="yearly"]').innerHTML = (t ? 'Try ' + t + ' days free' : 'Plus for a year') + '<small>' + esc(Plus.price('yearly')) + ' a year after that · ' + (t ? 'cancel before it starts and pay nothing' : 'two months free against monthly') + '</small>';
     el.querySelector('[data-plus="monthly"]').innerHTML = esc(Plus.price('monthly')) + ' a month<small>No trial, no commitment</small>';
     el.classList.add('on');
+    Track.hit('plus_sheet');
   },
   close() { if (Plus.el) Plus.el.classList.remove('on'); },
   async checkout(which) {
@@ -9873,6 +9931,7 @@ const Plus = {
       const j = await r.json().catch(() => ({}));
       if (r.status === 503) { toast('Subscriptions open soon — there is nothing to pay yet.'); return; }
       if (!r.ok || !j.url) { toast(j.error || 'The checkout could not be opened.', 'warn'); return; }
+      Track.hit('checkout_started');
       location.href = j.url;
     } catch (e) { toast('Could not reach the server. Try again in a moment.', 'warn'); }
   },
@@ -9906,6 +9965,9 @@ const Plus = {
         <p class="flow-sub plus-status" data-i18n="off">${esc(status)}</p>
         <div class="flow-row" style="margin-top:8px">${act}</div>
         <ul class="plus-has plus-has-sm">${Plus.HAS.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul>
+        <div class="flow-label" style="margin-top:16px">Your day</div>
+        <p class="flow-sub">What “My day changed” plans inside: the working day, and the room it leaves between Big Rocks.</p>
+        <div class="flow-row plus-day"><label>From <input class="flow-in" type="time" data-s="workStart" value="${esc(s.workStart || '09:00')}"></label><label>to <input class="flow-in" type="time" data-s="workEnd" value="${esc(s.workEnd || '18:00')}"></label><label>room <input class="flow-in" type="number" min="0" max="60" step="5" data-s="bufferMin" data-type="num" value="${esc(String(s.bufferMin == null ? 10 : s.bufferMin))}"> min</label></div>
         <div class="flow-label" style="margin-top:16px">Daily rhythm</div>
         <div class="flow-switch"><div class="t"><b>Evening check-in</b><span>One notification in the evening: how did today go? Tick what got done, move what did not.</span></div>
           <input type="checkbox" data-s="eveningCheck" data-type="bool" ${s.eveningCheck ? 'checked' : ''}></div>
@@ -10045,6 +10107,7 @@ const FirstRun = {
     try { await DB.set(FirstRun.KEY, { at: new Date().toISOString(), roles: (roles || []).length, rocks: (rocks || []).length }); } catch (e) {}
     el.remove();
     try { Nav.go('today'); } catch (e) {}
+    Track.hit('first_run_done'); if (rocks && rocks.length) Track.hit('rock_added');
     if (rocks && rocks.length) toast('Your week is set. Patterns arrives after a few days of use.', null, 4000);
   },
   async boot() {
@@ -10054,6 +10117,310 @@ const FirstRun = {
 };
 window.FlowFirstRun = FirstRun;
 window.FlowAuthState = Auth;   /* read by tests; not a way in */
+
+/* ── Track: what people do, never what they wrote ─────────────────────────
+ * A dozen named moments — the first run finished, a Big Rock added, a
+ * replan accepted, a review completed, the Plus sheet opened — counted on
+ * the server per day, per account, with no title, note or number attached.
+ * The owner reads them back as counts. This is what tells whether people
+ * come back and plan, which is the only question the growth plan asks. */
+const Track = {
+  EVENTS: ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on'],
+  sent: new Set(),
+  hit(ev) {
+    try {
+      if (Track.EVENTS.indexOf(ev) < 0) return;
+      if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return;
+      const day = new Date().toISOString().slice(0, 10);
+      const k = ev + ':' + day;
+      if (Track.sent.has(k)) return;          /* once a day per device is enough for a count of people */
+      Track.sent.add(k);
+      fetch('/api/flow/track', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ e: ev, look: TodayLook.on() ? 's' : 'a' }) }).catch(() => {});
+    } catch (e) {}
+  },
+  boot() { Track.hit('app_open'); }
+};
+window.FlowTrack = Track;
+
+/* ── My day changed: a replan you approve ───────────────────────────────────
+ * The day had a shape in the morning; a meeting ran over, something landed,
+ * and now the open Big Rocks do not fit in what is left. This works out what
+ * does fit — fixed events first, then the rocks by time and priority, each
+ * with its length and a little room between — and proposes which ones move
+ * to the next day with room. Nothing moves until the person says so; a
+ * rock can be kept today (and something else moves instead), the lengths
+ * can be changed, and the whole thing undoes in one tap. No model is asked:
+ * it is arithmetic over the record, which is why it works offline and why
+ * the preview is free. Applying it is Plus. Simple only. */
+const Replan = {
+  el: null, rows: [], keep: new Set(),
+  hm(m) { const h = Math.floor(m / 60), r = m % 60; return h ? h + 'h' + (r ? ' ' + r + 'm' : '') : r + 'm'; },
+  mins(t) { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? (+m[1]) * 60 + (+m[2]) : null; },
+  prefs() {
+    const s = (typeof Settings !== 'undefined' && Settings.data) || {};
+    return { start: Replan.mins(s.workStart) ?? 9 * 60, end: Replan.mins(s.workEnd) ?? 18 * 60, buffer: Math.max(0, +s.bufferMin || 10), dur: Math.max(10, +s.defaultDurationMin || 60) };
+  },
+  duration(r) {
+    if (r.time && r.end) { const a = Replan.mins(r.time), b = Replan.mins(r.end); if (a != null && b != null && b > a) return b - a; }
+    return Replan.prefs().dur;
+  },
+  /* Minutes of calendar still ahead today, inside the working day. */
+  eventsAhead(now, end) {
+    let m = 0;
+    try {
+      const today = RockActions.iso(new Date());
+      (Ahead.cal || []).forEach((e) => {
+        if (e.allDay) return;
+        const s0 = Date.parse(e.start), e0 = Date.parse(e.end); if (isNaN(s0) || isNaN(e0)) return;
+        if (RockActions.iso(new Date(s0)) !== today) return;
+        const d = new Date(s0); const sm = Math.max(now, d.getHours() * 60 + d.getMinutes()); const em = Math.min(end, sm + (e0 - s0) / 6e4);
+        if (em > sm) m += em - sm;
+      });
+    } catch (e) {}
+    return Math.round(m);
+  },
+  /* The arithmetic, with nothing drawn: a pure function the tests can call. */
+  compute(opts) {
+    opts = opts || {};
+    const now = opts.now != null ? opts.now : (new Date().getHours() * 60 + new Date().getMinutes());
+    const P = Object.assign(Replan.prefs(), opts.prefs || {});
+    const from = Math.max(now, P.start);
+    const events = opts.events != null ? opts.events : Replan.eventsAhead(from, P.end);
+    const left = Math.max(0, P.end - from - events);
+    const rocks = (opts.rocks || Replan.todayRocks()).map((r) => Object.assign({ dur: Replan.duration(r) }, r, opts.durs && opts.durs[r.id] ? { dur: opts.durs[r.id] } : {}));
+    const rank = { high: 0, med: 1, low: 2 };
+    rocks.sort((a, b) => (a.late === b.late ? 0 : a.late ? 1 : -1) || ((rank[a.prio] ?? 1) - (rank[b.prio] ?? 1)) || String(a.time || '99:99').localeCompare(String(b.time || '99:99')));
+    const keep = opts.keep || new Set();
+    let used = 0; const fits = [], moves = [];
+    /* kept ones first, then the rest in order */
+    [...rocks.filter((r) => keep.has(String(r.id))), ...rocks.filter((r) => !keep.has(String(r.id)))].forEach((r) => {
+      const need = r.dur + (fits.length ? P.buffer : 0);
+      if (keep.has(String(r.id)) || used + need <= left) { fits.push(r); used += need; } else moves.push(r);
+    });
+    const over = Math.max(0, used - left);
+    return { now, left, events, rocks, fits, moves, used, over, prefs: P };
+  },
+  todayRocks() {
+    try {
+      const k = TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7);
+      return k.today.map((r) => Object.assign({ late: false }, r)).concat(k.late.map((r) => Object.assign({ late: true }, r)));
+    } catch (e) { return []; }
+  },
+  /* The next day with the fewest open Big Rocks, inside the next seven. */
+  landing(skip) {
+    const t = (new Date().getDay() + 6) % 7;
+    let best = null;
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + i);
+      const dow = (d.getDay() + 6) % 7; if (dow >= 5 && i < 6) continue;         /* not a weekend, unless there is nothing else */
+      let n = 0; try { n = ((cData.rocks[weekId(d)] || []).filter((r) => r && !r.done && r.day === dow)).length; } catch (e) {}
+      n += (skip || 0);
+      if (!best || n < best.n) best = { d, n };
+      if (n === 0) break;
+    }
+    return best ? best.d : (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d; })();
+  },
+  build() {
+    if (Replan.el) return Replan.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-replan'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-rp="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="My day changed">' +
+        '<div class="fn-grab" data-rp="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-rp="close" aria-label="Close">×</button>' +
+        '<h4>My day changed</h4><div class="fn-sub rp-sub"></div>' +
+        '<div class="rp-body"></div>' +
+        '<div class="ra-row ra-end rp-acts"><button type="button" class="flow-btn" data-rp="close">Not now</button><button type="button" class="flow-btn primary" data-rp="accept">Move them</button></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-rp]'); if (!b) return;
+      const a = b.getAttribute('data-rp');
+      if (a === 'close') return Replan.close();
+      if (a === 'keep') { const id = b.getAttribute('data-id'); if (Replan.keep.has(id)) Replan.keep.delete(id); else Replan.keep.add(id); Replan.paint(); return; }
+      if (a === 'accept') return Replan.accept();
+    });
+    wrap.addEventListener('change', (e) => {
+      const inp = e.target.closest('[data-rp-dur]'); if (!inp) return;
+      const v = Math.max(5, Math.min(600, parseInt(inp.value, 10) || 0)); Replan.durs[inp.getAttribute('data-rp-dur')] = v; Replan.paint();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Replan.close(); });
+    Replan.el = wrap;
+    return wrap;
+  },
+  durs: {},
+  open() {
+    if (!Plus.simple()) return;
+    Replan.build(); Replan.keep = new Set(); Replan.durs = {};
+    Replan.paint();
+    Replan.el.classList.add('on');
+    Track.hit('replan_preview');
+  },
+  close() { if (Replan.el) Replan.el.classList.remove('on'); },
+  paint() {
+    const el = Replan.el; if (!el) return;
+    const c = Replan.compute({ keep: Replan.keep, durs: Replan.durs });
+    Replan.last = c;
+    const land = Replan.landing(c.moves.length);
+    const landL = RockActions.label(land);
+    const endH = Math.floor(c.prefs.end / 60), endM = String(c.prefs.end % 60).padStart(2, '0');
+    el.querySelector('.rp-sub').textContent = c.rocks.length
+      ? Replan.hm(c.left) + ' left until ' + endH + ':' + endM + (c.events ? ', after ' + Replan.hm(c.events) + ' of meetings' : '') + '. ' + c.rocks.length + ' Big Rock' + (c.rocks.length === 1 ? '' : 's') + ' need' + (c.rocks.length === 1 ? 's' : '') + ' about ' + Replan.hm(c.rocks.reduce((a, r) => a + r.dur, 0)) + '.'
+      : 'Nothing open today. The day is yours.';
+    const row = (r, moving) => '<div class="rp-row' + (moving ? ' mv' : '') + '">' +
+      '<span class="rp-t">' + esc(r.title) + (r.late ? '<small>overdue</small>' : r.time ? '<small>' + esc(r.time) + '</small>' : '') + '</span>' +
+      '<label class="rp-dur"><input type="number" min="5" max="600" step="5" value="' + r.dur + '" data-rp-dur="' + esc(String(r.id)) + '" aria-label="Minutes for ' + esc(r.title) + '"><span>min</span></label>' +
+      '<button type="button" class="rp-keep' + (Replan.keep.has(String(r.id)) ? ' on' : '') + '" data-rp="keep" data-id="' + esc(String(r.id)) + '" aria-pressed="' + Replan.keep.has(String(r.id)) + '">' + (moving ? 'Keep today' : (Replan.keep.has(String(r.id)) ? 'Kept' : 'Keep')) + '</button>' +
+      '</div>';
+    el.querySelector('.rp-body').innerHTML =
+      (c.fits.length ? '<div class="ra-k">Fits today</div>' + c.fits.map((r) => row(r, false)).join('') : '') +
+      (c.moves.length ? '<div class="ra-k">Moves to ' + esc(landL) + '<small>' + Replan.hm(c.over) + ' more than the day has' + (Replan.keep.size ? ' · kept ones stay' : '') + '</small></div>' + c.moves.map((r) => row(r, true)).join('') : (c.rocks.length ? '<p class="rp-ok">Everything fits. Nothing needs to move.</p>' : '')) +
+      (c.moves.length && Plus.free() ? Plus.line('replan') : '');
+    const acc = el.querySelector('[data-rp="accept"]');
+    acc.hidden = !c.moves.length;
+    acc.textContent = c.moves.length ? 'Move ' + c.moves.length + ' to ' + landL : 'Move them';
+    Replan.land = land;
+  },
+  async accept() {
+    const c = Replan.last; if (!c || !c.moves.length) return Replan.close();
+    if (Plus.free()) { Plus.open('replan'); return; }
+    const before = c.moves.map((r) => { const h = RockActions.find(r.id); return h ? { id: r.id, w: h.w, day: h.r.day } : null; }).filter(Boolean);
+    c.moves.forEach((r) => {
+      const h = RockActions.find(r.id); if (!h) return;
+      const to = weekId(Replan.land), day = (Replan.land.getDay() + 6) % 7;
+      cData.rocks[h.w].splice(h.i, 1);
+      if (!cData.rocks[to]) cData.rocks[to] = [];
+      h.r.day = day; h.r.done = false; h.r.moved = (h.r.moved || 0) + 1;
+      cData.rocks[to].push(h.r);
+    });
+    RockActions.save('➡️ Day replanned: ' + c.moves.length + ' Big Rock' + (c.moves.length === 1 ? '' : 's') + ' moved to ' + RockActions.label(Replan.land));
+    Track.hit('replan_accepted');
+    Replan.close();
+    RockActions.undo('Moved ' + c.moves.length + ' to ' + RockActions.label(Replan.land), () => {
+      before.forEach((b) => {
+        const h = RockActions.find(b.id); if (!h) return;
+        cData.rocks[h.w].splice(h.i, 1);
+        if (!cData.rocks[b.w]) cData.rocks[b.w] = [];
+        h.r.day = b.day; h.r.moved = Math.max(0, (h.r.moved || 1) - 1); cData.rocks[b.w].push(h.r);
+      });
+      RockActions.save('');
+      Track.hit('replan_undone');
+    });
+  }
+};
+window.FlowReplan = Replan;
+
+/* ── Overdue: a count you can deal with, not a wall of red ──────────────────
+ * Big Rocks from earlier days of the week that are still open. One sheet
+ * lists them, and each has the four honest answers: done, today, tomorrow,
+ * or let it go. Simple only. */
+const Triage = {
+  el: null,
+  late() { try { return TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7).late; } catch (e) { return []; } },
+  build() {
+    if (Triage.el) return Triage.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-triage'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-tg="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Overdue">' +
+        '<div class="fn-grab" data-tg="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-tg="close" aria-label="Close">×</button>' +
+        '<h4>Overdue</h4><div class="fn-sub tg-sub"></div>' +
+        '<div class="tg-body"></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tg]'); if (!b) return;
+      const a = b.getAttribute('data-tg'), id = b.getAttribute('data-id');
+      if (a === 'close') return Triage.close();
+      const t = new Date(); t.setHours(12, 0, 0, 0);
+      if (a === 'done') { const h = RockActions.find(id); if (h) { h.r.done = true; RockActions.save('✅ Big rock done: ' + h.r.title); } }
+      else if (a === 'today') RockActions.move(id, t);
+      else if (a === 'tomorrow') { t.setDate(t.getDate() + 1); RockActions.move(id, t); }
+      else if (a === 'drop') RockActions.setAside(id, 'dropped');
+      Track.hit('triage_done');
+      Triage.paint();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Triage.close(); });
+    Triage.el = wrap;
+    return wrap;
+  },
+  open() { if (!Plus.simple()) return; Triage.build(); Triage.paint(); Triage.el.classList.add('on'); },
+  close() { if (Triage.el) Triage.el.classList.remove('on'); },
+  paint() {
+    const el = Triage.el; if (!el) return;
+    const late = Triage.late();
+    el.querySelector('.tg-sub').textContent = late.length ? late.length + ' Big Rock' + (late.length === 1 ? '' : 's') + ' from earlier this week, still open. Each one: done, today, tomorrow, or let it go.' : 'Nothing overdue. Clear week.';
+    el.querySelector('.tg-body').innerHTML = late.map((r) => '<div class="tg-row"><span class="tg-t">' + esc(r.title) + '<small>' + esc(DOW[(r.day + 1) % 7] || '') + (r.time ? ' ' + esc(r.time) : '') + '</small></span>' +
+      '<div class="tg-acts"><button type="button" class="flow-btn sm" data-tg="done" data-id="' + esc(String(r.id)) + '">Done</button><button type="button" class="flow-btn sm" data-tg="today" data-id="' + esc(String(r.id)) + '">Today</button><button type="button" class="flow-btn sm" data-tg="tomorrow" data-id="' + esc(String(r.id)) + '">Tomorrow</button><button type="button" class="flow-btn sm ra-drop" data-tg="drop" data-id="' + esc(String(r.id)) + '">Drop</button></div></div>').join('');
+    if (!late.length) setTimeout(() => Triage.close(), 900);
+  }
+};
+window.FlowTriage = Triage;
+
+/* ── The week, reviewed with evidence ───────────────────────────────────────
+ * Under the scorecard of the existing Review week sheet, in Simple only:
+ * what happened (planned, done, moved, dropped, handed off), the one thing
+ * that kept being carried over, one to three commitments for next week —
+ * typed here, landing on the Week Compass — and one line about the week,
+ * kept with the record. Nothing is scored; the counts are the counts. */
+const ReviewPlus = {
+  KEY: 'flow:reviews',
+  counts(wid) {
+    const list = (cData.rocks && cData.rocks[wid]) || [];
+    const aside = RockActions.aside().filter((a) => a.wid === wid && !a.ext);
+    const moved = list.filter((r) => r && (r.moved || 0) > 0);
+    const most = list.filter((r) => r && !r.done && (r.moved || 0) >= 2).sort((a, b) => (b.moved || 0) - (a.moved || 0))[0] || null;
+    return { planned: list.length + aside.length, done: list.filter((r) => r && r.done).length, open: list.filter((r) => r && !r.done).length, moved: moved.length, dropped: aside.filter((a) => a.status === 'dropped').length, delegated: aside.filter((a) => a.status === 'delegated').length, most };
+  },
+  html(wid) {
+    const c = ReviewPlus.counts(wid);
+    const cell = (n, l) => '<div class="rv-c"><b>' + n + '</b><span>' + l + '</span></div>';
+    return '<div class="rv-ev">' +
+      '<div class="ra-k">What happened</div>' +
+      '<div class="rv-cells">' + cell(c.planned, 'planned') + cell(c.done, 'done') + cell(c.moved, 'moved') + cell(c.dropped, 'dropped') + cell(c.delegated, 'handed off') + '</div>' +
+      (c.most ? '<p class="rv-note"><b>' + esc(c.most.title) + '</b> moved ' + c.most.moved + ' times and is still open. Smaller, or not this week?</p>' : (c.open ? '<p class="rv-note">' + c.open + ' still open. The Overdue list on Today sorts them one by one.</p>' : '')) +
+      '<div class="ra-k">Next week, one to three</div>' +
+      '<form class="rv-next">' + [0, 1, 2].map((i) => '<input class="flow-in" maxlength="200" placeholder="' + (i === 0 ? 'The one thing that would make next week count' : 'Optional') + '" aria-label="Big Rock for next week ' + (i + 1) + '">').join('') +
+        '<label class="flow-label" for="rv-line">One line about this week</label><textarea class="flow-in" id="rv-line" rows="2" maxlength="500" placeholder="Optional. Kept with the record, never shared."></textarea>' +
+        '<div class="ra-row ra-end"><button type="submit" class="flow-btn primary">Set next week</button></div></form>' +
+    '</div>';
+  },
+  async submit(form) {
+    const titles = [...form.querySelectorAll('input')].map((i) => i.value.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const line = form.querySelector('#rv-line').value.trim();
+    const mon = new Date(); mon.setHours(12, 0, 0, 0); mon.setDate(mon.getDate() + (7 - (mon.getDay() + 6) % 7));
+    const wid = weekId(mon);
+    titles.forEach((t, i) => addRock(t, (cData.roles && cData.roles[0]) || '', Math.min(4, i), '', wid, { prio: i === 0 ? 'high' : 'med' }));
+    try {
+      const list = (await DB.get(ReviewPlus.KEY, [])) || [];
+      const thisW = weekId(new Date());
+      const rec = { wid: thisW, at: new Date().toISOString(), counts: (() => { const c = ReviewPlus.counts(thisW); delete c.most; return c; })(), line, next: titles.length };
+      const i = list.findIndex((x) => x && x.wid === thisW); if (i >= 0) list[i] = rec; else list.push(rec);
+      await DB.set(ReviewPlus.KEY, list.slice(-60));
+    } catch (e) {}
+    if (line) { try { J('journal', '📝 Week ' + weekId(new Date()) + ': ' + line); } catch (e) {} }
+    try { renderToday(); renderCompass(); } catch (e) {}
+    Track.hit('review_completed');
+    toast(titles.length ? 'Next week is set: ' + titles.length + ' Big Rock' + (titles.length === 1 ? '' : 's') + '.' : 'Week reviewed ✓');
+    const w = document.getElementById('flow-review'); if (w) w.classList.remove('on');
+  },
+  /* Called when the Review week sheet is drawn. */
+  decorate(wrap) {
+    let box = wrap.querySelector('#rv-evidence');
+    if (!Plus.simple()) { if (box) box.remove(); return; }
+    if (!box) {
+      box = document.createElement('div'); box.id = 'rv-evidence';
+      const after = wrap.querySelector('#rv-score'); if (after) after.after(box); else wrap.querySelector('.fn-sheet').appendChild(box);
+      box.addEventListener('submit', (e) => { e.preventDefault(); ReviewPlus.submit(e.target); });
+      box.addEventListener('click', (e) => e.stopPropagation());
+    }
+    box.innerHTML = ReviewPlus.html(weekId(new Date()));
+  }
+};
+window.FlowReviewPlus = ReviewPlus;
 
 /* ── Patterns: the habit card reads you instead of asking you ──────────────
  * The Habits card on Today opens with a short read of how you have actually
@@ -10136,6 +10503,7 @@ const Patterns = {
     const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
     if (!blob) { toast('Could not draw the card.', 'warn'); return; }
     const file = new File([blob], 'the-flow-patterns.png', { type: 'image/png' });
+    Track.hit('share_read');
     try {
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: 'My week, read by The Flow' }); return; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -10528,7 +10896,7 @@ const Ahead = {
       const open = Ahead.menu === it.key;
       rows += '<li class="ah-row' + (it.big ? ' big' : '') + '" data-ahk="' + esc(it.key) + '">' +
         '<span class="ah-tm">' + (it.time ? esc(it.time) : it.allDay ? 'All day' : '') + '</span>' +
-        '<span class="ah-t">' + esc(it.title) + '<small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : 'Calendar') + (it.where ? ' · ' + esc(it.where) : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
+        '<span class="ah-t"><span data-i18n="off">' + esc(it.title) + '</span><small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : 'Calendar') + (it.where ? ' · ' + esc(it.where) : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
         '<button type="button" class="ah-bell' + (rem.length ? ' on' : '') + '" data-ah="menu" aria-expanded="' + open + '" aria-label="' + (rem.length ? 'Reminders set: ' + rem.length : 'Remind me') + '">' + Nav.svg('bell') + (rem.length ? '<b>' + rem.length + '</b>' : '') + '</button>' +
         '<button type="button" class="ra-more ah-ra" data-ra-item="' + esc(it.key) + '" aria-label="More for ' + esc(it.title) + '">' + Nav.svg('dots') + '</button>' +
         (open ? '<div class="ah-menu" role="menu">' + Ahead.options(it).map((o) => { const on = rem.some((r) => r.id.endsWith('@' + o.id)); return '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" data-ah="opt" data-o="' + o.id + '"' + (on ? ' class="on"' : '') + '>' + (on ? '✓ ' : '') + esc(o.label) + '</button>'; }).join('') + (Ahead.options(it).length ? '' : '<span class="ah-none">Too soon to remind.</span>') + '</div>' : '') +
@@ -11240,7 +11608,7 @@ const RockActions = {
     const to = weekId(date), day = (date.getDay() + 6) % 7;
     c.rocks[hit.w].splice(hit.i, 1);
     if (!c.rocks[to]) c.rocks[to] = [];
-    hit.r.day = day; hit.r.done = false;
+    hit.r.day = day; hit.r.done = false; hit.r.moved = (hit.r.moved || 0) + 1;   /* the review counts carry-overs */
     c.rocks[to].push(hit.r);
     RockActions.save('➡️ Big rock moved to ' + RockActions.label(date) + ': ' + hit.r.title);
     RockActions.undo('Moved to ' + RockActions.label(date), () => {
@@ -12396,6 +12764,8 @@ const ConnectApps = {
     const hm = (s) => new Date(s).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const t0 = (x) => x.allDay ? -1 : (x.start ? Date.parse(x.start) : (x.time ? Date.parse(today() + 'T' + x.time + ':00') : 9e15));
     const all = [].concat((ev || []).map((e) => ({ kind: 'ev', e })), mine.map((r) => ({ kind: 'me', r }))).sort((a, b) => t0(a.e || a.r) - t0(b.e || b.r));
+    /* Simple names the account under an event only when today's events come from more than one. */
+    const accountsToday = new Set((ev || []).map((e) => e.account).filter(Boolean)).size;
     const rows = all.length ? all.map((x) => {
       if (x.kind === 'me') {
         const r = x.r;
@@ -12409,7 +12779,7 @@ const ConnectApps = {
       return '<div class="td-rock"><div class="dot med"></div><div class="rk-title">' +
         (go ? '<a href="' + esc(go) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a>' : esc(e.title)) +
         (e.location ? '<div class="td-rk-note">📍 ' + esc(e.location) + '</div>' : '') +
-        (ConnectApps.many && e.account ? '<div class="td-rk-note">' + esc(e.account) + '</div>' : '') +
+        (ConnectApps.many && e.account && !(TodayLook.on() && accountsToday <= 1) ? '<div class="td-rk-note">' + esc(e.account) + '</div>' : '') +
         EventBrief.rowHtml(e) +
         '</div><div class="rk-meta">' + esc(when) + '</div></div>';
     }).join('') : '<div class="td-rocks-empty">No meetings today.</div>';
@@ -15123,6 +15493,7 @@ async function boot() {
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
+  try { Track.boot(); } catch (e) {}
   try { Patterns.boot(); } catch (e) { console.warn('[Flow] patterns', e); }
   FirstRun.boot().catch((e) => console.warn('[Flow] first run', e));
   try { Ahead.boot(); } catch (e) { console.warn('[Flow] ahead', e); }
@@ -15179,7 +15550,7 @@ async function boot() {
   Queue.flush();
 
   window.Flow = {
-    SetView, PwSheet, BudgetFold, Photo, OpenRock,
+    SetView, PwSheet, BudgetFold, Photo, OpenRock, TodayPlus,
     version: window.__FLOW_UPGRADE__,
     DB, Settings, Schedule, Finance, Notes, Journal, Calendar, Reminders, ICS, GCAL, Chart, Visuals, Rollup, Tabs, TimeChips, Auth, Profile, Theme, Lang,
     Markets, Inbox, Ask, Planner, Nav, Sections, DataCard, Focus, MoodChart, NorthStar, Score, Direction, Fold, Friends, Audit, AuditMath,
