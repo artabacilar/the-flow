@@ -74,7 +74,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('the page title is replaced, not doubled', v.titleHidden);
   ok('the strip is the seven days of this week, today marked', v.days === 7 && v.on === setup.t, v);
   ok('days with an open Big Rock carry a dot, a day with only a done one does not', v.busy[setup.t] === true && v.busy.filter(Boolean).length === (setup.t > 0 ? 2 : 1), v.busy);
-  ok('the summary counts today\'s open rocks, not the week\'s', setup.overdueExpected ? /^2 Big Rocks for today/.test(v.line) : /^3 Big Rocks for today/.test(v.line), v.line);
+  ok('the summary counts today\'s open rocks, not the week\'s', setup.overdueExpected ? /^2 Priorities for today/.test(v.line) : /^3 Priorities for today/.test(v.line), v.line);
   ok('and the overdue one', setup.overdueExpected ? /1 overdue/.test(v.line) : !/overdue/.test(v.line), v.line);
   ok('next is today\'s first open rock', /^Next\s*/.test(v.next) && (setup.overdueExpected ? /Record the DJ set demo/ : /Send the Q4 plan/).test(v.next) && /Today/.test(v.next), v.next);
   ok('the week pill shows how much is done', /Week \d+ · 25%/.test(v.pills), v.pills);
@@ -104,13 +104,13 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     cData.rocks[w] = saved; cSave(); renderToday(); await new Promise((r) => setTimeout(r, 400));
     return out;
   });
-  ok('ten rocks later in the week are not ten for today', /^Nothing due today\./.test(ahead.line) && !/10 Big Rocks/.test(ahead.line), ahead.line);
+  ok('ten rocks later in the week are not ten for today', /^Nothing due today\./.test(ahead.line) && !/10 (Big Rocks|Priorities)/.test(ahead.line), ahead.line);
   ok('they show as more this week', /10 more this week/.test(ahead.pills), ahead.pills);
   ok('next is the earliest one, with its day', ahead.t < 6 ? /Later thing 0/.test(ahead.next) && /Tomorrow 09:00/.test(ahead.next) : /No day set/.test(ahead.next), ahead.next);
-  ok('one open today is one for today', /^1 Big Rock for today\.$/.test(ahead.line2), ahead.line2);
+  ok('one open today is one for today', /^1 Priority for today\.$/.test(ahead.line2), ahead.line2);
   ok('next is today\'s, at its time', /Today second/.test(ahead.next2) && /Today 15:30/.test(ahead.next2), ahead.next2);
   ok('the rest of the week is the pill', /8 more this week/.test(ahead.pills2), ahead.pills2);
-  ok('today finished says so', /^Today’s Big Rocks are done\./.test(ahead.line3), ahead.line3);
+  ok('today finished says so', /^Today’s Priorities are done\./.test(ahead.line3), ahead.line3);
 
   console.log('\n— it follows a change —');
   const after = await p.evaluate(async () => {
@@ -120,7 +120,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     await new Promise((r) => setTimeout(r, 600));
     return { line: document.querySelector('.lk-line').textContent, next: !!document.querySelector('.lk-next'), n: document.querySelectorAll('.lk-hero').length };
   });
-  ok('when everything is done it says so', /All 4 Big Rocks done/.test(after.line), after);
+  ok('when everything is done it says so', /All 4 Priorities done/.test(after.line), after);
   ok('with no next item', after.next === false, after);
   ok('and the summary is not added twice', after.n === 1, after);
 
@@ -169,6 +169,25 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('and the previous tab bar', back.fab === '16px', back.fab);
   await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(4500);
   ok('it stays off after a reload', await p.evaluate(() => document.documentElement.getAttribute('data-flow-look') === 'classic'));
+
+  console.log('\n— Big Rocks are Priorities in Simple —');
+  const words = async () => p.evaluate(() => { const t = (sel) => { const e = document.querySelector(sel); return e ? e.textContent.trim() : null; }; return { label: t('#today-feed .td-rocks:not(#td-cal) .td-rocks-head .lbl'), menu: [...document.querySelectorAll('.fn-txt, .fn-tab, nav button, .flow-btn')].map((e) => e.textContent).filter((x) => /Big Rock|Priorit/i.test(x)).slice(0, 4), title: (document.querySelector('#today-feed .rk-title') || {}).textContent, ph: (document.querySelector('#today-feed .lk-dv-add input') || {}).placeholder || null }; });
+  await p.evaluate(() => { const w = weekId(new Date()), t = (new Date().getDay() + 6) % 7; (cData.rocks[w] = cData.rocks[w] || []).push({ id: 'bigword', title: 'Move the Big Rock in the garden', day: t, prio: 'med', done: false }); cSave(); renderToday(); });
+  await p.waitForTimeout(600);
+  const adv = await words();
+  ok('Advanced says Big Rocks', /Big Rocks/i.test(adv.label), adv);
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); }); await p.waitForTimeout(1200);
+  const sim = await words();
+  ok('Simple says Priorities, on the card and in the furniture', /Priorit/i.test(sim.label) && !/Big Rock/i.test(sim.label) && !sim.menu.some((x) => /Big Rock/i.test(x)), sim);
+  ok('and leaves a person\'s own title alone', await p.evaluate(() => /Move the Big Rock in the garden/.test(document.querySelector('#today-feed .td-rock[data-rockid="bigword"] .rk-title').textContent)));
+  await p.evaluate(() => { window.FlowTodayLook.sel = (new Date().getDay() + 6) % 7; window.FlowTodayLook.paint(); }); await p.waitForTimeout(400);
+  ok('placeholders follow too', await p.evaluate(() => { const i = document.querySelector('#today-feed .lk-dv-add input'); return !!i && /Priority/.test(i.placeholder) && !/Big Rock/.test(i.placeholder); }));
+  await p.evaluate(async () => { await Flow.Lang.set('tr'); }); await p.waitForTimeout(1500);
+  const trw = await p.evaluate(() => ({ label: document.querySelector('#today-feed .td-rocks:not(#td-cal) .td-rocks-head .lbl').textContent.trim(), ph: (document.querySelector('#today-feed .lk-dv-add input') || {}).placeholder || '', any: document.body.textContent.indexOf('Büyük Taş') >= 0 }));
+  ok('in Turkish it is Öncelik, with its suffixes', /Öncelik/.test(trw.label) && /Öncelik/.test(trw.ph) && !trw.any, trw);
+  await p.evaluate(async () => { await Flow.Lang.set('en'); await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); }); await p.waitForTimeout(1200);
+  const backw = await words();
+  ok('back in Advanced it is Big Rocks again, everywhere', /Big Rocks/i.test(backw.label) && !/Priorit/i.test(backw.label), backw);
 
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
