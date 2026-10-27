@@ -350,6 +350,12 @@ async function handleChat(p, req, res, ctx) {
     ctx.json(res, 429, { error: 'You have reached today\'s limit of ' + CHAT_DAILY_CAP + ' messages. It resets at midnight UTC.', used, cap: CHAT_DAILY_CAP });
     return true;
   }
+  if (freeTier(ctx)) {
+    const wk = 'chatw:' + isoWeekKey();
+    const w = (await ctx.counter.get(wk)) || 0;
+    if (w >= CHAT_FREE_WEEKLY) { ctx.json(res, 402, PLUS_REFUSAL('ask', { used: w, cap: CHAT_FREE_WEEKLY })); return true; }
+    await ctx.counter.set(wk, w + 1);
+  }
 
   let body = {};
   try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
@@ -510,6 +516,12 @@ async function handleChatStream(p, req, res, ctx) {
   if (CHAT_DAILY_CAP > 0 && used >= CHAT_DAILY_CAP) {
     ctx.json(res, 429, { error: 'You have reached today\'s limit of ' + CHAT_DAILY_CAP + ' messages. It resets at midnight UTC.', used, cap: CHAT_DAILY_CAP });
     return true;
+  }
+  if (freeTier(ctx)) {
+    const wk = 'chatw:' + isoWeekKey();
+    const w = (await ctx.counter.get(wk)) || 0;
+    if (w >= CHAT_FREE_WEEKLY) { ctx.json(res, 402, PLUS_REFUSAL('ask', { used: w, cap: CHAT_FREE_WEEKLY })); return true; }
+    await ctx.counter.set(wk, w + 1);
   }
 
   let body = {};
@@ -1543,6 +1555,15 @@ const PAT_DAILY_CAP = (() => {
   return Number.isFinite(n) && n >= 0 ? n : 6;
 })();
 const patDayKey = () => 'pat:' + new Date().toISOString().slice(0, 10);
+/* The free allowance: one read a week, counted by ISO week, and never a
+   rewrite. Plus (and every account from before there was a plan) is the
+   daily read above. ctx.plan is absent in tests that call this directly,
+   and absent means Plus. */
+const freeTier = (ctx) => !!(ctx.plan && ctx.plan.tier === 'free');
+const isoWeekKey = () => { const d = new Date(); const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return t.getUTCFullYear() + '-W' + String(Math.ceil(((t - y0) / 864e5 + 1) / 7)).padStart(2, '0'); };
+const PAT_FREE_WEEKLY = 1;
+const CHAT_FREE_WEEKLY = 5;
+const PLUS_REFUSAL = (feature, extra) => Object.assign({ error: 'This is part of Flow Plus.', plus: true, feature }, extra || {});
 const patCountKey = () => 'patn:' + new Date().toISOString().slice(0, 10);
 const patJobs = new Map();
 let patPost = (...a) => postJSON(...a);
@@ -1694,6 +1715,16 @@ async function handlePatterns(p, req, res, ctx) {
      already under way is the answer to all of them. */
   if (!body.refresh) {
     for (const [jid, j] of patJobs) if (j.uid === uid && j.status === 'working') { ctx.json(res, 202, { ok: true, job: jid, joined: true }); return true; }
+  }
+  if (freeTier(ctx)) {
+    const last = cached || await ctx.counter.get(PAT_LAST);
+    if (body.refresh) { ctx.json(res, 402, PLUS_REFUSAL('patterns', { patterns: last && last.headline != null ? last : undefined })); return true; }
+    const wk = 'patw:' + isoWeekKey();
+    if (((await ctx.counter.get(wk)) || 0) >= PAT_FREE_WEEKLY) {
+      if (last && last.headline != null) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, stale: true, capped: true, plus: true, patterns: last }); return true; }
+      ctx.json(res, 402, PLUS_REFUSAL('patterns')); return true;
+    }
+    await ctx.counter.set(wk, 1);
   }
   const spent = (await ctx.counter.get(patCountKey())) || 0;
   if (PAT_DAILY_CAP > 0 && spent >= PAT_DAILY_CAP) {

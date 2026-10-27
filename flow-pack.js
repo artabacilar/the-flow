@@ -318,6 +318,8 @@ const SETTINGS_DEFAULTS = {
   bankProvider: 'none',
   statementDateFormat: 'auto',
   pushRemindRocks: true,         // reminders at a rock's own time
+  eveningCheck: false,           // one notification in the evening: how did today go?
+  eveningCheckAt: '21:00',
   hiddenTabs: [],                // sections taken out of the menu (data kept)
   sectionsV: 0,                  // which default-hiding pass has run on this account
   todayMarkets: false,           // the price strip on Today is a widget: off until asked for
@@ -3008,6 +3010,7 @@ const Ask = {
          gets the buffered endpoint rather than an error. */
       let j = null;
       try { j = await r.json(); } catch (e) {}
+      if (j && j.plus) { Plus.refused(j, { open: true }); fail(Plus.simple() ? 'Ask is part of Flow Plus — it answers from your own record. See Plus in Settings.' : j.error); return; }
       if (j && j.error) { fail(j.error); return; }
       if (!r.body) { await Ask.sendBuffered(history); return; }
       fail('That did not work.');
@@ -3079,7 +3082,8 @@ const Ask = {
         body: JSON.stringify({ messages: history })
       });
       const j = await r.json().catch(() => ({}));
-      Ask.turns.push({ role: 'assistant', content: (r.ok ? (j.reply || '(no answer)') : (j.error || 'That did not work.')) });
+      if (!r.ok && j.plus) Plus.refused(j, { open: true });
+      Ask.turns.push({ role: 'assistant', content: (r.ok ? (j.reply || '(no answer)') : (j.plus && Plus.simple() ? 'Ask is part of Flow Plus — it answers from your own record. See Plus in Settings.' : (j.error || 'That did not work.'))) });
       if (r.ok && j.used != null) Ask.meta = j.used + ' of ' + j.cap + ' messages today';
     } catch (e) {
       Ask.turns.push({ role: 'assistant', content: 'Could not reach the server.' });
@@ -4070,6 +4074,7 @@ const SettingsUI = {
         <div class="flow-hero" style="font-size:38px">Settings</div>
       </div>
 
+      ${TodayLook.on() ? Plus.settingsHtml() : ''}
       <div class="flow-card" id="lookCard">
         <h3>🎨 Appearance</h3>
         <p class="flow-sub">Pick a colour theme. It applies the instant you tap it — no reload — and is saved to your account (or kept on this device while you're just looking around).</p>
@@ -4363,6 +4368,7 @@ const SettingsUI = {
     /* ---- Connect to Claude ---- */
     SettingsUI.mcpWire(section);
     try { SettingsUI.watchWire(section); } catch (e) {}
+    try { Plus.settingsWire(section); } catch (e) {}
 
     /* ---- Connections (Google, and whatever follows it) ---- */
     try { Connect.wire(section); } catch (e) { console.warn('[Flow] connections', e); }
@@ -7144,6 +7150,7 @@ const Auth = {
       Auth.installed = true;
       Auth.user = j.user || null;
       Auth.seed = j.seed || null;
+      Auth.simpleDefault = !!j.simpleDefault;
       if (!Auth.user) Auth.screen(!!j.needsSetup);
       return Auth.user;
     } catch (e) { return null; }
@@ -9766,6 +9773,288 @@ const SimpleSkin = {
 };
 window.FlowSimpleSkin = SimpleSkin;
 
+/* ── Flow Plus: the plan, and the one sheet that sells it ──────────────────
+ * Free is the planner — everything a person types in, theirs for good. Plus
+ * is the reading: Patterns every morning, Coming up's prep and reminders,
+ * Ask, Direction, statements and briefs. The server decides who is on which
+ * plan (flow-plus.js) and answers 402 with {plus:true} when a Free account
+ * asks for a Plus feature; this is the only place the app turns that into
+ * something to look at.
+ *
+ * Simple only. In Advanced nothing here is drawn: no card in Settings, no
+ * sheet, no line under a card. A refusal there reads as the plain sentence
+ * the server sent, exactly as any other error does. The owner, and every
+ * account from before there was a price, are Plus for good and never see
+ * any of this either. */
+const Plus = {
+  state: null,
+  WHY: {
+    patterns: ['Patterns every morning', 'One honest read of how your week is actually going, from everything in your record.'],
+    ahead: ['Coming up, read for you', 'What to get ready before each thing on your calendar, and the reminders worth setting.'],
+    ask: ['Ask, about your own record', 'Questions answered from your sleep, your money, your week — not from the internet.'],
+    direction: ['Direction', 'Where the weeks are taking you, read from the record.'],
+    'plan-week': ['The week, planned with you', 'A first draft of the week from your roles and what slipped.'],
+    statement: ['Statements read into Finances', 'A bank statement becomes a month of categorised spending in one go.'],
+    brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.']
+  },
+  HAS: ['Patterns every morning, with Direction', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you'],
+  async load() {
+    try { if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return null; } catch (e) { return null; }
+    try {
+      const r = await fetch('/api/flow/plan', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (j && j.ok) Plus.state = j;
+    } catch (e) {}
+    return Plus.state;
+  },
+  tier() { return (Plus.state && Plus.state.tier) || 'plus'; },      /* unknown reads as Plus: never nag by mistake */
+  free() { return Plus.tier() === 'free'; },
+  simple() { try { return TodayLook.on(); } catch (e) { return false; } },
+  /* A server reply. True when it was a Plus refusal. In Simple, and when the
+     person asked for the thing themselves, the sheet opens; a refusal met
+     while a card was loading on its own stays a quiet line in that card. */
+  refused(j, opts) {
+    if (!j || !j.plus) return false;
+    if (Plus.simple() && opts && opts.open) Plus.open(j.feature);
+    return true;
+  },
+  price(k) { return (Plus.state && Plus.state.prices && Plus.state.prices[k]) || (k === 'monthly' ? '$9.99' : '$79.99'); },
+  trial() { return Plus.state && typeof Plus.state.trialDays === 'number' ? Plus.state.trialDays : 14; },
+  line(feature) {
+    if (!Plus.simple() || !Plus.free()) return '';
+    const w = Plus.WHY[feature] || Plus.WHY.patterns;
+    return '<p class="pt-wait plus-line"><b>' + esc(w[0]) + '</b> is part of Flow Plus. <button type="button" class="pt-link" data-plus-open="' + esc(feature) + '">See Plus</button></p>';
+  },
+  build() {
+    if (Plus.el) return Plus.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-plus'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-plus="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Flow Plus">' +
+        '<div class="fn-grab" data-plus="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-plus="close" aria-label="Close">×</button>' +
+        '<div class="plus-k">Flow Plus</div>' +
+        '<h4 class="plus-h"></h4><p class="plus-why"></p>' +
+        '<ul class="plus-has">' + Plus.HAS.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
+        '<button type="button" class="flow-btn primary plus-buy" data-plus="yearly"></button>' +
+        '<button type="button" class="flow-btn plus-buy" data-plus="monthly"></button>' +
+        '<p class="plus-fine">Cancel any time. Everything you have typed in stays yours, Plus or not — and you can export it whenever you like.</p>' +
+        '<button type="button" class="pt-link plus-later" data-plus="close">Not now</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-plus]'); if (!b) return;
+      const a = b.getAttribute('data-plus');
+      if (a === 'close') return Plus.close();
+      if (a === 'yearly' || a === 'monthly') Plus.checkout(a);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Plus.close(); });
+    Plus.el = wrap;
+    return wrap;
+  },
+  open(feature) {
+    if (!Plus.simple()) return;
+    const el = Plus.build();
+    const w = Plus.WHY[feature] || ['Everything The Flow can read for you', 'Patterns, Coming up, Ask and the rest — every morning, from your own record.'];
+    el.querySelector('.plus-h').textContent = w[0];
+    el.querySelector('.plus-why').textContent = w[1];
+    const t = Plus.trial();
+    el.querySelector('[data-plus="yearly"]').innerHTML = (t ? 'Try ' + t + ' days free' : 'Plus for a year') + '<small>' + esc(Plus.price('yearly')) + ' a year after that · ' + (t ? 'cancel before it starts and pay nothing' : 'two months free against monthly') + '</small>';
+    el.querySelector('[data-plus="monthly"]').innerHTML = esc(Plus.price('monthly')) + ' a month<small>No trial, no commitment</small>';
+    el.classList.add('on');
+  },
+  close() { if (Plus.el) Plus.el.classList.remove('on'); },
+  async checkout(which) {
+    if (Plus.state && !Plus.state.checkout) { toast('Subscriptions open soon — there is nothing to pay yet.'); return; }
+    try {
+      const r = await fetch('/api/flow/plan/checkout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: which, origin: location.origin }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 503) { toast('Subscriptions open soon — there is nothing to pay yet.'); return; }
+      if (!r.ok || !j.url) { toast(j.error || 'The checkout could not be opened.', 'warn'); return; }
+      location.href = j.url;
+    } catch (e) { toast('Could not reach the server. Try again in a moment.', 'warn'); }
+  },
+  async portal() {
+    try {
+      const r = await fetch('/api/flow/plan/portal', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: location.origin }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.url) { toast(j.error || 'The billing page could not be opened.', 'warn'); return; }
+      location.href = j.url;
+    } catch (e) { toast('Could not reach the server. Try again in a moment.', 'warn'); }
+  },
+  /* The card in Settings. Simple only; the caller checks. */
+  settingsHtml() {
+    const st = Plus.state;
+    const s = (typeof Settings !== 'undefined' && Settings.data) || {};
+    let status, act;
+    if (!st) { status = 'Checking your plan…'; act = ''; }
+    else if (st.tier === 'plus') {
+      const until = st.until ? new Date(st.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      status = st.source === 'founder' ? 'Plus — the founder\'s account, for good.'
+        : st.source === 'early' ? 'Plus — you were here before there was a price, so it is yours for good.'
+        : (st.ends ? 'Plus until ' + until + ' — it will not renew.' : 'Plus' + (until ? ' · renews around ' + until : '') + '.');
+      act = st.portal ? '<button type="button" class="flow-btn sm" data-plus-act="portal">Manage billing</button>' : (st.source === 'apple' || st.source === 'google' ? '<p class="flow-sub">Managed through the ' + (st.source === 'apple' ? 'App Store' : 'Play Store') + ' subscriptions on your phone.</p>' : '');
+    } else {
+      status = 'Free — the planner, all of it. ' + (st.lapsed ? 'Plus ended on ' + new Date(st.lapsed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + '.' : 'Plus adds the reading.');
+      act = '<button type="button" class="flow-btn sm primary" data-plus-act="open">' + (Plus.trial() ? 'Try Plus free for ' + Plus.trial() + ' days' : 'See Plus') + '</button>';
+    }
+    return `
+      <div class="flow-card" id="plusCard">
+        <h3>✨ Flow Plus</h3>
+        <p class="flow-sub plus-status" data-i18n="off">${esc(status)}</p>
+        <div class="flow-row" style="margin-top:8px">${act}</div>
+        <ul class="plus-has plus-has-sm">${Plus.HAS.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul>
+        <div class="flow-label" style="margin-top:16px">Daily rhythm</div>
+        <div class="flow-switch"><div class="t"><b>Evening check-in</b><span>One notification in the evening: how did today go? Tick what got done, move what did not.</span></div>
+          <input type="checkbox" data-s="eveningCheck" data-type="bool" ${s.eveningCheck ? 'checked' : ''}></div>
+        <div class="flow-row"><span class="flow-label">At</span><input class="flow-in" type="time" data-s="eveningCheckAt" value="${esc(s.eveningCheckAt || '21:00')}" style="max-width:130px"></div>
+        <div class="flow-label" style="margin-top:16px">Your data</div>
+        <p class="flow-sub">Everything you have put in, as one file. Free or Plus, it is yours.</p>
+        <div class="flow-row"><a class="flow-btn sm" href="/api/flow/account/export" download="the-flow-export.json" data-plus-act="export">↓ Export everything</a></div>
+      </div>`;
+  },
+  settingsWire(section) {
+    const card = section.querySelector('#plusCard'); if (!card) return;
+    card.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-plus-act]'); if (!b) return;
+      const a = b.getAttribute('data-plus-act');
+      if (a === 'open') { e.preventDefault(); Plus.open(); }
+      if (a === 'portal') { e.preventDefault(); Plus.portal(); }
+    });
+    if (!Plus.state) Plus.load().then(() => { const c = section.querySelector('#plusCard'); if (c && Plus.state) { const st = c.querySelector('.plus-status'); const tmp = document.createElement('div'); tmp.innerHTML = Plus.settingsHtml(); st.textContent = tmp.querySelector('.plus-status').textContent; c.querySelector('.flow-row').innerHTML = tmp.querySelector('.flow-row').innerHTML; } });
+  },
+  boot() {
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-plus-open]');
+      if (b) { e.preventDefault(); Plus.open(b.getAttribute('data-plus-open')); }
+    });
+    try {
+      const q = new URLSearchParams(location.search).get('plus');
+      if (q === 'welcome') { toast('Welcome to Plus ✓ — the morning read starts tomorrow.', null, 4000); history.replaceState(null, '', location.pathname); }
+      else if (q === 'later') history.replaceState(null, '', location.pathname);
+    } catch (e) {}
+    Plus.load().catch(() => {});
+  }
+};
+window.FlowPlus = Plus;
+
+/* ── The first run: roles, three Big Rocks, Today ───────────────────────────
+ * A new account used to open onto a dashboard shaped by one person's life:
+ * twelve sections, one of them named after his company. This asks two
+ * questions and puts the person in Today with their own week in under two
+ * minutes. Simple only, template accounts only (the server marks an account
+ * that inherited an existing Flow as 'legacy' and it never sees this), once.
+ * The example rocks the server seeds are taken out when the person writes
+ * their own; "Skip" keeps them as the tour they were meant to be. */
+const FirstRun = {
+  KEY: 'flow:firstrun',
+  SUGGEST: ['Work', 'Health & Body', 'Money', 'Family', 'Relationships', 'Learning', 'Side project', 'Something creative', 'Home'],
+  EXAMPLES: { 'Work': 'Send the proposal to…', 'Health & Body': 'Train three times', 'Money': 'Pay the invoices by Friday', 'Family': 'Dinner with no phones', 'Relationships': 'Call someone I have not called', 'Learning': 'One chapter a day', 'Side project': 'Ship one small thing', 'Something creative': 'Two hours with the music', 'Home': 'Fix the thing I keep walking past' },
+  async due() {
+    try {
+      if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return false;
+      if (Auth.seed !== 'template') return false;
+      if (window.__flowSkipFirstRun) return false;   /* the test replica, for suites about other things */
+      if (!TodayLook.on()) return false;
+      if (await DB.get(FirstRun.KEY, null)) return false;
+      /* An account that already holds a week of its own — anything beyond
+         the seeded examples — is not a first run, whatever the marker says. */
+      const own = Object.keys((typeof cData !== 'undefined' && cData.rocks) || {}).some((w) => (cData.rocks[w] || []).some((r) => r && !/An example to get you started/.test(String(r.note || ''))));
+      if (own) { try { await DB.set(FirstRun.KEY, { at: new Date().toISOString(), skipped: 'had a week' }); } catch (e) {} return false; }
+      return true;
+    } catch (e) { return false; }
+  },
+  roles() { try { return (Array.isArray(cData.roles) && cData.roles.length ? cData.roles : []).slice(); } catch (e) { return []; } },
+  open() {
+    if (document.getElementById('flow-fr')) return;
+    const name = TodayLook.name();
+    const have = FirstRun.roles();
+    const all = []; have.concat(FirstRun.SUGGEST).forEach((r) => { if (all.indexOf(r) < 0) all.push(r); });
+    const el = document.createElement('div');
+    el.id = 'flow-fr'; el.className = 'flow-x';
+    el.innerHTML =
+      '<div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-h">' +
+        '<div class="fr-step" data-step="1">' +
+          '<div class="fr-k">The Flow</div>' +
+          '<h2 id="fr-h" class="fr-h">' + (name ? 'Welcome, ' + esc(name) + '.' : 'Welcome.') + '</h2>' +
+          '<p class="fr-sub">The Flow reads your life back to you. First, the parts of it you want to keep in view — your roles. Pick a few, or add your own.</p>' +
+          '<div class="fr-chips">' + all.map((r) => '<button type="button" class="fr-chip' + (have.indexOf(r) >= 0 ? ' on' : '') + '" data-role="' + esc(r) + '" aria-pressed="' + (have.indexOf(r) >= 0) + '">' + esc(r) + '</button>').join('') + '</div>' +
+          '<form class="fr-add"><input class="flow-in" maxlength="40" placeholder="Add a role of your own" aria-label="Add a role"><button type="submit" class="flow-btn sm">Add</button></form>' +
+          '<div class="fr-row"><button type="button" class="pt-link" data-fr="skip">Skip for now</button><button type="button" class="flow-btn primary" data-fr="next">Continue</button></div>' +
+        '</div>' +
+        '<div class="fr-step" data-step="2" hidden>' +
+          '<div class="fr-k">This week</div>' +
+          '<h2 class="fr-h">Three Big Rocks.</h2>' +
+          '<p class="fr-sub">The few things that would make this week count. They go in first; everything else fits around them. One is enough to start.</p>' +
+          '<div class="fr-rocks"></div>' +
+          '<div class="fr-row"><button type="button" class="pt-link" data-fr="back">Back</button><button type="button" class="flow-btn primary" data-fr="done">Start my week</button></div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(el);
+    const chosen = () => [...el.querySelectorAll('.fr-chip.on')].map((b) => b.getAttribute('data-role'));
+    el.addEventListener('click', (e) => {
+      const chip = e.target.closest('.fr-chip');
+      if (chip) { chip.classList.toggle('on'); chip.setAttribute('aria-pressed', chip.classList.contains('on')); return; }
+      const b = e.target.closest('[data-fr]'); if (!b) return;
+      const a = b.getAttribute('data-fr');
+      if (a === 'skip') return FirstRun.finish(el, null, []);
+      if (a === 'back') { el.querySelector('[data-step="2"]').hidden = true; el.querySelector('[data-step="1"]').hidden = false; return; }
+      if (a === 'next') {
+        const roles = chosen();
+        if (!roles.length) { toast('Pick at least one role — or skip for now.', 'warn'); return; }
+        const box = el.querySelector('.fr-rocks');
+        box.innerHTML = [0, 1, 2].map((i) => {
+          const role = roles[i % roles.length];
+          return '<div class="fr-rock"><input class="flow-in" maxlength="200" placeholder="' + esc(FirstRun.EXAMPLES[role] || 'Something that matters this week') + '" aria-label="Big Rock ' + (i + 1) + '">' +
+            '<select class="flow-in" aria-label="Role for Big Rock ' + (i + 1) + '">' + roles.map((r) => '<option' + (r === role ? ' selected' : '') + '>' + esc(r) + '</option>').join('') + '</select></div>';
+        }).join('');
+        el.querySelector('[data-step="1"]').hidden = true; el.querySelector('[data-step="2"]').hidden = false;
+        setTimeout(() => { const i = box.querySelector('input'); if (i) i.focus(); }, 80);
+        return;
+      }
+      if (a === 'done') {
+        const rocks = [...el.querySelectorAll('.fr-rock')].map((r) => ({ title: r.querySelector('input').value.replace(/\s+/g, ' ').trim(), role: r.querySelector('select').value })).filter((r) => r.title);
+        if (!rocks.length) { toast('Write one Big Rock to start — or go back and skip.', 'warn'); return; }
+        FirstRun.finish(el, chosen(), rocks);
+      }
+    });
+    el.querySelector('.fr-add').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = e.target.querySelector('input'); const v = inp.value.replace(/\s+/g, ' ').trim().slice(0, 40);
+      if (!v) return;
+      if (![...el.querySelectorAll('.fr-chip')].some((c) => c.getAttribute('data-role').toLowerCase() === v.toLowerCase())) {
+        el.querySelector('.fr-chips').insertAdjacentHTML('beforeend', '<button type="button" class="fr-chip on" data-role="' + esc(v) + '" aria-pressed="true">' + esc(v) + '</button>');
+      }
+      inp.value = '';
+    });
+  },
+  async finish(el, roles, rocks) {
+    try {
+      if (roles && roles.length) { cData.roles = roles; }
+      if (rocks && rocks.length) {
+        const wid = weekId(new Date()), t = (new Date().getDay() + 6) % 7;
+        /* The seeded examples make way for the real thing. */
+        Object.keys(cData.rocks || {}).forEach((w) => { cData.rocks[w] = (cData.rocks[w] || []).filter((r) => !/An example to get you started/.test(String(r.note || ''))); });
+        rocks.forEach((r, i) => addRock(r.title, r.role, Math.min(6, t + i), '', wid, { prio: i === 0 ? 'high' : 'med' }));
+      }
+      if (roles && roles.length) { cSave(); try { renderCompass(); } catch (e) {} }
+      try { renderToday(); } catch (e) {}
+    } catch (e) { console.warn('[Flow] first run', e); }
+    try { await DB.set(FirstRun.KEY, { at: new Date().toISOString(), roles: (roles || []).length, rocks: (rocks || []).length }); } catch (e) {}
+    el.remove();
+    try { Nav.go('today'); } catch (e) {}
+    if (rocks && rocks.length) toast('Your week is set. Patterns arrives after a few days of use.', null, 4000);
+  },
+  async boot() {
+    if (!(await FirstRun.due())) return;
+    setTimeout(() => { try { FirstRun.open(); } catch (e) { console.warn('[Flow] first run', e); } }, 400);
+  }
+};
+window.FlowFirstRun = FirstRun;
+window.FlowAuthState = Auth;   /* read by tests; not a way in */
+
 /* ── Patterns: the habit card reads you instead of asking you ──────────────
  * The Habits card on Today opens with a short read of how you have actually
  * been living — written once a day by the assistant from what is already in
@@ -9809,6 +10098,51 @@ const Patterns = {
     toast('Habit added ✓ — tick it here each day');
     return true;
   },
+  /* One sentence about your week, as a picture: the read's headline on the
+     lime card, with the app's name under it. The phone's share sheet when
+     there is one; a download otherwise. Nothing but the headline leaves the
+     device — not the patterns, not the record. */
+  async share() {
+    const d = Patterns.data && Patterns.data.read;
+    if (!d || !d.headline) { toast('Nothing to share yet.'); return; }
+    const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#C8F26B'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#15190A';
+    g.font = '700 34px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    g.fillText('THE FLOW · PATTERNS', 90, 130);
+    g.font = '400 30px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    g.fillStyle = 'rgba(21,25,10,.62)';
+    g.fillText(new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), 90, 180);
+    /* the headline, wrapped, in a size that fits */
+    const words = String(d.headline).split(/\s+/);
+    let size = 84, lines = [];
+    for (; size >= 44; size -= 6) {
+      g.font = '700 ' + size + 'px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      lines = []; let cur = '';
+      words.forEach((w) => { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > W - 180 && cur) { lines.push(cur); cur = w; } else cur = t; });
+      if (cur) lines.push(cur);
+      if (lines.length * size * 1.18 <= H - 520) break;
+    }
+    g.fillStyle = '#15190A';
+    let y = 330;
+    lines.forEach((l) => { g.fillText(l, 90, y); y += size * 1.18; });
+    g.font = '400 32px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    g.fillStyle = 'rgba(21,25,10,.62)';
+    g.fillText('Read from my own record by The Flow', 90, H - 150);
+    g.fillStyle = '#15190A';
+    g.font = '700 34px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    g.fillText('theflow.today', 90, H - 95);
+    const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
+    if (!blob) { toast('Could not draw the card.', 'warn'); return; }
+    const file = new File([blob], 'the-flow-patterns.png', { type: 'image/png' });
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: 'My week, read by The Flow' }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('Saved the card as a picture.');
+  },
   open() { try { return localStorage.getItem('flow:ptHabits') === '1'; } catch (e) { return false; } },
   setOpen(v) { try { localStorage.setItem('flow:ptHabits', v ? '1' : '0'); } catch (e) {} },
   extra() {
@@ -9837,6 +10171,16 @@ const Patterns = {
         body: JSON.stringify({ refresh: !!force, today, lang: (typeof Lang !== 'undefined' && Lang.current) || 'en', extra: Patterns.extra() }) });
       let j = await r.json().catch(() => ({}));
       if (r.status === 503) { Patterns.off = true; throw new Error(''); }
+      /* Free: the week's read is used up, or a rewrite was asked for. The
+         last read, if there is one, still stands; the card says what Plus
+         adds (in Simple) rather than calling it an error. */
+      if (r.status === 402 && j.plus) {
+        Patterns.plus = true;
+        if (j.patterns && j.patterns.headline != null) { Patterns.data = { day: String(j.patterns.generatedAt || '').slice(0, 10) || today, read: j.patterns }; await DB.set(Patterns.KEY, Patterns.data); }
+        if (force) Plus.refused(j, { open: true });
+        throw new Error(Plus.simple() ? '' : (j.error || ''));
+      }
+      if (j.plus) Patterns.plus = true;
       if (!r.ok && r.status !== 202) throw new Error(j.error || 'Patterns could not be read just now.');
       if (r.status === 202 && j.job) {
         for (let i = 0; i < 60; i++) {
@@ -9870,6 +10214,7 @@ const Patterns = {
     if (Patterns.busy && !d) return '<div class="pt"><p class="pt-wait"><i class="eb-spin"></i>Reading how your last few weeks actually went…</p></div>';
     if (!d) {
       if (Patterns.off) return '';
+      if (Patterns.plus && Plus.simple()) return '<div class="pt">' + Plus.line('patterns') + '</div>';
       return Patterns.error ? '<div class="pt"><p class="pt-wait">' + esc(Patterns.error) + ' <button type="button" class="pt-link" data-pt="retry">Try again</button></p></div>' : '';
     }
     const when = d.generatedAt ? new Date(d.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -9882,7 +10227,9 @@ const Patterns = {
         (Patterns.isHabit(x) ? '<span class="pt-added">✓ habit</span>' : '<button type="button" class="pt-link pt-mk" data-pt="habit" data-i="' + i + '" aria-label="Track as a habit: ' + esc(x) + '">+ habit</button>') + '</li>').join('') + '</ul></div>' : '') +
       (d.missing ? '<p class="pt-miss">' + esc(d.missing) + '</p>' : '') +
       '<p class="pt-foot">' + (stale ? 'From ' + esc(Patterns.data.day) : 'Read from your record' + (when ? ' at ' + esc(when) : '')) +
-        ' · <button type="button" class="pt-link" data-pt="rewrite"' + (Patterns.busy ? ' disabled' : '') + '>' + (Patterns.busy ? 'Rewriting…' : 'Rewrite') + '</button>' +
+        (Patterns.plus && Plus.simple() ? ' · Plus reads every morning · <button type="button" class="pt-link" data-pt="plus">See Plus</button>'
+          : ' · <button type="button" class="pt-link" data-pt="rewrite"' + (Patterns.busy ? ' disabled' : '') + '>' + (Patterns.busy ? 'Rewriting…' : 'Rewrite') + '</button>') +
+        (Plus.simple() ? ' · <button type="button" class="pt-link" data-pt="share">Share</button>' : '') +
         (Patterns.error || Patterns.note ? ' <span class="pt-err">' + esc(Patterns.error || Patterns.note) + '</span>' : '') + '</p>' +
     '</div>';
   },
@@ -9931,6 +10278,8 @@ const Patterns = {
       const what = b.getAttribute('data-pt');
       if (what === 'rewrite') { Patterns.ensure(true); return; }
       if (what === 'retry') { Patterns.ensure('retry'); return; }
+      if (what === 'plus') { Plus.open('patterns'); return; }
+      if (what === 'share') { Patterns.share(); return; }
       if (what === 'habit') {
         const x = Patterns.data && Patterns.data.read && (Patterns.data.read.next || [])[+b.getAttribute('data-i')];
         if (x) Patterns.addHabit(x);
@@ -10101,6 +10450,7 @@ const Ahead = {
       let r = await fetch('/api/flow/ahead', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       let j = await r.json().catch(() => ({}));
       if (r.status === 503) { Ahead.off = true; throw new Error(''); }
+      if (r.status === 402 && j.plus) { Ahead.needsPlus = true; if (force) Plus.refused(j, { open: true }); throw new Error(Plus.simple() ? '' : (j.error || '')); }
       if (!r.ok && r.status !== 202) throw new Error(j.error || 'Coming up could not be read just now.');
       if (r.status === 202 && j.job) {
         for (let i = 0; i < 60; i++) {
@@ -10151,6 +10501,7 @@ const Ahead = {
           return '<button type="button" class="ah-chip' + (on ? ' on' : '') + '" data-ah="sugg" data-i="' + r.i + '" aria-pressed="' + on + '"><b>' + (on ? '✓ ' : '+ ') + esc(when) + '</b> ' + esc(r.why || it.title) + '</button>'; }).join('') + '</div>' : '') +
         '<p class="ah-foot">' + (Ahead.busy ? 'Reading…' : 'Read at ' + esc(new Date((rd.generatedAt || Date.now())).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))) + ' · <button type="button" class="pt-link" data-ah="rewrite"' + (Ahead.busy ? ' disabled' : '') + '>Rewrite</button>' + (Ahead.error ? ' <span class="pt-err">' + esc(Ahead.error) + '</span>' : '') + '</p></div>';
     } else if (Ahead.busy) readHtml = '<div class="ah-read"><p class="pt-wait"><i class="eb-spin"></i>Reading the weeks ahead…</p></div>';
+    else if (Ahead.needsPlus && Plus.simple()) readHtml = '<div class="ah-read">' + Plus.line('ahead') + '</div>';
     else if (Ahead.error) readHtml = '<div class="ah-read"><p class="pt-wait">' + esc(Ahead.error) + ' <button type="button" class="pt-link" data-ah="rewrite">Try again</button></p></div>';
 
     let rows = '', last = '', rocksToday = 0;
@@ -14696,6 +15047,16 @@ async function boot() {
 
   try {
     await Settings.load();
+    /* A new account starts in Simple when this Flow says so (the server's
+       FLOW_SIMPLE_DEFAULT). Advanced is one switch away and nothing it does
+       is lost; an account that has ever chosen stays as it chose, and one
+       that inherited an existing Flow is left exactly as it was. */
+    try {
+      if (Auth.user && !Auth.user.guest && Auth.seed === 'template' && Auth.simpleDefault) {
+        const saved = await DB.get(SETTINGS_KEY, null);
+        if (!saved || typeof saved.newLook === 'undefined') await Settings.set('newLook', true);
+      }
+    } catch (e) {}
     await Promise.all([Schedule.load(), Finance.load(), Notes.load(), Journal.load()]);
     /* The first Finances form painted before the second store was read. */
     try { const rf = Ledger.host('renderFinance'); if (typeof rf === 'function') rf(); } catch (e) {}
@@ -14761,7 +15122,9 @@ async function boot() {
   try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
+  try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
   try { Patterns.boot(); } catch (e) { console.warn('[Flow] patterns', e); }
+  FirstRun.boot().catch((e) => console.warn('[Flow] first run', e));
   try { Ahead.boot(); } catch (e) { console.warn('[Flow] ahead', e); }
   /* Reconcile the colour theme (account value wins over the device default the
      inline script already painted). Never blocks the veil below. */

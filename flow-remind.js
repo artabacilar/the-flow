@@ -142,9 +142,27 @@ async function tickUser(deps, uid, now) {
   const reminders = await readJSON(raw, pre + 'flow:reminders', []) || [];
   const remDue = dueReminders(reminders, L.date, L.minutes, WINDOW_MIN)
     .filter((r) => already.indexOf('r:' + r.id) < 0);
-  if (!due.length && !remDue.length) return { uid, skipped: 'nothing due', at: L.hhmm, tz: settings.timezone || DEFAULT_TZ };
+  /* The evening check-in: one notification at the hour the person chose,
+     asking how the day went. Off unless switched on in Settings. */
+  let evening = null;
+  if (settings.eveningCheck && already.indexOf('evening') < 0) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(settings.eveningCheckAt || '21:00'));
+    const at = m ? (+m[1]) * 60 + (+m[2]) : 21 * 60;
+    if (L.minutes >= at && L.minutes < at + WINDOW_MIN) evening = { at };
+  }
+  if (!due.length && !remDue.length && !evening) return { uid, skipped: 'nothing due', at: L.hhmm, tz: settings.timezone || DEFAULT_TZ };
 
   const delivered = [];
+  if (evening) {
+    const out = await sendToUser(raw, uid, {
+      title: 'How did today go?',
+      body: 'Tick what got done, move what did not, and one line on how it felt.',
+      thread: 'evening',
+      data: { evening: L.date }
+    });
+    delivered.push('evening');
+    if (!out || !out.ok) deps.log && deps.log('[flow/remind] ' + uid + ': ' + ((out && out.error) || 'send failed'));
+  }
   for (const r of remDue) {
     const out = await sendToUser(raw, uid, {
       title: String(r.title || 'Reminder').slice(0, 120),

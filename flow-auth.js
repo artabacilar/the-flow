@@ -97,6 +97,11 @@ oauthMod = loadModule('flow-oauth', ['build']);
 let starter = null;
 starter = loadModule('flow-starter', ['build']);
 
+/* The plan on the account and the shops that set it. Absent is valid: every
+   account is then on the plan it always was, which is everything. */
+let plus = null;
+plus = loadModule('flow-plus', ['handle']);
+
 /* Other apps connected to an account — Google first. Absent is valid: no
    Connections section, and nothing else changes. */
 let connect = null;
@@ -924,6 +929,13 @@ async function gate(req, res) {
      a small body, a few per address per hour, the last hundred kept, and
      only the owner can read them back. What is kept is technical: versions,
      sizes, error messages, element names. */
+  /* ---- the shops ----
+     Stripe and RevenueCat call these with a signature of their own; there is
+     no session to check and nothing a caller without the secret can change. */
+  if (plus && p.indexOf('/api/plus/webhook/') === 0) {
+    if (await plus.webhooks(p, req, res, { json, readBody, getJSON, setJSON })) return true;
+  }
+
   if (p === '/api/diag/client') {
     if (req.method === 'POST') {
       const ip = String((req.headers['x-forwarded-for'] || '').split(',')[0] || (req.socket && req.socket.remoteAddress) || '').trim();
@@ -1547,34 +1559,56 @@ async function gate(req, res) {
   /* ---- other extras (the assistant) ----
      Signed in only: these cost upstream quota or money, so an anonymous
      caller must never be able to spend either. */
+  /* A reader already locked to one account's namespace. The modules below
+     never receive the raw store, so a bug in a new feature cannot read across
+     accounts even by accident. */
+  const mineFor = (uid) => {
+    const pre = nsPrefix(uid);
+    return {
+      async get(key) {
+        const v = await raw.get(pre + key);
+        if (v == null) return null;
+        if (typeof v !== 'string') return v;
+        const t = v.trim();
+        if (t && (t[0] === '{' || t[0] === '[')) { try { return JSON.parse(t); } catch (e) {} }
+        return v;
+      },
+      async all() {
+        const everything = await raw.all();
+        const out = {};
+        Object.keys(everything || {}).forEach(k => {
+          if (k.indexOf(pre) === 0) out[k.slice(pre.length)] = everything[k];
+        });
+        return out;
+      }
+    };
+  };
+
+  /* ---- the plan: what it is, buying it, taking your data with you ---- */
+  if (plus && (p.indexOf('/api/flow/plan') === 0 || p === '/api/flow/account/export')) {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    try {
+      if (await plus.handle(p, req, res, { json, readBody, user: me, mine: mineFor(me.id), getJSON, setJSON })) return true;
+    } catch (e) {
+      json(res, 502, { error: 'That service is unavailable right now.' });
+      return true;
+    }
+  }
+
   if (extras && p.indexOf('/api/flow/') === 0) {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
     try {
-      /* extras never receives the raw store. It gets a reader already locked
-         to the caller's own namespace, so a bug in a new feature cannot read
-         across accounts even by accident. */
-      const pre = nsPrefix(me.id);
-      const mine = {
-        async get(key) {
-          const v = await raw.get(pre + key);
-          if (v == null) return null;
-          if (typeof v !== 'string') return v;
-          const t = v.trim();
-          if (t && (t[0] === '{' || t[0] === '[')) { try { return JSON.parse(t); } catch (e) {} }
-          return v;
-        },
-        async all() {
-          const everything = await raw.all();
-          const out = {};
-          Object.keys(everything || {}).forEach(k => {
-            if (k.indexOf(pre) === 0) out[k.slice(pre.length)] = everything[k];
-          });
-          return out;
-        }
-      };
+      /* The plan decides what the assistant may do for this account. Without
+         the plan module every account is Plus, exactly as before it existed. */
+      const plan = plus ? await plus.planOf(me, { getJSON }) : { tier: 'plus' };
+      if (plan.tier === 'free' && plus.PLUS_ONLY[p] && req.method !== 'GET') {
+        json(res, 402, plus.refusal(plus.PLUS_ONLY[p]));
+        return true;
+      }
       const done = await extras.handle(p, req, res, {
-        json, readBody, user: me, mine,
+        json, readBody, user: me, mine: mineFor(me.id), plan,
         counter: {
           get: (k) => getJSON('__auth:ctr:' + me.id + ':' + k, 0),
           set: (k, v) => setJSON('__auth:ctr:' + me.id + ':' + k, v)
@@ -1623,7 +1657,9 @@ async function gate(req, res) {
       try { started = await seedStarter(me.id, me.name); } catch (e) { started = 0; }
     }
 
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started });
+    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started,
+      /* New accounts start in Simple only when this Flow says so (FLOW_SIMPLE_DEFAULT on the server); off, they start in Advanced as they always did. */
+      simpleDefault: !!process.env.FLOW_SIMPLE_DEFAULT });
     return true;
   }
 
