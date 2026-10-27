@@ -1970,6 +1970,21 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "The code on the watch has six letters and numbers.": "Saatteki kod altı harf ve rakamdan oluşur.",
   "Linked ✓ — {} will show your day in a moment.": "Bağlandı ✓ — {} birazdan gününü gösterecek.",
   "Unlink this watch? It stops showing your day straight away.": "Bu saatin bağlantısı kesilsin mi? Gününü hemen göstermeyi bırakır.",
+  "Suggested reminders": "Önerilen hatırlatmalar",
+  "No habits yet. Add one, or tap “+ habit” on anything under Do next.": "Henüz alışkanlık yok. Bir tane ekle ya da Sıradaki altındakilerden birinde “+ alışkanlık”a dokun.",
+  "Add a habit — e.g. Walk 20 minutes": "Alışkanlık ekle — ör. 20 dakika yürü",
+  "New habit": "Yeni alışkanlık",
+  "+ habit": "+ alışkanlık",
+  "✓ habit": "✓ alışkanlık",
+  "Track as a habit: {}": "Alışkanlık olarak takip et: {}",
+  "Habit added ✓ — tick it here each day": "Alışkanlık eklendi ✓ — her gün buradan işaretle",
+  "Already a habit": "Zaten bir alışkanlık",
+  "No rewrites left today — this is the last read.": "Bugünlük yeniden yazma hakkın bitti — bu son okuma.",
+  "Patterns could not be read just now.": "Örüntüler şu anda okunamadı.",
+  "Patterns took too long. Try again in a minute.": "Örüntüler çok uzun sürdü. Bir dakika sonra tekrar dene.",
+  "From {}": "{} tarihinden",
+  "Not going. It stays in your calendar; Coming up stops listing it": "Gitmiyorum. Takviminde kalır; Yaklaşan artık göstermez",
+  "Not doing it. Coming up stops listing it": "Yapılmayacak. Yaklaşan artık göstermez",
 /* DICT-END */
 }, RULES);
 

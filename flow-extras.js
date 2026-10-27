@@ -1667,6 +1667,7 @@ async function writePatterns(body, key, mine) {
   return out;
 }
 
+const PAT_LAST = 'patlast';
 async function handlePatterns(p, req, res, ctx) {
   if (p !== '/api/flow/patterns') return false;
   const uid = (ctx.user && ctx.user.id) || 'anon';
@@ -1688,8 +1689,17 @@ async function handlePatterns(p, req, res, ctx) {
   try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
   const cached = await ctx.counter.get(patDayKey());
   if (cached && cached.patterns && !body.refresh) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, patterns: cached }); return true; }
+  /* Several devices open at once (phone, Mac, a tab) each asked for the
+     day's first read, and each one was a paid read that counted. A read
+     already under way is the answer to all of them. */
+  if (!body.refresh) {
+    for (const [jid, j] of patJobs) if (j.uid === uid && j.status === 'working') { ctx.json(res, 202, { ok: true, job: jid, joined: true }); return true; }
+  }
   const spent = (await ctx.counter.get(patCountKey())) || 0;
   if (PAT_DAILY_CAP > 0 && spent >= PAT_DAILY_CAP) {
+    /* Out of rewrites is not out of patterns: the last read still stands. */
+    const last = cached || await ctx.counter.get(PAT_LAST);
+    if (last && last.headline != null) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, stale: true, capped: true, patterns: last }); return true; }
     ctx.json(res, 429, { error: 'Patterns were rewritten ' + spent + ' times today. They reset at midnight UTC.', used: spent, cap: PAT_DAILY_CAP });
     return true;
   }
@@ -1699,7 +1709,7 @@ async function handlePatterns(p, req, res, ctx) {
   await ctx.counter.set(patCountKey(), spent + 1);
   const counter = ctx.counter;
   writePatterns(body, key, ctx.mine)
-    .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(patDayKey(), out); } catch (e) {} })
+    .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(patDayKey(), out); await counter.set(PAT_LAST, out); } catch (e) {} })
     .catch(async (e) => { job.status = 'error'; job.error = friendlyUpstream(e) || 'Patterns could not be read just now.';
       /* a read that failed did not cost anything, so it does not count */
       try { const n = (await counter.get(patCountKey())) || 0; if (n > 0) await counter.set(patCountKey(), n - 1); } catch (x) {} });
@@ -1823,6 +1833,9 @@ async function handleAhead(p, req, res, ctx) {
   const cached = await ctx.counter.get(aheadDayKey());
   if (cached && cached.headline != null && !body.refresh && cached.sig === String(body.sig || '').slice(0, 200)) {
     ctx.json(res, 200, { ok: true, status: 'done', cached: true, ahead: cached }); return true;
+  }
+  if (!body.refresh) {
+    for (const [jid, j] of aheadJobs) if (j.uid === uid && j.status === 'working') { ctx.json(res, 202, { ok: true, job: jid, joined: true }); return true; }
   }
   const spent = (await ctx.counter.get(aheadCountKey())) || 0;
   if (AHEAD_DAILY_CAP > 0 && spent >= AHEAD_DAILY_CAP) {

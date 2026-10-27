@@ -9781,6 +9781,7 @@ const Patterns = {
   data: null,       // { day, read: { headline, patterns[], next[], missing, generatedAt } }
   busy: false,
   error: '',
+  note: '',        // said under the read, not an error (the rewrites are used up)
   off: false,       // the assistant is not set up on this server
   tried: '',
   day() { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); },
@@ -9789,6 +9790,24 @@ const Patterns = {
     const v = await DB.get(Patterns.KEY, null);
     Patterns.data = (v && v.read) ? v : null;
     return Patterns.data;
+  },
+  isHabit(name) {
+    try { const n = String(name || '').trim().toLowerCase(); return !!n && (hbData.habits || []).some((h) => String(h.name || '').trim().toLowerCase() === n); } catch (e) { return false; }
+  },
+  /* The same thing the Habits page does when you add one there. */
+  addHabit(name) {
+    const v = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!v || typeof hbData === 'undefined') return false;
+    if (Patterns.isHabit(v)) { toast('Already a habit'); return false; }
+    if (!Array.isArray(hbData.habits)) hbData.habits = [];
+    hbData.habits.push({ id: Date.now().toString(), name: v });
+    try { if (typeof J === 'function') J('habits', '➕ New habit: ' + v); } catch (e) {}
+    try { S.set('habits', hbData); } catch (e) {}
+    try { if (typeof renderHabits === 'function') renderHabits(); } catch (e) {}
+    try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+    Patterns.setOpen(true);
+    toast('Habit added ✓ — tick it here each day');
+    return true;
   },
   open() { try { return localStorage.getItem('flow:ptHabits') === '1'; } catch (e) { return false; } },
   setOpen(v) { try { localStorage.setItem('flow:ptHabits', v ? '1' : '0'); } catch (e) {} },
@@ -9799,15 +9818,20 @@ const Patterns = {
     return out;
   },
   /* Once a day on its own; Rewrite asks again. */
+  /* force: true is Rewrite (a new, paid read). 'retry' asks again for the
+     day's read — the server answers from what it already has when it can,
+     so trying again after an error never costs a rewrite. */
   async ensure(force) {
     if (Patterns.busy || Patterns.off) return;
     if (typeof Auth !== 'undefined' && (!Auth.user || Auth.user.guest)) return;
+    const retry = force === 'retry';
+    if (retry) force = false;
     await Patterns.load();
     const today = Patterns.day();
-    if (!force && Patterns.data && Patterns.data.day === today) return;
-    if (!force && Patterns.tried === today) return;
+    if (!force && !retry && Patterns.data && Patterns.data.day === today) return;
+    if (!force && !retry && Patterns.tried === today) return;
     Patterns.tried = today;
-    Patterns.busy = true; Patterns.error = ''; Patterns.repaint();
+    Patterns.busy = true; Patterns.error = ''; Patterns.note = ''; Patterns.repaint();
     try {
       let r = await fetch('/api/flow/patterns', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh: !!force, today, lang: (typeof Lang !== 'undefined' && Lang.current) || 'en', extra: Patterns.extra() }) });
@@ -9824,11 +9848,19 @@ const Patterns = {
           throw new Error(k.error || 'Patterns could not be read just now.');
         }
       }
-      if (!j.patterns) throw new Error('Patterns took too long. Try Rewrite.');
-      Patterns.data = { day: today, read: j.patterns };
+      if (!j.patterns) throw new Error('Patterns took too long. Try again in a minute.');
+      /* A read kept from an earlier day (the rewrites are used up) keeps its
+         own date, so the card says "From …" instead of passing it off as today's. */
+      const own = j.capped && j.patterns.generatedAt ? String(j.patterns.generatedAt).slice(0, 10) : today;
+      Patterns.data = { day: own, read: j.patterns };
       await DB.set(Patterns.KEY, Patterns.data);
+      if (j.capped) Patterns.note = 'No rewrites left today — this is the last read.';
     } catch (e) {
       Patterns.error = (e && e.message) || '';
+      Patterns.errAt = Date.now();
+      /* Another device may have read it since this one loaded: show that
+         rather than an empty card. */
+      if (!Patterns.data) { try { const v = await DB.get(Patterns.KEY, null); if (v && v.read) Patterns.data = v; } catch (x) {} }
     }
     Patterns.busy = false;
     Patterns.repaint();
@@ -9838,7 +9870,7 @@ const Patterns = {
     if (Patterns.busy && !d) return '<div class="pt"><p class="pt-wait"><i class="eb-spin"></i>Reading how your last few weeks actually went…</p></div>';
     if (!d) {
       if (Patterns.off) return '';
-      return Patterns.error ? '<div class="pt"><p class="pt-wait">' + esc(Patterns.error) + ' <button type="button" class="pt-link" data-pt="rewrite">Try again</button></p></div>' : '';
+      return Patterns.error ? '<div class="pt"><p class="pt-wait">' + esc(Patterns.error) + ' <button type="button" class="pt-link" data-pt="retry">Try again</button></p></div>' : '';
     }
     const when = d.generatedAt ? new Date(d.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
     const stale = Patterns.data.day !== Patterns.day();
@@ -9846,11 +9878,12 @@ const Patterns = {
       (d.headline ? '<p class="pt-head">' + esc(d.headline) + '</p>' : '') +
       (d.patterns && d.patterns.length ? '<ul class="pt-list">' + d.patterns.map((x) =>
         '<li class="pt-' + esc(x.tone) + '"><span class="pt-area">' + esc(x.area) + '</span><span class="pt-tx">' + esc(x.text) + '</span></li>').join('') + '</ul>' : '') +
-      (d.next && d.next.length ? '<div class="pt-next"><b>Do next</b><ul>' + d.next.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      (d.next && d.next.length ? '<div class="pt-next"><b>Do next</b><ul>' + d.next.map((x, i) => '<li><span>' + esc(x) + '</span>' +
+        (Patterns.isHabit(x) ? '<span class="pt-added">✓ habit</span>' : '<button type="button" class="pt-link pt-mk" data-pt="habit" data-i="' + i + '" aria-label="Track as a habit: ' + esc(x) + '">+ habit</button>') + '</li>').join('') + '</ul></div>' : '') +
       (d.missing ? '<p class="pt-miss">' + esc(d.missing) + '</p>' : '') +
       '<p class="pt-foot">' + (stale ? 'From ' + esc(Patterns.data.day) : 'Read from your record' + (when ? ' at ' + esc(when) : '')) +
         ' · <button type="button" class="pt-link" data-pt="rewrite"' + (Patterns.busy ? ' disabled' : '') + '>' + (Patterns.busy ? 'Rewriting…' : 'Rewrite') + '</button>' +
-        (Patterns.error ? ' <span class="pt-err">' + esc(Patterns.error) + '</span>' : '') + '</p>' +
+        (Patterns.error || Patterns.note ? ' <span class="pt-err">' + esc(Patterns.error || Patterns.note) + '</span>' : '') + '</p>' +
     '</div>';
   },
   /* Called each time Today draws the Habits card. */
@@ -9876,7 +9909,10 @@ const Patterns = {
       (rows.length ? 'Habits you tick · ' + done + ' / ' + rows.length : 'Habits you tick') + '<span class="pt-chev" aria-hidden="true">▾</span></button><div class="pt-hb-b"></div>';
     const b = fold.querySelector('.pt-hb-b');
     rows.forEach((r) => b.appendChild(r));
-    if (empty) b.appendChild(empty);
+    if (empty) empty.remove();
+    /* Adding one is right here, not a trip to another page. */
+    b.insertAdjacentHTML('beforeend', (rows.length ? '' : '<p class="pt-hbnone">No habits yet. Add one, or tap “+ habit” on anything under Do next.</p>') +
+      '<form class="pt-addhb" autocomplete="off"><input class="flow-in" maxlength="120" placeholder="Add a habit — e.g. Walk 20 minutes" aria-label="New habit"><button type="submit" class="flow-btn sm">Add</button></form>');
     box.after(fold);
     Patterns.later();
   },
@@ -9894,10 +9930,28 @@ const Patterns = {
       if (!b) return;
       const what = b.getAttribute('data-pt');
       if (what === 'rewrite') { Patterns.ensure(true); return; }
+      if (what === 'retry') { Patterns.ensure('retry'); return; }
+      if (what === 'habit') {
+        const x = Patterns.data && Patterns.data.read && (Patterns.data.read.next || [])[+b.getAttribute('data-i')];
+        if (x) Patterns.addHabit(x);
+        return;
+      }
       if (what === 'habits') {
         const f = b.closest('.pt-hb'); const on = !f.classList.contains('open');
         f.classList.toggle('open', on); b.setAttribute('aria-expanded', String(on)); Patterns.setOpen(on);
       }
+    });
+    document.addEventListener('submit', (e) => {
+      const f = e.target.closest && e.target.closest('.pt-addhb');
+      if (!f) return;
+      e.preventDefault();
+      const inp = f.querySelector('input');
+      if (Patterns.addHabit(inp.value)) inp.value = '';
+    });
+    /* An error is not the last word: coming back to the app asks again
+       (from the day's read, not a new one), at most every ten minutes. */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && Patterns.error && !Patterns.busy && Date.now() - (Patterns.errAt || 0) > 10 * 60 * 1000) Patterns.ensure('retry');
     });
     Patterns.load().then(() => Patterns.repaint()).catch(() => {});
   }
@@ -9986,7 +10040,10 @@ const Ahead = {
         out.push({ key: 'sc:' + r.key, kind: 'task', date: r.date, time: r.time || '', title: r.text || r.title || String(r.key).split('::').pop(), where: '', big: !!r.alert });
       });
     } catch (e) {}
-    return out.sort((a, b) => (a.date + (a.time || (a.allDay ? '00:00' : '99:99'))).localeCompare(b.date + (b.time || (b.allDay ? '00:00' : '99:99'))));
+    /* dropped or handed off from here — see RockActions.openItem */
+    let shown = out;
+    try { shown = out.filter((x) => !RockActions.isHidden(x.key)); } catch (e) {}
+    return shown.sort((a, b) => (a.date + (a.time || (a.allDay ? '00:00' : '99:99'))).localeCompare(b.date + (b.time || (b.allDay ? '00:00' : '99:99'))));
   },
   sig(items) { return items.map((x) => x.date + (x.time || '') + x.title).join('|').length + ':' + items.length + ':' + (items[0] ? items[0].date : '') + ':' + items.slice(0, 12).map((x) => x.title.length).join('.'); },
 
@@ -10076,10 +10133,22 @@ const Ahead = {
     let readHtml = '';
     if (rd) {
       const ref = (n) => { const r = ritems[n]; return r ? (byKey[r.key] || r) : null; };
+      /* The tabs cut the read as well as the list: a week shows what to
+         get ready this week, in date order. */
+      const inSpan = (it) => !!it && (it.date || '') <= until && !!byKey[it.key];
+      const prep = (rd.prep || []).map((p) => Object.assign({ it: ref(p.ref) }, p)).filter((p) => inSpan(p.it))
+        .sort((a, b) => String(a.by || a.it.date).localeCompare(String(b.by || b.it.date)));
+      const untilMs = Ahead.plus(span + 1).getTime();
+      const remind = (rd.remind || []).map((r, i) => Object.assign({ i, it: ref(r.ref), atD: new Date(r.at + ':00') }, r))
+        .filter((r) => r.it && byKey[r.it.key] && !isNaN(r.atD) && r.atD.getTime() >= Date.now() && r.atD.getTime() < untilMs);
       readHtml = '<div class="ah-read">' + (rd.headline ? '<p class="ah-head">' + esc(rd.headline) + '</p>' : '') +
-        (rd.prep && rd.prep.length ? '<ul class="ah-prep">' + rd.prep.map((p) => { const it = ref(p.ref); return it ? '<li><span class="ah-by">' + (p.by ? esc(new Date(p.by + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })) : '') + '</span><span class="ah-what">' + esc(p.what) + '<small>' + esc(it.title) + '</small></span></li>' : ''; }).join('') + '</ul>' : '') +
+        (prep.length ? '<ul class="ah-prep">' + prep.map((p) => '<li><span class="ah-by">' + esc(new Date((p.by || p.it.date) + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })) + '</span><span class="ah-what">' + esc(p.what) + '<small>' + esc(p.it.title) + '</small></span></li>').join('') + '</ul>' : '') +
         (rd.watch && rd.watch.length ? '<ul class="ah-watch">' + rd.watch.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '') +
-        (rd.remind && rd.remind.length ? '<div class="ah-sugg">' + rd.remind.map((r, i) => { const it = ref(r.ref); if (!it || !byKey[it.key]) return ''; const at = new Date(r.at + ':00'); if (isNaN(at) || at.getTime() < Date.now()) return ''; const on = (Ahead.rem || []).some((x) => x.id.indexOf(it.key.replace(/[^\w:.-]/g, '').slice(0, 80) + '@ai' + i) === 0); return '<button type="button" class="ah-chip' + (on ? ' on' : '') + '" data-ah="sugg" data-i="' + i + '">' + (on ? '✓ ' : '+ ') + esc(r.why || it.title) + ' · ' + esc(at.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })) + '</button>'; }).join('') + '</div>' : '') +
+        (remind.length ? '<div class="ah-sugg"><span class="ah-sk">Suggested reminders</span>' + remind.map((r) => { const it = r.it; const on = (Ahead.rem || []).some((x) => x.id.indexOf(it.key.replace(/[^\w:.-]/g, '').slice(0, 80) + '@ai' + r.i) === 0);
+          /* The reminder's own day and time first, so "tomorrow" in the
+             note reads from that day, not from today. */
+          const when = r.atD.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + Ahead.hm(r.atD);
+          return '<button type="button" class="ah-chip' + (on ? ' on' : '') + '" data-ah="sugg" data-i="' + r.i + '" aria-pressed="' + on + '"><b>' + (on ? '✓ ' : '+ ') + esc(when) + '</b> ' + esc(r.why || it.title) + '</button>'; }).join('') + '</div>' : '') +
         '<p class="ah-foot">' + (Ahead.busy ? 'Reading…' : 'Read at ' + esc(new Date((rd.generatedAt || Date.now())).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))) + ' · <button type="button" class="pt-link" data-ah="rewrite"' + (Ahead.busy ? ' disabled' : '') + '>Rewrite</button>' + (Ahead.error ? ' <span class="pt-err">' + esc(Ahead.error) + '</span>' : '') + '</p></div>';
     } else if (Ahead.busy) readHtml = '<div class="ah-read"><p class="pt-wait"><i class="eb-spin"></i>Reading the weeks ahead…</p></div>';
     else if (Ahead.error) readHtml = '<div class="ah-read"><p class="pt-wait">' + esc(Ahead.error) + ' <button type="button" class="pt-link" data-ah="rewrite">Try again</button></p></div>';
@@ -10110,12 +10179,13 @@ const Ahead = {
         '<span class="ah-tm">' + (it.time ? esc(it.time) : it.allDay ? 'All day' : '') + '</span>' +
         '<span class="ah-t">' + esc(it.title) + '<small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : 'Calendar') + (it.where ? ' · ' + esc(it.where) : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
         '<button type="button" class="ah-bell' + (rem.length ? ' on' : '') + '" data-ah="menu" aria-expanded="' + open + '" aria-label="' + (rem.length ? 'Reminders set: ' + rem.length : 'Remind me') + '">' + Nav.svg('bell') + (rem.length ? '<b>' + rem.length + '</b>' : '') + '</button>' +
+        '<button type="button" class="ra-more ah-ra" data-ra-item="' + esc(it.key) + '" aria-label="More for ' + esc(it.title) + '">' + Nav.svg('dots') + '</button>' +
         (open ? '<div class="ah-menu" role="menu">' + Ahead.options(it).map((o) => { const on = rem.some((r) => r.id.endsWith('@' + o.id)); return '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" data-ah="opt" data-o="' + o.id + '"' + (on ? ' class="on"' : '') + '>' + (on ? '✓ ' : '') + esc(o.label) + '</button>'; }).join('') + (Ahead.options(it).length ? '' : '<span class="ah-none">Too soon to remind.</span>') + '</div>' : '') +
       '</li>';
     });
     const count = list.length, setN = (Ahead.rem || []).filter((r) => r.at >= Ahead.localAt(new Date())).length;
     return '<div class="flow-td-head"><span class="l">Coming up</span><span class="c">' + count + (setN ? ' · ' + setN + ' reminder' + (setN === 1 ? '' : 's') : '') + '</span></div>' +
-      '<div class="ah-tabs" role="tablist">' + [7, 14, 30].map((n) => '<button type="button" role="tab" aria-selected="' + (n === span) + '" data-ah="span" data-n="' + n + '"' + (n === span ? ' class="on"' : '') + '>' + (n === 7 ? 'Week' : n === 14 ? '2 weeks' : 'Month') + '</button>').join('') + '</div>' +
+      '<div class="ah-tabs" role="tablist">' + [7, 14, 30].map((n) => { const k = all.filter((x) => x.date <= Ahead.iso(Ahead.plus(n))).length; return '<button type="button" role="tab" aria-selected="' + (n === span) + '" data-ah="span" data-n="' + n + '"' + (n === span ? ' class="on"' : '') + '>' + (n === 7 ? 'Week' : n === 14 ? '2 weeks' : 'Month') + (k ? ' <i>' + k + '</i>' : '') + '</button>'; }).join('') + '</div>' +
       readHtml +
       (count ? '<ul class="ah-list">' + rows + '</ul>' : '<p class="flow-td-empty">' + (Ahead.calIds().length ? 'Nothing in the next ' + (span === 30 ? 'month' : span + ' days') + '.' : 'Nothing planned ahead yet. Put Big Rocks on coming days, or connect your calendar in Settings.') + '</p>');
   },
@@ -10846,6 +10916,14 @@ const RockActions = {
     const list = RockActions.aside();
     const i = list.findIndex((x) => String(x.id) === String(id)); if (i < 0) return;
     const rec = list.splice(i, 1)[0];
+    if (rec.ext) {
+      /* Not a Big Rock: done means off every list; taken back means it is
+         on Coming up again. */
+      if (opts.done) RockActions.hidden().push({ key: rec.ext, at: new Date().toISOString(), done: true });
+      RockActions.save(opts.silent ? '' : opts.done ? '✅ Done (' + (rec.to || 'someone') + '): ' + rec.title : '↩️ Back on Coming up: ' + rec.title);
+      try { Ahead.paint(); } catch (e) {}
+      return;
+    }
     const c = RockActions.data();
     let w = rec.wid, day = rec.day;
     const now = weekId(new Date());
@@ -10890,11 +10968,58 @@ const RockActions = {
     try { names = (Friends.list || []).map((f) => f && (f.name || f.byName)).filter(Boolean); } catch (e) {}
     RockActions.aside().forEach((a) => { if (a.to && names.indexOf(a.to) < 0) names.push(a.to); });
     el.querySelector('#ra-people').innerHTML = names.slice(0, 20).map((n) => '<option value="' + esc(n) + '">').join('');
+    RockActions.item = null;
+    el.querySelector('.ra-mv').hidden = false;
+    el.querySelector('.ra-dropsub').textContent = 'Not doing it. Leaves the list without counting as done';
     RockActions.mode('main');
     el.classList.add('on');
     setTimeout(() => { const b = el.querySelector('[data-ra="tomorrow"]'); if (b && matchMedia('(hover:hover)').matches) b.focus(); }, 60);
   },
-  close() { if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; },
+
+  /* ---- something in Coming up that is not a Big Rock ----
+     A calendar event or a dated task lives somewhere else (the calendar, the
+     planner), so it is not moved or deleted from here. Delegating it puts it
+     under Waiting on with a day to check back; dropping it takes it off
+     Coming up. Both can be undone, and Put back brings it back. */
+  hidden() { const c = RockActions.data(); if (!c) return []; if (!Array.isArray(c.aheadHidden)) c.aheadHidden = []; return c.aheadHidden; },
+  isHidden(key) {
+    if (RockActions.hidden().some((h) => h && h.key === key)) return true;
+    return RockActions.aside().some((a) => a && a.ext === key);
+  },
+  openItem(it) {
+    if (!it) return;
+    if (it.kind === 'rock' && it.rockId) return RockActions.open(it.rockId);
+    if (!RockActions.el) RockActions.build();
+    const el = RockActions.el;
+    RockActions.cur = 'ext:' + it.key; RockActions.item = it;
+    el.querySelector('h4').textContent = it.title;
+    const d = RockActions.fromIso(it.date);
+    el.querySelector('.fn-sub').textContent = RockActions.label(d) + (it.time ? ' · ' + it.time : '') + (it.kind === 'event' ? ' · Calendar' : ' · Task');
+    el.querySelector('.ra-mv').hidden = true;
+    el.querySelector('.ra-dropsub').textContent = it.kind === 'event' ? 'Not going. It stays in your calendar; Coming up stops listing it' : 'Not doing it. Coming up stops listing it';
+    const t = new Date(); t.setDate(t.getDate() + 1);
+    el.querySelector('#ra-who').value = '';
+    el.querySelector('#ra-follow').value = it.date && it.date > RockActions.iso(new Date()) ? RockActions.iso(new Date(Math.max(t.getTime(), RockActions.fromIso(it.date).getTime() - 864e5))) : RockActions.iso(t);
+    let names = [];
+    try { names = (Friends.list || []).map((f) => f && (f.name || f.byName)).filter(Boolean); } catch (e) {}
+    RockActions.aside().forEach((a) => { if (a.to && names.indexOf(a.to) < 0) names.push(a.to); });
+    el.querySelector('#ra-people').innerHTML = names.slice(0, 20).map((n) => '<option value="' + esc(n) + '">').join('');
+    RockActions.mode('main');
+    el.classList.add('on');
+  },
+  asideItem(it, status, extra) {
+    const d = RockActions.fromIso(it.date) || new Date();
+    const rec = Object.assign({ id: 'x' + Date.now().toString(36), title: it.title, wid: weekId(d), day: (d.getDay() + 6) % 7, time: it.time || '', date: it.date, ext: it.key, kind: it.kind, status, at: new Date().toISOString() }, extra || {});
+    RockActions.aside().push(rec);
+    RockActions.save(status === 'dropped' ? '🗑️ Dropped from Coming up: ' + it.title : '🤝 Delegated to ' + rec.to + ': ' + it.title);
+    RockActions.undo(status === 'dropped' ? 'Dropped' : 'Delegated to ' + rec.to, () => {
+      const list = RockActions.aside(); const i = list.findIndex((x) => x.id === rec.id);
+      if (i >= 0) list.splice(i, 1);
+      RockActions.save();
+    });
+    try { Ahead.paint(); } catch (e) {}
+  },
+  close() { if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; RockActions.item = null; },
   mode(m) {
     const el = RockActions.el; if (!el) return;
     el.querySelector('.ra-main').hidden = m !== 'main';
@@ -10911,17 +11036,17 @@ const RockActions = {
         '<button type="button" class="fn-capture-close" data-ra="close" aria-label="Close">×</button>' +
         '<h4></h4><div class="fn-sub"></div>' +
         '<div class="ra-main">' +
-          '<div class="ra-k">Move</div>' +
+          '<div class="ra-mv"><div class="ra-k">Move</div>' +
           '<div class="ra-row">' +
             '<button type="button" class="flow-btn" data-ra="tomorrow">Tomorrow</button>' +
             '<button type="button" class="flow-btn" data-ra="nextweek">Next week</button>' +
             '<label class="ra-pick"><span>Pick a day</span><input type="date" id="ra-date" aria-label="Move to this day"></label>' +
             '<button type="button" class="flow-btn" data-ra="moveto">Move</button>' +
-          '</div>' +
+          '</div></div>' +
           '<div class="ra-k">Hand it off</div>' +
           '<button type="button" class="flow-btn ra-wide" data-ra="delegate">Delegate…<small>Someone else does it; you check back</small></button>' +
           '<div class="ra-k">Let it go</div>' +
-          '<button type="button" class="flow-btn ra-wide ra-drop" data-ra="drop">Drop it<small>Not doing it. Leaves the list without counting as done</small></button>' +
+          '<button type="button" class="flow-btn ra-wide ra-drop" data-ra="drop">Drop it<small class="ra-dropsub">Not doing it. Leaves the list without counting as done</small></button>' +
         '</div>' +
         '<form class="ra-del" hidden>' +
           '<label class="flow-label" for="ra-who">Who is doing it?</label>' +
@@ -10954,14 +11079,15 @@ const RockActions = {
       if (a === 'tomorrow') { RockActions.close(); return RockActions.move(id, plus(1)); }
       if (a === 'nextweek') { const d = new Date(); d.setDate(d.getDate() + (7 - (d.getDay() + 6) % 7)); RockActions.close(); return RockActions.move(id, d); }
       if (a === 'moveto') { const d = RockActions.fromIso(wrap.querySelector('#ra-date').value); if (!d) return; RockActions.close(); return RockActions.move(id, d); }
-      if (a === 'drop') { RockActions.close(); return RockActions.setAside(id, 'dropped'); }
+      if (a === 'drop') { const it = RockActions.item; RockActions.close(); return it ? RockActions.asideItem(it, 'dropped') : RockActions.setAside(id, 'dropped'); }
     });
     wrap.querySelector('.ra-del').addEventListener('submit', (e) => {
       e.preventDefault();
       const who = wrap.querySelector('#ra-who').value.replace(/\s+/g, ' ').trim();
       if (!who) { wrap.querySelector('#ra-who').focus(); toast('Who is doing it?', 'warn'); return; }
-      const id = RockActions.cur; RockActions.close();
-      RockActions.setAside(id, 'delegated', { to: who.slice(0, 60), follow: wrap.querySelector('#ra-follow').value || '' });
+      const id = RockActions.cur, it = RockActions.item; RockActions.close();
+      const extra = { to: who.slice(0, 60), follow: wrap.querySelector('#ra-follow').value || '' };
+      if (it) RockActions.asideItem(it, 'delegated', extra); else RockActions.setAside(id, 'delegated', extra);
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) RockActions.close(); });
   },
@@ -11049,6 +11175,13 @@ const RockActions = {
     /* Capture, so the ⋯ inside a row that ticks on a tap opens the sheet
        instead of ticking the rock. */
     document.addEventListener('click', (e) => {
+      const ai = e.target.closest && e.target.closest('[data-ra-item]');
+      if (ai) {
+        e.preventDefault(); e.stopPropagation();
+        const it = Ahead.items().find((x) => x.key === ai.getAttribute('data-ra-item'));
+        if (it) RockActions.openItem(it);
+        return;
+      }
       const m = e.target.closest && e.target.closest('[data-ra-open]');
       if (m) { e.preventDefault(); e.stopPropagation(); RockActions.open(m.getAttribute('data-ra-open')); return; }
       const d = e.target.closest && e.target.closest('[data-ra-done]');
