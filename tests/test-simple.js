@@ -80,17 +80,24 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     ok('Plan today opens', await p.evaluate(() => !!document.querySelector('.td-plan, #td-plan, .fn-sheetwrap.on, [id*="plan"].on')));
     await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 
-    for (const [name, sel] of [['Diet', '[data-diet]'], ['Sharpen the Blade', '[data-saw]']]) {
-      await T();
-      const G = '#today-feed .td-group:has(' + sel + ')';
-      if (!(await p.evaluate((g) => document.querySelector(g).classList.contains('is-open'), G))) { await p.click(G + ' .td-group-head'); await p.waitForTimeout(350); }
-      const c0 = await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G);
-      await p.click('#today-feed ' + sel + ':not(.done)'); await p.waitForTimeout(700);
-      const c1 = await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G);
-      ok(name + ' opens and a tick counts', parseInt(c1, 10) === parseInt(c0, 10) + 1 && await p.evaluate((g) => document.querySelector(g).classList.contains('is-open'), G), { c0, c1 });
-      await p.click('#today-feed ' + sel + '.done'); await p.waitForTimeout(700);
-      ok(name + ' unticks', (await p.evaluate((g) => document.querySelector(g + ' .g-cnt').textContent.trim(), G)) === c0);
-    }
+    /* Diet and Sharpen the Blade are not on Today in Simple: the first said
+       nothing, the second is weekly and lives in the review. Advanced keeps
+       both, exactly as they were. */
+    await T();
+    const groups = await p.evaluate(() => ['[data-diet]', '[data-saw]'].map((sel) => { const g = document.querySelector('#today-feed .td-group:has(' + sel + ')'); return g ? getComputedStyle(g).display : 'missing'; }));
+    ok('Diet and Sharpen the Blade are off Today in Simple', groups.every((d) => d === 'none'), groups);
+    await p.evaluate(() => Flow.TodayPlus.reviewSheet()); await p.waitForTimeout(500);
+    const saw0 = await p.evaluate(() => { const b = document.querySelectorAll('#rv-evidence [data-rv-saw]'); return { n: b.length, on: [...b].filter((x) => x.classList.contains('on')).length }; });
+    ok('the week\'s review carries the Blade: eight ticks', saw0.n === 8, saw0);
+    await p.click('#rv-evidence [data-rv-saw]:not(.on)'); await p.waitForTimeout(300);
+    const saw1 = await p.evaluate(() => ({ on: document.querySelectorAll('#rv-evidence [data-rv-saw].on').length, data: Object.keys((cData.saw || {})[weekId(new Date())] || {}).length, sub: document.querySelector('#rv-evidence .ra-k small').textContent }));
+    ok('a tick there counts for the week', saw1.on === saw0.on + 1 && saw1.data === saw1.on && saw1.sub === saw1.on + ' of 8 this week', saw1);
+    await p.click('#rv-evidence [data-rv-saw].on'); await p.waitForTimeout(300);
+    ok('and unticks', (await p.evaluate(() => document.querySelectorAll('#rv-evidence [data-rv-saw].on').length)) === saw0.on);
+    await p.evaluate(() => document.getElementById('flow-review').classList.remove('on'));
+    await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); Flow.Nav.go('today'); renderToday(); }); await p.waitForTimeout(700);
+    ok('Advanced still has both groups on Today', await p.evaluate(() => ['[data-diet]', '[data-saw]'].every((sel) => { const g = document.querySelector('#today-feed .td-group:has(' + sel + ')'); return g && getComputedStyle(g).display !== 'none'; })));
+    await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); Flow.Nav.go('today'); renderToday(); }); await p.waitForTimeout(700);
 
     console.log('— + / Add —');
     const openAdd = async () => { if (kind !== 'desktop') await p.click('#fn-capbtn'); else await p.click('#fn-sideadd'); await p.waitForTimeout(350); };

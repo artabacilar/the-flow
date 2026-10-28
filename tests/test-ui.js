@@ -64,7 +64,10 @@ const controls = (p) => p.evaluate(() => {
   for (const t of ALL) {
     await p.evaluate((t) => Flow.Nav.go(t), t); await p.waitForTimeout(350);
     const now = new Set(await controls(p));
-    const miss = before[t].filter((x) => !now.has(x) && !now.has(simpleWord(x)));
+    /* Two things Simple leaves off Today on purpose: the Diet checklist and
+       the Sharpen the Blade list (the Blade is asked in the week's review). */
+    const LEFT_OUT = /^div\|\|(Diet|Sharpen the Blade)\d/;
+    const miss = before[t].filter((x) => !now.has(x) && !now.has(simpleWord(x)) && !LEFT_OUT.test(x));
     if (miss.length) gaps[t] = miss.slice(0, 6);
   }
   ok('every page has every control it has in Advanced', !Object.keys(gaps).length, gaps);

@@ -94,6 +94,20 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     ok('with nothing left the list closes itself and the pill is gone', await p.evaluate(() => !document.querySelector('#flow-triage.on') && !document.querySelector('#today-feed [data-lk-act="triage"]')));
   }
 
+  console.log('\n— an Open loop past its day —');
+  await p.evaluate(async () => { const d = new Date(); d.setDate(d.getDate() - 8); Flow.Schedule.put('planner::loop1', { text: 'Call the landlord about the lease', tab: 'planner', date: window.FlowRockActions.iso(d), done: false }); await Flow.Schedule.saveNow(); renderToday(); });
+  await p.waitForTimeout(700);
+  const lp = await p.evaluate(() => ({ chip: (document.querySelector('#today-feed [data-lk-act="triage"]') || {}).textContent || '' }));
+  ok('the Overdue chip counts it, with no overdue Priority left', lp.chip === 'Overdue · 1', lp);
+  await p.click('#today-feed [data-lk-act="triage"]'); await p.waitForTimeout(400);
+  const lrow = await p.evaluate(() => { const el = document.getElementById('flow-triage'); const r = el.querySelector('.tg-row.tg-loop'); return { on: el.classList.contains('on'), t: r && r.querySelector('.tg-t').textContent, acts: r ? [...r.querySelectorAll('button')].map((b) => b.textContent) : [], sub: el.querySelector('.tg-sub').textContent }; });
+  ok('the sheet lists it under its own kind: Done, Today, Tomorrow — no Drop, it lives in the Planner', lrow.on && /Call the landlord/.test(lrow.t) && lrow.acts.join() === 'Done,Today,Tomorrow' && /1 Open loop past its day/.test(lrow.sub), lrow);
+  await p.click('#flow-triage [data-tg="ltoday"]'); await p.waitForTimeout(600);
+  ok('Today moves it onto today, still open', await p.evaluate(() => { const r = Flow.Schedule.get('planner::loop1'); return r && r.date === window.FlowRockActions.iso(new Date()) && !r.done; }));
+  await p.waitForTimeout(1000);
+  ok('nothing left overdue: the sheet closes and the chip goes', await p.evaluate(() => !document.querySelector('#flow-triage.on') && !document.querySelector('#today-feed [data-lk-act="triage"]')));
+  await p.evaluate(async () => { Flow.Schedule.remove('planner::loop1'); await Flow.Schedule.saveNow(); renderToday(); });
+
   console.log('\n— the review, with evidence —');
   await p.evaluate(() => { const w = weekId(new Date()); const r = (cData.rocks[w] || []).find((x) => x.id === 'r3'); if (r) r.moved = 3; const r2 = (cData.rocks[w] || []).find((x) => x.id === 'r2'); if (r2) r2.done = true; cSave(); window.FlowRockActions && 0; });
   await p.evaluate(() => Flow.TodayPlus.reviewSheet()); await p.waitForTimeout(500);

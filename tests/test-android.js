@@ -46,6 +46,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     /* folds */
     for (const sel of ['#today-feed .td-group:has([data-diet]) .td-group-head', '#today-feed .td-group:has([data-saw]) .td-group-head, #today-feed .td-group:nth-of-type(2) .td-group-head']) {
       const h = await p.$(sel); if (!h) { log('no', sel); continue; }
+      if (!(await h.isVisible())) { log('  (not on Today in this look)', sel.split(' ')[1]); continue; }
       await h.scrollIntoViewIfNeeded(); await p.waitForTimeout(300);
       const before = await h.evaluate((e) => e.closest('.td-group').className);
       await h.tap(); await p.waitForTimeout(700);
