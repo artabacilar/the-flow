@@ -86,6 +86,13 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     await T();
     const groups = await p.evaluate(() => ['[data-diet]', '[data-saw]'].map((sel) => { const g = document.querySelector('#today-feed .td-group:has(' + sel + ')'); return g ? getComputedStyle(g).display : 'missing'; }));
     ok('Diet and Sharpen the Blade are off Today in Simple', groups.every((d) => d === 'none'), groups);
+    /* which prices show is a setting: the Widgets row is off Today, the strip's note links to it */
+    await p.evaluate(async () => { await Flow.Settings.set('todayMarkets', true); Flow.Markets.data = Flow.Markets.data || { quotes: {}, ageMs: 0, fxDate: '2026-10-27' }; Flow.Markets.paint(); }); await p.waitForTimeout(500);
+    const wg = await p.evaluate(() => ({ row: getComputedStyle(document.querySelector('#td-widgets')).display, edit: !!document.querySelector('#flow-markets [data-mkt-edit]') && getComputedStyle(document.querySelector('#flow-markets .flow-mkt-editwrap')).display !== 'none' }));
+    ok('the Widgets row is off Today; the price strip says "edit" instead', wg.row === 'none' && wg.edit, wg);
+    await p.click('#flow-markets [data-mkt-edit]'); await p.waitForTimeout(900);
+    ok('edit opens Settings, at the Today card', await p.evaluate(() => document.querySelector('.tab.active') && document.querySelector('.tab.active').getAttribute('data-tab') === 'settings' && !!document.querySelector('#todayCard [data-s="todayMarkets"]')));
+    await p.evaluate(async () => { await Flow.Settings.set('todayMarkets', false); Flow.Markets.paint(); Flow.Nav.go('today'); }); await p.waitForTimeout(500);
     await p.evaluate(() => Flow.TodayPlus.reviewSheet()); await p.waitForTimeout(500);
     const saw0 = await p.evaluate(() => { const b = document.querySelectorAll('#rv-evidence [data-rv-saw]'); return { n: b.length, on: [...b].filter((x) => x.classList.contains('on')).length }; });
     ok('the week\'s review carries the Blade: eight ticks', saw0.n === 8, saw0);

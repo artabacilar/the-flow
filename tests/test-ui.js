@@ -16,7 +16,8 @@ const controls = (p) => p.evaluate(() => {
   const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return (e.offsetParent || cs.position === 'fixed') && r.width > 2 && r.height > 2 && cs.visibility !== 'hidden' && +cs.opacity > 0.05; };
   const out = new Set();
   sec.querySelectorAll('button, a, input, select, textarea, [role=button], [data-jump]').forEach((e) => {
-    if (!vis(e) || e.closest('.lk-strip, .lk-hero')) return;
+    /* the Widgets row is a setting Simple keeps in Settings; not a page control */
+    if (!vis(e) || e.closest('.lk-strip, .lk-hero, #td-widgets')) return;
     out.add(e.tagName.toLowerCase() + '|' + (e.getAttribute('data-s') || e.getAttribute('data-jump') || '') + '|' + (e.placeholder || e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40));
   });
   return [...out].sort();
