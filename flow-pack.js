@@ -10173,7 +10173,7 @@ window.FlowAuthState = Auth;   /* read by tests; not a way in */
  * The owner reads them back as counts. This is what tells whether people
  * come back and plan, which is the only question the growth plan asks. */
 const Track = {
-  EVENTS: ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'meal_logged'],
+  EVENTS: ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'meal_logged', 'habit_done_here'],
   sent: new Set(),
   hit(ev) {
     try {
@@ -12280,6 +12280,7 @@ const Meals = {
                  a desktop has no camera to speak of and shows only the second. */
               '<div class="ml-ph-btns"><label class="ml-ph-btn ml-ph-cam"><input type="file" accept="image/*" capture="environment" id="ml-cam" aria-label="Take a photo of the meal">' + Nav.svg('camera', 'fn-i') + 'Take a photo</label>' +
               '<label class="ml-ph-btn"><input type="file" accept="image/*" id="ml-file" aria-label="Choose a photo of the meal">Choose a photo</label></div>' +
+              '<small class="ml-ph-drop">or drop a picture here, or paste one</small>' +
             '</div>' +
             '<img alt="" hidden><button type="button" class="ml-ph-x" data-ml="unphoto" aria-label="Remove the photo" hidden>×</button>' +
           '</div>' +
@@ -12311,6 +12312,13 @@ const Meals = {
       if (a === 'save') return Meals.commit();
     });
     ['#ml-file', '#ml-cam'].forEach((sel) => wrap.querySelector(sel).addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) Meals.pick(f); }));
+    /* On a desktop a picture also arrives by dropping it on the sheet or
+       pasting it (a screenshot, a photo copied from Photos). */
+    const ph = wrap.querySelector('.ml-photo');
+    ['dragenter', 'dragover'].forEach((ev) => wrap.addEventListener(ev, (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); ph.classList.add('drop'); } }));
+    ['dragleave', 'drop'].forEach((ev) => wrap.addEventListener(ev, () => ph.classList.remove('drop')));
+    wrap.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && [...e.dataTransfer.files].find((x) => /^image\//.test(x.type)); if (f) { e.preventDefault(); Meals.pick(f); } });
+    wrap.addEventListener('paste', (e) => { const it = e.clipboardData && [...e.clipboardData.items].find((x) => /^image\//.test(x.type)); if (it) { const f = it.getAsFile(); if (f) { e.preventDefault(); Meals.pick(f); } } });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Meals.close(); });
     Meals.el = wrap;
     return wrap;
@@ -12402,6 +12410,190 @@ const Meals = {
   }
 };
 window.FlowMeals = Meals;
+
+/* ── A habit you can do from the habit ──────────────────────────────────
+ * "Write three sentences before bed" was a box to tick. Now the name is a
+ * door: tap it and the thing itself is there — a place to write the three
+ * sentences (saved to the journal), a timer for "Meditate 10 min", or, for
+ * a habit that is just a habit, Done with an optional line. Saving ticks
+ * today. Which door a habit opens is read from its name and can be changed
+ * at the top of the sheet; the choice is kept with the account.
+ * Simple only; Advanced ticks boxes as it always did. */
+const HabitDo = {
+  KEY: 'flow:habitkinds', kinds: null, el: null, cur: null, kind: 'tick', timer: null, left: 0, total: 0,
+  KINDS: [['write', 'Write'], ['timer', 'Timer'], ['tick', 'Just tick']],
+  async load() { if (HabitDo.kinds) return HabitDo.kinds; try { HabitDo.kinds = (await DB.get(HabitDo.KEY, null)) || {}; } catch (e) { HabitDo.kinds = {}; } return HabitDo.kinds; },
+  host() { return { data: TodayPlus.host('hbData'), S: TodayPlus.host('S'), t: TodayPlus.host('todayStr') || today(), J: TodayPlus.host('J'), rh: TodayPlus.host('renderHabits') }; },
+  habit(id) { const h = HabitDo.host(); return ((h.data && h.data.habits) || []).find((x) => x && x.id === id) || null; },
+  done(id) { const h = HabitDo.host(); return !!(h.data && h.data.completions && h.data.completions[id] && h.data.completions[id][h.t]); },
+  /* What the name says it is. */
+  guess(name) {
+    const n = String(name || '').toLowerCase();
+    if (/\b(write|writ|journal|sentence|note|reflect|gratitude|diary)\b|yaz|günlük|cümle|not al|şükran/.test(n)) return 'write';
+    if (/\b(meditat|breath|stretch|read|study|walk|run|practice|practise|yoga|min|minute)\w*|dakika|dk\b|oku|nefes|yürü|koş|meditasyon|esne|çalış/.test(n)) return 'timer';
+    return 'tick';
+  },
+  minutes(name) { const m = /(\d{1,3})\s*(?:min|minute|dakika|dk)/i.exec(String(name || '')); const n = m ? +m[1] : 10; return Math.max(1, Math.min(180, n)); },
+  kindOf(h) { const k = HabitDo.kinds && HabitDo.kinds[h.id]; return (k && HabitDo.KINDS.some(([x]) => x === k)) ? k : HabitDo.guess(h.name); },
+  async setKind(id, kind) { await HabitDo.load(); HabitDo.kinds[id] = kind; try { await DB.set(HabitDo.KEY, HabitDo.kinds); } catch (e) {} },
+
+  /* ---- the tick, the same one the box does ---- */
+  tick(id, line) {
+    const { data, S, t, J, rh } = HabitDo.host(); if (!data || !S) return false;
+    data.completions = data.completions || {}; data.completions[id] = data.completions[id] || {};
+    const was = !!data.completions[id][t];
+    data.completions[id][t] = true;
+    const h = HabitDo.habit(id);
+    if (!was && typeof J === 'function' && h) { try { J('habits', '✅ ' + h.name + (line ? ' — ' + line : '')); } catch (e) {} }
+    S.set('habits', data);
+    try { if (typeof rh === 'function') rh(); } catch (e) {}
+    try { if (typeof window.renderToday === 'function') window.renderToday(); } catch (e) {}
+    return !was;
+  },
+  async journal(h, body, tags) {
+    const now = new Date().toISOString();
+    Journal.entries.push({ id: uid('j'), created: now, updated: now, date: today(), title: '', body, tags: ['habit'].concat(tags || []), prompts: {}, mood: null, energy: null });
+    await Journal.save();
+    try { Journal.rerender(); } catch (e) {}
+  },
+
+  /* ---- the sheet ---- */
+  build() {
+    if (HabitDo.el) return HabitDo.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-hdo'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-hd="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Habit">' +
+        '<div class="fn-grab" data-hd="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-hd="close" aria-label="Close">×</button>' +
+        '<div class="hd-k">Habit</div><h4 class="hd-name" data-i18n="off"></h4><div class="fn-sub hd-sub"></div>' +
+        '<div class="hd-kinds" role="tablist"></div>' +
+        '<div class="hd-body"></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const k = e.target.closest('[data-hd-kind]');
+      if (k) { HabitDo.kind = k.getAttribute('data-hd-kind'); HabitDo.setKind(HabitDo.cur, HabitDo.kind); HabitDo.paint(); return; }
+      const b = e.target.closest('[data-hd]'); if (!b) return;
+      const a = b.getAttribute('data-hd');
+      if (a === 'close') return HabitDo.close();
+      if (a === 'save') return HabitDo.saveWrite();
+      if (a === 'start') return HabitDo.start();
+      if (a === 'finish') return HabitDo.finish(true);
+      if (a === 'done') return HabitDo.justDone();
+    });
+    wrap.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && HabitDo.kind === 'write') { e.preventDefault(); HabitDo.saveWrite(); } });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) HabitDo.close(); });
+    HabitDo.el = wrap;
+    return wrap;
+  },
+  async open(id) {
+    if (!TodayLook.on()) return;
+    const h = HabitDo.habit(id); if (!h) return;
+    await HabitDo.load();
+    HabitDo.build();
+    HabitDo.stopTimer();
+    HabitDo.cur = id; HabitDo.kind = HabitDo.kindOf(h);
+    HabitDo.paint();
+    HabitDo.el.classList.add('on');
+    setTimeout(() => { const ta = HabitDo.el.querySelector('#hd-text'); if (ta && matchMedia('(hover:hover)').matches) ta.focus(); }, 80);
+  },
+  close() { HabitDo.stopTimer(); if (HabitDo.el) HabitDo.el.classList.remove('on'); HabitDo.cur = null; },
+  paint() {
+    const el = HabitDo.el, h = HabitDo.habit(HabitDo.cur); if (!el || !h) return;
+    const done = HabitDo.done(h.id);
+    el.querySelector('.hd-name').textContent = h.name;
+    el.querySelector('.hd-sub').textContent = done ? 'Done today. Doing it again is fine — it is still one tick.' : 'Do it here; saving ticks today.';
+    el.querySelector('.hd-kinds').innerHTML = HabitDo.KINDS.map(([k, l]) => '<button type="button" role="tab" aria-selected="' + (k === HabitDo.kind) + '" class="' + (k === HabitDo.kind ? 'on' : '') + '" data-hd-kind="' + k + '">' + l + '</button>').join('');
+    const body = el.querySelector('.hd-body');
+    if (HabitDo.kind === 'write') {
+      body.innerHTML = '<textarea class="flow-in" id="hd-text" rows="5" maxlength="2000" placeholder="Three sentences about today — how it felt, what you actually did, one thing for tomorrow."></textarea>' +
+        '<div class="hd-hint">Saved to your journal, with the habit\'s name.</div>' +
+        '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-hd="close">Not now</button><button type="button" class="flow-btn primary" data-hd="save">Save and tick</button></div>';
+    } else if (HabitDo.kind === 'timer') {
+      const min = HabitDo.minutes(h.name);
+      body.innerHTML = '<div class="hd-clock" data-i18n="off">' + HabitDo.clock(min * 60) + '</div>' +
+        '<div class="hd-hint hd-timer-hint">' + min + ' minutes. Done ticks today either way — the clock is a help, not a judge.</div>' +
+        '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-hd="close">Not now</button><button type="button" class="flow-btn" data-hd="finish">Done</button><button type="button" class="flow-btn primary" data-hd="start">Start</button></div>';
+    } else {
+      body.innerHTML = '<input class="flow-in" id="hd-line" maxlength="200" placeholder="One line about it (optional)">' +
+        '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-hd="close">Not now</button><button type="button" class="flow-btn primary" data-hd="done">Done for today</button></div>';
+    }
+  },
+  clock(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
+
+  /* ---- the three doors ---- */
+  async saveWrite() {
+    const el = HabitDo.el, h = HabitDo.habit(HabitDo.cur); if (!el || !h) return;
+    const ta = el.querySelector('#hd-text'); const body = String(ta.value || '').trim();
+    if (!body) { ta.focus(); toast('Write something first.', 'warn'); return; }
+    await HabitDo.journal(h, body, [h.name]);
+    HabitDo.tick(h.id);
+    HabitDo.close();
+    toast('Saved to your journal ✓ ' + h.name + ' ticked.', null, 2000);
+    Track.hit('habit_done_here');
+  },
+  start() {
+    const el = HabitDo.el, h = HabitDo.habit(HabitDo.cur); if (!el || !h) return;
+    HabitDo.stopTimer();
+    HabitDo.total = HabitDo.minutes(h.name) * 60; HabitDo.left = HabitDo.total; HabitDo.startedAt = Date.now();
+    const b = el.querySelector('[data-hd="start"]'); if (b) { b.disabled = true; b.textContent = 'Running…'; }
+    el.querySelector('.hd-clock').classList.add('run');
+    HabitDo.timer = setInterval(() => {
+      HabitDo.left = HabitDo.total - Math.round((Date.now() - HabitDo.startedAt) / 1000);
+      const c = el.querySelector('.hd-clock'); if (c) c.textContent = HabitDo.clock(HabitDo.left);
+      if (HabitDo.left <= 0) { HabitDo.finish(false); }
+    }, 500);
+  },
+  stopTimer() { if (HabitDo.timer) { clearInterval(HabitDo.timer); HabitDo.timer = null; } },
+  async finish(early) {
+    const h = HabitDo.habit(HabitDo.cur); if (!h) return;
+    const ran = HabitDo.timer ? Math.round((Date.now() - HabitDo.startedAt) / 60000) : 0;
+    HabitDo.stopTimer();
+    HabitDo.tick(h.id, ran ? ran + ' min' : '');
+    try { if (ran >= 1) await Focus.add(ran, 'habit'); } catch (e) {}
+    HabitDo.close();
+    toast(h.name + ' ✓' + (ran ? ' · ' + ran + ' min' : ''), null, 1800);
+    Track.hit('habit_done_here');
+  },
+  justDone() {
+    const el = HabitDo.el, h = HabitDo.habit(HabitDo.cur); if (!el || !h) return;
+    const line = String((el.querySelector('#hd-line') || {}).value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    HabitDo.tick(h.id, line);
+    HabitDo.close();
+    toast(h.name + ' ✓', null, 1500);
+    Track.hit('habit_done_here');
+  },
+
+  /* ---- the doors on the page: the name on Today's card, and on Habits ---- */
+  decorate() {
+    if (!TodayLook.on()) return;
+    document.querySelectorAll('#flow-td-habits .flow-td-row.hb .tx:not(.hd-door)').forEach((tx) => { tx.classList.add('hd-door'); tx.setAttribute('role', 'button'); tx.setAttribute('tabindex', '0'); });
+    document.querySelectorAll('#habitsList .habit-name:not(.hd-door)').forEach((n) => { n.classList.add('hd-door'); n.setAttribute('role', 'button'); n.setAttribute('tabindex', '0'); });
+  },
+  boot() {
+    const go = (e) => {
+      if (!TodayLook.on()) return;
+      const row = e.target.closest && e.target.closest('#flow-td-habits .flow-td-row.hb .tx, #habitsList .habit-name');
+      if (!row) return;
+      let id = null;
+      const r = row.closest('.flow-td-row.hb'); if (r) { const b = r.querySelector('[data-hb]'); id = b && b.getAttribute('data-hb'); }
+      if (!id) { const card = row.closest('.habit-card'); const d = card && card.querySelector('[data-hid]'); id = d && d.getAttribute('data-hid'); }
+      if (!id) return;
+      e.preventDefault(); e.stopPropagation();
+      HabitDo.open(id);
+    };
+    document.addEventListener('click', go, true);
+    document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('hd-door')) go(e); });
+    HabitDo.load();
+    let queued = false;
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { HabitDo.decorate(); } catch (e) {} }); };
+    new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
+    later();
+  }
+};
+window.FlowHabitDo = HabitDo;
 
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that
@@ -15966,6 +16158,7 @@ async function boot() {
   try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
   try { Meals.boot(); } catch (e) { console.warn('[Flow] meals', e); }
+  try { HabitDo.boot(); } catch (e) { console.warn('[Flow] habit do', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
   try { Track.boot(); } catch (e) {}

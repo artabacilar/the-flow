@@ -2136,6 +2136,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Camera or library": "Kamera veya galeri",
   "Take a photo": "Fotoğraf çek",
   "Choose a photo": "Fotoğraf seç",
+  "or drop a picture here, or paste one": "ya da buraya bir resim bırak, ya da yapıştır",
   "Take a photo of the meal": "Öğünün fotoğrafını çek",
   "Choose a photo of the meal": "Öğünün fotoğrafını seç",
   "Remove the photo": "Fotoğrafı kaldır",
@@ -2165,6 +2166,19 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "A daily target for the Meals card on Today. Leave blank for totals only.": "Bugün'deki Öğünler kartı için günlük hedef. Yalnızca toplamlar için boş bırak.",
   "g protein": "g protein",
   "Removed {}": "{} kaldırıldı",
+  "Write": "Yaz",
+  "Timer": "Zamanlayıcı",
+  "Just tick": "Sadece işaretle",
+  "Done today. Doing it again is fine — it is still one tick.": "Bugün yapıldı. Tekrar yapmak sorun değil — yine tek işaret.",
+  "Do it here; saving ticks today.": "Burada yap; kaydetmek bugünü işaretler.",
+  "Three sentences about today — how it felt, what you actually did, one thing for tomorrow.": "Bugün hakkında üç cümle — nasıl hissettirdi, gerçekten ne yaptın, yarın için bir şey.",
+  "Saved to your journal, with the habit's name.": "Alışkanlığın adıyla günlüğüne kaydedilir.",
+  "Save and tick": "Kaydet ve işaretle",
+  "{} minutes. Done ticks today either way — the clock is a help, not a judge.": "{} dakika. Bitti her halükârda bugünü işaretler — saat yardımcıdır, yargıç değil.",
+  "Running…": "Çalışıyor…",
+  "One line about it (optional)": "Bununla ilgili bir satır (isteğe bağlı)",
+  "Done for today": "Bugünlük bitti",
+  "Write something first.": "Önce bir şey yaz.",
 /* DICT-END */
 }, RULES);
 
