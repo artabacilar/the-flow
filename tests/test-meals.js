@@ -72,6 +72,7 @@ const PNG = 'data:image/jpeg;base64,' + Buffer.from('not really a jpeg but the s
   ok('a Meals card sits where the Diet list was, empty, with Log a meal', card0 && card0.vis && /nothing logged/.test(card0.head) && card0.add && /td-group/.test(card0.after), card0);
   await p.evaluate(() => Flow.Nav.openCapture()); await p.waitForTimeout(300);
   await p.click('#flow-capture [data-fn-cap="diet"]'); await p.waitForTimeout(400);
+  ok('two doors to a picture: the camera (back, straight away) and the library', await p.evaluate(() => { const c = document.querySelector('#flow-meal #ml-cam'), f = document.querySelector('#flow-meal #ml-file'); return c && c.getAttribute('capture') === 'environment' && /image/.test(c.accept) && f && !f.hasAttribute('capture'); }));
   ok('the + sheet\'s Meal opens the photo sheet, not the old checklist', await p.evaluate(() => document.querySelector('#flow-meal.on') && !document.querySelector('#flow-capture.on') && document.querySelector('.tab.active').getAttribute('data-tab') === 'today'));
   await p.click('#flow-meal [data-ml="estimate"]'); await p.waitForTimeout(200);
   ok('nothing to go on is said in the sheet, not sent', await p.evaluate(() => !document.querySelector('#flow-meal .ml-err').hidden) && seen === null);
