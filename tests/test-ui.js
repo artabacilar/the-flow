@@ -56,10 +56,15 @@ const controls = (p) => p.evaluate(() => {
   ok('Simple has the same sidebar, every page', simp.join(',') === adv.join(','), simp);
   ok('and stays on the page you were on', await p.evaluate(() => document.querySelector('.tab.active').getAttribute('data-tab')) === 'training');
   const gaps = {};
+  /* Simple says a few of the app's own words differently (Big Rocks are
+     Priorities, the quadrant list is Open loops). The same control with the
+     Simple word is the same control. */
+  const vocab = await p.evaluate(() => window.FlowVocab.list().filter((r) => typeof r.to === 'string').map((r) => [r.rx.source, r.rx.flags, r.to]));
+  const simpleWord = (x) => vocab.reduce((acc, [src, flags, to]) => acc.replace(new RegExp(src, flags), to), x);
   for (const t of ALL) {
     await p.evaluate((t) => Flow.Nav.go(t), t); await p.waitForTimeout(350);
     const now = new Set(await controls(p));
-    const miss = before[t].filter((x) => !now.has(x));
+    const miss = before[t].filter((x) => !now.has(x) && !now.has(simpleWord(x)));
     if (miss.length) gaps[t] = miss.slice(0, 6);
   }
   ok('every page has every control it has in Advanced', !Object.keys(gaps).length, gaps);

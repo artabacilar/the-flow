@@ -179,15 +179,19 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); }); await p.waitForTimeout(1200);
   const sim = await words();
   ok('Simple says Priorities, on the card and in the furniture', /Priorit/i.test(sim.label) && !/Big Rock/i.test(sim.label) && !sim.menu.some((x) => /Big Rock/i.test(x)), sim);
+  const loops = await p.evaluate(() => ({ card: (document.querySelector('#flow-td-priorities .flow-td-head .l') || {}).textContent, nav: [...document.querySelectorAll('.fn-txt')].map((e) => e.textContent.trim()).filter((x) => /Open loops|Priorities/.test(x)) }));
+  ok('the old quadrant card and its menu item are Open loops, so Priorities means one thing', loops.card === 'Open loops' && loops.nav.includes('Open loops') && !loops.nav.includes('Priorities'), loops);
   ok('and leaves a person\'s own title alone', await p.evaluate(() => /Move the Big Rock in the garden/.test(document.querySelector('#today-feed .td-rock[data-rockid="bigword"] .rk-title').textContent)));
   await p.evaluate(() => { window.FlowTodayLook.sel = (new Date().getDay() + 6) % 7; window.FlowTodayLook.paint(); }); await p.waitForTimeout(400);
   ok('placeholders follow too', await p.evaluate(() => { const i = document.querySelector('#today-feed .lk-dv-add input'); return !!i && /Priority/.test(i.placeholder) && !/Big Rock/.test(i.placeholder); }));
   await p.evaluate(async () => { await Flow.Lang.set('tr'); }); await p.waitForTimeout(1500);
   const trw = await p.evaluate(() => ({ label: document.querySelector('#today-feed .td-rocks:not(#td-cal) .td-rocks-head .lbl').textContent.trim(), ph: (document.querySelector('#today-feed .lk-dv-add input') || {}).placeholder || '', any: document.body.textContent.indexOf('Büyük Taş') >= 0 }));
   ok('in Turkish it is Öncelik, with its suffixes', /Öncelik/.test(trw.label) && /Öncelik/.test(trw.ph) && !trw.any, trw);
+  ok('and the quadrant card is Açık işler', await p.evaluate(() => (document.querySelector('#flow-td-priorities .flow-td-head .l') || {}).textContent === 'Açık işler'));
   await p.evaluate(async () => { await Flow.Lang.set('en'); await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); }); await p.waitForTimeout(1200);
   const backw = await words();
   ok('back in Advanced it is Big Rocks again, everywhere', /Big Rocks/i.test(backw.label) && !/Priorit/i.test(backw.label), backw);
+  ok('and the quadrant card is Priorities again', await p.evaluate(() => (document.querySelector('#flow-td-priorities .flow-td-head .l') || {}).textContent === 'Priorities'));
 
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();

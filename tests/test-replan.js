@@ -34,6 +34,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ];
   const c1 = await p.evaluate((rocks) => { const R = window.FlowReplan; const c = R.compute({ now: 13 * 60, events: 60, prefs: { start: 9 * 60, end: 18 * 60, buffer: 10, dur: 60 }, rocks }); return { left: c.left, fits: c.fits.map((r) => r.id), moves: c.moves.map((r) => r.id), used: c.used, over: c.over }; }, rocks);
   ok('13:00, an hour of meetings left: 4 hours free; three fit, one moves', c1.left === 240 && c1.fits.join() === 'a,b,c' && c1.moves.join() === 'd' && c1.used === 200, c1);
+  ok('the overrun is the whole day against the time left: 4h 30m needed, 4h free, 30m over', c1.over === 30, c1);
   const c2 = await p.evaluate((rocks) => { const c = window.FlowReplan.compute({ now: 16 * 60, events: 0, prefs: { start: 9 * 60, end: 18 * 60, buffer: 10, dur: 60 }, rocks }); return { fits: c.fits.map((r) => r.id), moves: c.moves.map((r) => r.id) }; }, rocks);
   ok('at 16:00 only the high-priority timed one fits; the rest move, the overdue one last', c2.fits.join() === 'a' && c2.moves.join() === 'b,c,d', c2);
   const c3 = await p.evaluate((rocks) => { const c = window.FlowReplan.compute({ now: 16 * 60, events: 0, prefs: { start: 9 * 60, end: 18 * 60, buffer: 10, dur: 60 }, rocks, keep: new Set(['c']) }); return { fits: c.fits.map((r) => r.id), moves: c.moves.map((r) => r.id) }; }, rocks);
@@ -66,7 +67,9 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const sh = await p.evaluate(() => { const el = document.getElementById('flow-replan'); return { on: el.classList.contains('on'), sub: el.querySelector('.rp-sub').textContent, rows: el.querySelectorAll('.rp-row').length, fits: !!el.querySelector('.ra-k'), accept: el.querySelector('[data-rp="accept"]').hidden }; });
   ok('the sheet opens with the time left and every open rock, nothing moved yet', sh.on && /left until 18:00/.test(sh.sub) && sh.rows === (S.late ? 5 : 4) && (await p.evaluate(() => (cData.rocks[weekId(new Date())] || []).length)) === (S.late ? 5 : 4), sh);
   /* force a crowded day whatever the clock says: every rock takes 3 hours */
-  await p.evaluate(() => { document.querySelectorAll('#flow-replan [data-rp-dur]').forEach((i) => { i.value = '180'; i.dispatchEvent(new Event('change', { bubbles: true })); }); });
+  /* one at a time, by id: each change repaints the sheet, so a list of inputs
+     taken before the first change is detached after it */
+  await p.evaluate(() => { [...document.querySelectorAll('#flow-replan [data-rp-dur]')].map((i) => i.getAttribute('data-rp-dur')).forEach((id) => { const i = document.querySelector('#flow-replan [data-rp-dur="' + id + '"]'); i.value = '180'; i.dispatchEvent(new Event('change', { bubbles: true })); }); });
   await p.waitForTimeout(200);
   const crowded = await p.evaluate(() => { const el = document.getElementById('flow-replan'); return { moves: el.querySelectorAll('.rp-row.mv').length, btn: el.querySelector('[data-rp="accept"]').textContent, hidden: el.querySelector('[data-rp="accept"]').hidden }; });
   ok('with three-hour rocks most of the day moves, and the button says where', crowded.moves >= 1 && !crowded.hidden && /^Move \d+ to /.test(crowded.btn), crowded);
