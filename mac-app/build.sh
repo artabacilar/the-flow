@@ -160,6 +160,10 @@ PLIST
 plutil -lint -s "$APP/Contents/Info.plist" || fail "Info.plist did not validate"
 
 # ---- entitlements ----------------------------------------------------------
+# files.user-selected.read-only: a sandboxed app may only read a file the
+# person picked in an open panel if it says so here. Without it the picker
+# behind every <input type=file> (a meal photo, a bank statement) opened
+# and then handed the page nothing — "Choose a photo" did nothing at all.
 # The sandbox is mandatory on the Mac App Store. Outgoing connections are the
 # one hole it needs: without network.client the window sits on the offline
 # page forever, and nothing else says why.
@@ -183,6 +187,8 @@ cat > "$ENT" <<ENTS
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 $STORE_KEYS
 </dict>
