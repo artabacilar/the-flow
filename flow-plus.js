@@ -46,7 +46,7 @@ const RC_AUTH = process.env.REVENUECAT_WEBHOOK_AUTH || '';
 
 const KEY = (uid) => '__plus:plan:' + uid;
 const STATS = (day) => '__stats:' + day;
-const TRACKED = ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'entitlement_changed'];
+const TRACKED = ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'entitlement_changed', 'meal_logged'];
 const CUST = (cid) => '__plus:cust:' + cid;
 
 /* Everything a Free account may not ask the server to do. Patterns and chat

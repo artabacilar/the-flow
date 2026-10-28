@@ -1887,6 +1887,127 @@ async function handleAhead(p, req, res, ctx) {
   return true;
 }
 
+/* ==========================================================================
+ * Meals — a plate, photographed, as numbers
+ * --------------------------------------------------------------------------
+ * The page sends one picture (already shrunk to ~1000px, so it fits the
+ * body limit) or a line of text, and gets back an estimate: what is on the
+ * plate, calories, protein, carbs, fat, and how sure the model is. Nothing
+ * is stored here — the page keeps the meal (numbers and names, never the
+ * photo) in the account. Free accounts get a few a week; Plus is capped
+ * per day only so a runaway client cannot spend the key.
+ * ========================================================================== */
+
+const MEAL_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_MEAL_DAILY_CAP || '40', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 40;
+})();
+const MEAL_FREE_WEEKLY = 3;
+const MEAL_MAX_IMAGE = 900 * 1024;       /* bytes of base64 — the body limit is 1 MB */
+const mealCountKey = () => 'mealn:' + new Date().toISOString().slice(0, 10);
+let mealPost = (...a) => postJSON(...a);
+
+const MEAL_SYSTEM = [
+  'You estimate the nutrition of one meal for a personal life app called The Flow.',
+  'You get a photo of a plate, a short description, or both. Estimate what is there and how much,',
+  'using ordinary portion sizes and standard nutrition values. Be honest about uncertainty.',
+  '',
+  'Return ONLY a JSON object, no prose around it:',
+  '{',
+  '  "food": true,',
+  '  "name": "the meal in a few words (e.g. Grilled chicken with rice and salad)",',
+  '  "items": [ { "name": "chicken breast", "amount": "150 g", "kcal": 250 } ],   // 1 to 8',
+  '  "kcal": 620,          // whole meal, integer',
+  '  "protein_g": 45,',
+  '  "carbs_g": 60,',
+  '  "fat_g": 18,',
+  '  "confidence": "low | medium | high",',
+  '  "note": "one short line on what makes it uncertain (hidden sauce, portion size); empty if nothing"',
+  '}',
+  '',
+  'Rules:',
+  '· If the picture is not food (a desk, a person, a screen), return {"food": false, "note": "what it is instead"}.',
+  '· Whole-meal numbers must be the sum of the items, rounded.',
+  '· A description that names a brand or a size ("large", "double") overrides what the photo suggests.',
+  '· Never ask questions; give the best estimate and say in "note" what would change it.',
+  '· Keep names short, in the language asked for.'
+].join('\n');
+
+function parseMeal(text) {
+  const s = String(text || '');
+  const m = s.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let j; try { j = JSON.parse(m[0]); } catch (e) { return null; }
+  if (!j || typeof j !== 'object') return null;
+  if (j.food === false) return { food: false, note: String(j.note || '').slice(0, 160) };
+  const num = (v, max) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 0 ? Math.min(n, max) : 0; };
+  const items = (Array.isArray(j.items) ? j.items : []).slice(0, 8)
+    .map((it) => it && typeof it === 'object' ? { name: String(it.name || '').slice(0, 60), amount: String(it.amount || '').slice(0, 30), kcal: num(it.kcal, 3000) } : null)
+    .filter((it) => it && it.name);
+  const out = {
+    food: true,
+    name: String(j.name || (items[0] && items[0].name) || '').slice(0, 80),
+    items,
+    kcal: num(j.kcal, 6000), protein: num(j.protein_g != null ? j.protein_g : j.protein, 500),
+    carbs: num(j.carbs_g != null ? j.carbs_g : j.carbs, 800), fat: num(j.fat_g != null ? j.fat_g : j.fat, 400),
+    confidence: ['low', 'medium', 'high'].indexOf(j.confidence) >= 0 ? j.confidence : 'medium',
+    note: String(j.note || '').slice(0, 200)
+  };
+  if (!out.name && !out.kcal) return null;
+  if (!out.kcal && items.length) out.kcal = items.reduce((a, it) => a + it.kcal, 0);
+  return out;
+}
+
+async function readMeal(body, key) {
+  const lang = body.lang === 'tr' ? 'Turkish' : 'English';
+  const content = [];
+  if (body.image) {
+    const m = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(String(body.image));
+    if (!m) throw Object.assign(new Error('That is not a picture the app can read.'), { code: 400 });
+    if (m[2].length > MEAL_MAX_IMAGE) throw Object.assign(new Error('That picture is too big. The app shrinks photos before sending; try again.'), { code: 413 });
+    content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+  }
+  const text = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!content.length && !text) throw Object.assign(new Error('A picture or a few words about the meal.'), { code: 400 });
+  content.push({ type: 'text', text: (text ? 'About it: ' + text + '\n' : '') + 'Estimate this meal. Names in ' + lang + '.' });
+  const r = await mealPost('https://api.anthropic.com/v1/messages', {
+    'x-api-key': key, 'anthropic-version': '2023-06-01'
+  }, { model: CHAT_MODEL, max_tokens: 600, system: MEAL_SYSTEM, messages: [{ role: 'user', content }] }, 60000);
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('meal', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status < 200 || r.status >= 300) { logUpstream('meal', r.status, upstreamWhy(r)); throw new Error('The meal could not be read just now (upstream ' + r.status + ').'); }
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const out = parseMeal(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'));
+  if (!out) throw new Error('The estimate came back in a shape the app could not read. Try again.');
+  return out;
+}
+
+async function handleMeal(p, req, res, ctx) {
+  if (p !== '/api/flow/meal' || req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  let wk = null;
+  if (freeTier(ctx)) {
+    wk = 'mealw:' + isoWeekKey();
+    const used = (await ctx.counter.get(wk)) || 0;
+    if (used >= MEAL_FREE_WEEKLY) { ctx.json(res, 402, PLUS_REFUSAL('meals', { used, cap: MEAL_FREE_WEEKLY })); return true; }
+  }
+  const spent = (await ctx.counter.get(mealCountKey())) || 0;
+  if (MEAL_DAILY_CAP > 0 && spent >= MEAL_DAILY_CAP) { ctx.json(res, 429, { error: 'That is ' + spent + ' meals read today. They reset at midnight UTC.', used: spent, cap: MEAL_DAILY_CAP }); return true; }
+  try {
+    const meal = await readMeal(body, key);
+    if (meal.food === false) { ctx.json(res, 422, { error: 'That does not look like food' + (meal.note ? ' — ' + meal.note : '') + '.', notFood: true }); return true; }
+    await ctx.counter.set(mealCountKey(), spent + 1);
+    if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
+    ctx.json(res, 200, { ok: true, meal, used: spent + 1, cap: MEAL_DAILY_CAP, free: wk ? { used: (await ctx.counter.get(wk)) || 0, cap: MEAL_FREE_WEEKLY } : undefined });
+  } catch (e) {
+    ctx.json(res, e && e.code ? e.code : 502, { error: friendlyUpstream(e) || (e && e.message) || 'The meal could not be read just now.' });
+  }
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -1899,7 +2020,12 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleBrief(p, req, res, ctx)) return true;
   if (await handlePatterns(p, req, res, ctx)) return true;
   if (await handleAhead(p, req, res, ctx)) return true;
+  if (await handleMeal(p, req, res, ctx)) return true;
   return false;
+};
+module.exports._internals.meal = {
+  parseMeal, handle: handleMeal, MEAL_SYSTEM, config: () => ({ cap: MEAL_DAILY_CAP, free: MEAL_FREE_WEEKLY }),
+  setPoster(fn) { mealPost = fn || ((...a) => postJSON(...a)); }
 };
 module.exports._internals.parsePlan = parsePlan;
 module.exports._internals.PLAN_SYSTEM = PLAN_SYSTEM;

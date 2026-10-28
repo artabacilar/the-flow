@@ -321,6 +321,8 @@ const SETTINGS_DEFAULTS = {
   workStart: '09:00',            // the working day, for My day changed
   workEnd: '18:00',
   bufferMin: 10,                 // room between two Big Rocks
+  mealKcal: 0,                   // Meals on Today: a daily target, 0 = totals only
+  mealProtein: 0,
   eveningCheck: false,           // one notification in the evening: how did today go?
   eveningCheckAt: '21:00',
   hiddenTabs: [],                // sections taken out of the menu (data kept)
@@ -8938,7 +8940,7 @@ const Meetings = {
       const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
       box.innerHTML =
         '<div class="td-meet-line">🎙️ <span data-i18n="off">' + esc(m.title) + '</span>' +
-          ' · <button type="button" class="td-meet-tg">Notes ▾</button></div>' +
+          ' · <button type="button" class="td-meet-tg">Show notes ▾</button></div>' +
         '<div class="td-meet-body" hidden>' +
           '<p class="td-meet-people">' + (m.at ? esc(Meetings.when(m)) : '') + (people.length ? ' · ' + esc(people.join(', ')) : '') +
             (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') + '</p>' +
@@ -8949,7 +8951,7 @@ const Meetings = {
       box.querySelector('.td-meet-tg').addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
         const b = box.querySelector('.td-meet-body'); b.hidden = !b.hidden;
-        e.target.textContent = b.hidden ? 'Notes ▾' : 'Notes ▴';
+        e.target.textContent = b.hidden ? 'Show notes ▾' : 'Hide notes ▴';
       });
       if (note) note.replaceWith(box); else (row.querySelector('.rk-title') || row).appendChild(box);
     });
@@ -9688,6 +9690,7 @@ const TodayLook = {
     if (hero.previousElementSibling !== above) above.after(hero);
     TodayLook.put(hero.querySelector('.lk-hero-main'), TodayLook.hero(feed));
     TodayLook.put(hero.querySelector('.lk-acts'), TodayLook.actsHtml());
+    try { Meals.paint(); } catch (e) {}
     /* A tile with nothing in it reads as a quiet dash, not a headline. */
     feed.querySelectorAll('.flow-td-pulse .flow-td-tile').forEach((t) => {
       const v = t.querySelector('.v'); const empty = !!v && /^[—–-]?$/.test(v.textContent.trim());
@@ -9881,9 +9884,10 @@ const Plus = {
     'plan-week': ['The week, planned with you', 'A first draft of the week from your roles and what slipped.'],
     statement: ['Statements read into Finances', 'A bank statement becomes a month of categorised spending in one go.'],
     brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.'],
-    replan: ['My day changed — applied', 'The preview is free. Moving the Big Rocks that no longer fit, in one tap with undo, is Plus.']
+    replan: ['My day changed — applied', 'The preview is free. Moving the Big Rocks that no longer fit, in one tap with undo, is Plus.'],
+    meals: ['Meals from a photo', 'Three plates a week are free. Every meal, read into calories and protein the moment you photograph it, is Plus.']
   },
-  HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you'],
+  HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you', 'Meals from a photo: calories and protein, logged'],
   async load() {
     try { if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return null; } catch (e) { return null; }
     try {
@@ -9997,6 +10001,9 @@ const Plus = {
         <div class="flow-label" style="margin-top:16px">Your day</div>
         <p class="flow-sub">What “My day changed” plans inside: the working day, and the room it leaves between Big Rocks.</p>
         <div class="flow-row plus-day"><label>From <input class="flow-in" type="time" data-s="workStart" value="${esc(s.workStart || '09:00')}"></label><label>to <input class="flow-in" type="time" data-s="workEnd" value="${esc(s.workEnd || '18:00')}"></label><label>room <input class="flow-in" type="number" min="0" max="60" step="5" data-s="bufferMin" data-type="num" value="${esc(String(s.bufferMin == null ? 10 : s.bufferMin))}"> min</label></div>
+        <div class="flow-label" style="margin-top:16px">Meals</div>
+        <p class="flow-sub">A daily target for the Meals card on Today. Leave blank for totals only.</p>
+        <div class="flow-row plus-day"><label><input class="flow-in" type="number" min="0" max="8000" step="50" data-s="mealKcal" data-type="num" value="${esc(String(s.mealKcal || ''))}" placeholder="2200"> kcal</label><label><input class="flow-in" type="number" min="0" max="500" step="5" data-s="mealProtein" data-type="num" value="${esc(String(s.mealProtein || ''))}" placeholder="120"> g protein</label></div>
         <div class="flow-label" style="margin-top:16px">Daily rhythm</div>
         <div class="flow-switch"><div class="t"><b>Evening check-in</b><span>One notification in the evening: how did today go? Tick what got done, move what did not.</span></div>
           <input type="checkbox" data-s="eveningCheck" data-type="bool" ${s.eveningCheck ? 'checked' : ''}></div>
@@ -10165,7 +10172,7 @@ window.FlowAuthState = Auth;   /* read by tests; not a way in */
  * The owner reads them back as counts. This is what tells whether people
  * come back and plan, which is the only question the growth plan asks. */
 const Track = {
-  EVENTS: ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on'],
+  EVENTS: ['app_open', 'first_run_done', 'rock_added', 'rock_done', 'replan_preview', 'replan_accepted', 'replan_undone', 'triage_done', 'review_completed', 'plus_sheet', 'checkout_started', 'share_read', 'evening_on', 'meal_logged'],
   sent: new Set(),
   hit(ev) {
     try {
@@ -12188,6 +12195,204 @@ const Repeat = {
 };
 window.FlowRepeat = Repeat;
 
+/* ── Meals: a plate, photographed, as numbers ────────────────────────────
+ * The Diet checklist asked "did you have lunch?" and learned nothing. This
+ * asks for a photo (or a line) and keeps what it is, the calories and the
+ * protein, carbs and fat — an estimate, said so, and every number can be
+ * changed before it is saved. The photo is never stored: it goes to the
+ * server for one read and is forgotten; the account keeps the numbers.
+ * Simple only. Free: three a week; Plus: as many as the day needs. */
+const Meals = {
+  KEY: 'flow:meals', data: null, el: null, img: null, est: null, busy: false,
+  async load() { if (Meals.data) return Meals.data; try { Meals.data = (await DB.get(Meals.KEY, null)) || { v: 1, days: {} }; } catch (e) { Meals.data = { v: 1, days: {} }; } if (!Meals.data.days) Meals.data.days = {}; return Meals.data; },
+  day(d) { const k = d || today(); const D = Meals.data || { days: {} }; return (D.days && D.days[k]) || []; },
+  totals(d) { return Meals.day(d).reduce((a, m) => { a.kcal += +m.kcal || 0; a.protein += +m.protein || 0; a.carbs += +m.carbs || 0; a.fat += +m.fat || 0; a.n++; return a; }, { kcal: 0, protein: 0, carbs: 0, fat: 0, n: 0 }); },
+  targets() { const s = (typeof Settings !== 'undefined' && Settings.data) || {}; return { kcal: +s.mealKcal > 0 ? +s.mealKcal : 0, protein: +s.mealProtein > 0 ? +s.mealProtein : 0 }; },
+  fmt(n) { return Number(n || 0).toLocaleString('en-GB'); },
+  async save() { try { await DB.set(Meals.KEY, Meals.data); } catch (e) {} Meals.paint(); },
+  async add(m) {
+    await Meals.load();
+    const k = today(); if (!Meals.data.days[k]) Meals.data.days[k] = [];
+    const now = new Date();
+    const rec = { id: uid('m'), at: pad(now.getHours()) + ':' + pad(now.getMinutes()), name: m.name, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fat: m.fat, confidence: m.confidence, items: (m.items || []).slice(0, 8) };
+    Meals.data.days[k].push(rec);
+    /* keep the account light: a season of days, not a lifetime */
+    const keys = Object.keys(Meals.data.days).sort(); while (keys.length > 120) delete Meals.data.days[keys.shift()];
+    await Meals.save();
+    try { J('diet', '🍽️ ' + rec.name + ' · ' + rec.kcal + ' kcal'); } catch (e) {}
+    Track.hit('meal_logged');
+    return rec;
+  },
+  async remove(id) {
+    await Meals.load();
+    const k = today(); const list = Meals.data.days[k] || []; const i = list.findIndex((m) => m.id === id); if (i < 0) return;
+    const [rec] = list.splice(i, 1);
+    await Meals.save();
+    RockActions.undo('Removed ' + rec.name, async () => { (Meals.data.days[k] = Meals.data.days[k] || []).splice(Math.min(i, Meals.data.days[k].length), 0, rec); await Meals.save(); });
+  },
+
+  /* ---- the card on Today ---- */
+  cardHtml() {
+    const t = Meals.totals(), T = Meals.targets(), list = Meals.day();
+    const over = T.kcal && t.kcal > T.kcal;
+    const head = t.n ? Meals.fmt(t.kcal) + ' kcal' + (t.protein ? ' · ' + t.protein + ' g protein' : '') : 'nothing logged';
+    return '<div class="flow-td-head"><span class="l">Meals</span><span class="c' + (over ? ' late' : '') + '" data-i18n="off">' + esc(head) + '</span></div>' +
+      (T.kcal ? '<div class="ml-bar' + (over ? ' over' : '') + '"><i style="width:' + Math.min(100, Math.round(t.kcal / T.kcal * 100)) + '%"></i></div><div class="ml-of" data-i18n="off">' + (over ? Meals.fmt(t.kcal - T.kcal) + ' kcal over ' + Meals.fmt(T.kcal) : Meals.fmt(Math.max(0, T.kcal - t.kcal)) + ' kcal left of ' + Meals.fmt(T.kcal)) + (T.protein ? ' · ' + (t.protein >= T.protein ? 'protein ✓' : (T.protein - t.protein) + ' g protein to go') : '') + '</div>' : '') +
+      list.map((m) => '<div class="flow-td-row ml-row"><span class="tx" data-i18n="off">' + esc(m.name) + '<small>' + esc(m.at) + (m.protein ? ' · ' + m.protein + ' g protein' : '') + (m.confidence === 'low' ? ' · rough guess' : '') + '</small></span><span class="mt" data-i18n="off">' + Meals.fmt(m.kcal) + ' kcal</span><button type="button" class="ml-x" data-meal-x="' + esc(m.id) + '" aria-label="Remove ' + esc(m.name) + '">×</button></div>').join('') +
+      '<button type="button" class="flow-empty-action ml-add" data-meal-open>' + Nav.svg('food') + '<span>Log a meal</span></button>';
+  },
+  paint() {
+    const feed = document.getElementById('today-feed'); if (!feed) return;
+    let box = document.getElementById('flow-td-meals');
+    if (!TodayLook.on() || !Meals.data) { if (box) box.remove(); return; }
+    if (!box) {
+      box = document.createElement('div'); box.id = 'flow-td-meals'; box.className = 'flow-td flow-td-sec flow-x';
+      box.addEventListener('click', (e) => {
+        const x = e.target.closest('[data-meal-x]'); if (x) { Meals.remove(x.getAttribute('data-meal-x')); return; }
+        if (e.target.closest('[data-meal-open]')) Meals.open();
+      });
+    }
+    /* where the Diet list was: after the day's training */
+    const train = feed.querySelector('.td-group');
+    const after = train || feed.querySelector('.td-rocks:not(#td-cal)');
+    if (after && after.parentNode === feed) { if (box.previousElementSibling !== after) after.after(box); }
+    else if (!box.isConnected) feed.appendChild(box);
+    TodayLook.put(box, Meals.cardHtml());
+  },
+
+  /* ---- the sheet ---- */
+  build() {
+    if (Meals.el) return Meals.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-meal'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-ml="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Log a meal">' +
+        '<div class="fn-grab" data-ml="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-ml="close" aria-label="Close">×</button>' +
+        '<h4>Log a meal</h4><div class="fn-sub">A photo, a few words, or both. The numbers are an estimate — change any of them before you save.</div>' +
+        '<div class="ml-in">' +
+          '<label class="ml-photo" data-ml-photo><input type="file" accept="image/*" id="ml-file" aria-label="Add a photo of the meal"><span class="ml-ph-empty">' + Nav.svg('food') + '<b>Add a photo</b><small>Camera or library</small></span><img alt="" hidden><button type="button" class="ml-ph-x" data-ml="unphoto" aria-label="Remove the photo" hidden>×</button></label>' +
+          '<textarea class="flow-in" id="ml-text" rows="2" maxlength="300" placeholder="What is it, roughly? (optional) — e.g. menemen with two slices of bread"></textarea>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-ml="close">Not now</button><button type="button" class="flow-btn primary" data-ml="estimate">Estimate</button></div>' +
+          '<div class="ml-err" hidden></div>' +
+        '</div>' +
+        '<div class="ml-out" hidden>' +
+          '<input class="flow-in ml-name" id="ml-name" maxlength="80" aria-label="Meal">' +
+          '<div class="ml-nums">' +
+            '<label><input type="number" min="0" max="6000" step="10" id="ml-kcal" aria-label="Calories"><span>kcal</span></label>' +
+            '<label><input type="number" min="0" max="500" id="ml-protein" aria-label="Protein"><span>protein g</span></label>' +
+            '<label><input type="number" min="0" max="800" id="ml-carbs" aria-label="Carbs"><span>carbs g</span></label>' +
+            '<label><input type="number" min="0" max="400" id="ml-fat" aria-label="Fat"><span>fat g</span></label>' +
+          '</div>' +
+          '<ul class="ml-items"></ul>' +
+          '<div class="ml-conf"></div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-ml="again">Start again</button><button type="button" class="flow-btn primary" data-ml="save">Save to today</button></div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ml]'); if (!b) return;
+      const a = b.getAttribute('data-ml');
+      if (a === 'close') return Meals.close();
+      if (a === 'unphoto') { e.preventDefault(); Meals.setImage(null); return; }
+      if (a === 'estimate') return Meals.estimate();
+      if (a === 'again') return Meals.reset();
+      if (a === 'save') return Meals.commit();
+    });
+    wrap.querySelector('#ml-file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) Meals.pick(f); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Meals.close(); });
+    Meals.el = wrap;
+    return wrap;
+  },
+  open() {
+    if (!TodayLook.on()) return;
+    Meals.build(); Meals.load();
+    Meals.reset();
+    Meals.el.classList.add('on');
+    setTimeout(() => { const t = Meals.el.querySelector('#ml-text'); if (t && matchMedia('(hover:hover)').matches) t.focus(); }, 80);
+  },
+  close() { if (Meals.el) Meals.el.classList.remove('on'); },
+  reset() {
+    const el = Meals.el; if (!el) return;
+    Meals.est = null; Meals.setImage(null);
+    el.querySelector('#ml-text').value = '';
+    el.querySelector('.ml-err').hidden = true;
+    el.querySelector('.ml-in').hidden = false; el.querySelector('.ml-out').hidden = true;
+    const btn = el.querySelector('[data-ml="estimate"]'); btn.disabled = false; btn.textContent = 'Estimate';
+  },
+  setImage(dataUrl) {
+    Meals.img = dataUrl || null;
+    const el = Meals.el; if (!el) return;
+    const img = el.querySelector('.ml-photo img'), empty = el.querySelector('.ml-ph-empty'), x = el.querySelector('.ml-ph-x');
+    if (dataUrl) { img.src = dataUrl; img.hidden = false; empty.hidden = true; x.hidden = false; }
+    else { img.removeAttribute('src'); img.hidden = true; empty.hidden = false; x.hidden = true; el.querySelector('#ml-file').value = ''; }
+  },
+  /* The photo is shrunk here, on the device: a phone picture is 3–5 MB
+     and the server takes 1; a thousand pixels is plenty to see a plate. */
+  shrink(file, max, q) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file); const im = new Image();
+      im.onload = () => {
+        try {
+          const s = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+          const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.naturalWidth * s)); c.height = Math.max(1, Math.round(im.naturalHeight * s));
+          c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', q));
+        } catch (e) { reject(e); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not an image')); };
+      im.src = url;
+    });
+  },
+  async pick(file) {
+    try {
+      let d = await Meals.shrink(file, 1024, 0.8);
+      if (d.length > 850 * 1024) d = await Meals.shrink(file, 800, 0.6);
+      Meals.setImage(d);
+    } catch (e) { toast('That file is not a picture the app can read.', 'warn'); }
+  },
+  async estimate() {
+    const el = Meals.el; if (!el || Meals.busy) return;
+    const text = el.querySelector('#ml-text').value.trim();
+    const err = el.querySelector('.ml-err'); err.hidden = true;
+    if (!Meals.img && !text) { err.textContent = 'A photo, or a few words about the meal.'; err.hidden = false; return; }
+    const btn = el.querySelector('[data-ml="estimate"]');
+    Meals.busy = true; btn.disabled = true; btn.textContent = 'Reading the plate…';
+    try {
+      const r = await fetch('/api/flow/meal', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: Meals.img || undefined, text, lang: (document.documentElement.lang === 'tr' ? 'tr' : 'en') }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 402 && j.plus) { Meals.close(); Plus.open('meals'); return; }
+      if (!r.ok || !j.meal) { err.textContent = j.error || 'The meal could not be read just now.'; err.hidden = false; return; }
+      Meals.show(j.meal);
+    } catch (e) { err.textContent = 'The meal could not be read just now.'; err.hidden = false; }
+    finally { Meals.busy = false; btn.disabled = false; btn.textContent = 'Estimate'; }
+  },
+  show(m) {
+    const el = Meals.el; Meals.est = m;
+    el.querySelector('.ml-in').hidden = true; el.querySelector('.ml-out').hidden = false;
+    el.querySelector('#ml-name').value = m.name || '';
+    el.querySelector('#ml-kcal').value = m.kcal || 0; el.querySelector('#ml-protein').value = m.protein || 0; el.querySelector('#ml-carbs').value = m.carbs || 0; el.querySelector('#ml-fat').value = m.fat || 0;
+    el.querySelector('.ml-items').innerHTML = (m.items || []).map((it) => '<li data-i18n="off"><span>' + esc(it.name) + (it.amount ? ' <small>' + esc(it.amount) + '</small>' : '') + '</span><b>' + Meals.fmt(it.kcal) + '</b></li>').join('');
+    const conf = { low: 'A rough guess', medium: 'A fair estimate', high: 'A confident estimate' }[m.confidence] || 'An estimate';
+    el.querySelector('.ml-conf').innerHTML = '<b>' + esc(conf) + '.</b>' + (m.note ? ' <span data-i18n="off">' + esc(m.note) + '</span>' : '');
+  },
+  async commit() {
+    const el = Meals.el; if (!el || !Meals.est) return;
+    const n = (id, max) => Math.max(0, Math.min(max, Math.round(+el.querySelector(id).value || 0)));
+    const name = el.querySelector('#ml-name').value.replace(/\s+/g, ' ').trim().slice(0, 80) || Meals.est.name || 'Meal';
+    const rec = await Meals.add({ name, kcal: n('#ml-kcal', 6000), protein: n('#ml-protein', 500), carbs: n('#ml-carbs', 800), fat: n('#ml-fat', 400), confidence: Meals.est.confidence, items: Meals.est.items });
+    Meals.close();
+    const t = Meals.totals();
+    toast(rec.name + ' · ' + Meals.fmt(rec.kcal) + ' kcal. Today: ' + Meals.fmt(t.kcal) + ' kcal.', null, 2200);
+  },
+  boot() {
+    Meals.load().then(() => Meals.paint());
+  }
+};
+window.FlowMeals = Meals;
+
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that
  * rock, not just open the app. The iPhone app calls window.__flowOpen({rock})
@@ -13441,6 +13646,8 @@ const Nav = {
         setTimeout(() => ta.focus({ preventScroll: true }), 60);
         return;
       }
+      /* In Simple, Meal is the photo: the plate read into numbers, here. */
+      if (id === 'diet' && TodayLook.on()) { Nav.closeCapture(false); Meals.open(); return; }
       /* The rest hand you to the section that owns that kind of entry. Writing
          them in place needs each section's own write path; the journal is the
          one the pack already owns end to end. */
@@ -15748,6 +15955,7 @@ async function boot() {
   try { Habits.boot(); } catch (e) { console.warn('[Flow] habits', e); }
   try { MoneyMask.boot(); } catch (e) { console.warn('[Flow] hide numbers', e); }
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
+  try { Meals.boot(); } catch (e) { console.warn('[Flow] meals', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
   try { Track.boot(); } catch (e) {}
