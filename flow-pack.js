@@ -9531,7 +9531,9 @@ const TodayLook = {
   /* The review is not here: "Review week" is already in the row under the
      card, every day, and the same door twice is clutter. */
   actsHtml() {
-    let late = 0; try { late = TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7).late.length; } catch (e) {}
+    /* Overdue counts both kinds: Priorities from earlier this week, and
+       Open loops past their day — the ones the old card listed in red. */
+    let late = 0; try { late = Triage.count(); } catch (e) {}
     return (late ? '<button type="button" class="lk-act hot" data-lk-act="triage">Overdue · ' + late + '</button>' : '') +
       '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>';
   },
@@ -10348,6 +10350,9 @@ window.FlowReplan = Replan;
 const Triage = {
   el: null,
   late() { try { return TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7).late; } catch (e) { return []; } },
+  /* Open loops past their day: dated tasks from the Planner, still open. */
+  loops() { try { return TodayPlus.priorities().overdue.filter((r) => r && r.key); } catch (e) { return []; } },
+  count() { return Triage.late().length + Triage.loops().length; },
   build() {
     if (Triage.el) return Triage.el;
     const wrap = document.createElement('div');
@@ -10366,6 +10371,20 @@ const Triage = {
       const a = b.getAttribute('data-tg'), id = b.getAttribute('data-id');
       if (a === 'close') return Triage.close();
       const t = new Date(); t.setHours(12, 0, 0, 0);
+      const key = b.getAttribute('data-key');
+      if (key) {
+        /* an Open loop: the record keeps its place in the Planner; only its day, or its done, changes */
+        const rec = Schedule.get(key); if (!rec) return;
+        if (a === 'ldone') { Schedule.put(key, { done: true }); try { J('planning', '✅ Done: ' + rec.text); } catch (e2) {} }
+        else if (a === 'ltoday') Schedule.put(key, { date: RockActions.iso(t) });
+        else if (a === 'ltomorrow') { t.setDate(t.getDate() + 1); Schedule.put(key, { date: RockActions.iso(t) }); }
+        try { Schedule.saveNow(); } catch (e2) {}
+        try { renderToday(); } catch (e2) {}
+        try { TodayLook.paint(); } catch (e2) {}
+        Track.hit('triage_done');
+        Triage.paint();
+        return;
+      }
       if (a === 'done') { const h = RockActions.find(id); if (h) { h.r.done = true; RockActions.save('✅ Big rock done: ' + h.r.title); } }
       else if (a === 'today') RockActions.move(id, t);
       else if (a === 'tomorrow') { t.setDate(t.getDate() + 1); RockActions.move(id, t); }
@@ -10381,11 +10400,19 @@ const Triage = {
   close() { if (Triage.el) Triage.el.classList.remove('on'); },
   paint() {
     const el = Triage.el; if (!el) return;
-    const late = Triage.late();
-    el.querySelector('.tg-sub').textContent = late.length ? late.length + ' Big Rock' + (late.length === 1 ? '' : 's') + ' from earlier this week, still open. Each one: done, today, tomorrow, or let it go.' : 'Nothing overdue. Clear week.';
-    el.querySelector('.tg-body').innerHTML = late.map((r) => '<div class="tg-row"><span class="tg-t">' + esc(r.title) + '<small>' + esc(DOW[(r.day + 1) % 7] || '') + (r.time ? ' ' + esc(r.time) : '') + '</small></span>' +
-      '<div class="tg-acts"><button type="button" class="flow-btn sm" data-tg="done" data-id="' + esc(String(r.id)) + '">Done</button><button type="button" class="flow-btn sm" data-tg="today" data-id="' + esc(String(r.id)) + '">Today</button><button type="button" class="flow-btn sm" data-tg="tomorrow" data-id="' + esc(String(r.id)) + '">Tomorrow</button><button type="button" class="flow-btn sm ra-drop" data-tg="drop" data-id="' + esc(String(r.id)) + '">Drop</button></div></div>').join('');
-    if (!late.length) setTimeout(() => Triage.close(), 900);
+    const late = Triage.late(), loops = Triage.loops();
+    const n = late.length + loops.length;
+    el.querySelector('.tg-sub').textContent = n
+      ? (late.length ? late.length + ' Big Rock' + (late.length === 1 ? '' : 's') + ' from earlier this week' : '') + (late.length && loops.length ? ', ' : '') + (loops.length ? loops.length + ' Open loop' + (loops.length === 1 ? '' : 's') + ' past ' + (loops.length === 1 ? 'its' : 'their') + ' day' : '') + ', still open. Each one: done, today, tomorrow' + (late.length ? ', or let it go' : '') + '.'
+      : 'Nothing overdue. Clear week.';
+    const ago = (iso) => { const d = RockActions.fromIso(iso); return d ? RockActions.label(d) : ''; };
+    el.querySelector('.tg-body').innerHTML =
+      (late.length && loops.length ? '<div class="ra-k">Priorities</div>' : '') +
+      late.map((r) => '<div class="tg-row"><span class="tg-t">' + esc(r.title) + '<small>' + esc(DOW[(r.day + 1) % 7] || '') + (r.time ? ' ' + esc(r.time) : '') + '</small></span>' +
+      '<div class="tg-acts"><button type="button" class="flow-btn sm" data-tg="done" data-id="' + esc(String(r.id)) + '">Done</button><button type="button" class="flow-btn sm" data-tg="today" data-id="' + esc(String(r.id)) + '">Today</button><button type="button" class="flow-btn sm" data-tg="tomorrow" data-id="' + esc(String(r.id)) + '">Tomorrow</button><button type="button" class="flow-btn sm ra-drop" data-tg="drop" data-id="' + esc(String(r.id)) + '">Drop</button></div></div>').join('') +
+      (loops.length ? (late.length ? '<div class="ra-k">Open loops</div>' : '') + loops.map((r) => '<div class="tg-row tg-loop"><span class="tg-t" data-i18n="off">' + esc(String(r.text || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')) + '<small>' + esc(ago(r.date)) + (r.time ? ' ' + esc(r.time) : '') + '</small></span>' +
+      '<div class="tg-acts"><button type="button" class="flow-btn sm" data-tg="ldone" data-key="' + esc(String(r.key)) + '">Done</button><button type="button" class="flow-btn sm" data-tg="ltoday" data-key="' + esc(String(r.key)) + '">Today</button><button type="button" class="flow-btn sm" data-tg="ltomorrow" data-key="' + esc(String(r.key)) + '">Tomorrow</button></div></div>').join('') : '');
+    if (!n) setTimeout(() => Triage.close(), 900);
   }
 };
 window.FlowTriage = Triage;
@@ -10412,11 +10439,37 @@ const ReviewPlus = {
       '<div class="ra-k">What happened</div>' +
       '<div class="rv-cells">' + cell(c.planned, 'planned') + cell(c.done, 'done') + cell(c.moved, 'moved') + cell(c.dropped, 'dropped') + cell(c.delegated, 'handed off') + '</div>' +
       (c.most ? '<p class="rv-note"><b>' + esc(c.most.title) + '</b> moved ' + c.most.moved + ' times and is still open. Smaller, or not this week?</p>' : (c.open ? '<p class="rv-note">' + c.open + ' still open. The Overdue list on Today sorts them one by one.</p>' : '')) +
+      ReviewPlus.sawHtml(wid) +
       '<div class="ra-k">Next week, one to three</div>' +
       '<form class="rv-next">' + [0, 1, 2].map((i) => '<input class="flow-in" maxlength="200" placeholder="' + (i === 0 ? 'The one thing that would make next week count' : 'Optional') + '" aria-label="Big Rock for next week ' + (i + 1) + '">').join('') +
         '<label class="flow-label" for="rv-line">One line about this week</label><textarea class="flow-in" id="rv-line" rows="2" maxlength="500" placeholder="Optional. Kept with the record, never shared."></textarea>' +
         '<div class="ra-row ra-end"><button type="submit" class="flow-btn primary">Set next week</button></div></form>' +
     '</div>';
+  },
+  /* Sharpen the Blade is a weekly list, so in Simple it is asked here, once
+     a week, instead of sitting on Today every day: eight ticks for the week. */
+  saw(wid) {
+    try {
+      if (typeof sawActive !== 'function' || typeof cData === 'undefined') return null;
+      if (!cData.saw) cData.saw = {}; if (!cData.saw[wid]) cData.saw[wid] = {};
+      return { on: sawActive(), done: cData.saw[wid] };
+    } catch (e) { return null; }
+  },
+  sawHtml(wid) {
+    const s = ReviewPlus.saw(wid);
+    if (!s || !s.on.length) return '';
+    const n = s.on.filter(([k]) => s.done[k]).length;
+    return '<div class="ra-k">Sharpen the Blade<small>' + n + ' of ' + s.on.length + ' this week</small></div>' +
+      '<div class="rv-saw">' + s.on.map(([k, label]) => '<button type="button" class="' + (s.done[k] ? 'on' : '') + '" data-rv-saw="' + esc(k) + '" aria-pressed="' + !!s.done[k] + '"><i aria-hidden="true"></i>' + esc(String(label).replace(/^\s*(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\uFE0F|\u200D\p{Extended_Pictographic})*\s*/u, '')) + '</button>').join('') + '</div>';
+  },
+  sawTick(btn) {
+    const wid = weekId(new Date()); const s = ReviewPlus.saw(wid); if (!s) return;
+    const k = btn.getAttribute('data-rv-saw'); const row = s.on.find(([x]) => x === k); if (!row) return;
+    if (s.done[k]) delete s.done[k]; else { s.done[k] = true; try { J('planning', '🪒 Sharpen the Blade: ' + row[1]); } catch (e) {} }
+    try { cSave(); } catch (e) {}
+    btn.classList.toggle('on', !!s.done[k]); btn.setAttribute('aria-pressed', String(!!s.done[k]));
+    const k2 = btn.closest('#rv-evidence').querySelector('.ra-k small'); if (k2) k2.textContent = s.on.filter(([x]) => s.done[x]).length + ' of ' + s.on.length + ' this week';
+    try { renderToday(); } catch (e) {}
   },
   async submit(form) {
     const titles = [...form.querySelectorAll('input')].map((i) => i.value.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -10445,7 +10498,7 @@ const ReviewPlus = {
       box = document.createElement('div'); box.id = 'rv-evidence';
       const after = wrap.querySelector('#rv-score'); if (after) after.after(box); else wrap.querySelector('.fn-sheet').appendChild(box);
       box.addEventListener('submit', (e) => { e.preventDefault(); ReviewPlus.submit(e.target); });
-      box.addEventListener('click', (e) => e.stopPropagation());
+      box.addEventListener('click', (e) => { e.stopPropagation(); const b = e.target.closest('[data-rv-saw]'); if (b) ReviewPlus.sawTick(b); });
     }
     box.innerHTML = ReviewPlus.html(weekId(new Date()));
   }
@@ -11719,6 +11772,10 @@ const RockActions = {
     el.querySelector('#ra-people').innerHTML = names.slice(0, 20).map((n) => '<option value="' + esc(n) + '">').join('');
     RockActions.item = null;
     el.querySelector('.ra-mv').hidden = false;
+    /* Repeat is Simple's: the section shows there, the chain works everywhere. */
+    const rep = el.querySelector('.ra-repwrap');
+    rep.hidden = !TodayLook.on() || hit.r.day == null || hit.r.day < 0;
+    rep.innerHTML = rep.hidden ? '' : Repeat.sectionHtml(hit.r, d);
     el.querySelector('.ra-dropsub').textContent = 'Not doing it. Leaves the list without counting as done';
     RockActions.mode('main');
     el.classList.add('on');
@@ -11745,6 +11802,7 @@ const RockActions = {
     const d = RockActions.fromIso(it.date);
     el.querySelector('.fn-sub').textContent = RockActions.label(d) + (it.time ? ' · ' + it.time : '') + (it.kind === 'event' ? ' · Calendar' : ' · Task');
     el.querySelector('.ra-mv').hidden = true;
+    el.querySelector('.ra-repwrap').hidden = true;
     el.querySelector('.ra-dropsub').textContent = it.kind === 'event' ? 'Not going. It stays in your calendar; Coming up stops listing it' : 'Not doing it. Coming up stops listing it';
     const t = new Date(); t.setDate(t.getDate() + 1);
     el.querySelector('#ra-who').value = '';
@@ -11792,6 +11850,7 @@ const RockActions = {
             '<label class="ra-pick"><span>Pick a day</span><input type="date" id="ra-date" aria-label="Move to this day"></label>' +
             '<button type="button" class="flow-btn" data-ra="moveto">Move</button>' +
           '</div></div>' +
+          '<div class="ra-repwrap" hidden></div>' +
           '<div class="ra-k">Hand it off</div>' +
           '<button type="button" class="flow-btn ra-wide" data-ra="delegate">Delegate…<small>Someone else does it; you check back</small></button>' +
           '<div class="ra-k">Let it go</div>' +
@@ -11818,6 +11877,14 @@ const RockActions = {
     RockActions.el = wrap;
     const plus = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
     wrap.addEventListener('click', (e) => {
+      const rep = e.target.closest('[data-ra-rep]');
+      if (rep && RockActions.cur && !RockActions.item) {
+        const id = RockActions.cur;
+        Repeat.set(id, rep.getAttribute('data-ra-rep') || '');
+        const h2 = RockActions.find(id);
+        if (h2) wrap.querySelector('.ra-repwrap').innerHTML = Repeat.sectionHtml(h2.r, RockActions.dateOf(h2.w, h2.r.day));
+        return;
+      }
       const b = e.target.closest('[data-ra]'); if (!b) return;
       const a = b.getAttribute('data-ra'), id = RockActions.cur;
       if (a === 'close') return RockActions.close();
@@ -11875,6 +11942,8 @@ const RockActions = {
       }).join('');
   },
   paint() {
+    try { Repeat.materialize(); } catch (e) { console.warn('[Flow] repeat', e); }
+    try { if (TodayLook.on()) Repeat.decorate(); } catch (e) {}
     const feed = document.getElementById('today-feed');
     if (feed && feed.querySelector('.td-head')) {
       const html = RockActions.waitingHtml();
@@ -11960,6 +12029,153 @@ const RockActions = {
   }
 };
 window.FlowRockActions = RockActions;
+
+/* ── Repeat ───────────────────────────────────────────────────────────────
+ * "Send the invoices to the accountant" is not one Big Rock, it is one a
+ * month. A rock can repeat every week, every two weeks, or every month on
+ * the same date; the ones in a chain share a `series`, and each carries the
+ * rule. When the latest one is done — or its day has passed — the next one
+ * is written on its day, and only the next one: a chain never has more than
+ * one occurrence ahead, and a month nobody opened the app does not come back
+ * as four overdue copies. Its id is the series and the date, so two devices
+ * that both write it write the same rock, and nothing is written twice. */
+const Repeat = {
+  RULES: [['week', 'Every week'], ['2weeks', 'Every 2 weeks'], ['month', 'Every month']],
+  /* Written in the page's language: the dictionary knows the sentence
+     patterns; the weekday and the ordinal are made here so the Turkish
+     reads "ayın 1'i", not "the 1st" with a Turkish frame around it. */
+  label(rule, d) {
+    const tr = (() => { try { return document.documentElement.lang === 'tr'; } catch (e) { return false; } })();
+    const t = (k, v) => { try { return (window.FlowI18n && FlowI18n.t) ? FlowI18n.t(k, v) : k.replace('{}', v); } catch (e) { return k.replace('{}', v); } };
+    const dow = d ? t(DOW[d.getDay()]) : '';
+    if (rule === 'week') return d ? t('Every week on {}', dow) : t('Every week');
+    if (rule === '2weeks') return d ? t('Every 2 weeks on {}', dow) : t('Every 2 weeks');
+    if (rule === 'month') return d ? t('Every month on the {}', tr ? Repeat.ordTr(d.getDate()) : Repeat.ord(d.getDate())) : t('Every month');
+    return '';
+  },
+  ord(n) { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); },
+  ordTr(n) { const u = { 1: "'i", 2: "'si", 3: "'ü", 4: "'ü", 5: "'i", 6: "'sı", 7: "'si", 8: "'i", 9: "'u", 10: "'u", 20: "'si", 30: "'u" }; return n + (u[n] || u[n % 10] || "'i"); },
+  /* The next day after `d` the rule lands on. A month is the same date, or
+     the last day of a shorter month (the 31st in April is the 30th). */
+  next(d, rule) {
+    const x = new Date(d); x.setHours(12, 0, 0, 0);
+    if (rule === 'week') { x.setDate(x.getDate() + 7); return x; }
+    if (rule === '2weeks') { x.setDate(x.getDate() + 14); return x; }
+    if (rule === 'month') {
+      const want = x.getDate();
+      const y = new Date(x.getFullYear(), x.getMonth() + 1, 1, 12);
+      const last = new Date(y.getFullYear(), y.getMonth() + 1, 0).getDate();
+      y.setDate(Math.min(want, last));
+      return y;
+    }
+    return null;
+  },
+  /* Every occurrence of every chain: in the weeks, and set aside. */
+  members() {
+    const c = RockActions.data(); if (!c || !c.rocks) return {};
+    const by = {};
+    const add = (r, w, where) => {
+      if (!r || !r.repeat || r.day == null || r.day < 0) return;
+      const d = RockActions.dateOf(w, r.day); if (!d) return;
+      const s = String(r.series || r.id);
+      (by[s] = by[s] || []).push({ r, w, d, where });
+    };
+    Object.keys(c.rocks).forEach((w) => (c.rocks[w] || []).forEach((r) => add(r, w, 'week')));
+    RockActions.aside().forEach((a) => add(a, a.wid, 'aside'));
+    return by;
+  },
+  /* Write the next occurrence of every chain whose latest one is finished
+     with — done, set aside, or past its day. Catching up after a gap skips
+     the days that are gone: the next one is the first on or after today. */
+  busy: false,
+  materialize(now) {
+    if (Repeat.busy) return 0;
+    const c = RockActions.data(); if (!c || !c.rocks) return 0;
+    const today = new Date(now || Date.now()); today.setHours(0, 0, 0, 0);
+    const by = Repeat.members();
+    let wrote = 0;
+    Object.keys(by).forEach((s) => {
+      const list = by[s].sort((a, b) => a.d - b.d);
+      const last = list[list.length - 1];
+      const rule = last.r.repeat;
+      if (!Repeat.RULES.some((x) => x[0] === rule)) return;
+      const over = last.where === 'aside' || last.r.done || last.d < today;
+      if (!over) return;
+      let n = Repeat.next(last.d, rule);
+      let guard = 0;
+      while (n && n < today && guard++ < 400) n = Repeat.next(n, rule);
+      if (!n) return;
+      const id = s + '@' + RockActions.iso(n);
+      if (RockActions.find(id) || RockActions.aside().some((a) => String(a.id) === id)) return;
+      const w = weekId(n);
+      const src = last.r;
+      const r = { id, title: src.title, role: src.role || '', day: (n.getDay() + 6) % 7, time: src.time || '', end: src.end || '', prio: src.prio || 'med', note: src.note || '', done: false, repeat: rule, series: s };
+      if (!c.rocks[w]) c.rocks[w] = [];
+      c.rocks[w].push(r);
+      wrote++;
+    });
+    if (wrote) {
+      Repeat.busy = true;
+      try { cSave(); } catch (e) {}
+      try { RockActions.rerender(); } catch (e) {}
+      Repeat.busy = false;
+    }
+    return wrote;
+  },
+  /* Set a rule on a rock (and the chain it belongs to), or take it off.
+     Taking it off also removes the one ahead that was written by the rule
+     and not yet touched — nobody asked for that one. */
+  set(id, rule) {
+    const hit = RockActions.find(id); if (!hit) return;
+    const c = RockActions.data();
+    const s = String(hit.r.series || hit.r.id);
+    const d = RockActions.dateOf(hit.w, hit.r.day);
+    if (rule) {
+      hit.r.repeat = rule; hit.r.series = s;
+      Object.keys(c.rocks).forEach((w) => (c.rocks[w] || []).forEach((r) => { if (r && String(r.series) === s && r !== hit.r && !r.done) r.repeat = rule; }));
+      RockActions.save('🔁 Repeats, ' + Repeat.label(rule, d).toLowerCase() + ': ' + hit.r.title);
+      Repeat.materialize();
+      toast(Repeat.label(rule, d) + '.', null, 1800);
+    } else {
+      const prev = hit.r.repeat;
+      const removed = [], cleared = [];
+      Object.keys(c.rocks).forEach((w) => {
+        c.rocks[w] = (c.rocks[w] || []).filter((r) => {
+          if (!r || String(r.series) !== s) return true;
+          const rd = RockActions.dateOf(w, r.day);
+          if (r !== hit.r && !r.done && rd && d && rd > d && /@\d{4}-\d{2}-\d{2}$/.test(String(r.id))) { removed.push({ w, r }); return false; }
+          if (r.repeat) { cleared.push(r); delete r.repeat; }
+          return true;
+        });
+      });
+      RockActions.save('🔁 No longer repeats: ' + hit.r.title);
+      RockActions.undo(removed.length ? 'Stopped repeating · the next one removed' : 'Stopped repeating', () => {
+        cleared.forEach((r) => { r.repeat = prev; });
+        removed.forEach(({ w, r }) => { if (!c.rocks[w]) c.rocks[w] = []; c.rocks[w].push(r); });
+        RockActions.save();
+      });
+    }
+  },
+  /* The Repeat section of the ⋯ sheet, for the rock that is open. */
+  sectionHtml(r, d) {
+    const cur = r.repeat || '';
+    return '<div class="ra-k">Repeat</div><div class="ra-row ra-rep">' +
+      '<button type="button" class="flow-btn sm' + (!cur ? ' on' : '') + '" data-ra-rep="" aria-pressed="' + !cur + '">Never</button>' +
+      Repeat.RULES.map(([k, l]) => '<button type="button" class="flow-btn sm' + (cur === k ? ' on' : '') + '" data-ra-rep="' + k + '" aria-pressed="' + (cur === k) + '">' + l + '</button>').join('') +
+      '</div>' + (cur ? '<div class="ra-repnote"><b data-i18n="off">' + esc(Repeat.label(cur, d)) + (r.time ? ' · ' + esc(r.time) : '') + '</b><span>The next one is written when this one is done.</span></div>' : '');
+  },
+  mark(r) { return r && r.repeat ? '<span class="rk-rep" title="' + esc(Repeat.label(r.repeat)) + '" aria-label="' + esc(Repeat.label(r.repeat)) + '">' + Nav.svg('refresh', 'rk-rep-i') + '</span>' : ''; },
+  decorate() {
+    document.querySelectorAll('#today-feed .td-rocks:not(#td-cal) .td-rock[data-rockid], .lk-dv-row[data-rid]').forEach((row) => {
+      if (row.querySelector('.rk-rep')) return;
+      const hit = RockActions.find(row.getAttribute('data-rockid') || row.getAttribute('data-rid'));
+      if (!hit || !hit.r.repeat) return;
+      const t = row.querySelector('.rk-title, .lk-dv-t');
+      if (t) t.insertAdjacentHTML('beforeend', Repeat.mark(hit.r));
+    });
+  }
+};
+window.FlowRepeat = Repeat;
 
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that

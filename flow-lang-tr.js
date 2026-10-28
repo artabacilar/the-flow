@@ -2114,6 +2114,17 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "{} overdue since {}": "{} tanesi {} ayından beri gecikmiş",
   "review ▾": "gözden geçir ▾",
   "Open loops": "Açık işler",
+  "Repeat": "Tekrar",
+  "Never": "Hiç",
+  "Every week": "Her hafta",
+  "Every 2 weeks": "İki haftada bir",
+  "Every month": "Her ay",
+  "Every week on {}": "Her hafta {}",
+  "Every 2 weeks on {}": "İki haftada bir {}",
+  "Every month on the {}": "Her ay ayın {}",
+  "The next one is written when this one is done.": "Bu bitince bir sonraki yazılır.",
+  "Stopped repeating": "Tekrar durduruldu",
+  "Stopped repeating · the next one removed": "Tekrar durduruldu · sonraki kaldırıldı",
 /* DICT-END */
 }, RULES);
 

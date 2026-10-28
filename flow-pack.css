@@ -3087,7 +3087,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button.on{color
 #cGrid .chip.rock .ra-more{width:22px;height:22px;margin:0 -4px 0 4px;vertical-align:middle;opacity:.55}
 #cGrid .chip.rock .ra-more svg{width:14px;height:14px}
 .lk-dv-row .ra-more{margin-left:auto}
-#flow-ra .ra-k{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#8a8f98);margin:16px 0 8px}
+#flow-ra .ra-k,#rv-evidence .ra-k{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#8a8f98);margin:16px 0 8px}
 #flow-ra .ra-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #flow-ra .ra-row.ra-end{justify-content:flex-end;margin-top:16px}
 #flow-ra .ra-pick{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted,#8a8f98)}
@@ -3207,7 +3207,7 @@ html[data-flow-look="new"] #flow-fr .pt-link{color:rgba(21,25,10,.68)}
 .rp-keep{border:1px solid var(--border2,#333846);background:transparent;color:var(--text);border-radius:999px;padding:6px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .rp-keep.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .rp-ok{color:var(--muted);margin:8px 0}
-#flow-replan .ra-k small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:12px;margin-top:2px}
+#flow-replan .ra-k small,#rv-evidence .ra-k small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:12px;margin-top:2px}
 /* Overdue */
 .tg-row{padding:10px 0;border-top:1px solid var(--border,rgba(255,255,255,.08))}
 .tg-row .tg-t{display:block;font-weight:600;margin-bottom:6px;overflow-wrap:anywhere}
@@ -3230,7 +3230,7 @@ html[data-flow-look="new"] .rp-keep.on{background:var(--lk-coral,#FF6B3D);border
    each rock its own soft row, the minutes a plain field, Keep a pill, and
    the one button that moves things in coral. */
 html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .fn-sub{font-size:14px;line-height:1.4;margin-bottom:14px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-mute);margin:14px 2px 6px}
+html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage,#rv-evidence) .ra-k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-mute);margin:14px 2px 6px}
 html[data-flow-theme="signature"][data-flow-look="new"] #flow-replan .ra-k small{margin-top:3px;color:var(--lk-coral);font-weight:600}
 html[data-flow-theme="signature"][data-flow-look="new"] .rp-row{border:0;background:var(--lk-s2);border-radius:18px;padding:12px 12px 12px 16px;gap:10px;margin-top:8px;grid-template-columns:minmax(0,1fr) auto auto}
 html[data-flow-theme="signature"][data-flow-look="new"] .rp-row.mv{opacity:1;box-shadow:inset 0 0 0 1.5px rgba(255,107,61,.42)}
@@ -3257,6 +3257,31 @@ html[data-flow-theme="signature"][data-flow-look="new"] .tg-acts button.ra-drop{
 html[data-flow-look="new"] #plusCard .plus-day{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 html[data-flow-look="new"] #plusCard .plus-day label{display:flex;align-items:center;gap:6px;font-size:13px}
 html[data-flow-look="new"] #plusCard .plus-day .flow-in{max-width:110px}
+
+/* Repeat: a rule on a rock, chosen in the ⋯ sheet (Simple) */
+.ra-rep{flex-wrap:wrap}
+.ra-rep .flow-btn.on{background:var(--accent);border-color:var(--accent);color:#06131c}
+.ra-repnote{font-size:12.5px;color:var(--muted);margin:8px 0 2px;line-height:1.4}
+.ra-repnote b{display:block;font-weight:700;color:var(--text)}
+html[data-flow-theme="signature"][data-flow-look="new"] .ra-repnote b{color:var(--lk-ink)}
+html[data-flow-theme="signature"][data-flow-look="new"] .ra-rep .flow-btn{border:0;background:var(--lk-s2);color:var(--lk-ink);border-radius:999px;min-height:38px;padding:0 14px;font-weight:700}
+html[data-flow-theme="signature"][data-flow-look="new"] .ra-rep .flow-btn.on{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme="signature"][data-flow-look="new"] .ra-repnote{color:var(--lk-mute)}
+.rk-rep{display:inline-flex;align-items:center;margin-left:6px;vertical-align:-2px;color:var(--lk-mute,#8E8E94)}
+.rk-rep-i{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+html:not([data-flow-look="new"]) .rk-rep{display:none}
+
+/* Simple: Today does not carry the Diet checklist or the Sharpen the Blade
+   list. Ticking "Breakfast" tells nobody anything, and the Blade is a weekly
+   commitment, so it lives in the week's review instead. Advanced keeps both. */
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:has([data-diet]),
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:has([data-saw]){display:none !important}
+/* the Blade in the review sheet: eight ticks, this week's */
+.rv-saw{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.rv-saw button{appearance:none;display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;min-height:34px;padding:0 12px 0 9px;background:rgba(255,255,255,.07);color:var(--lk-ink,#F4F4F2);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.rv-saw button i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);flex:none}
+.rv-saw button.on{background:rgba(200,242,107,.14);color:var(--lk-lime,#C8F26B)}
+.rv-saw button.on i{background:var(--lk-lime,#C8F26B);border-color:var(--lk-lime,#C8F26B)}
 
 /* Simple: old overdue items fold into one line on the Open loops card */
 html[data-flow-look="new"] .lk-stale{width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--lk-line);color:inherit;font:inherit;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 0}
