@@ -2646,7 +2646,18 @@ const Markets = {
       `<div class="flow-mkt-note">${d.stale ? '⚠️ ' : ''}${esc(Markets.ago(d.ageMs))}` +
       (d.fxDate ? ' · rates ' + esc(d.fxDate) : '') +
       (Object.keys(d.errors || {}).length ? ' · some sources unavailable' : '') +
-      ' · gram gold is derived from the ounce price</div>';
+      ' · gram gold is derived from the ounce price' +
+      /* Simple keeps the chips off Today: which prices show is a setting,
+         and this is the way to it. */
+      '<span class="flow-mkt-editwrap"> · <button type="button" class="flow-mkt-edit" data-mkt-edit>edit</button></span></div>';
+    if (!strip.__mktEdit) {
+      strip.__mktEdit = true;
+      strip.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-mkt-edit]')) return;
+        try { SetView.open('main'); } catch (e2) { try { Nav.go('settings'); } catch (e3) {} }
+        setTimeout(() => { const c = document.getElementById('todayCard'); if (c) window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - 70, behavior: 'smooth' }); }, 350);
+      });
+    }
   }
 };
 

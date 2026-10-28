@@ -3283,6 +3283,14 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:ha
 .rv-saw button.on{background:rgba(200,242,107,.14);color:var(--lk-lime,#C8F26B)}
 .rv-saw button.on i{background:var(--lk-lime,#C8F26B);border-color:var(--lk-lime,#C8F26B)}
 
+/* Simple: the Widgets row (which prices show) is a setting, not a part of
+   the day — it stays in Settings → Today; the price strip's note links there. */
+html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-widgets{display:none !important}
+.flow-mkt-editwrap{display:none}
+html[data-flow-theme="signature"][data-flow-look="new"] .flow-mkt-editwrap{display:inline}
+.flow-mkt-edit{appearance:none;border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+html[data-flow-theme="signature"][data-flow-look="new"] .flow-mkt-edit:hover{color:var(--lk-ink)}
+
 /* Simple: old overdue items fold into one line on the Open loops card */
 html[data-flow-look="new"] .lk-stale{width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--lk-line);color:inherit;font:inherit;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 0}
 html[data-flow-look="new"] .lk-stale .mt{color:var(--lk-mute)}

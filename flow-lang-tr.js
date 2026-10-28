@@ -2125,6 +2125,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "The next one is written when this one is done.": "Bu bitince bir sonraki yazılır.",
   "Stopped repeating": "Tekrar durduruldu",
   "Stopped repeating · the next one removed": "Tekrar durduruldu · sonraki kaldırıldı",
+  "edit": "düzenle",
 /* DICT-END */
 }, RULES);
 
