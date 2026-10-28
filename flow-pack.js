@@ -8039,7 +8039,8 @@ const NAV_ICONS = {
   search:   '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   refresh:  '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
   scale:    '<circle cx="12" cy="12" r="9"/><path d="M12 12l3.5-3.5"/>',
-  star:     '<path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.5-4.2 6.1-.8z"/>'
+  star:     '<path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.5-4.2 6.1-.8z"/>',
+  camera:   '<path d="M4 8h3.5l1.5-2.5h6L16.5 8H20v11H4z"/><circle cx="12" cy="13.5" r="3.2"/>'
 };
 
 
@@ -12272,7 +12273,16 @@ const Meals = {
         '<button type="button" class="fn-capture-close" data-ml="close" aria-label="Close">×</button>' +
         '<h4>Log a meal</h4><div class="fn-sub">A photo, a few words, or both. The numbers are an estimate — change any of them before you save.</div>' +
         '<div class="ml-in">' +
-          '<label class="ml-photo" data-ml-photo><input type="file" accept="image/*" id="ml-file" aria-label="Add a photo of the meal"><span class="ml-ph-empty">' + Nav.svg('food') + '<b>Add a photo</b><small>Camera or library</small></span><img alt="" hidden><button type="button" class="ml-ph-x" data-ml="unphoto" aria-label="Remove the photo" hidden>×</button></label>' +
+          '<div class="ml-photo" data-ml-photo>' +
+            '<div class="ml-ph-empty">' + Nav.svg('food') + '<b>Add a photo</b>' +
+              /* Two doors on a phone: the camera straight away, or the library.
+                 capture="environment" opens the back camera on iOS and Android;
+                 a desktop has no camera to speak of and shows only the second. */
+              '<div class="ml-ph-btns"><label class="ml-ph-btn ml-ph-cam"><input type="file" accept="image/*" capture="environment" id="ml-cam" aria-label="Take a photo of the meal">' + Nav.svg('camera', 'fn-i') + 'Take a photo</label>' +
+              '<label class="ml-ph-btn"><input type="file" accept="image/*" id="ml-file" aria-label="Choose a photo of the meal">Choose a photo</label></div>' +
+            '</div>' +
+            '<img alt="" hidden><button type="button" class="ml-ph-x" data-ml="unphoto" aria-label="Remove the photo" hidden>×</button>' +
+          '</div>' +
           '<textarea class="flow-in" id="ml-text" rows="2" maxlength="300" placeholder="What is it, roughly? (optional) — e.g. menemen with two slices of bread"></textarea>' +
           '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-ml="close">Not now</button><button type="button" class="flow-btn primary" data-ml="estimate">Estimate</button></div>' +
           '<div class="ml-err" hidden></div>' +
@@ -12300,7 +12310,7 @@ const Meals = {
       if (a === 'again') return Meals.reset();
       if (a === 'save') return Meals.commit();
     });
-    wrap.querySelector('#ml-file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) Meals.pick(f); });
+    ['#ml-file', '#ml-cam'].forEach((sel) => wrap.querySelector(sel).addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) Meals.pick(f); }));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Meals.close(); });
     Meals.el = wrap;
     return wrap;
@@ -12326,7 +12336,7 @@ const Meals = {
     const el = Meals.el; if (!el) return;
     const img = el.querySelector('.ml-photo img'), empty = el.querySelector('.ml-ph-empty'), x = el.querySelector('.ml-ph-x');
     if (dataUrl) { img.src = dataUrl; img.hidden = false; empty.hidden = true; x.hidden = false; }
-    else { img.removeAttribute('src'); img.hidden = true; empty.hidden = false; x.hidden = true; el.querySelector('#ml-file').value = ''; }
+    else { img.removeAttribute('src'); img.hidden = true; empty.hidden = false; x.hidden = true; el.querySelector('#ml-file').value = ''; el.querySelector('#ml-cam').value = ''; }
   },
   /* The photo is shrunk here, on the device: a phone picture is 3–5 MB
      and the server takes 1; a thousand pixels is plenty to see a plate. */

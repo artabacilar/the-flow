@@ -3303,10 +3303,15 @@ html:not([data-flow-theme="signature"][data-flow-look="new"]) #flow-td-meals{dis
 #flow-td-meals .ml-of{font-size:12.5px;color:var(--lk-mute,#8E8E94);font-weight:600;margin-bottom:4px}
 #flow-td-meals .ml-add{display:inline-flex;align-items:center;gap:8px;margin-top:10px;border-radius:999px;background:var(--lk-s2,#1D1D20);border:0;color:var(--lk-ink,#F4F4F2);font-weight:700}
 #flow-td-meals .ml-add .fn-i{width:16px;height:16px}
-#flow-meal .ml-photo{display:block;position:relative;border-radius:18px;background:var(--lk-s2,#1D1D20);min-height:120px;overflow:hidden;cursor:pointer;margin-bottom:10px}
-#flow-meal .ml-photo input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+#flow-meal .ml-photo{display:block;position:relative;border-radius:18px;background:var(--lk-s2,#1D1D20);min-height:120px;overflow:hidden;margin-bottom:10px}
+#flow-meal .ml-ph-btns{display:flex;gap:8px;margin-top:10px;pointer-events:auto}
+#flow-meal .ml-ph-btn{position:relative;display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:0 16px;border-radius:999px;background:var(--lk-s1,#141416);color:var(--lk-ink,#F4F4F2);font-size:13.5px;font-weight:700;cursor:pointer;overflow:hidden}
+#flow-meal .ml-ph-btn.ml-ph-cam{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03)}
+#flow-meal .ml-ph-btn .fn-i{width:15px;height:15px;stroke:currentColor}
+#flow-meal .ml-ph-btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;font-size:0}
+@media (hover:hover) and (pointer:fine){ #flow-meal .ml-ph-cam{display:none} }
 #flow-meal .ml-ph-empty[hidden],#flow-meal .ml-photo img[hidden],#flow-meal .ml-ph-x[hidden],#flow-meal .ml-in[hidden],#flow-meal .ml-out[hidden],#flow-meal .ml-err[hidden]{display:none !important}
-#flow-meal .ml-ph-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:120px;color:var(--lk-mute,#8E8E94);pointer-events:none}
+#flow-meal .ml-ph-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:140px;padding:14px;color:var(--lk-mute,#8E8E94)}
 #flow-meal .ml-ph-empty .fn-i{width:26px;height:26px;stroke:currentColor}
 #flow-meal .ml-ph-empty b{color:var(--lk-ink,#F4F4F2);font-size:15px}
 #flow-meal .ml-ph-empty small{font-size:12px}
