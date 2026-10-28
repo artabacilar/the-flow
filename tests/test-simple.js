@@ -118,12 +118,17 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     await p.fill('#fn-noteinput', 'A quick note from Simple');
     await p.click('#fn-notesave'); await p.waitForTimeout(800);
     ok('a note is saved to the journal', await p.evaluate((n) => Flow.Journal.entries.length === n + 1 && Flow.Journal.entries.some((e) => e.body === 'A quick note from Simple'), nJ));
-    const go = { quad: 'compass', finance: 'finance', training: 'training', habits: 'habits', diet: 'sleep', sleep: 'sleep' };
+    const go = { quad: 'compass', finance: 'finance', training: 'training', habits: 'habits', sleep: 'sleep' };
     for (const id of Object.keys(go)) {
       await T(); await openAdd();
       await p.click('#flow-capture [data-fn-cap="' + id + '"]'); await p.waitForTimeout(600);
       ok('+ ' + id + ' opens ' + go[id], await tab(p) === go[id], await tab(p));
     }
+    /* Meal, in Simple, is the photo sheet — it stays on Today */
+    await T(); await openAdd();
+    await p.click('#flow-capture [data-fn-cap="diet"]'); await p.waitForTimeout(500);
+    ok('+ diet opens the meal sheet, on Today', await p.evaluate(() => !!document.querySelector('#flow-meal.on')) && await tab(p) === 'today', await tab(p));
+    await p.evaluate(() => window.FlowMeals.close()); await p.waitForTimeout(200);
 
     console.log('— pages —');
     await p.evaluate(() => Flow.Nav.go('finance')); await p.waitForTimeout(500);

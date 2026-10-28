@@ -179,7 +179,7 @@ function memStore() { const m = new Map(); return { m, get: async (k) => (m.has(
       const body = meet && meet.querySelector('.td-meet-body');
       return { line: meet && meet.querySelector('.td-meet-line').textContent, open: body && !body.hidden, html: body && body.innerHTML.slice(0, 600) };
     });
-    ok('Today shows the meeting under the rock, one short line', ui.line && /Davines with Climboost/.test(ui.line) && /Notes/.test(ui.line) && !/Open recording/.test(ui.line), ui.line);
+    ok('Today shows the meeting under the rock, one short line', ui.line && /Davines with Climboost/.test(ui.line) && /notes/i.test(ui.line) && !/Open recording/.test(ui.line), ui.line);
     ok('the recording link and the people are inside the notes', /Open recording/.test(ui.html) && /Ozcan/.test(ui.html), ui.html);
     ok('and the notes unfold: who was there, the summary, the other items', ui.open && /Ozcan/.test(ui.html) && /Slow sellers/.test(ui.html) && /Send slow-sellers list/.test(ui.html) && /<b>TikTok<\/b>/.test(ui.html), ui.html);
     /* A real Fathom summary on a phone: a long bullet that is one big
