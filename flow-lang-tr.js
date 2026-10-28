@@ -2111,6 +2111,9 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Sync now": "Şimdi eşitle",
   "Allow Health access": "Sağlık erişimine izin ver",
   "Read now": "Şimdi oku",
+  "{} overdue since {}": "{} tanesi {} ayından beri gecikmiş",
+  "review ▾": "gözden geçir ▾",
+  "Open loops": "Açık işler",
 /* DICT-END */
 }, RULES);
 

@@ -63,6 +63,27 @@ function ids(n) {
 /* The note under each starter rock. Written so that somebody who reads it
    knows both what the rock is teaching and that it is theirs to delete. */
 const TOUR = 'An example to get you started — change it or remove it.';
+const TOUR_TR = 'Başlamak için bir örnek — değiştir ya da kaldır.';
+/* The same week in Turkish, for an account that signed up from a Turkish
+   device. The roles stay as the app names them (the page translates those);
+   what a person would read as a sentence is written in their language. */
+const TR = {
+  rocks: [
+    ['Bu haftayı değerli kılacak üç şeye karar ver', 'Work', 'high', 'Öncelikler önce girer; geri kalan her şey etraflarına sığar.'],
+    ['Gerçekte ne için antrenman yaptığını yaz', 'Health & Body', 'med', 'Antrenman sekmesi planı tutar; bu, arkasındaki sebep.'],
+    ['Günlüğe dürüst bir paragraf', 'Learning', 'med', 'Günlük, hiçbir şeyin puanlanmadığı tek yer.'],
+    ['Hep yarına attığın o tek şeyi bitir', 'Work', 'high', 'Üç kez ertelendiyse ya öncelik değildir ya da senin değildir.'],
+    ['Geriye bak: ne işe yaradı, ne yaramadı, ne değişecek', 'Relationships', 'med', 'Buradaki on beş dakika, haftanın diğer on beş dakikalarından değerli.']
+  ],
+  habits: ['30 dakika hareket', 'Seçtiğin saatte yatakta ol', 'Telefonsuz bir derin çalışma bloğu', 'Ekran olmayan bir şey oku'],
+  journal: (who) => 'Hesap oluşturuldu' + (who ? ' — hoş geldin, ' + who : '') + '. Önümüzdeki hafta örneklerle kuruldu; onları kendininkilerle değiştir.',
+  training: {
+    mon: { title: 'İtiş', focus: 'Göğüs, omuz, triseps', note: '' }, tue: { title: 'Hafif kardiyo', focus: '2. bölge', note: 'Burundan nefes alabildiğin tempo — konuşamıyorsan yavaşla.' },
+    wed: { title: 'Çekiş', focus: 'Sırt, biseps', note: '' }, thu: { title: 'Dinlenme', focus: '', note: 'Dinlenme planın parçası, boşluğu değil.' },
+    fri: { title: 'Bacak', focus: 'Squat deseni', note: '' }, sat: { title: 'Dışarıda bir şey', focus: 'Ne seviyorsan', note: '' }, sun: { title: 'Dinlenme', focus: '', note: '' }
+  },
+  exercises: { 'Bench press': 'Bench press', 'Overhead press': 'Omuz pres', 'Dips': 'Dips', 'Pull-ups': 'Barfiks', 'Barbell row': 'Barbell kürek', 'Face pulls': 'Face pull', 'Back squat': 'Squat', 'Romanian deadlift': 'Romanya deadlift', 'Calf raises': 'Kalf' }
+};
 
 /* Five rocks, placed from today forward and never behind it.
  *
@@ -81,9 +102,9 @@ const TOUR = 'An example to get you started — change it or remove it.';
  * seeded at 09:00 on the day you sign up at 11:00 is overdue before you have
  * read it. The person puts the times in when they decide.
  */
-function rocks(wid, todayIndex) {
+function rocks(wid, todayIndex, lang) {
   const id = ids(5);
-  const ROCKS = [
+  const ROCKS = lang === 'tr' ? TR.rocks : [
     ['Decide the three things that would make this week count', 'Work', 'high',
       'Big Rocks go in first; everything else fits around them.'],
     ['Write down what you are actually training for', 'Health & Body', 'med',
@@ -108,32 +129,29 @@ function rocks(wid, todayIndex) {
     day: todayIndex + Math.floor((i * left) / ROCKS.length),
     time: '', end: '',
     prio: r[2],
-    note: r[3] + ' ' + TOUR,
+    note: r[3] + ' ' + (lang === 'tr' ? TOUR_TR : TOUR),
     done: false
   }));
   return { [wid]: list };
 }
 
-function habits() {
+function habits(lang) {
   const id = ids(4);
+  const names = lang === 'tr' ? TR.habits : ['Move for 30 minutes', 'In bed by the hour you chose', 'One block of deep work, no phone', 'Read something that is not a screen'];
   return {
-    habits: [
-      { id: id[0], name: 'Move for 30 minutes' },
-      { id: id[1], name: 'In bed by the hour you chose' },
-      { id: id[2], name: 'One block of deep work, no phone' },
-      { id: id[3], name: 'Read something that is not a screen' }
-    ],
+    habits: names.map((name, i) => ({ id: id[i], name })),
     /* Empty, and staying empty. A streak has to be earned to mean anything. */
     completions: {}
   };
 }
 
-function training(wid) {
-  const ex = (name, sets) => [name, sets];
+function training(wid, lang) {
+  const tr = lang === 'tr';
+  const ex = (name, sets) => [tr ? (TR.exercises[name] || name) : name, sets];
   /* The COMPLETE shape, not just the part this file cares about. The
      dashboard heals what it finds missing, but it should not have to: a
      section written from outside should arrive whole. */
-  return {
+  const plan = {
     weeks: {}, workouts: {}, times: {}, timesW: {}, weights: [],
     plans: {
       [wid]: {
@@ -150,6 +168,8 @@ function training(wid) {
       }
     }
   };
+  if (tr) Object.keys(plan.plans[wid]).forEach((d) => { const t = TR.training[d]; if (t) Object.assign(plan.plans[wid][d], { title: t.title, focus: t.focus, note: t.note }); });
+  return plan;
 }
 
 /* There is deliberately no ld_sawItems here.
@@ -212,10 +232,11 @@ function sectionHasContent(key, value) {
  * decides how to write them; nothing here touches a store, which is what makes
  * it testable without a server.
  * ------------------------------------------------------------------------ */
-function build(name, now) {
+function build(name, now, lang) {
   const when = now instanceof Date ? now : new Date();
   const wid = weekId(when);
   const who = String(name || '').trim();
+  lang = lang === 'tr' ? 'tr' : 'en';
 
   return {
     ld_compass: {
@@ -223,19 +244,19 @@ function build(name, now) {
          and a filled-in box is much harder to face than an empty one. */
       mission: '',
       roles: ROLES.slice(),
-      rocks: rocks(wid, dayIndex(when)),
+      rocks: rocks(wid, dayIndex(when), lang),
       saw: {},
       reviews: {}
     },
-    ld_habits: habits(),
-    ld_training: training(wid),
+    ld_habits: habits(lang),
+    ld_training: training(wid, lang),
     /* { t, cat, txt } — the exact shape journal() in flow-mcp.js appends, and
        the one the Journal tab reads. A different-looking entry here would be
        silently dropped on the floor by the renderer. */
     ld_journal: [{
       t: when.toISOString(),
       cat: 'planning',
-      txt: 'Account created' + (who ? ' — welcome, ' + who : '') +
+      txt: lang === 'tr' ? TR.journal(who) : 'Account created' + (who ? ' — welcome, ' + who : '') +
            '. The week ahead was set up with examples; replace them with your own.'
     }]
   };
@@ -275,4 +296,4 @@ function fillSection(existing, fresh) {
   return out;
 }
 
-module.exports = { build, hasContent: sectionHasContent, fill: fillSection, weekId, TOUR, ROLES };
+module.exports = { build, hasContent: sectionHasContent, fill: fillSection, weekId, TOUR, TOUR_TR, ROLES };

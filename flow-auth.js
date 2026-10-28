@@ -496,6 +496,14 @@ function acctCookie(acct, maxAgeSec) {
   if (PROD) bits.push('Secure');
   return bits.join('; ');
 }
+/* The language a new account's first week is written in: what the page
+   said, else the device's first preference. Only 'tr' or 'en' for now. */
+function langOf(req, said) {
+  if (said === 'tr' || said === 'en') return said;
+  const al = String((req && req.headers && req.headers['accept-language']) || '').toLowerCase();
+  return /^tr\b|,\s*tr\b/.test(al) ? 'tr' : 'en';
+}
+
 async function currentUser(req) {
   const token = parseJar(req.headers && req.headers.cookie)['flow_sid'];
   if (!token) return null;
@@ -575,7 +583,7 @@ async function adoptUnlistable(uid) {
    A stamp left by an older, worse version must not stop a better one. */
 const STARTED_V = 2;
 
-async function seedStarter(uid, name) {
+async function seedStarter(uid, name, lang) {
   if (!starter) return 0;
   try {
     /* A stamp is final only if the version that wrote it still applies.
@@ -593,7 +601,7 @@ async function seedStarter(uid, name) {
     if (done && Number(done.v || 0) >= STARTED_V) return 0;
     const pre = nsPrefix(uid);
     const all = await raw.all();
-    const sections = starter.build(name, new Date());
+    const sections = starter.build(name, new Date(), lang);
 
     /* Section by section, and only where there is nothing to lose.
        The first version asked whether the NAMESPACE was empty, which is a
@@ -1654,7 +1662,7 @@ async function gate(req, res) {
        for every account that already has a week this costs one read. */
     let started = 0;
     if (!me.owner || healed === 0) {
-      try { started = await seedStarter(me.id, me.name); } catch (e) { started = 0; }
+      try { started = await seedStarter(me.id, me.name, langOf(req, null)); } catch (e) { started = 0; }
     }
 
     json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started,
@@ -1761,7 +1769,7 @@ async function gate(req, res) {
        A failure here must never cost somebody their signup. They would be
        left holding a password for an account that does not exist, which is
        far worse than opening onto a blank week. */
-    if (adopted === 0) await seedStarter(id, name);
+    if (adopted === 0) await seedStarter(id, name, langOf(req, b.lang));
 
     const { token, expires } = await newSession(id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(id, SESSION_DAYS * 86400)]);

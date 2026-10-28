@@ -6607,8 +6607,17 @@ const TodayPlus = {
       `<div class="flow-td-row${cls || ''}">${id ?
         `<button type="button" class="flow-today-check" role="checkbox" aria-checked="false" data-q="${esc(id)}" aria-label="Complete priority: ${esc(txt)}"><span class="bx" aria-hidden="true"></span></button>` : ''}
         <span class="tx" data-i18n="off">${linkifyText(txt)}</span>${meta ? `<span class="mt">${esc(meta)}</span>` : ''}</div>`;
+    /* Simple: an item overdue for more than two weeks is not a red row every
+       morning; the old ones fold into one line that opens on a tap. */
+    const simple = (() => { try { return TodayLook.on(); } catch (e) { return false; } })();
+    const ago = (d) => Math.round((Date.now() - parseISO(d).getTime()) / 864e5);
+    const stale = simple ? pri.overdue.filter((r) => ago(r.date) > 14) : [];
+    const fresh = simple ? pri.overdue.filter((r) => ago(r.date) <= 14) : pri.overdue;
+    const staleHtml = stale.length ? '<button type="button" class="flow-td-row od lk-stale" data-stale-toggle aria-expanded="false"><span class="tx">' + stale.length + ' overdue since ' + esc(MON[parseISO(stale[stale.length - 1].date).getMonth()]) + '</span><span class="mt">review ▾</span></button>' +
+      '<div class="lk-stale-body" hidden>' + stale.slice(0, 12).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')).join('') + '</div>' : '';
     const pbody = [
-      ...pri.overdue.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
+      ...fresh.slice(0, 4).map(r => prow(r.text, 'overdue · ' + prettyDate(r.date), ' od')),
+      staleHtml,
       ...(pri.flagged || []).slice(0, 5).map(r => prow(r.text, 'priority · ' + (r.date === today() ? 'today' : prettyDate(r.date)), '')),
       ...pri.q1.slice(0, 4).map(i => prow(i.txt, 'Q1 · urgent', '', i.id)),
       ...pri.q2.slice(0, 3).map(i => prow(i.txt, 'Q2', '', i.id))
@@ -7330,6 +7339,7 @@ const Auth = {
         if (mode === 'signup') {
           payload.name = $('#fa-name', el).value.trim();
           payload.invite = $('#fa-inv', el).value.trim();
+          try { payload.lang = (typeof Lang !== 'undefined' && Lang.current) || ''; } catch (e) {}
         }
         if (mode === 'recover') payload.code = $('#fa-rc', el).value;
         const j = await Auth.post(
@@ -9518,12 +9528,12 @@ const TodayLook = {
       ${rocks.length ? `<div class="lk-prog" role="progressbar" aria-label="Big Rocks done this week" aria-valuemin="0" aria-valuemax="${rocks.length}" aria-valuenow="${rocks.length - k.open.length}"><i style="width:${pct}%"></i></div>` : ''}`;
   },
 
+  /* The review is not here: "Review week" is already in the row under the
+     card, every day, and the same door twice is clutter. */
   actsHtml() {
     let late = 0; try { late = TodayLook.heroPick(TodayLook.rocks(), (new Date().getDay() + 6) % 7).late.length; } catch (e) {}
-    const dow = (new Date().getDay() + 6) % 7;
     return (late ? '<button type="button" class="lk-act hot" data-lk-act="triage">Overdue · ' + late + '</button>' : '') +
-      '<button type="button" class="lk-act" data-lk-act="replan">My day changed</button>' +
-      (dow >= 4 ? '<button type="button" class="lk-act" data-lk-act="review">Review the week</button>' : '');
+      '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>';
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -9652,17 +9662,19 @@ const TodayLook = {
       if (inp && had) inp.focus({ preventScroll: true });
       TodayLook.refocus = false;
     }
+    /* The hero is one card: the sentence about the day, and along its foot
+       the decisions that sentence calls for — the overdue list, a replan
+       when the day changed. They live on the card, not loose under it, so
+       the phone does not show a stray pill between the card and Plan today. */
     let hero = feed.querySelector('.lk-hero');
-    if (!hero) { hero = document.createElement('button'); hero.type = 'button'; hero.className = 'lk-hero'; }
+    if (!hero) {
+      hero = document.createElement('div'); hero.className = 'lk-hero';
+      hero.innerHTML = '<button type="button" class="lk-hero-main"></button><div class="lk-acts"></div>';
+    }
     const above = (dv && dv.isConnected) ? dv : strip;
     if (hero.previousElementSibling !== above) above.after(hero);
-    TodayLook.put(hero, TodayLook.hero(feed));
-    /* Under the hero: the day's three decisions — the overdue list, a
-       replan when the day changed, the week's review from Friday on. */
-    let acts = feed.querySelector('.lk-acts');
-    if (!acts) { acts = document.createElement('div'); acts.className = 'lk-acts'; }
-    if (acts.previousElementSibling !== hero) hero.after(acts);
-    TodayLook.put(acts, TodayLook.actsHtml());
+    TodayLook.put(hero.querySelector('.lk-hero-main'), TodayLook.hero(feed));
+    TodayLook.put(hero.querySelector('.lk-acts'), TodayLook.actsHtml());
     /* A tile with nothing in it reads as a quiet dash, not a headline. */
     feed.querySelectorAll('.flow-td-pulse .flow-td-tile').forEach((t) => {
       const v = t.querySelector('.v'); const empty = !!v && /^[—–-]?$/.test(v.textContent.trim());
@@ -9699,6 +9711,8 @@ const TodayLook = {
       }
       const dvb = e.target.closest('[data-dv]');
       if (dvb) { TodayLook.dayAct(dvb); return; }
+      const st = e.target.closest('[data-stale-toggle]');
+      if (st) { const body = st.nextElementSibling; if (body) { body.hidden = !body.hidden; st.setAttribute('aria-expanded', String(!body.hidden)); } return; }
       const act = e.target.closest('[data-lk-act]');
       if (act) {
         const a = act.getAttribute('data-lk-act');
@@ -9812,6 +9826,8 @@ const Vocab = {
   TR: { '': 'Öncelik', lar: 'Öncelikler', ı: 'Önceliği', a: 'Önceliğe', ın: 'Önceliğin', ta: 'Öncelikte', tan: 'Öncelikten', ları: 'Öncelikleri', lara: 'Önceliklere', larda: 'Önceliklerde', lardan: 'Önceliklerden', ların: 'Önceliklerin' },
   list() {
     return [
+      /* The old quadrant list first, so its word is free for the week's few things. */
+      { rx: /\bPriorities\b/g, to: 'Open loops' }, { rx: /Öncelikler(?![a-zçğıöşü])/g, to: 'Açık işler' }, { rx: /Complete priority:/g, to: 'Complete open loop:' },
       { rx: /\bBig Rocks\b/g, to: 'Priorities' }, { rx: /\bBig rocks\b/g, to: 'Priorities' }, { rx: /\bbig rocks\b/g, to: 'priorities' },
       { rx: /\bBig Rock\b/g, to: 'Priority' }, { rx: /\bBig rock\b/g, to: 'Priority' }, { rx: /\bbig rock\b/g, to: 'priority' },
       { rx: /Büyük [Tt]aş(lar)?(ı|a|ta|tan|ın|ları|lara|larda|lardan|ların)?(?![a-zçğıöşü])/g, to: (m, mid, suf) => Vocab.TR[(mid ? 'lar' : '') + (suf || '')] || 'Öncelik' },
@@ -10031,7 +10047,7 @@ const FirstRun = {
       if (await DB.get(FirstRun.KEY, null)) return false;
       /* An account that already holds a week of its own — anything beyond
          the seeded examples — is not a first run, whatever the marker says. */
-      const own = Object.keys((typeof cData !== 'undefined' && cData.rocks) || {}).some((w) => (cData.rocks[w] || []).some((r) => r && !/An example to get you started/.test(String(r.note || ''))));
+      const own = Object.keys((typeof cData !== 'undefined' && cData.rocks) || {}).some((w) => (cData.rocks[w] || []).some((r) => r && !/An example to get you started|Başlamak için bir örnek/.test(String(r.note || ''))));
       if (own) { try { await DB.set(FirstRun.KEY, { at: new Date().toISOString(), skipped: 'had a week' }); } catch (e) {} return false; }
       return true;
     } catch (e) { return false; }
@@ -10109,7 +10125,7 @@ const FirstRun = {
       if (rocks && rocks.length) {
         const wid = weekId(new Date()), t = (new Date().getDay() + 6) % 7;
         /* The seeded examples make way for the real thing. */
-        Object.keys(cData.rocks || {}).forEach((w) => { cData.rocks[w] = (cData.rocks[w] || []).filter((r) => !/An example to get you started/.test(String(r.note || ''))); });
+        Object.keys(cData.rocks || {}).forEach((w) => { cData.rocks[w] = (cData.rocks[w] || []).filter((r) => !/An example to get you started|Başlamak için bir örnek/.test(String(r.note || ''))); });
         rocks.forEach((r, i) => addRock(r.title, r.role, Math.min(6, t + i), '', wid, { prio: i === 0 ? 'high' : 'med' }));
       }
       if (roles && roles.length) { cSave(); try { renderCompass(); } catch (e) {} }
@@ -10208,8 +10224,11 @@ const Replan = {
       const need = r.dur + (fits.length ? P.buffer : 0);
       if (keep.has(String(r.id)) || used + need <= left) { fits.push(r); used += need; } else moves.push(r);
     });
-    const over = Math.max(0, used - left);
-    return { now, left, events, rocks, fits, moves, used, over, prefs: P };
+    /* How far the whole day overruns: everything, kept or not, against
+       the time left — not just what was squeezed in (that is never over). */
+    const need = rocks.reduce((a, r, i) => a + r.dur + (i ? P.buffer : 0), 0);
+    const over = Math.max(0, need - left);
+    return { now, left, events, rocks, fits, moves, used, need, over, prefs: P };
   },
   todayRocks() {
     try {

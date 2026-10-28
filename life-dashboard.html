@@ -1708,6 +1708,21 @@ function syncPaint(){
      still holds writes that exist nowhere else. A genuine account mismatch
      with nothing queued still deletes outright, so one account's data is never
      retained on another's device. */
+  /* True when the local Week Compass has no Priorities for the current week
+     while the server's copy has some. The week id is computed here because
+     the app's own weekId() is defined further down the page. */
+  function emptierWeek(localStr, serverStr){
+    try{
+      const L=JSON.parse(localStr), S=JSON.parse(serverStr);
+      const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-((d.getDay()+6)%7));
+      const y0=new Date(d.getFullYear(),0,4);
+      const wid=d.getFullYear()+'-W'+String(1+Math.round(((d-y0)/864e5-3+((y0.getDay()+6)%7))/7)).padStart(2,'0');
+      const l=((L&&L.rocks)||{})[wid]||[], s=((S&&S.rocks)||{})[wid]||[];
+      return l.length===0 && s.length>0;
+    }catch(e){ return false; }
+  }
+  window.__flowEmptierWeek = emptierWeek;
+
   function purgeLocal(keep){
     const del=[];
     try{
@@ -1985,14 +2000,28 @@ function syncPaint(){
     });
     const dirtyKeys=Object.keys(dirty);
     const push={};
+    const dropped=[];
     dirtyKeys.forEach(k=>{
       const v=lsGet(k); if(v==null) return;
       /* If this device held nothing for that section when it started, our copy
          cannot be an edit of the server's — it is a fresh default. Keep it
          aside and let the server's real record win. */
-      if(!(k in painted) && all[k]!=null){ try{ localStorage.setItem('bak2_'+k, v); }catch(e){} delete dirty[k]; return; }
+      if(!(k in painted) && all[k]!=null){ try{ localStorage.setItem('bak2_'+k, v); }catch(e){} delete dirty[k]; dropped.push(k); return; }
+      /* A week with nothing in it is never an edit of a week with something
+         in it. A browser that lost its copy of the Week Compass (a cleared
+         cache, a half-finished sync) and then wrote a default came back with
+         zero Priorities for the current week while the server held the real
+         ones — and, marked dirty, pushed the empty week up over them. The
+         server's copy wins here; what this device held is kept under bak2_. */
+      if(k==='ld_compass' && all[k]!=null && emptierWeek(v, all[k])){
+        try{ localStorage.setItem('bak2_'+k, v); }catch(e){}
+        delete dirty[k]; dropped.push(k);
+        try{ sessionStorage.setItem('__flowSyncNote', JSON.stringify({at:new Date().toISOString(), what:'an empty week on this device gave way to the server\'s'})); }catch(e){}
+        return;
+      }
       push[k]=v;
     });
+    if(dropped.length) dirtyDrop(dropped);
 
     /* Open mode, first run: this browser holds the only copy — send it up. */
     if(!accountsExist && serverKeys.length===0 && Object.keys(painted).length){
