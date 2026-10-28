@@ -356,6 +356,15 @@ const USAGE = {
    * does ask to write. So it says what is actually the case. */
   NSHealthUpdateUsageDescription:
     'The Flow does not write anything to Apple Health. It only reads what your watch or ring has already recorded, and Apple requires this text to be present either way.',
+  /* Meals: "Log a meal" offers Take Photo from the page's own file field. The
+   * web view hands that to the system camera, and without this string iOS
+   * kills the app the moment the camera opens — the same rule as the
+   * microphone. The library picker needs no permission, but the string is
+   * shown if the page ever asks for more than one picture at once. */
+  NSCameraUsageDescription:
+    'The Flow uses the camera to photograph a meal, so it can be logged as calories and protein. The photo is read once and is not kept.',
+  NSPhotoLibraryUsageDescription:
+    'The Flow can read a photo you choose of a meal, so it can be logged as calories and protein. Nothing is written to your library.',
 };
 
 for (const [key, text] of Object.entries(USAGE)) {
