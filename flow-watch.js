@@ -24,6 +24,50 @@ const DEFAULT_TZ = 'Europe/Istanbul';
 const DAY_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/* The few words the server writes for the wrist, in the two languages the
+   app speaks. Which one: what the watch asked for (`lang`), then what the
+   account chose in the app (flow:lang), then English. Titles are the
+   person's own and are never translated. */
+const WORDS = {
+  en: {
+    long: DAY_LONG, short: DAY_SHORT, today: 'Today', tomorrow: 'Tomorrow', overdue: 'Overdue',
+    none: 'Nothing set for this week.',
+    all: (n) => 'All ' + n + ' Priorities done.',
+    left: (n, late) => n + (n === 1 ? ' Priority' : ' Priorities') + ' for today' + (late ? ', ' + late + ' overdue.' : '.'),
+    onlyLate: (late) => 'Nothing left for today, ' + late + ' overdue.',
+    doneToday: 'Today’s Priorities are done.',
+    free: 'Nothing due today.'
+  },
+  tr: {
+    long: ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'],
+    short: ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'], today: 'Bugün', tomorrow: 'Yarın', overdue: 'Gecikmiş',
+    none: 'Bu hafta için bir şey yok.',
+    all: (n) => n + ' önceliğin hepsi tamam.',
+    left: (n, late) => 'Bugün için ' + n + ' öncelik' + (late ? ', ' + late + ' gecikmiş.' : '.'),
+    onlyLate: (late) => 'Bugün için bir şey kalmadı, ' + late + ' gecikmiş.',
+    doneToday: 'Bugünün öncelikleri tamam.',
+    free: 'Bugün için bir şey yok.'
+  }
+};
+async function langFor(store, asked) {
+  const a = String(asked || '').slice(0, 2).toLowerCase();
+  if (WORDS[a]) return a;
+  const saved = await readJSON(store, 'flow:lang', null);
+  const s = String(saved || '').slice(0, 2).toLowerCase();
+  return WORDS[s] ? s : 'en';
+}
+
+/* Which door a habit opens — the same reading of its name the app does
+   (HabitDo.guess in flow-pack.js), unless the person chose one there. */
+function habitKind(name, chosen) {
+  if (chosen === 'write' || chosen === 'timer' || chosen === 'tick') return chosen;
+  const n = String(name || '').toLowerCase();
+  if (/\b(write|writ|journal|sentence|note|reflect|gratitude|diary)\b|yaz|günlük|cümle|not al|şükran/.test(n)) return 'write';
+  if (/\b(meditat|breath|stretch|read|study|walk|run|practice|practise|yoga|min|minute)\w*|dakika|dk\b|oku|nefes|yürü|koş|meditasyon|esne|çalış/.test(n)) return 'timer';
+  return 'tick';
+}
+function habitMinutes(name) { const m = /(\d{1,3})\s*(?:min|minute|dakika|dk)/i.exec(String(name || '')); const n = m ? +m[1] : 10; return Math.max(1, Math.min(180, n)); }
+
 async function readJSON(store, key, fallback) {
   try {
     const v = await store.get(key);
@@ -68,6 +112,48 @@ function addDays(dateStr, n) {
   const t = new Date(Date.UTC(y, m - 1, d + n));
   return t.toISOString().slice(0, 10);
 }
+/* "2026-W44", day 2 → "2026-10-28". */
+function dateOf(wid, day) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(String(wid || '')); if (!m) return null;
+  const jan4 = new Date(Date.UTC(+m[1], 0, 4));
+  const mon = new Date(jan4); mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (+m[2] - 1) * 7 + (day >= 0 ? day : 0));
+  return mon.toISOString().slice(0, 10);
+}
+const dowOf = (dateStr) => { const [y, m, d] = dateStr.split('-').map(Number); return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; };
+
+/* The next one of a repeating Priority — the rule the app follows (Repeat
+   in flow-pack.js): same weekday a week or two on, or the same date next
+   month (the 31st becomes a short month's last day); days already gone are
+   skipped, so there is only ever one ahead; its id is the series and the
+   date, so the app and the watch write the same rock once. */
+function nextOf(dateStr, rule) {
+  if (rule === 'week') return addDays(dateStr, 7);
+  if (rule === '2weeks') return addDays(dateStr, 14);
+  if (rule === 'month') {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10);
+  }
+  return null;
+}
+function writeNext(c, rock, wid, todayStr) {
+  const rule = rock.repeat; if (!nextOf('2026-01-01', rule)) return null;
+  const series = String(rock.series || rock.id);
+  const from = dateOf(wid, rock.day); if (!from) return null;
+  let n = nextOf(from, rule), guard = 0;
+  while (n && n < todayStr && guard++ < 400) n = nextOf(n, rule);
+  if (!n) return null;
+  const id = series + '@' + n;
+  const exists = Object.keys(c.rocks || {}).some((w) => (c.rocks[w] || []).some((r) => r && String(r.id) === id)) || (c.aside || []).some((a) => a && String(a.id) === id);
+  /* a later one already written by the app counts too */
+  const ahead = Object.keys(c.rocks || {}).some((w) => (c.rocks[w] || []).some((r) => r && String(r.series || '') === series && r !== rock && !r.done && dateOf(w, r.day) > from));
+  if (exists || ahead) return null;
+  const w = isoWeek(n);
+  if (!c.rocks[w]) c.rocks[w] = [];
+  const r = { id, title: rock.title, role: rock.role || '', day: dowOf(n), time: rock.time || '', end: rock.end || '', prio: rock.prio || 'med', note: rock.note || '', done: false, repeat: rule, series };
+  c.rocks[w].push(r);
+  return r;
+}
 
 async function zoneFor(store, asked) {
   const t = validTz(asked);
@@ -83,13 +169,15 @@ const clean = (s) => String(s || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').rep
 async function today(store, opts) {
   opts = opts || {};
   const tz = await zoneFor(store, opts.tz);
+  const lang = await langFor(store, opts.lang);
+  const T = WORDS[lang];
   const L = clock(tz, opts.now || new Date());
   const c = await readJSON(store, 'ld_compass', {}) || {};
   const week = ((c.rocks || {})[L.wid] || []).filter((r) => r && typeof r === 'object');
   const view = (r, overdue) => ({
     id: String(r.id), title: clean(r.title).slice(0, 140) || 'Untitled',
     time: r.time || null, done: !!r.done, overdue: !!overdue,
-    prio: r.prio || 'med', day: DAY_SHORT[r.day] || null
+    prio: r.prio || 'med', day: T.short[r.day] || null, repeat: r.repeat || null
   });
   const byTime = (a, b) => (a.day - b.day) || String(a.time || '99:99').localeCompare(String(b.time || '99:99'));
   const mine = week.filter((r) => r.day === L.day).sort(byTime);
@@ -109,36 +197,39 @@ async function today(store, opts) {
     const isToday = nextRock.day === L.day, isLate = !isToday && nextRock.day < L.day;
     next = {
       id: String(nextRock.id), title: clean(nextRock.title).slice(0, 140),
-      when: isToday ? (nextRock.time ? 'Today ' + nextRock.time : 'Today')
-        : isLate ? 'Overdue · ' + DAY_SHORT[nextRock.day]
-        : (nextRock.day === L.day + 1 ? 'Tomorrow' : DAY_SHORT[nextRock.day]) + (nextRock.time ? ' ' + nextRock.time : '')
+      when: isToday ? (nextRock.time ? T.today + ' ' + nextRock.time : T.today)
+        : isLate ? T.overdue + ' · ' + T.short[nextRock.day]
+        : (nextRock.day === L.day + 1 ? T.tomorrow : T.short[nextRock.day]) + (nextRock.time ? ' ' + nextRock.time : '')
     };
   }
 
   const hb = await readJSON(store, 'ld_habits', { habits: [], completions: {} }) || {};
   const comp = hb.completions || {};
+  const kinds = await readJSON(store, 'flow:habitkinds', {}) || {};
   const habits = (Array.isArray(hb.habits) ? hb.habits : []).filter((h) => h && h.id != null && h.name)
     .slice(0, 30)
-    .map((h) => ({ id: String(h.id), name: clean(h.name).slice(0, 60), done: !!(comp[h.id] && comp[h.id][L.date]) }));
+    .map((h) => ({ id: String(h.id), name: clean(h.name).slice(0, 60), done: !!(comp[h.id] && comp[h.id][L.date]), kind: habitKind(h.name, kinds[h.id]), minutes: habitMinutes(h.name) }));
 
   return {
-    date: L.date, weekday: DAY_LONG[L.day], now: L.hhmm, tz,
+    date: L.date, weekday: T.long[L.day], now: L.hhmm, tz, lang,
     counts: { today: openToday.length, todayDone: mine.length - openToday.length, overdue: late.length },
-    headline: headline(openToday.length, late.length, mine.length, week),
+    headline: headline(openToday.length, late.length, mine.length, week, lang),
     next, rocks, habits,
     week: { id: L.wid, done: week.filter((r) => r.done).length, total: week.length, more: ahead.length },
     updated: new Date().toISOString()
   };
 }
 
-/* The same sentence the Today card says, so the watch and the phone agree. */
-function headline(n, late, todayAll, week) {
-  if (!week.length) return 'Nothing set for this week.';
-  if (week.every((r) => r.done)) return 'All ' + week.length + ' Big Rocks done.';
-  if (n) return n + ' Big Rock' + (n === 1 ? '' : 's') + ' for today' + (late ? ', ' + late + ' overdue.' : '.');
-  if (late) return 'Nothing left for today, ' + late + ' overdue.';
-  if (todayAll) return 'Today’s Big Rocks are done.';
-  return 'Nothing due today.';
+/* The same sentence the Today card says, so the watch and the phone agree —
+   in Simple's words: Priorities. */
+function headline(n, late, todayAll, week, lang) {
+  const T = WORDS[lang] || WORDS.en;
+  if (!week.length) return T.none;
+  if (week.every((r) => r.done)) return T.all(week.length);
+  if (n) return T.left(n, late);
+  if (late) return T.onlyLate(late);
+  if (todayAll) return T.doneToday;
+  return T.free;
 }
 
 /* ---------- what a watch may change -------------------------------------- */
@@ -172,9 +263,32 @@ async function act(store, b, opts) {
     const want = b.done == null ? !hit.done : !!b.done;
     if (!!hit.done !== want) {
       hit.done = want;
+      if (want && hit.repeat) { const wid = Object.keys(c.rocks).find((w) => (c.rocks[w] || []).includes(hit)); try { writeNext(c, hit, wid, L.date); } catch (e) {} }
       await writeJSON(store, 'ld_compass', c);
       await note(store, (want ? '✅ Big rock done on ' : '↩️ Big rock reopened on ') + via + ': ' + hit.title);
     }
+    return;
+  }
+
+  /* An overdue Priority put on today or tomorrow from the wrist — the Today
+     and Tomorrow of the Overdue sheet. It counts as moved, for the review. */
+  if (action === 'move') {
+    const id = String(b.id || '');
+    const c = await readJSON(store, 'ld_compass', null);
+    let hit = null, from = null;
+    if (c && c.rocks) for (const wid of Object.keys(c.rocks)) {
+      const i = (c.rocks[wid] || []).findIndex((x) => x && String(x.id) === id);
+      if (i >= 0) { hit = c.rocks[wid][i]; from = { wid, i }; break; }
+    }
+    if (!hit) throw new WatchError('That Big Rock is not there any more.', 404);
+    const date = b.to === 'tomorrow' ? addDays(L.date, 1) : L.date;
+    const wid = isoWeek(date);
+    c.rocks[from.wid].splice(from.i, 1);
+    if (!c.rocks[wid]) c.rocks[wid] = [];
+    hit.day = dowOf(date); hit.done = false; hit.moved = (hit.moved || 0) + 1;
+    c.rocks[wid].push(hit);
+    await writeJSON(store, 'ld_compass', c);
+    await note(store, '➡️ Big rock moved to ' + (b.to === 'tomorrow' ? 'tomorrow' : 'today') + ' on ' + via + ': ' + hit.title);
     return;
   }
 
@@ -186,6 +300,16 @@ async function act(store, b, opts) {
     if (!hb.completions) hb.completions = {};
     if (!hb.completions[h.id]) hb.completions[h.id] = {};
     const want = b.done == null ? !hb.completions[h.id][L.date] : !!b.done;
+    /* A writing habit done on the wrist: what was said goes to the journal
+       under the habit's name, as it does from the app. */
+    const said = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
+    if (want && said) {
+      const j = await readJSON(store, 'flow:journal', []);
+      const list = Array.isArray(j) ? j : [];
+      const now = new Date().toISOString();
+      list.push({ id: 'j' + newId(), created: now, updated: now, date: L.date, title: '', body: said, tags: ['habit', String(h.name).slice(0, 60), 'watch'], prompts: {}, mood: null, energy: null });
+      await writeJSON(store, 'flow:journal', list);
+    }
     if (want) hb.completions[h.id][L.date] = true; else delete hb.completions[h.id][L.date];
     await writeJSON(store, 'ld_habits', hb);
     return;
@@ -218,7 +342,7 @@ async function act(store, b, opts) {
     return;
   }
 
-  throw new WatchError('A watch can tick a rock or a habit, or add one. "' + action.slice(0, 20) + '" is not one of those.');
+  throw new WatchError('A watch can tick a rock or a habit, move an overdue one, or add one. "' + action.slice(0, 20) + '" is not one of those.');
 }
 
 /* ---------- the route ---------------------------------------------------- */
@@ -228,12 +352,12 @@ async function handle(req, res, store, ctx) {
   const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   const device = req.headers['x-flow-device'] || '';
   try {
-    if (req.method === 'GET') return send(200, await today(store, { tz: u.searchParams.get('tz') }));
+    if (req.method === 'GET') return send(200, await today(store, { tz: u.searchParams.get('tz'), lang: u.searchParams.get('lang') }));
     if (req.method === 'POST') {
       let b = {};
       try { b = JSON.parse(await ctx.readBody(req) || '{}') || {}; } catch (e) { return send(400, { error: 'That was not JSON.' }); }
       await act(store, b, { device, tz: u.searchParams.get('tz') });
-      return send(200, await today(store, { tz: b.tz || u.searchParams.get('tz') }));
+      return send(200, await today(store, { tz: b.tz || u.searchParams.get('tz'), lang: b.lang || u.searchParams.get('lang') }));
     }
     res.setHeader('Allow', 'GET, POST');
     return send(405, { error: 'GET reads today; POST ticks or adds.' });
@@ -243,4 +367,4 @@ async function handle(req, res, store, ctx) {
   }
 }
 
-module.exports = { handle, today, act, _internals: { clock, isoWeek, addDays, headline, validTz, clean, WatchError } };
+module.exports = { handle, today, act, _internals: { clock, isoWeek, addDays, dateOf, nextOf, writeNext, headline, habitKind, habitMinutes, validTz, clean, WatchError, WORDS } };
