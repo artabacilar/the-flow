@@ -15,3 +15,21 @@ server directly.
 
 Linking: the watch shows a six-character code; type it in The Flow →
 Settings → Watch (or theflow.today/watch).
+
+## What it does
+
+- **Today**: the headline, what is next, today's Priorities (open first,
+  then the ones that slipped, then what is done) and today's habits. A tap
+  ticks; ↻ marks a Priority that repeats — ticking it writes the next one
+  on the server, as the app does.
+- **Overdue**: tapping a Priority that slipped offers Done, Today or Tomorrow.
+- **Habits with a door**: a writing habit ("Write 3 sentences before bed")
+  opens a field that takes dictation — saved to the journal under the habit,
+  and today is ticked; a timed one ("Meditate 10 min") opens its clock, which
+  survives the wrist going down and taps when it ends. The door is read from
+  the name, or as chosen in the app.
+- **Add by voice**: a Priority for today or tomorrow, or a note.
+- **Language**: English or Turkish, following the watch's own language; the
+  server writes the headline in the same one.
+- **Complications**: circular, corner, inline and rectangular — Priorities
+  left today and the next one.

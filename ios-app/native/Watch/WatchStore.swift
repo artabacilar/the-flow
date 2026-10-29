@@ -27,6 +27,17 @@ enum WatchStore {
     }
     static var isLinked: Bool { !(token ?? "").isEmpty }
 
+    /// When a habit's clock, started on the wrist, is due to end — kept so
+    /// that lowering the wrist (and the app being suspended) does not lose it.
+    static func timerEnd(_ habit: String) -> Date? {
+        let t = defaults.double(forKey: "watch.timer." + habit)
+        return t > 0 ? Date(timeIntervalSince1970: t) : nil
+    }
+    static func setTimerEnd(_ habit: String, _ end: Date?) {
+        if let e = end { defaults.set(e.timeIntervalSince1970, forKey: "watch.timer." + habit) }
+        else { defaults.removeObject(forKey: "watch.timer." + habit) }
+    }
+
     static var lastDay: WatchDay? {
         get {
             guard let d = defaults.data(forKey: "watch.day") else { return nil }
@@ -58,6 +69,16 @@ enum WatchStore {
     }
 }
 
+// MARK: - Words
+
+/// The app speaks English and Turkish; the watch follows the watch's own
+/// language, and tells the server, so the headline the server writes is in
+/// the same one. Titles are the person's own and are never translated.
+enum Words {
+    static var lang: String { (Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("tr") ? "tr" : "en" }
+    static func t(_ en: String, _ tr: String) -> String { lang == "tr" ? tr : en }
+}
+
 // MARK: - The day, as /api/watch sends it
 
 struct WatchDay: Codable, Equatable {
@@ -66,8 +87,17 @@ struct WatchDay: Codable, Equatable {
     struct Rock: Codable, Equatable, Identifiable {
         let id: String; let title: String; let time: String?
         var done: Bool; let overdue: Bool; let prio: String?; let day: String?
+        /// "week", "2weeks" or "month" when it repeats; the server writes the next one when it is ticked.
+        let `repeat`: String?
     }
-    struct Habit: Codable, Equatable, Identifiable { let id: String; let name: String; var done: Bool }
+    /// `kind` is the door the habit opens — "write", "timer" or "tick" — read
+    /// from its name the way the app reads it, or as chosen in the app.
+    struct Habit: Codable, Equatable, Identifiable {
+        let id: String; let name: String; var done: Bool
+        let kind: String?; let minutes: Int?
+        var door: String { kind ?? "tick" }
+        var mins: Int { max(1, minutes ?? 10) }
+    }
     struct Week: Codable, Equatable { let id: String; let done: Int; let total: Int; let more: Int }
 
     let date: String
@@ -80,6 +110,7 @@ struct WatchDay: Codable, Equatable {
     var habits: [Habit]
     let week: Week
     let updated: String
+    let lang: String?
 
     var openToday: Int { counts.today }
     var progress: Double { week.total > 0 ? Double(week.done) / Double(week.total) : 0 }
@@ -92,9 +123,9 @@ enum WatchAPI {
         case notLinked, unlinked, offline, server(String)
         var errorDescription: String? {
             switch self {
-            case .notLinked: return "This watch is not linked yet."
-            case .unlinked: return "This watch was unlinked. Link it again."
-            case .offline: return "No connection. Showing the last day it read."
+            case .notLinked: return Words.t("This watch is not linked yet.", "Bu saat henüz bağlı değil.")
+            case .unlinked: return Words.t("This watch was unlinked. Link it again.", "Bu saatin bağlantısı kaldırıldı. Yeniden bağla.")
+            case .offline: return Words.t("No connection. Showing the last day it read.", "Bağlantı yok. Son okunan gün gösteriliyor.")
             case .server(let m): return m
             }
         }
@@ -102,7 +133,7 @@ enum WatchAPI {
 
     private static func call(_ path: String, method: String = "GET", body: [String: Any]? = nil, auth: Bool = true) async throws -> Data {
         var comps = URLComponents(url: WatchStore.origin.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        if path == "api/watch" { comps.queryItems = [URLQueryItem(name: "tz", value: TimeZone.current.identifier)] }
+        if path == "api/watch" { comps.queryItems = [URLQueryItem(name: "tz", value: TimeZone.current.identifier), URLQueryItem(name: "lang", value: Words.lang)] }
         var req = URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         req.httpMethod = method
         req.setValue("watchOS", forHTTPHeaderField: "X-Flow-Device")
@@ -121,7 +152,7 @@ enum WatchAPI {
         if code == 401 && auth { WatchStore.token = nil; WatchStore.lastDay = nil; throw Failure.unlinked }
         guard (200..<300).contains(code) else {
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw Failure.server(msg ?? "The server said no (\(code)).")
+            throw Failure.server(msg ?? Words.t("The server said no (\(code)).", "Sunucu kabul etmedi (\(code))."))
         }
         return data
     }
@@ -137,7 +168,7 @@ enum WatchAPI {
 
     /// One round trip: the change, and the day as it now is.
     static func act(_ body: [String: Any]) async throws -> WatchDay {
-        var b = body; b["tz"] = TimeZone.current.identifier
+        var b = body; b["tz"] = TimeZone.current.identifier; b["lang"] = Words.lang
         let d = try JSONDecoder().decode(WatchDay.self, from: try await call("api/watch", method: "POST", body: b))
         WatchStore.lastDay = d
         WatchStore.reloadComplications()
