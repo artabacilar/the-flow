@@ -20,12 +20,31 @@ struct FlowWatchApp: App {
     }
 }
 
+/// App Store screenshots, in DEBUG builds only: `-FlowShots` draws a sample
+/// day without the network or a link; `-FlowShow late|write|timer|add`
+/// opens that sheet; `-FlowScroll habits` scrolls down to the habits. A
+/// release build has none of it.
+enum Shots {
+    #if DEBUG
+    static let args = ProcessInfo.processInfo.arguments
+    static var on: Bool { args.contains("-FlowShots") }
+    static func value(_ key: String) -> String? {
+        guard let i = args.firstIndex(of: key), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+    #else
+    static var on: Bool { false }
+    static func value(_ key: String) -> String? { nil }
+    #endif
+}
+
 struct RootView: View {
     @State private var linked = WatchStore.isLinked
 
     var body: some View {
         Group {
-            if linked { TodayView(onUnlinked: { linked = false }) }
+            if Shots.on { TodayView(onUnlinked: {}) }
+            else if linked { TodayView(onUnlinked: { linked = false }) }
             else { PairView(onLinked: { linked = true }) }
         }
     }
@@ -102,7 +121,7 @@ struct PairView: View {
 struct TodayView: View {
     let onUnlinked: () -> Void
     @Environment(\.scenePhase) private var phase
-    @State private var day: WatchDay? = WatchStore.lastDay
+    @State private var day: WatchDay? = Shots.on ? WatchDay.demo : WatchStore.lastDay
     @State private var note: String?
     @State private var busy = Set<String>()
     @State private var adding = false
@@ -118,6 +137,7 @@ struct TodayView: View {
     /// section chrome, which differs between watchOS versions.
     var body: some View {
         NavigationStack {
+          ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if let day = day {
@@ -128,7 +148,7 @@ struct TodayView: View {
                         label(day.rocks.isEmpty ? Words.t("No Priorities today", "Bugün öncelik yok") : Words.t("Priorities", "Öncelikler"))
                         ForEach(day.rocks) { r in rockRow(r) }
                         if !day.habits.isEmpty {
-                            label(Words.t("Habits", "Alışkanlıklar"))
+                            label(Words.t("Habits", "Alışkanlıklar")).id("habits")
                             ForEach(day.habits) { h in habitRow(h) }
                         }
                         Button { adding = true } label: {
@@ -149,6 +169,22 @@ struct TodayView: View {
                 }
                 .padding(.horizontal, 4)
             }
+            .onAppear {
+                guard Shots.on else { return }
+                if let to = Shots.value("-FlowScroll") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo(to, anchor: .top) } }
+                if let show = Shots.value("-FlowShow"), let d = day {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        switch show {
+                        case "late": late = d.rocks.first { $0.overdue }
+                        case "write": writing = d.habits.first { $0.door == "write" }
+                        case "timer": timing = d.habits.first { $0.door == "timer" }
+                        case "add": adding = true
+                        default: break
+                        }
+                    }
+                }
+            }
+          }
             .navigationTitle("The Flow")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -258,6 +294,7 @@ struct TodayView: View {
     }
 
     @MainActor private func load() async {
+        if Shots.on { return }
         do { day = try await WatchAPI.today(); note = nil }
         catch WatchAPI.Failure.unlinked { onUnlinked() }
         catch { note = (error as? LocalizedError)?.errorDescription ?? Words.t("Could not refresh.", "Yenilenemedi.") }
@@ -526,5 +563,32 @@ struct TimerView: View {
             WKInterfaceDevice.current().play(.failure)
         }
         saving = false
+    }
+}
+
+// MARK: - The sample day for screenshots
+
+extension WatchDay {
+    /// What the App Store screenshots show: an ordinary Thursday, nobody's real list.
+    static var demo: WatchDay {
+        let tr = Words.lang == "tr"
+        return WatchDay(
+            date: "2026-10-29", weekday: tr ? "Perşembe" : "Thursday", now: "09:41",
+            counts: .init(today: 2, todayDone: 1, overdue: 1),
+            headline: tr ? "Bugün için 2 öncelik, 1 gecikmiş." : "2 Priorities for today, 1 overdue.",
+            next: .init(id: "d1", title: tr ? "Mekân sözleşmesini gönder" : "Send the venue contract", when: tr ? "Bugün 10:00" : "Today 10:00"),
+            rocks: [
+                .init(id: "d1", title: tr ? "Mekân sözleşmesini gönder" : "Send the venue contract", time: "10:00", done: false, overdue: false, prio: "high", day: tr ? "Per" : "Thu", repeat: nil),
+                .init(id: "d2", title: tr ? "Faturaları muhasebeciye gönder" : "Send the invoices to the accountant", time: nil, done: false, overdue: false, prio: "med", day: tr ? "Per" : "Thu", repeat: "month"),
+                .init(id: "d3", title: tr ? "Sigortayı yenile" : "Renew the insurance", time: nil, done: false, overdue: true, prio: "med", day: tr ? "Pzt" : "Mon", repeat: nil),
+                .init(id: "d4", title: tr ? "Fotoğrafçıyı ayarla" : "Book the photographer", time: nil, done: true, overdue: false, prio: "med", day: tr ? "Per" : "Thu", repeat: nil)
+            ],
+            habits: [
+                .init(id: "h1", name: tr ? "Yatmadan 3 cümle yaz" : "Write 3 sentences before bed", done: false, kind: "write", minutes: 10),
+                .init(id: "h2", name: tr ? "10 dakika meditasyon" : "Meditate 10 min", done: false, kind: "timer", minutes: 10),
+                .init(id: "h3", name: tr ? "Soğuk duş" : "Cold shower", done: true, kind: "tick", minutes: 10)
+            ],
+            week: .init(id: "2026-W44", done: 3, total: 8, more: 3),
+            updated: "", lang: Words.lang)
     }
 }
