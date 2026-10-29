@@ -169,18 +169,20 @@ struct TodayView: View {
                 }
                 .padding(.horizontal, 4)
             }
-            .onAppear {
+            /* Screenshot mode only: wait for the first frame, then scroll or
+               open the sheet asked for — presenting during the first
+               appearance is ignored on watchOS. */
+            .task {
                 guard Shots.on else { return }
-                if let to = Shots.value("-FlowScroll") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo(to, anchor: .top) } }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if let to = Shots.value("-FlowScroll") { withAnimation { proxy.scrollTo(to, anchor: .top) } }
                 if let show = Shots.value("-FlowShow"), let d = day {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        switch show {
-                        case "late": late = d.rocks.first { $0.overdue }
-                        case "write": writing = d.habits.first { $0.door == "write" }
-                        case "timer": timing = d.habits.first { $0.door == "timer" }
-                        case "add": adding = true
-                        default: break
-                        }
+                    switch show {
+                    case "late": late = d.rocks.first { $0.overdue }
+                    case "write": writing = d.habits.first { $0.door == "write" }
+                    case "timer": timing = d.habits.first { $0.door == "timer" }
+                    case "add": adding = true
+                    default: break
                     }
                 }
             }
