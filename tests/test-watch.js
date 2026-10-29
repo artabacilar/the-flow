@@ -37,8 +37,15 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   ok('links read as their words', t.rocks.find((r) => r.id === 'c').title === 'Wednesday, no time');
   ok('a dropped rock is nowhere', !JSON.stringify(t).includes('Dropped one'));
   ok('next is the one at nine', t.next && t.next.id === 'b' && t.next.when === 'Today 09:00', t.next);
-  ok('the headline is the phone\'s', t.headline === '2 Big Rocks for today, 1 overdue.', t.headline);
+  ok('the headline is the phone\'s, in Simple\'s words', t.headline === '2 Priorities for today, 1 overdue.', t.headline);
+  const tTr = await W.today(st, { now: late, lang: 'tr' });
+  ok('in Turkish when the watch is: the headline, the weekday, the "when"', tTr.headline === 'Bugün için 2 öncelik, 1 gecikmiş.' && tTr.weekday === 'Çarşamba' && tTr.next.when === 'Bugün 09:00' && tTr.rocks.find((r) => r.id === 'a').day === 'Sal', { h: tTr.headline, w: tTr.weekday, n: tTr.next });
+  st.m['flow:lang'] = JSON.stringify('tr');
+  ok('or when the account chose Turkish in the app', (await W.today(st, { now: late })).headline.startsWith('Bugün'));
+  ok('the watch\'s own language wins over the account\'s', (await W.today(st, { now: late, lang: 'en' })).headline.startsWith('2 Priorities'));
+  delete st.m['flow:lang'];
   ok('habits say which are done today', t.habits.find((h) => h.id === 'h1').done === true && t.habits.find((h) => h.id === 'h2').done === false);
+  ok('and which door each opens: Read and Walk are timers, ten minutes', t.habits.every((h) => h.kind === 'timer' && h.minutes === 10), t.habits);
   ok('and the rest of the week is counted', t.week.more === 1 && t.week.total === 5 && t.week.done === 1, t.week);
 
   console.log('\n— what a tap changes —');
@@ -58,6 +65,35 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   await W.act(st, { action: 'add', kind: 'note', text: 'The venue wants a deposit by Friday' }, { now: late });
   const j = JSON.parse(st.m['flow:journal']);
   ok('a note goes to the journal, on the person\'s date', j.length === 1 && j[0].date === '2026-10-28' && j[0].tags.includes('watch'), j[0]);
+  await W.act(st, { action: 'move', id: 'a', to: 'tomorrow' }, { now: late });
+  const mv = JSON.parse(st.m.ld_compass).rocks['2026-W44'].find((r) => r.id === 'a');
+  ok('an overdue one moved to tomorrow from the wrist lands on Thursday, open, counted as moved', mv && mv.day === 3 && !mv.done && mv.moved === 1, mv);
+  await W.act(st, { action: 'move', id: 'a', to: 'today' }, { now: late });
+  ok('or today', JSON.parse(st.m.ld_compass).rocks['2026-W44'].find((r) => r.id === 'a').day === 2);
+  st.m.ld_habits = JSON.stringify({ habits: [{ id: 'hw', name: 'Write 3 sentences before bed' }], completions: {} });
+  ok('a writing habit says so', (await W.today(st, { now: late })).habits[0].kind === 'write');
+  st.m['flow:habitkinds'] = JSON.stringify({ hw: 'tick' });
+  ok('unless the person chose another door in the app', (await W.today(st, { now: late })).habits[0].kind === 'tick');
+  await W.act(st, { action: 'habit', id: 'hw', done: true, text: 'Slow day. Sent the invoices. Venue first thing tomorrow.' }, { now: late });
+  const jj = JSON.parse(st.m['flow:journal']); const lastJ = jj[jj.length - 1];
+  ok('the sentences said to the watch go to the journal under the habit, and today is ticked', /invoices/.test(lastJ.body) && lastJ.tags.includes('Write 3 sentences before bed') && lastJ.date === '2026-10-28' && JSON.parse(st.m.ld_habits).completions.hw['2026-10-28'] === true, lastJ);
+
+  console.log('\n— a Priority that repeats —');
+  /* the invoices, monthly on the 1st; ticked on the wrist on 28 October */
+  const rs = memStore({ ld_compass: JSON.stringify({ rocks: { '2026-W44': [{ id: 'inv', title: 'Send the invoices', day: 6, time: '10:00', prio: 'med', done: false, repeat: 'month', series: 'inv' }] } }) });
+  await W.act(rs, { action: 'rock', id: 'inv', done: true }, { now: late });
+  const rc = JSON.parse(rs.m.ld_compass);
+  const nx = (rc.rocks['2026-W49'] || []).find((r) => r.id === 'inv@2026-12-01');
+  ok('ticking it writes the next one: 1 December, same time and rule', nx && nx.day === 1 && nx.time === '10:00' && nx.repeat === 'month' && nx.series === 'inv' && !nx.done, Object.keys(rc.rocks));
+  await W.act(rs, { action: 'rock', id: 'inv', done: false }, { now: late });
+  await W.act(rs, { action: 'rock', id: 'inv', done: true }, { now: late });
+  const n2 = Object.values(JSON.parse(rs.m.ld_compass).rocks).flat().filter((r) => r.series === 'inv').length;
+  ok('ticking it again does not write a second one', n2 === 2, n2);
+  const ps = memStore({ ld_compass: JSON.stringify({ rocks: { '2026-W40': [{ id: 'w', title: 'Water the plants', day: 0, done: false, repeat: 'week', series: 'w' }] } }) });
+  await W.act(ps, { action: 'rock', id: 'w', done: true }, { now: late });
+  const pw = Object.values(JSON.parse(ps.m.ld_compass).rocks).flat().filter((r) => r.series === 'w' && r.id !== 'w');
+  ok('a weekly one ticked weeks late gets one next, on or after today — not a pile', pw.length === 1 && pw[0].id === 'w@2026-11-02', pw.map((r) => r.id));
+
   let err = null; try { await W.act(st, { action: 'rock', id: 'nope' }); } catch (e) { err = e; }
   ok('a rock that has gone says so', err && err.code === 404);
   err = null; try { await W.act(st, { action: 'delete', id: 'a' }); } catch (e) { err = e; }
