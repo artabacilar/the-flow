@@ -1,7 +1,7 @@
 import WidgetKit
 import SwiftUI
 
-/// The Flow on the watch face: how many Big Rocks are left today, and the
+/// The Flow on the watch face: how many Priorities are left today, and the
 /// next one. Read-only — a complication's only gesture is a tap, and a tap
 /// opens the app, which is where ticking happens.
 ///
@@ -51,7 +51,7 @@ struct FlowComplicationView: View {
     @ViewBuilder private var content: some View {
         if !entry.linked {
             switch family {
-            case .accessoryInline: Text("The Flow — link")
+            case .accessoryInline: Text(Words.t("The Flow — link", "The Flow — bağla"))
             default: Image(systemName: "link").font(.title3).widgetAccentable()
             }
         } else {
@@ -70,11 +70,11 @@ struct FlowComplicationView: View {
                     .font(.title2.weight(.bold))
                     .widgetLabel { Text(nextTitle.isEmpty ? "The Flow" : nextTitle) }
             case .accessoryInline:
-                Text(open + late == 0 ? "Nothing left today" : (nextTitle.isEmpty ? "\(open + late) left today" : "\(open + late) left · \(nextTitle)"))
+                Text(open + late == 0 ? Words.t("Nothing left today", "Bugün iş kalmadı") : (nextTitle.isEmpty ? Words.t("\(open + late) left today", "Bugün \(open + late) kaldı") : Words.t("\(open + late) left · \(nextTitle)", "\(open + late) kaldı · \(nextTitle)")))
             default:
                 VStack(alignment: .leading, spacing: 1) {
                     Text("THE FLOW").font(.system(size: 11, weight: .heavy)).widgetAccentable()
-                    Text(entry.day?.headline ?? "Open The Flow").font(.headline).lineLimit(2).minimumScaleFactor(0.8)
+                    Text(entry.day?.headline ?? Words.t("Open The Flow", "The Flow'u aç")).font(.headline).lineLimit(2).minimumScaleFactor(0.8)
                     if let n = entry.day?.next {
                         Text(n.title).font(.footnote).lineLimit(1)
                     }
@@ -100,7 +100,7 @@ struct FlowComplications: Widget {
             FlowComplicationView(entry: entry)
         }
         .configurationDisplayName("The Flow")
-        .description("Big Rocks left today and the next one.")
+        .description(Words.t("Priorities left today and the next one.", "Bugün kalan öncelikler ve sıradaki."))
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }
@@ -109,9 +109,9 @@ extension WatchDay {
     static let sample = WatchDay(
         date: "2026-10-27", weekday: "Tuesday", now: "09:00",
         counts: .init(today: 2, todayDone: 1, overdue: 0),
-        headline: "2 Big Rocks for today.",
+        headline: Words.t("2 Priorities for today.", "Bugün için 2 öncelik."),
         next: .init(id: "s", title: "Send the venue contract", when: "Today 10:00"),
         rocks: [], habits: [],
         week: .init(id: "2026-W44", done: 3, total: 8, more: 3),
-        updated: "")
+        updated: "", lang: nil)
 }
