@@ -1,4 +1,5 @@
 import UIKit
+import AppIntents
 import UserNotifications
 
 /// No storyboard, no framework, no dependency graph. The shell exists to put a
@@ -73,6 +74,14 @@ enum FlowRoute {
     /// Held until the web view has a page to hand it to — on a cold launch
     /// the tap arrives before there is one.
     static var pending: String?
+    /// "Talk to …" from Siri, a Shortcut or theflow://talk: open the
+    /// assistant, listening. Held, like a rock, until the page can take it.
+    static var talk = false
+
+    static func talkNow() {
+        talk = true
+        NotificationCenter.default.post(name: open, object: nil)
+    }
 
     static func rock(_ id: String) {
         guard !id.isEmpty else { return }
@@ -81,6 +90,7 @@ enum FlowRoute {
     }
 
     static func handle(url: URL) {
+        if url.scheme == "theflow", url.host == "talk" { talkNow(); return }
         guard url.scheme == "theflow", url.host == "rock" else { return }
         let id = url.pathComponents.first(where: { $0 != "/" }) ?? ""
         rock(id)
@@ -107,5 +117,39 @@ final class FlowNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
                                 willPresent notification: UNNotification,
                                 withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
         done([.banner, .list, .sound])
+    }
+}
+
+
+// MARK: - Siri and Shortcuts
+
+/// "Hey Siri, talk to The Flow": opens the app with the assistant already
+/// listening. A Shortcut can run the same action under any name the person
+/// likes — "Talk to Jarvis" — which is how a name of their own reaches Siri
+/// (App Shortcut phrases must carry the app's name).
+struct TalkToAssistantIntent: AppIntent {
+    static var title: LocalizedStringResource = "Talk to your assistant"
+    static var description = IntentDescription("Opens The Flow with your assistant listening, ready for what you want done.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        FlowRoute.talkNow()
+        return .result()
+    }
+}
+
+struct FlowShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: TalkToAssistantIntent(),
+            phrases: [
+                "Talk to \(.applicationName)",
+                "Ask \(.applicationName)",
+                "Open my assistant in \(.applicationName)"
+            ],
+            shortTitle: "Talk",
+            systemImageName: "waveform"
+        )
     }
 }

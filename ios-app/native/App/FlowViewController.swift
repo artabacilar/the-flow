@@ -43,6 +43,10 @@ final class FlowViewController: UIViewController {
     /// Hand a pending "open this rock" to the page. If the page has not
     /// finished starting, it keeps the id and opens it once it has.
     @objc private func deliverRoute() {
+        if FlowRoute.talk, webView.url != nil, !webView.isLoading {
+            FlowRoute.talk = false
+            webView.evaluateJavaScript("if (window.FlowSay && window.FlowSay.open) window.FlowSay.open(); else window.__flowPendingTalk = true;")
+        }
         guard let id = FlowRoute.pending, webView.url != nil, !webView.isLoading else { return }
         FlowRoute.pending = nil
         let q = quote(id)
