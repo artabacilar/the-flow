@@ -2055,7 +2055,8 @@ const DO_SYSTEM = [
   '}',
   '',
   'Meaning of each:',
-  '· rock: a one-off thing to do on a day — the app calls these Priorities. Use the date they said; "tomorrow", "Friday", "next week" (= next Monday) are relative to TODAY below. No day said: today.',
+  '· rock: a one-off thing to do on a day — the app calls these Priorities. Use the date they said. No day said: today.',
+  '· DATES: never work a date out yourself. Copy it from the CALENDAR list below, matching the weekday they said. "Sunday" means the first Sunday in the list after today; "this Sunday" the same; "next Sunday" or "Sunday next week" the Sunday of next week (the list marks the weeks). "Tomorrow" is the line marked tomorrow. A weekday they name must be that weekday — Sunday is never a Monday.',
   '· habit: something to do every day from now on ("start meditating", "every day", "daily"). Not for one-off things.',
   '· tick: they did a habit ("I went for my run", "tick cold shower"). Only for a habit in the list; pick its id.',
   '· journal: a note, a thought, how the day went, three sentences before bed, an idea to keep. Keep their words; clean up only the filler ("um", "like"). Several sentences are fine.',
@@ -2077,6 +2078,53 @@ const DO_SYSTEM = [
 ].join('\n');
 
 const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(new Date(String(s) + 'T00:00:00'));
+
+/* Fourteen days, each with its weekday, so a date is copied, not computed —
+   models slip a day on "Sunday" otherwise. */
+const WD_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function isoAdd(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function wdOf(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); }
+function doCalendar(today) {
+  const out = [];
+  const dow = (wdOf(today) + 6) % 7;            /* 0 = Monday */
+  for (let i = 0; i < 15; i++) {
+    const d = isoAdd(today, i), wk = Math.floor((dow + i) / 7);
+    out.push(WD_EN[wdOf(d)] + ' ' + d + (i === 0 ? ' (today)' : i === 1 ? ' (tomorrow)' : '') + (wk === 0 ? ' · this week' : wk === 1 ? ' · next week' : ' · in two weeks'));
+  }
+  return out.join('\n');
+}
+/* The last line of defence: when they named exactly one weekday and a dated
+   action landed on a different one, it is moved to that weekday — the
+   nearest one to where the model put it, so its choice of week stands. */
+const WD_WORDS = [
+  [0, 'sunday|sundays|pazar|pazara|pazarı|pazarın|pazarda|pazardan'],
+  [1, 'monday|mondays|pazartesi|pazartesiye|pazartesinin|pazartesinde|pazartesiden'],
+  [2, 'tuesday|tuesdays|salı|salıya|salının|salıda|salıdan'],
+  [3, 'wednesday|wednesdays|çarşamba|çarşambaya|çarşambanın|çarşambada|çarşambadan'],
+  [4, 'thursday|thursdays|perşembe|perşembeye|perşembenin|perşembede|perşembeden'],
+  [5, 'friday|fridays|cuma|cumaya|cumanın|cumada|cumadan'],
+  [6, 'saturday|saturdays|cumartesi|cumartesiye|cumartesinin|cumartesinde|cumartesiden']
+].map(([n, w]) => [n, new RegExp('(?<!\\p{L})(?:' + w + ')(?!\\p{L})', 'giu')]);
+function weekdaysSaid(text) {
+  const raw = String(text || ''); const t = raw.toLowerCase() + ' \n ' + raw.toLocaleLowerCase('tr');
+  const seen = new Set();
+  WD_WORDS.forEach(([n, re]) => { re.lastIndex = 0; if (re.test(t)) seen.add(n); });
+  return [...seen];
+}
+function fixWeekdays(said, actions, today) {
+  const days = weekdaysSaid(said);
+  if (days.length !== 1) return actions;
+  const want = days[0];
+  return actions.map((a) => {
+    if (!a || (a.type !== 'rock' && a.type !== 'move') || !isIso(a.date)) return a;
+    const got = wdOf(a.date);
+    if (got === want) return a;
+    let best = null;
+    for (let k = -3; k <= 3; k++) { const d = isoAdd(a.date, k); if (wdOf(d) === want && d >= today && (best === null || Math.abs(k) < Math.abs(best.k))) best = { d, k }; }
+    if (!best) for (let k = 1; k <= 7; k++) { const d = isoAdd(today, k); if (wdOf(d) === want) { best = { d, k }; break; } }
+    return best ? Object.assign({}, a, { date: best.d }) : a;
+  });
+}
 
 /* The voice it speaks in. "butler" is an original character in the spirit of
    a film AI butler — composed, British, quietly witty — not an impression of
@@ -2183,7 +2231,8 @@ async function handleDo(p, req, res, ctx) {
   let snapshot = '';
   try { if (ctx.mine) snapshot = await buildContext(ctx.mine); } catch (e) {}
   const lines = [
-    'TODAY: ' + known.today + (known.weekday ? ' (' + known.weekday + ')' : '') + (known.time ? ', now ' + known.time : ''),
+    'TODAY: ' + WD_EN[wdOf(known.today)] + ' ' + known.today + (known.time ? ', now ' + known.time : ''),
+    'CALENDAR (copy dates from here):\n' + doCalendar(known.today),
     'App language: ' + lang + ' (reply in the language they spoke).',
     'Priorities (id | title | date | done):',
     known.rocks.length ? known.rocks.map((r) => r.id + ' | ' + r.title + ' | ' + (r.date || '?') + ' | ' + (r.done ? 'done' : 'open')).join('\n') : '(none)',
@@ -2209,6 +2258,7 @@ async function handleDo(p, req, res, ctx) {
     const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
     const out = parseDo(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), known);
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
+    out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
     ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP });
@@ -2340,7 +2390,7 @@ module.exports._internals.ahead = {
 };
 module.exports._internals.wellFormed = wellFormed;
 module.exports._internals.say = {
-  parseDo, doContext, doPersona, doHistory, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
+  parseDo, doContext, doPersona, doHistory, doCalendar, fixWeekdays, weekdaysSaid, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
   setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
 };
 module.exports._internals.speak = {
