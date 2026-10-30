@@ -3438,3 +3438,33 @@ html[data-flow-theme][data-flow-look="new"] .hd-door:focus-visible{outline:2px s
 html[data-flow-look="new"] .lk-stale{width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--lk-line);color:inherit;font:inherit;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 0}
 html[data-flow-look="new"] .lk-stale .mt{color:var(--lk-mute)}
 html[data-flow-look="new"] .lk-stale-body .flow-td-row{opacity:.85}
+
+/* ── Say it: the voice assistant's sheet and the Talk button on Today ── */
+#flow-say .sy-k{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-mute,#8E8E94);margin-bottom:8px}
+#flow-say .sy-state{min-height:20px;font-size:14px;font-weight:600;color:var(--lk-ink,#F4F4F2);margin-bottom:8px}
+#flow-say #sy-text{width:100%;min-height:96px;resize:vertical;font-size:17px;line-height:1.45}
+#flow-say .sy-ex{margin-top:8px;font-size:12.5px;color:var(--lk-mute,#8E8E94)}
+#flow-say .ra-row.ra-end{display:flex;justify-content:flex-end;flex-wrap:wrap;margin-top:14px;gap:10px}
+#flow-say .ra-row.ra-end .flow-btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:999px;min-height:46px;padding:0 18px;background:var(--lk-s2,#1D1D20);color:var(--lk-ink,#F4F4F2);font-weight:700}
+#flow-say .ra-row.ra-end .flow-btn.primary{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03);font-weight:800}
+#flow-say .ra-row.ra-end .flow-btn[disabled]{opacity:.7}
+#flow-say .flow-btn .fn-i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#flow-say .sy-mic.on{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03);animation:syPulse 1.4s ease-in-out infinite}
+@keyframes syPulse{0%,100%{box-shadow:0 0 0 0 rgba(var(--lk-coral-a,255,107,61),.45)}50%{box-shadow:0 0 0 10px rgba(var(--lk-coral-a,255,107,61),0)}}
+@media (prefers-reduced-motion:reduce){#flow-say .sy-mic.on{animation:none}}
+#flow-say .sy-heard{font-size:13.5px;color:var(--lk-mute,#8E8E94);font-style:italic;margin-bottom:8px}
+#flow-say .sy-say{font-size:17px;font-weight:700;line-height:1.35;color:var(--lk-ink,#F4F4F2);margin-bottom:12px}
+#flow-say .sy-cards{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto}
+#flow-say .sy-card{background:var(--lk-s2,#1D1D20);border-radius:16px;padding:10px 12px}
+#flow-say .sy-ch{display:flex;align-items:center;gap:8px;min-height:28px}
+#flow-say .sy-kind{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-mute,#8E8E94)}
+#flow-say .sy-t{flex:1;font-size:15px;font-weight:650;color:var(--lk-ink,#F4F4F2)}
+#flow-say .sy-ch .sy-x{margin-left:auto;appearance:none;border:0;background:none;color:var(--lk-mute,#8E8E94);font-size:20px;line-height:1;width:32px;height:32px;border-radius:50%;cursor:pointer}
+#flow-say .sy-card .flow-in{width:100%;margin-top:6px;font-size:15px}
+#flow-say .sy-days{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#flow-say .sy-days .flow-chip{cursor:pointer;border-radius:999px}
+#flow-say .sy-days .flow-chip.on{background:var(--lk-ink,#F4F4F2);color:var(--lk-bg,#0A0A0B);border-color:transparent}
+html:not([data-flow-look="new"]) .lk-say{display:none !important}
+.lk-say{display:inline-flex;align-items:center;gap:7px;margin-top:10px;min-height:36px;padding:0 14px 0 11px;border:0;border-radius:999px;background:var(--lk-s1,#141416);color:var(--lk-ink,#F4F4F2);font:inherit;font-size:13.5px;font-weight:750;cursor:pointer}
+.lk-say .fn-i{width:17px;height:17px;fill:none;stroke:var(--lk-coral,#FF6B3D);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+

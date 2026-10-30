@@ -2008,6 +2008,167 @@ async function handleMeal(p, req, res, ctx) {
   return true;
 }
 
+/* ==========================================================================
+ * Say it — the voice assistant
+ * --------------------------------------------------------------------------
+ * The person talks (or types) one stretch of ordinary speech — "tomorrow at
+ * ten call the venue, start reading twenty minutes a day, tick cold shower,
+ * and note that today felt slow" — and this turns it into a short list of
+ * proposed actions. It does not change anything: the app shows the list as
+ * cards the person can correct, and only their "Do it" applies them, through
+ * the same code the buttons use. So a misheard word costs a tap, never a
+ * Priority on the wrong day.
+ *
+ * The app sends what is needed to resolve references ("the insurance",
+ * "cold shower") — this week's open Priorities and the habits, ids and
+ * titles only — and the model may only name ids it was given. Dates are
+ * worked out here as well as by the model: anything that is not a real
+ * YYYY-MM-DD is dropped rather than guessed at.
+ * ========================================================================== */
+const DO_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_DO_DAILY_CAP || '80', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 80;
+})();
+const DO_FREE_WEEKLY = 15;
+const doCountKey = () => 'don:' + new Date().toISOString().slice(0, 10);
+let doPost = (...a) => postJSON(...a);
+const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
+const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open'];
+
+const DO_SYSTEM = [
+  'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
+  'Turn it into actions for the app, and a short reply. You never act yourself: the app shows your actions for them to confirm.',
+  '',
+  'Return ONLY a JSON object, no prose around it:',
+  '{',
+  '  "say": "one or two short sentences, spoken back to them, in their language",',
+  '  "actions": [',
+  '    { "type": "rock",    "title": "Call the venue", "date": "YYYY-MM-DD", "time": "10:00", "note": "" },',
+  '    { "type": "habit",   "name": "Read 20 minutes" },',
+  '    { "type": "tick",    "habit": "<habit id from the list>", "date": "YYYY-MM-DD" },',
+  '    { "type": "journal", "text": "what they want written down, in their words", "title": "" },',
+  '    { "type": "move",    "rock": "<priority id from the list>", "date": "YYYY-MM-DD" },',
+  '    { "type": "done",    "rock": "<priority id from the list>" },',
+  '    { "type": "open",    "page": "one of: ' + DO_PAGES.join(', ') + '" }',
+  '  ]',
+  '}',
+  '',
+  'Meaning of each:',
+  '· rock: a one-off thing to do on a day — the app calls these Priorities. Use the date they said; "tomorrow", "Friday", "next week" (= next Monday) are relative to TODAY below. No day said: today.',
+  '· habit: something to do every day from now on ("start meditating", "every day", "daily"). Not for one-off things.',
+  '· tick: they did a habit ("I went for my run", "tick cold shower"). Only for a habit in the list; pick its id.',
+  '· journal: a note, a thought, how the day went, three sentences before bed, an idea to keep. Keep their words; clean up only the filler ("um", "like"). Several sentences are fine.',
+  '· move / done: only for a Priority in the list; pick its id. "Push X to Friday" is move; "I sent the contract" is done.',
+  '· open: they want to go somewhere in the app ("show my habits", "open the journal").',
+  '',
+  'Rules:',
+  '· One request can hold several actions; keep their order. At most 12.',
+  '· Never invent ids. If they mention a Priority or habit that is not in the list, use rock/habit to create it instead, and say so.',
+  '· A question about their day ("what is left today?") gets an answer in "say" from the lists, and no actions.',
+  '· If a writing habit is in the list and they are recording their day before bed, also tick that habit.',
+  '· Titles are short and start with a capital; keep the language they spoke in.',
+  '· "say" confirms what you understood ("Two Priorities and a note.") — never claims it is done; the person still confirms.',
+  '· If you could not understand anything useful, return no actions and say so briefly.'
+].join('\n');
+
+const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(new Date(String(s) + 'T00:00:00'));
+
+function parseDo(text, known) {
+  const s = String(text || '');
+  const m = s.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let j; try { j = JSON.parse(m[0]); } catch (e) { return null; }
+  if (!j || typeof j !== 'object') return null;
+  known = known || {};
+  const rockIds = new Set((known.rocks || []).map((r) => String(r.id)));
+  const habitIds = new Set((known.habits || []).map((h) => String(h.id)));
+  const today = isIso(known.today) ? known.today : new Date().toISOString().slice(0, 10);
+  const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+  const out = [];
+  /* Invalid entries are dropped first, then at most twelve kept — so a run of
+     made-up ids cannot crowd out the real requests behind it. */
+  for (const a of (Array.isArray(j.actions) ? j.actions : []).slice(0, 40)) {
+    if (out.length >= 12) break;
+    if (!a || typeof a !== 'object' || DO_TYPES.indexOf(a.type) < 0) continue;
+    if (a.type === 'rock') {
+      const title = str(a.title, 200); if (!title) continue;
+      const time = /^\d{1,2}:\d{2}$/.test(String(a.time || '')) ? String(a.time).padStart(5, '0') : '';
+      out.push({ type: 'rock', title, date: isIso(a.date) ? a.date : today, time, note: str(a.note, 500) });
+    } else if (a.type === 'habit') {
+      const name = str(a.name, 120); if (name) out.push({ type: 'habit', name });
+    } else if (a.type === 'tick') {
+      if (habitIds.has(String(a.habit))) out.push({ type: 'tick', habit: String(a.habit), date: isIso(a.date) ? a.date : today });
+    } else if (a.type === 'journal') {
+      const t = String(a.text == null ? '' : a.text).trim().slice(0, 4000); if (t) out.push({ type: 'journal', text: t, title: str(a.title, 120) });
+    } else if (a.type === 'move') {
+      if (rockIds.has(String(a.rock)) && isIso(a.date)) out.push({ type: 'move', rock: String(a.rock), date: a.date });
+    } else if (a.type === 'done') {
+      if (rockIds.has(String(a.rock))) out.push({ type: 'done', rock: String(a.rock) });
+    } else if (a.type === 'open') {
+      if (DO_PAGES.indexOf(a.page) >= 0) out.push({ type: 'open', page: a.page });
+    }
+  }
+  return { say: str(j.say, 400), actions: out };
+}
+
+function doContext(body) {
+  const c = (body && typeof body.ctx === 'object' && body.ctx) || {};
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const rocks = (Array.isArray(c.rocks) ? c.rocks : []).slice(0, 80)
+    .map((r) => r && { id: str(r.id, 60), title: str(r.title, 160), date: isIso(r.date) ? r.date : '', done: !!r.done })
+    .filter((r) => r && r.id && r.title);
+  const habits = (Array.isArray(c.habits) ? c.habits : []).slice(0, 60)
+    .map((h) => h && { id: str(h.id, 60), name: str(h.name, 120), done: !!h.done })
+    .filter((h) => h && h.id && h.name);
+  return { today: isIso(c.today) ? c.today : new Date().toISOString().slice(0, 10), weekday: str(c.weekday, 20), time: str(c.time, 5), rocks, habits };
+}
+
+async function handleDo(p, req, res, ctx) {
+  if (p !== '/api/flow/do' || req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const said = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 3000);
+  if (!said) { ctx.json(res, 400, { error: 'Say something first.' }); return true; }
+  let wk = null;
+  if (freeTier(ctx)) {
+    wk = 'dow:' + isoWeekKey();
+    const used = (await ctx.counter.get(wk)) || 0;
+    if (used >= DO_FREE_WEEKLY) { ctx.json(res, 402, PLUS_REFUSAL('voice', { used, cap: DO_FREE_WEEKLY })); return true; }
+  }
+  const spent = (await ctx.counter.get(doCountKey())) || 0;
+  if (DO_DAILY_CAP > 0 && spent >= DO_DAILY_CAP) { ctx.json(res, 429, { error: 'That is ' + spent + ' requests today. They reset at midnight UTC.', used: spent, cap: DO_DAILY_CAP }); return true; }
+  const known = doContext(body);
+  const lang = body.lang === 'tr' ? 'Turkish' : 'English';
+  const lines = [
+    'TODAY: ' + known.today + (known.weekday ? ' (' + known.weekday + ')' : '') + (known.time ? ', now ' + known.time : ''),
+    'App language: ' + lang + ' (reply in the language they spoke).',
+    'Priorities (id | title | date | done):',
+    known.rocks.length ? known.rocks.map((r) => r.id + ' | ' + r.title + ' | ' + (r.date || '?') + ' | ' + (r.done ? 'done' : 'open')).join('\n') : '(none)',
+    'Habits (id | name | ticked today):',
+    known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
+    '',
+    'They said: "' + said + '"'
+  ].join('\n');
+  try {
+    const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      { model: CHAT_MODEL, max_tokens: 1200, system: DO_SYSTEM, messages: [{ role: 'user', content: lines }] }, 45000);
+    if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true; }
+    if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' }); return true; }
+    if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
+    const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+    const out = parseDo(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), known);
+    if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
+    await ctx.counter.set(doCountKey(), spent + 1);
+    if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
+    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: out.actions, used: spent + 1, cap: DO_DAILY_CAP });
+  } catch (e) {
+    ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
+  }
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -2021,6 +2182,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handlePatterns(p, req, res, ctx)) return true;
   if (await handleAhead(p, req, res, ctx)) return true;
   if (await handleMeal(p, req, res, ctx)) return true;
+  if (await handleDo(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.meal = {
@@ -2060,3 +2222,7 @@ module.exports._internals.ahead = {
   setPoster(fn) { aheadPost = fn || ((...a) => postJSON(...a)); }
 };
 module.exports._internals.wellFormed = wellFormed;
+module.exports._internals.say = {
+  parseDo, doContext, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
+  setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
+};

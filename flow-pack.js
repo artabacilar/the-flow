@@ -8034,6 +8034,7 @@ const Profile = {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 const NAV_ICONS = {
+  mic:      '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
   dots:     '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   bell:     '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   today:    '<path d="M3 5h18v16H3z"/><path d="M8 3v4M16 3v4M3 11h18"/>',
@@ -9908,6 +9909,7 @@ const Plus = {
     statement: ['Statements read into Finances', 'A bank statement becomes a month of categorised spending in one go.'],
     brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.'],
     replan: ['My day changed — applied', 'The preview is free. Moving the Big Rocks that no longer fit, in one tap with undo, is Plus.'],
+    voice: ['Say it, as much as you like', 'Fifteen spoken requests a week are free. Talking to The Flow without counting is Plus.'],
     meals: ['Meals from a photo', 'Three plates a week are free. Every meal, read into calories and protein the moment you photograph it, is Plus.']
   },
   HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you', 'Meals from a photo: calories and protein, logged'],
@@ -12617,6 +12619,303 @@ const HabitDo = {
 };
 window.FlowHabitDo = HabitDo;
 
+/* ── Say it: one place to talk to The Flow ───────────────────────────────
+ * Open it and it is already listening — no second tap on a microphone. Say
+ * anything in ordinary words ("tomorrow at ten call the venue, start reading
+ * twenty minutes a day, tick cold shower, and note that today felt slow").
+ * The words land in a box that stays editable; when the speaking stops they
+ * go to /api/flow/do, which answers with proposed actions and a sentence.
+ * Each comes back as a card that can be corrected — the day, the words — or
+ * taken out, and nothing changes until "Do it". Then every action runs
+ * through the same code the app's own buttons use (addRock, the habit box,
+ * the journal, the ⋯ menu's move and done), so it saves, syncs and undoes
+ * like anything typed.
+ *
+ * The listening is FlowVoice's: the iPhone's and the Mac app's own speech
+ * recognition through the shell, and the browser's on Android and the web.
+ * Where neither exists the box is simply typed into. Simple only.
+ * ====================================================================== */
+const Say = {
+  el: null, busy: false, waiting: false, spoken: false, plan: null, said: '',
+  PAGE_NAMES: { today: 'Today', compass: 'Week', quad: 'Open loops', habits: 'Habits', journal: 'Journal', training: 'Training', diet: 'Diet', sleep: 'Sleep & mood', finance: 'Finances', time: 'Time', brainstorm: 'Brainstorm', settings: 'Settings' },
+  host() { return { c: (typeof cData !== 'undefined' && cData) ? cData : null, hb: TodayPlus.host('hbData'), S: TodayPlus.host('S') }; },
+  iso(d) { return RockActions.iso(d); },
+  day(iso) { return RockActions.fromIso(iso); },
+  label(iso) { const d = Say.day(iso); return d ? RockActions.label(d) : ''; },
+  plusDays(n) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return Say.iso(d); },
+
+  /* What the assistant needs to resolve "the insurance" or "cold shower":
+     open Priorities from two weeks back to three ahead, and the habits. Ids
+     and titles only — no notes, no journal. */
+  context() {
+    const { c, hb } = Say.host();
+    const rocks = [];
+    if (c && c.rocks) {
+      const now = new Date();
+      for (let k = -2; k <= 3; k++) {
+        const d = new Date(now); d.setDate(now.getDate() + 7 * k);
+        const w = weekId(d);
+        (c.rocks[w] || []).forEach((r) => {
+          if (!r || !r.title) return;
+          const dd = RockActions.dateOf(w, r.day);
+          if (k < 0 && r.done) return;
+          rocks.push({ id: String(r.id), title: String(r.title).slice(0, 160), date: dd ? Say.iso(dd) : '', done: !!r.done });
+        });
+      }
+    }
+    const habits = ((hb && hb.habits) || []).filter((h) => h && h.id && h.name).map((h) => ({ id: String(h.id), name: String(h.name).slice(0, 120), done: HabitDo.done(h.id) }));
+    const now = new Date();
+    return { today: Say.iso(now), weekday: now.toLocaleDateString('en-GB', { weekday: 'long' }), time: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'), rocks: rocks.slice(0, 80), habits: habits.slice(0, 60) };
+  },
+  findRock(id) { const hit = RockActions.find(id); return hit ? hit.r : null; },
+  habitName(id) { const h = HabitDo.habit(id); return h ? h.name : ''; },
+
+  /* ---- the sheet ---- */
+  build() {
+    if (Say.el) return Say.el;
+    const wrap = document.createElement('div');
+    wrap.id = 'flow-say'; wrap.className = 'fn-sheetwrap';
+    wrap.innerHTML =
+      '<div class="fn-scrim" data-say="close"></div>' +
+      '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Say it">' +
+        '<div class="fn-grab" data-say="close"></div>' +
+        '<button type="button" class="fn-capture-close" data-say="close" aria-label="Close">×</button>' +
+        '<div class="sy-k">Say it</div>' +
+        '<div class="sy-ask">' +
+          '<div class="sy-state" aria-live="polite"></div>' +
+          '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
+          '<div class="sy-ex">Priorities, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
+        '</div>' +
+        '<div class="sy-plan" hidden></div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-say]'); if (!b) return;
+      const a = b.getAttribute('data-say');
+      if (a === 'close') return Say.close();
+      if (a === 'listen') return FlowVoice && FlowVoice.listening ? FlowVoice.stop() : Say.listen();
+      if (a === 'send') return Say.send();
+      if (a === 'again') return Say.again();
+      if (a === 'do') return Say.apply();
+      if (a === 'drop') { const i = +b.getAttribute('data-i'); if (Say.plan) { Say.plan.actions.splice(i, 1); Say.paintPlan(); } return; }
+      if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
+    });
+    wrap.addEventListener('input', (e) => {
+      const f = e.target.closest('[data-sy-edit]'); if (!f || !Say.plan) return;
+      const it = Say.plan.actions[+f.getAttribute('data-i')]; if (!it) return;
+      it[f.getAttribute('data-sy-edit')] = f.value;
+    });
+    wrap.addEventListener('keydown', (e) => {
+      if (e.target.id === 'sy-text' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); Say.send(); }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Say.close(); });
+    /* The turn ends by itself after a pause; what was said goes off then. */
+    try {
+      if (window.FlowVoice) FlowVoice.on((state) => {
+        if (!Say.waiting) return;
+        if (state === 'listening') { Say.state('Listening… say it, then pause.'); Say.paintMic(); return; }
+        if (state === 'error') { Say.waiting = false; Say.paintMic(); return; }
+        if (state === 'idle') {
+          Say.waiting = false; Say.paintMic();
+          const t = (document.getElementById('sy-text') || {}).value || '';
+          if (t.trim() && Say.el.classList.contains('on') && !Say.plan) { Say.spoken = true; Say.send(); }
+          else if (!t.trim()) Say.state('Nothing heard. Tap the microphone, or type.');
+        }
+      });
+    } catch (e) {}
+    Say.el = wrap;
+    return wrap;
+  },
+  state(t) { const el = Say.el && Say.el.querySelector('.sy-state'); if (el) el.textContent = t || ''; },
+  paintMic() {
+    const b = Say.el && Say.el.querySelector('.sy-mic'); if (!b) return;
+    const can = !!(window.FlowVoice && FlowVoice.available);
+    b.hidden = !can;
+    const on = can && FlowVoice.listening;
+    b.classList.toggle('on', on);
+    b.innerHTML = Nav.svg('mic') + '<span>' + (on ? 'Stop' : 'Talk') + '</span>';
+  },
+  open(opts) {
+    if (!TodayLook.on()) return;
+    Say.build();
+    Say.plan = null; Say.spoken = false; Say.busy = false;
+    const ta = Say.el.querySelector('#sy-text'); ta.value = (opts && opts.text) || '';
+    Say.el.querySelector('.sy-ask').hidden = false;
+    Say.el.querySelector('.sy-plan').hidden = true;
+    Say.state('');
+    Say.el.classList.add('on');
+    Say.paintMic();
+    if (opts && opts.text) { Say.send(); return; }
+    /* Straight to listening, which is the point: one tap, then talk. */
+    setTimeout(() => Say.listen(), 120);
+  },
+  close() {
+    if (!Say.el) return;
+    try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
+    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) {}
+    Say.waiting = false;
+    Say.el.classList.remove('on');
+  },
+  listen() {
+    const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
+    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+    if (!(window.FlowVoice && FlowVoice.available)) { Say.state('Type it here — this browser cannot listen.'); return; }
+    Say.waiting = true;
+    try { FlowVoice.start(ta); } catch (e) { Say.waiting = false; }
+    Say.paintMic();
+  },
+  again() {
+    Say.plan = null;
+    Say.el.querySelector('.sy-plan').hidden = true;
+    Say.el.querySelector('.sy-ask').hidden = false;
+    const ta = Say.el.querySelector('#sy-text'); ta.value = '';
+    Say.state('');
+    Say.listen();
+  },
+  async send() {
+    if (Say.busy) return;
+    const ta = Say.el.querySelector('#sy-text');
+    const text = String(ta.value || '').trim();
+    if (!text) { Say.state('Say or type what you want first.'); return; }
+    try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.stop(); } catch (e) {}
+    Say.busy = true; Say.said = text;
+    Say.state('Working it out…');
+    const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
+    try {
+      const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang: (document.documentElement.lang === 'tr' ? 'tr' : 'en'), ctx: Say.context() }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
+      if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
+      Say.plan = { say: j.say || '', actions: Array.isArray(j.actions) ? j.actions : [] };
+      /* Going somewhere is not a change to anything; on its own it just goes. */
+      if (Say.plan.actions.length === 1 && Say.plan.actions[0].type === 'open') {
+        Say.speak(Say.plan.say); Say.close(); Nav.go(Say.plan.actions[0].page); return;
+      }
+      Say.speak(Say.plan.say);
+      Say.paintPlan();
+    } catch (e) { Say.state('That did not work — check the connection and try again.'); }
+    finally { Say.busy = false; go.disabled = false; }
+  },
+  /* Spoken back only when it was spoken to: a typed request reads the answer. */
+  speak(text) {
+    if (!Say.spoken || !text) return;
+    try {
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = document.documentElement.lang === 'tr' ? 'tr-TR' : 'en-GB';
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch (e) {}
+  },
+
+  /* ---- the cards ---- */
+  dayChips(i, iso) {
+    const opts = [[Say.plusDays(0), 'Today'], [Say.plusDays(1), 'Tomorrow']];
+    if (iso && opts.every(([d]) => d !== iso)) opts.push([iso, Say.label(iso)]);
+    return '<div class="sy-days">' + opts.map(([d, l]) => '<button type="button" class="flow-chip' + (d === iso ? ' on' : '') + '" data-say="when" data-i="' + i + '" data-d="' + d + '">' + esc(l) + '</button>').join('') + '</div>';
+  },
+  card(a, i) {
+    const drop = '<button type="button" class="sy-x" data-say="drop" data-i="' + i + '" aria-label="Leave this out">×</button>';
+    const head = (k, t) => '<div class="sy-ch"><span class="sy-kind">' + esc(k) + '</span>' + (t ? '<span class="sy-t" data-i18n="off">' + esc(t) + '</span>' : '') + drop + '</div>';
+    if (a.type === 'rock') return '<div class="sy-card">' + head('Priority' + (a.time ? ' · ' + a.time : ''), '') +
+      '<input class="flow-in" data-sy-edit="title" data-i="' + i + '" value="' + esc(a.title) + '">' + Say.dayChips(i, a.date) + '</div>';
+    if (a.type === 'habit') return '<div class="sy-card">' + head('New habit', '') + '<input class="flow-in" data-sy-edit="name" data-i="' + i + '" value="' + esc(a.name) + '"></div>';
+    if (a.type === 'tick') return '<div class="sy-card">' + head('Tick habit' + (a.date !== Say.plusDays(0) ? ' · ' + Say.label(a.date) : ''), Say.habitName(a.habit)) + '</div>';
+    if (a.type === 'journal') return '<div class="sy-card">' + head('Note → journal', '') + '<textarea class="flow-in" rows="3" data-sy-edit="text" data-i="' + i + '">' + esc(a.text) + '</textarea></div>';
+    if (a.type === 'move') { const r = Say.findRock(a.rock); return '<div class="sy-card">' + head('Move', r ? r.title : '') + Say.dayChips(i, a.date) + '</div>'; }
+    if (a.type === 'done') { const r = Say.findRock(a.rock); return '<div class="sy-card">' + head('Mark done', r ? r.title : '') + '</div>'; }
+    if (a.type === 'open') return '<div class="sy-card">' + head('Open', Say.PAGE_NAMES[a.page] || a.page) + '</div>';
+    return '';
+  },
+  paintPlan() {
+    const box = Say.el.querySelector('.sy-plan');
+    Say.el.querySelector('.sy-ask').hidden = true;
+    box.hidden = false;
+    const n = Say.plan.actions.length;
+    box.innerHTML =
+      '<div class="sy-heard" data-i18n="off">“' + esc(Say.said) + '”</div>' +
+      (Say.plan.say ? '<div class="sy-say" data-i18n="off">' + esc(Say.plan.say) + '</div>' : '') +
+      '<div class="sy-cards">' + Say.plan.actions.map((a, i) => Say.card(a, i)).join('') + '</div>' +
+      '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-say="again">' + Nav.svg('mic') + '<span>Say again</span></button>' +
+      (n ? '<button type="button" class="flow-btn primary" data-say="do">Do it' + (n > 1 ? ' (' + n + ')' : '') + '</button>' : '<button type="button" class="flow-btn primary" data-say="close">Close</button>') + '</div>';
+  },
+
+  /* ---- doing it, through the app's own paths ---- */
+  async apply() {
+    if (!Say.plan || Say.busy) return;
+    const { c, hb, S } = Say.host();
+    const roles = (c && Array.isArray(c.roles)) ? c.roles : [];
+    let open = null, did = 0, journal = false;
+    Say.busy = true;
+    try {
+      for (const a of Say.plan.actions) {
+        try {
+          if (a.type === 'rock') {
+            const d = Say.day(a.date) || new Date(); const title = String(a.title || '').trim(); if (!title || typeof addRock !== 'function') continue;
+            addRock(title.slice(0, 200), roles[0] || '', (d.getDay() + 6) % 7, a.time || '', weekId(d), { note: a.note || '', prio: 'med' });
+            did++;
+          } else if (a.type === 'habit') {
+            const name = String(a.name || '').trim(); if (!name || !hb || !S) continue;
+            hb.habits = hb.habits || [];
+            if (hb.habits.some((h) => h && String(h.name).toLowerCase() === name.toLowerCase())) continue;
+            hb.habits.push({ id: Date.now().toString() + did, name });
+            try { if (typeof J === 'function') J('habits', '➕ New habit: ' + name); } catch (e) {}
+            S.set('habits', hb); try { if (typeof renderHabits === 'function') renderHabits(); } catch (e) {}
+            did++;
+          } else if (a.type === 'tick') {
+            if (!hb || !S) continue;
+            if (a.date === Say.plusDays(0)) HabitDo.tick(a.habit);
+            else { hb.completions = hb.completions || {}; (hb.completions[a.habit] = hb.completions[a.habit] || {})[a.date] = true; S.set('habits', hb); }
+            did++;
+          } else if (a.type === 'journal') {
+            const body = String(a.text || '').trim(); if (!body) continue;
+            const now = new Date().toISOString();
+            Journal.entries.push({ id: uid('j'), created: now, updated: now, date: today(), title: String(a.title || ''), body, tags: ['voice'], prompts: {}, mood: null, energy: null });
+            journal = true; did++;
+          } else if (a.type === 'move') {
+            const d = Say.day(a.date); if (d) { TodayFix.move(a.rock, d); did++; }
+          } else if (a.type === 'done') {
+            TodayFix.done(a.rock); did++;
+          } else if (a.type === 'open') { open = a.page; }
+        } catch (e) { console.warn('[Flow] say', a.type, e); }
+      }
+      if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
+      try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+      try { TodayLook.paint(); } catch (e) {}
+    } finally { Say.busy = false; }
+    Say.close();
+    if (did) toast(did === 1 ? 'Done ✓' : did + ' things done ✓', null, 1800);
+    if (open) Nav.go(open);
+  },
+
+  /* A "Talk" button on Today, beside the greeting. */
+  decorate() {
+    if (!TodayLook.on()) return;
+    const hello = document.querySelector('#today-feed .lk-hello');
+    if (!hello || hello.querySelector('.lk-say')) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'lk-say';
+    b.setAttribute('aria-label', 'Say it');
+    b.innerHTML = Nav.svg('mic') + '<span>Talk</span>';
+    b.addEventListener('click', () => Say.open());
+    hello.appendChild(b);
+  },
+  boot() {
+    let queued = false;
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; try { Say.decorate(); } catch (e) {} }); };
+    try { new MutationObserver(later).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+    later();
+    /* ⌘/Ctrl + Shift + Space opens it from anywhere on a computer. */
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.code === 'Space' || e.key === ' ')) { if (!TodayLook.on()) return; e.preventDefault(); Say.open(); }
+    });
+    /* The home-screen shortcut and Siri / Assistant links land on /?say=1. */
+    try { if (/[?&]say=1\b/.test(location.search)) setTimeout(() => Say.open(), 1200); } catch (e) {}
+  }
+};
+window.FlowSay = Say;
+
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that
  * rock, not just open the app. The iPhone app calls window.__flowOpen({rock})
@@ -13870,6 +14169,7 @@ const Nav = {
         setTimeout(() => ta.focus({ preventScroll: true }), 60);
         return;
       }
+      if (id === 'say') { Nav.closeCapture(false); Say.open(); return; }
       /* In Simple, Meal is the photo: the plate read into numbers, here. */
       if (id === 'diet' && TodayLook.on()) { Nav.closeCapture(false); Meals.open(); return; }
       /* The rest hand you to the section that owns that kind of entry. Writing
@@ -13906,7 +14206,8 @@ const Nav = {
     const grid = document.getElementById('fn-capgrid');
     if (!grid) return;
     let hid = []; try { hid = Sections.hidden(); } catch (e) {}
-    grid.innerHTML = Nav.CAPTURE.filter(c => c.id === 'note' || (Nav.pill(c.go || c.id) && hid.indexOf(c.go || c.id) < 0)).map(c =>
+    grid.innerHTML = (TodayLook.on() ? '<button type="button" data-fn-cap="say">' + Nav.svg('mic') + '<span>Say it</span></button>' : '') +
+      Nav.CAPTURE.filter(c => c.id === 'note' || (Nav.pill(c.go || c.id) && hid.indexOf(c.go || c.id) < 0)).map(c =>
       '<button type="button" data-fn-cap="' + c.id + '">' + Nav.svg(c.icon) +
       '<span>' + esc(c.label) + '</span></button>').join('');
   },
@@ -16181,6 +16482,7 @@ async function boot() {
   try { TodayLook.boot(); } catch (e) { console.warn('[Flow] today look', e); }
   try { Meals.boot(); } catch (e) { console.warn('[Flow] meals', e); }
   try { HabitDo.boot(); } catch (e) { console.warn('[Flow] habit do', e); }
+  try { Say.boot(); } catch (e) { console.warn('[Flow] say', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
   try { Track.boot(); } catch (e) {}
