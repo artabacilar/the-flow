@@ -31,6 +31,8 @@ function wav() {
   ok('a composed British butler, addressing them as they chose', sir.persona === 'butler' && /butler/i.test(sir.text) && /"sir"/.test(sir.text), sir.text);
   ok('it is told not to claim to be, or quote, any character', /Do not claim to be any film or comic character/.test(sir.text));
   ok('what they asked to be called is cleaned of anything but letters', odd.call === 'bSirb DROP', odd.call);
+  const named = X.doPersona({ call: 'sir', name: 'J.A.R.V.I.S.' });
+  ok('a name they give it is used, as a name only — no backstory', named.name === 'J.A.R.V.I.S.' && /named you "J\.A\.R\.V\.I\.S\."/.test(named.text) && /no backstory, maker or film/.test(named.text), named.text);
   ok('plain is plain, and no title when none was chosen', plain.persona === 'plain' && /Do not use a title/.test(plain.text));
   ok('the reply is written to be spoken: no markdown, no lists, short, the point first', /spoken aloud by a voice: plain sentences, no markdown/.test(X.DO_SYSTEM) && /the point first, in at most three or four short sentences/.test(X.DO_SYSTEM));
   const long = X.parseDo(JSON.stringify({ say: 'x'.repeat(2000), actions: [], end: true }), {});
@@ -172,7 +174,20 @@ function wav() {
   await ask('thanks, that is all', true);
   await p.waitForTimeout(600);
   ok('"that is all" signs off and closes', await p.evaluate(() => !document.querySelector('#flow-say').classList.contains('on')));
-  await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'name'); await Flow.Settings.set('asstVoice', 'premium'); });
+  console.log('\n— a name —');
+  await p.evaluate(() => FlowSay.open()); await p.waitForTimeout(300);
+  await p.evaluate(() => { document.querySelector('#flow-say .sy-set').open = true; });
+  speak.length = 0;
+  await p.fill('#sy-name', 'J.A.R.V.I.S.'); await p.press('#sy-name', 'Tab'); await p.waitForTimeout(900);
+  const nm = await p.evaluate(() => ({ set: Flow.Settings.get('asstName'), k: document.querySelector('#flow-say .sy-k').textContent, aria: (document.querySelector('#today-feed .lk-say') || {}).getAttribute && document.querySelector('#today-feed .lk-say').getAttribute('aria-label') }));
+  ok('naming it J.A.R.V.I.S. shows the name on the sheet', nm.set === 'J.A.R.V.I.S.' && nm.k === 'J.A.R.V.I.S.', nm);
+  ok('and the button on Today says "Talk to J.A.R.V.I.S."', await p.evaluate(() => { const b = document.querySelector('#today-feed .lk-say span'); return !!b && b.textContent === 'Talk to J.A.R.V.I.S.'; }));
+  ok('and the voice says the name as a word, not letter by letter', speak.some((t) => /^Jarvis, at your service\.$/.test(t)), speak);
+  doReply = { ok: true, say: 'J.A.R.V.I.S. here, sir.', actions: [] };
+  await ask('who are you?', true);
+  ok('the request carries the name; spoken replies say "Jarvis"', dos[dos.length - 1].name === 'J.A.R.V.I.S.' && speak.includes('Jarvis here, sir.'), { name: dos[dos.length - 1].name, speak });
+  await p.evaluate(() => FlowSay.close());
+  await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'name'); await Flow.Settings.set('asstVoice', 'premium'); await Flow.Settings.set('asstName', ''); });
 
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
