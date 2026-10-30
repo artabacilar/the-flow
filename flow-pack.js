@@ -314,6 +314,10 @@ const SETTINGS_DEFAULTS = {
   asstHands: true,
   asstSheen: true,
   asstName: '',
+  /* Today, merged — a beta in Simple; the Focus pinned on it, and its colour. */
+  todayBeta: false,
+  todayBetaLime: false,
+  todayFocus: null,
   chipTabs: '',                  // blank = all tabs
   gcalClientId: '',
   gcalCalendarId: 'primary',
@@ -4128,6 +4132,8 @@ const SettingsUI = {
         </div>
         <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>Simple interface</b><span>The new design — every page and every function, cleaner and bigger. Off is Advanced, the classic design. Nothing you wrote changes either way.</span></div>
           <input type="checkbox" data-s="newLook" data-type="bool" ${s.newLook ? 'checked' : ''}></div>
+        ${TodayLook.on() ? `<div class="flow-switch" id="todayBetaRow"><div class="t"><b>The new Today (beta)</b><span>One plan for the day you pick on the strip, a Focus to pin, overdue under Needs review, and your calendar beside it. Off is the classic Today; nothing you wrote changes either way.</span></div>
+          <input type="checkbox" data-s="todayBeta" data-type="bool" ${s.todayBeta ? 'checked' : ''}></div>` : ''}
         <div class="flow-switch"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
           <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
         <div class="flow-switch"><div class="t"><b>Sharper breakdown charts</b><span>Cards headed “Visual breakdown” are redrawn as a crisp ring or bars. The original widget is hidden, never deleted.</span></div>
@@ -4379,6 +4385,7 @@ const SettingsUI = {
         if (key === 'upgradeVisuals') { if (v) Visuals.upgradeAll(); else Visuals.restoreAll(); }
         if (key === 'pushRemindRocks') Notify.syncMac();
         if (key === 'newLook') { try { TodayLook.applyLook(); } catch (e) {} }
+        if (key === 'todayBeta') { try { TodayBeta.apply(); } catch (e) {} }
         if (key === 'todayMarkets') {
           const pick = section.querySelector('#mktPick');
           if (pick) pick.hidden = !v;
@@ -9476,6 +9483,7 @@ const TodayLook = {
       if (on && t && TodayLook.SIMPLE_HIDE.indexOf(t) >= 0) Nav.go('today');
     } catch (e) {}
     if (on) { try { TodayLook.paint(); } catch (e) {} }
+    try { TodayBeta.paint(); } catch (e) {}
   },
   async setSimple(v) {
     v = !!v;
@@ -9580,7 +9588,8 @@ const TodayLook = {
        Open loops past their day — the ones the old card listed in red. */
     let late = 0; try { late = Triage.count(); } catch (e) {}
     return (late ? '<button type="button" class="lk-act hot" data-lk-act="triage">Overdue · ' + late + '</button>' : '') +
-      '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>';
+      '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>'
+      + '<button type="button" class="lk-act lk-act-beta" data-lk-act="beta">Try the new Today <span>beta</span></button>';
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -9655,6 +9664,7 @@ const TodayLook = {
     const onToday = !!document.querySelector('#tab-today.active');
     if (onToday && /^[1-7]$/.test(k)) {
       e.preventDefault();
+      if (TodayBeta.on()) { TodayBeta.pick(TodayBeta.week * 7 + (+k - 1), true); return; }
       const i = +k - 1; TodayLook.sel = TodayLook.sel === i ? null : i; TodayLook.paint();
       const v = document.querySelector('.lk-dayview'); if (v && v.getBoundingClientRect().bottom > innerHeight) v.scrollIntoView({ block: 'nearest' });
       return;
@@ -9728,6 +9738,7 @@ const TodayLook = {
       const v = t.querySelector('.v'); const empty = !!v && /^[—–-]?$/.test(v.textContent.trim());
       if (t.classList.contains('lk-empty') !== empty) t.classList.toggle('lk-empty', empty);
     });
+    try { TodayBeta.paint(); } catch (e) { console.warn('[Flow] today beta', e); }
   },
   /* Rewriting identical markup still costs a layout and drops focus and
      hover, and the feed's observer fires this often — so only write a part
@@ -9767,6 +9778,7 @@ const TodayLook = {
         if (a === 'triage') Triage.open();
         else if (a === 'replan') Replan.open();
         else if (a === 'review') { try { TodayPlus.reviewSheet(); } catch (e2) {} }
+        else if (a === 'beta') { try { TodayBeta.set(true); } catch (e2) {} }
         return;
       }
       if (e.target.closest('.lk-hero')) {
@@ -9789,6 +9801,362 @@ const TodayLook = {
   }
 };
 window.FlowTodayLook = TodayLook;
+
+/* ── Today, merged (beta) ────────────────────────────────────────────────
+ * The Today the proposal and the v2 prototype described, on your real board,
+ * behind a switch. One planning panel scoped to a date: the strip picks the
+ * day (or Week shows all seven), one list shows that day's Priorities with an
+ * optional Focus pinned on top, anything overdue waits under Needs review
+ * with Today / Tomorrow / Done / Drop, and one composer adds — to the day it
+ * was started on, shown on its date chip, until you change it. A rail shows
+ * the calendar for that day. Habits, training and meals follow under
+ * "Today's routines", because they are always today's.
+ *
+ * Simple only, off by default, and nothing is stored differently: the old
+ * Today comes back the moment the switch is off. While it is on, the strip,
+ * the day panel, the hero card, the Priorities card and Coming up step aside
+ * (hidden, not removed — the rest of the app still reads them). */
+const TodayBeta = {
+  view: 'day', sel: null, week: 0, showDone: false, reviewOpen: false,
+  draft: null, dayKey: '', el: null, refocus: false,
+  on() { try { return TodayLook.on() && !!Settings.get('todayBeta'); } catch (e) { return false; } },
+  lime() { try { return !!Settings.get('todayBetaLime'); } catch (e) { return false; } },
+  async set(v) {
+    await Settings.set('todayBeta', !!v);
+    TodayBeta.apply();
+    try { toast(v ? 'The new Today — beta. “Classic” at the top of it switches back.' : 'Classic Today.', null, 2200); } catch (e) {}
+    try { window.scrollTo({ top: 0 }); } catch (e) {}
+  },
+  apply() {
+    const on = TodayBeta.on();
+    document.documentElement.setAttribute('data-today-beta', on ? 'on' : 'off');
+    document.querySelectorAll('input[data-s="todayBeta"]').forEach((i) => { i.checked = !!Settings.get('todayBeta'); });
+    try { TodayLook.paint(); } catch (e) {}
+    if (!on && TodayBeta.el) TodayBeta.el.remove();
+    if (!on) document.querySelectorAll('#today-feed .lk-bt-routines').forEach((x) => x.remove());
+  },
+
+  /* ---- dates: o is a day number counted from this Monday (0) ---- */
+  todayO() { return (new Date().getDay() + 6) % 7; },
+  date(o) { const n = new Date(); const d = new Date(n.getFullYear(), n.getMonth(), n.getDate() - TodayBeta.todayO() + o, 12); return d; },
+  where(o) { const d = TodayBeta.date(o); return { d, wid: TodayLook.wid(d), day: (d.getDay() + 6) % 7 }; },
+  rocksOn(o) {
+    const w = TodayBeta.where(o);
+    try { return ((cData.rocks && cData.rocks[w.wid]) || []).filter((r) => r && r.day === w.day); } catch (e) { return []; }
+  },
+  longDate(o) { return TodayBeta.date(o).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }); },
+  short(o) { const d = TodayBeta.date(o); return DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; },
+  rel(o) { const t = TodayBeta.todayO(); return o === t ? 'Today' : o === t + 1 ? 'Tomorrow' : o === t - 1 ? 'Yesterday' : ''; },
+  byTime(a, b) { return String(a.time || '99:99').localeCompare(String(b.time || '99:99')); },
+
+  /* Back to today when the day turns, and each time the app opens. */
+  fresh() {
+    const k = new Date().toDateString();
+    if (TodayBeta.dayKey !== k) { TodayBeta.dayKey = k; TodayBeta.sel = TodayBeta.todayO(); TodayBeta.week = 0; TodayBeta.view = 'day'; TodayBeta.draft = null; }
+  },
+  late() { try { return Triage.late(); } catch (e) { return []; } },
+  loops() { try { return Triage.loops(); } catch (e) { return []; } },
+  focusId() { try { const f = Settings.get('todayFocus'); return f && f.id ? String(f.id) : ''; } catch (e) { return ''; } },
+
+  /* ---- markup ---- */
+  title(r) { return String(r.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'); },
+  links(r) {
+    const out = [];
+    String(r.title || '').replace(/\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g, (m, u) => { out.push(u); return m; });
+    (Array.isArray(r.links) ? r.links : []).forEach((u) => { if (/^https?:\/\//i.test(String(u)) && out.indexOf(u) < 0) out.push(u); });
+    return out;
+  },
+  label(u) { try { return RockActions.linkLabel(u); } catch (e) { return String(u).replace(/^https?:\/\//, ''); } },
+  row(r) {
+    const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
+    const links = TodayBeta.links(r).slice(0, 3).map((u) => '<a class="bt-link" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"><span>' + esc(TodayBeta.label(u)) + '</span></a>').join('');
+    let rep = ''; try { rep = Repeat.mark(r); } catch (e) {}
+    return '<div class="bt-task' + (r.done ? ' done' : '') + '" data-btid="' + id + '">' +
+      '<button type="button" class="bt-chk" role="checkbox" aria-checked="' + !!r.done + '" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
+      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + esc(t) + rep + '</button>' +
+        (note ? '<small>' + esc(note) + '</small>' : '') + (links ? '<div class="bt-links">' + links + '</div>' : '') + '</div>' +
+      '<div class="bt-when">' + (r.time ? '<span>' + esc(r.time) + '</span>' : '') +
+        (!r.done ? '<button type="button" class="bt-pin" data-bt="pin" data-id="' + id + '" title="Make this the Focus" aria-label="Make Focus: ' + esc(t) + '">' + Nav.svg('target', 'bt-i') + '</button>' : '') +
+        RockActions.more(r.id, t) + '</div></div>';
+  },
+  focusCard(r) {
+    const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
+    let running = false; try { running = Focus.running(); } catch (e) {}
+    return '<div class="bt-sec bt-sec-f">Focus</div><div class="bt-focus' + (TodayBeta.lime() ? ' lime' : '') + '" data-btid="' + id + '">' +
+      '<button type="button" class="bt-chk" role="checkbox" aria-checked="false" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
+      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') +
+        '<div class="bt-frow"><button type="button" class="bt-start" data-bt="focus">' + (running ? 'Focus running · open' : 'Start focus') + '</button>' +
+        '<button type="button" class="bt-unpin" data-bt="unpin">Unpin</button></div></div></div>';
+  },
+  headHtml() {
+    const B = TodayBeta, t = B.todayO();
+    let eyebrow, title, all = [];
+    if (B.view === 'day') {
+      all = B.rocksOn(B.sel);
+      eyebrow = B.sel === t ? 'Daily plan · Today' : 'Daily plan' + (B.rel(B.sel) ? ' · ' + B.rel(B.sel) : '');
+      title = B.longDate(B.sel);
+    } else {
+      for (let o = B.week * 7; o < B.week * 7 + 7; o++) all = all.concat(B.rocksOn(o));
+      eyebrow = 'Week plan' + (B.week === 0 ? ' · this week' : B.week === 1 ? ' · next week' : B.week === -1 ? ' · last week' : '');
+      title = B.short(B.week * 7).replace(/^\w+ /, '') + ' – ' + B.short(B.week * 7 + 6).replace(/^\w+ /, '');
+    }
+    const open = all.filter((r) => !r.done).length;
+    const away = B.view === 'day' ? (B.sel !== t || B.week !== 0) : B.week !== 0;
+    return '<div class="lk-bt-in bt-hdr"><div class="bt-hl"><div class="bt-eyebrow">' + esc(eyebrow) + ' <span class="bt-beta">Beta</span></div>' +
+      '<h2 class="bt-title">' + esc(title) + '</h2><div class="bt-counts">' + open + ' planned · ' + (all.length - open) + ' done</div></div>' +
+      '<div class="bt-hr">' + (away ? '<button type="button" class="bt-back" data-bt="today">← Today</button>' : '') +
+      '<button type="button" class="bt-classic" data-bt="classic" title="Back to the classic Today">Classic</button></div></div>' +
+      '<div class="lk-bt-in bt-ctrls"><span class="bt-seg" role="group" aria-label="View">' +
+        '<button type="button" data-bt="vday" aria-pressed="' + (B.view === 'day') + '">Day</button>' +
+        '<button type="button" data-bt="vweek" aria-pressed="' + (B.view === 'week') + '">Week</button></span>' +
+      '<div class="bt-cr"><button type="button" class="bt-btn icon" data-bt="prev" aria-label="Previous week">‹</button>' +
+        '<span class="bt-range">' + esc(B.short(B.week * 7).replace(/^\w+ /, '') + ' – ' + B.short(B.week * 7 + 6).replace(/^\w+ /, '')) + '</span>' +
+        '<button type="button" class="bt-btn icon" data-bt="next" aria-label="Next week">›</button>' +
+        '<button type="button" class="bt-btn" data-bt="replan">' + Nav.svg('refresh', 'bt-i') + 'Replan</button></div></div>';
+  },
+  stripHtml() {
+    const B = TodayBeta, t = B.todayO();
+    let h = '';
+    for (let i = 0; i < 7; i++) {
+      const o = B.week * 7 + i, all = B.rocksOn(o), left = all.filter((r) => !r.done).length, d = B.date(o);
+      const c = left ? String(left) : all.length ? '✓' : '–';
+      const sel = B.view === 'day' && o === B.sel;
+      h += '<button type="button" role="tab" class="lk-bt-day' + (o < t ? ' past' : '') + (o === t ? ' today' : '') + (o < t && left ? ' late' : '') + (!left && all.length ? ' clear' : '') + '" aria-selected="' + sel + '" tabindex="' + (sel || (B.view === 'week' && i === 0) ? 0 : -1) + '" data-bto="' + o + '" aria-label="' + esc(B.longDate(o)) + ': ' + (left ? left + ' planned' : all.length ? 'all done' : 'nothing planned') + '">' +
+        '<span class="w">' + esc(DOW[d.getDay()]) + '</span><span class="n">' + d.getDate() + '</span><span class="c">' + c + '</span></button>';
+    }
+    return h;
+  },
+  reviewHtml() {
+    const B = TodayBeta, late = B.late(), loops = B.loops(), n = late.length + loops.length;
+    if (!n) return '';
+    let h = '<div class="lk-bt-in bt-review"><span>Needs review · ' + n + '</span><button type="button" data-bt="review" aria-expanded="' + B.reviewOpen + '">' + (B.reviewOpen ? 'Close' : 'Review ›') + '</button></div>';
+    if (B.reviewOpen) {
+      h += '<div class="lk-bt-in bt-triage">' + late.map((r) => {
+        const id = esc(String(r.id));
+        return '<div class="bt-trow"><div class="bt-tt">' + esc(B.title(r)) + '<small>Was planned for ' + esc(DOW[(r.day + 1) % 7] || '') + (r.time ? ' ' + esc(r.time) : '') + '</small></div>' +
+          '<div class="bt-acts"><button type="button" data-tr="today" data-id="' + id + '">Today</button><button type="button" data-tr="tomorrow" data-id="' + id + '">Tomorrow</button><button type="button" data-tr="done" data-id="' + id + '">Done</button><button type="button" class="drop" data-tr="drop" data-id="' + id + '">Drop</button></div></div>';
+      }).join('') + loops.map((r) => {
+        const k = esc(String(r.key)), d = RockActions.fromIso(r.date);
+        return '<div class="bt-trow"><div class="bt-tt"><span data-i18n="off">' + esc(String(r.text || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')) + '</span><small>Open loop · ' + esc(d ? RockActions.label(d) : '') + (r.time ? ' ' + esc(r.time) : '') + '</small></div>' +
+          '<div class="bt-acts"><button type="button" data-tr="ltoday" data-key="' + k + '">Today</button><button type="button" data-tr="ltomorrow" data-key="' + k + '">Tomorrow</button><button type="button" data-tr="ldone" data-key="' + k + '">Done</button></div></div>';
+      }).join('') + '</div>';
+    }
+    return h;
+  },
+  listHtml() {
+    const B = TodayBeta, t = B.todayO();
+    let h = '';
+    if (B.view === 'day') {
+      const all = B.rocksOn(B.sel).slice().sort(B.byTime), open = all.filter((r) => !r.done), done = all.filter((r) => r.done);
+      const name = DOW[B.date(B.sel).getDay()];
+      const fid = B.focusId(), f = open.find((r) => String(r.id) === fid);
+      if (!all.length) h = '<div class="bt-empty"><b>' + (B.sel < t ? 'Nothing was planned for ' + esc(name) + '.' : 'Nothing planned for ' + esc(B.rel(B.sel) || name) + '.') + '</b>' + (B.sel < t ? '' : 'Add one below, or ask ' + esc(B.asst()) + '.') + '</div>';
+      else if (!open.length) h = '<div class="bt-empty"><b>All done for ' + esc(B.rel(B.sel) ? B.rel(B.sel).toLowerCase() : name) + '.</b>' + (B.sel >= t ? 'Pull something forward, or enjoy it.' : '') + '</div>';
+      if (f) h += B.focusCard(f);
+      const rest = open.filter((r) => r !== f);
+      if (rest.length) h += '<div class="bt-sec">Planned</div><div class="bt-rows">' + rest.map(B.row).join('') + '</div>';
+      if (done.length) h += '<button type="button" class="bt-donebar" data-bt="done" aria-expanded="' + B.showDone + '">Done · ' + done.length + (B.showDone ? ' ▾' : ' ›') + '</button>' + (B.showDone ? '<div class="bt-rows">' + done.map(B.row).join('') + '</div>' : '');
+    } else {
+      for (let i = 0; i < 7; i++) {
+        const o = B.week * 7 + i, all = B.rocksOn(o).slice().sort((a, b) => (a.done - b.done) || B.byTime(a, b));
+        if (!all.length) continue;
+        const open = all.filter((r) => !r.done).length;
+        h += '<button type="button" class="bt-daygrp' + (o === t ? ' today' : '') + (o < t && open ? ' late' : '') + '" data-bto="' + o + '"><span>' + esc(B.longDate(o)) + (o === t ? ' · today' : '') + '</span><span>' + open + ' planned · ' + (all.length - open) + ' done</span></button>' +
+          '<div class="bt-rows">' + all.map(B.row).join('') + '</div>';
+      }
+      if (!h) h = '<div class="bt-empty"><b>Nothing planned this week.</b>Add one below.</div>';
+    }
+    return '<div class="lk-bt-in">' + h + '</div>';
+  },
+  calHtml() {
+    const B = TodayBeta, o = B.view === 'day' ? B.sel : Math.max(B.todayO(), B.week * 7);
+    const iso = RockActions.iso(B.date(o));
+    let items = [];
+    try { items = Ahead.items().filter((x) => x.date === iso && x.kind !== 'rock'); } catch (e) {}
+    const past = o < B.todayO();
+    const rows = items.map((x) => '<div class="bt-ev"><time>' + esc(x.allDay ? 'All day' : x.time || '') + '</time><div><b data-i18n="off">' + esc(x.title) + '</b><span>' + (x.kind === 'event' ? (x.hours && !x.allDay ? B.dur(x.hours) : 'Calendar') : 'Open loop') + (x.where ? ' · ' + esc(x.where) : '') + '</span></div></div>').join('');
+    return '<div class="lk-bt-in"><div class="bt-eyebrow">Calendar · ' + esc(B.rel(o) || B.short(o)) + '</div>' +
+      (rows || '<p class="bt-none">' + (past ? 'Past days are not shown.' : 'Nothing in your calendar.') + '</p>') +
+      '<div class="bt-raillinks"><button type="button" class="bt-linkish" data-bt="compass">Open Week Compass ›</button><button type="button" class="bt-linkish" data-bt="weekreview">Review the week ›</button></div>' +
+      '<div class="bt-surf"><span>Focus card</span><span class="bt-seg sm" role="group" aria-label="Focus card colour"><button type="button" data-bt="quiet" aria-pressed="' + !B.lime() + '">Quiet</button><button type="button" data-bt="lime" aria-pressed="' + B.lime() + '">Lime</button></span></div></div>';
+  },
+  dur(h) { const m = Math.round(h * 60); return m >= 60 ? (m / 60).toFixed(m % 60 ? 1 : 0) + ' h' : m + ' min'; },
+  asst() { try { return Say.name(); } catch (e) { return 'J.A.R.V.I.S.'; } },
+
+  /* ---- the composer: its day is set when typing starts, and kept ---- */
+  target() {
+    const B = TodayBeta, t = B.todayO();
+    if (B.draft != null) return B.draft;
+    return B.view === 'day' ? Math.max(B.sel, t) : Math.max(t, B.week * 7);
+  },
+  chipText(o) { const r = TodayBeta.rel(o); return (r ? r + ' · ' : '') + TodayBeta.short(o); },
+  chip() {
+    const B = TodayBeta, el = B.el; if (!el) return;
+    const o = B.target(), btn = el.querySelector('.bt-date');
+    const moved = B.draft != null && B.view === 'day' && B.draft !== B.sel;
+    if (btn) { btn.textContent = B.chipText(o); btn.classList.toggle('moved', moved); }
+    const inp = el.querySelector('.bt-comp input');
+    if (inp) inp.placeholder = 'Add a Priority to ' + (B.rel(o) ? B.rel(o).toLowerCase() : DOW[B.date(o).getDay()]) + '…';
+    const hint = el.querySelector('.bt-hint');
+    if (hint) {
+      const viewPast = B.view === 'day' && B.sel < B.todayO() && B.draft == null;
+      const txt = moved ? 'This one keeps its day (' + B.short(B.draft) + '). Change it with the date chip.' : viewPast ? 'Past days take nothing new; this goes on today.' : '';
+      hint.textContent = txt; hint.hidden = !txt;
+    }
+  },
+  menu(open) {
+    const B = TodayBeta, m = B.el && B.el.querySelector('.bt-menu'); if (!m) return;
+    if (open === false || !m.hidden) { m.hidden = true; B.el.querySelector('.bt-date').setAttribute('aria-expanded', 'false'); return; }
+    const t = B.todayO(), opts = [t, t + 1, t + 2, t + 3, t + 7];
+    const cur = B.target(); if (opts.indexOf(cur) < 0) opts.splice(2, 0, cur);
+    m.innerHTML = opts.filter((v, i, a) => a.indexOf(v) === i).map((o) => '<button type="button" role="menuitem" data-btd="' + o + '"' + (o === cur ? ' aria-current="true"' : '') + '>' + esc(B.chipText(o)) + '</button>').join('');
+    m.hidden = false; B.el.querySelector('.bt-date').setAttribute('aria-expanded', 'true');
+  },
+  add() {
+    const B = TodayBeta, inp = B.el.querySelector('.bt-comp input');
+    const title = String(inp.value || '').trim();
+    if (!title) { inp.focus(); return; }
+    const o = B.target(), w = B.where(o);
+    if (typeof addRock !== 'function' || !w.wid) { toast('Open the Week Compass once, then try again.', 'warn'); return; }
+    const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
+    addRock(title.slice(0, 200), roles[0] || '', w.day, '', w.wid, { prio: 'med' });
+    const list = cData.rocks[w.wid] || [], r = list[list.length - 1];
+    inp.value = ''; B.draft = null; B.refocus = true;
+    RockActions.rerender();
+    const id = r && r.id;
+    RockActions.undo('Added to ' + B.chipText(o), () => {
+      const h = RockActions.find(id); if (!h) return;
+      cData.rocks[h.w].splice(h.i, 1); RockActions.save('↩️ Undid adding: ' + h.r.title);
+    });
+  },
+
+  /* ---- what the buttons do ---- */
+  tick(id) {
+    const h = RockActions.find(id); if (!h) return;
+    const r = h.r; r.done = !r.done;
+    if (r.done && TodayBeta.focusId() === String(id)) Settings.set('todayFocus', null);
+    RockActions.save(r.done ? '🪨 Big rock done: ' + r.title : '');
+    if (r.done) RockActions.undo('Done', () => { const h2 = RockActions.find(id); if (h2) { h2.r.done = false; RockActions.save(); } });
+  },
+  async act(b) {
+    const B = TodayBeta, a = b.getAttribute('data-bt'), id = b.getAttribute('data-id');
+    const t = B.todayO();
+    if (a === 'tick') return B.tick(id);
+    if (a === 'open') return RockActions.open(id);
+    if (a === 'pin') { await Settings.set('todayFocus', { id, at: new Date().toISOString() }); B.paint(); try { toast('Pinned as your Focus', null, 1400); } catch (e) {} return; }
+    if (a === 'unpin') { await Settings.set('todayFocus', null); B.paint(); return; }
+    if (a === 'focus') { try { if (!Focus.running()) await Focus.start(); Focus.open(); } catch (e) {} return; }
+    if (a === 'done') { B.showDone = !B.showDone; B.paint(); return; }
+    if (a === 'vday') { B.view = 'day'; if (B.sel < B.week * 7 || B.sel > B.week * 7 + 6) B.sel = B.week === 0 ? t : B.week * 7; }
+    else if (a === 'vweek') B.view = 'week';
+    else if (a === 'prev' || a === 'next') { B.week += a === 'next' ? 1 : -1; B.sel = B.week === 0 ? t : B.week * 7; }
+    else if (a === 'today') { B.sel = t; B.week = 0; B.view = 'day'; }
+    else if (a === 'review') B.reviewOpen = !B.reviewOpen;
+    else if (a === 'replan') { try { Replan.open(); } catch (e) {} return; }
+    else if (a === 'compass') { try { Nav.go('compass'); } catch (e) {} return; }
+    else if (a === 'weekreview') { try { TodayPlus.reviewSheet(); } catch (e) {} return; }
+    else if (a === 'classic') return B.set(false);
+    else if (a === 'quiet' || a === 'lime') { await Settings.set('todayBetaLime', a === 'lime'); }
+    else if (a === 'datechip') return B.menu();
+    B.paint();
+  },
+  pick(o, focus) {
+    const B = TodayBeta;
+    B.sel = o; B.week = Math.floor(o / 7); B.view = 'day'; B.paint();
+    if (focus) { const d = B.el && B.el.querySelector('[data-bto="' + o + '"].lk-bt-day'); if (d) d.focus(); }
+  },
+  triage(b) {
+    const a = b.getAttribute('data-tr'), id = b.getAttribute('data-id'), key = b.getAttribute('data-key');
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    if (key) {
+      const rec = Schedule.get(key); if (!rec) return;
+      if (a === 'ldone') { Schedule.put(key, { done: true }); try { J('planning', '✅ Done: ' + rec.text); } catch (e) {} }
+      else { if (a === 'ltomorrow') d.setDate(d.getDate() + 1); Schedule.put(key, { date: RockActions.iso(d) }); }
+      try { Schedule.saveNow(); } catch (e) {}
+      try { renderToday(); } catch (e) {}
+      TodayBeta.paint();
+      return;
+    }
+    if (a === 'done') { const h = RockActions.find(id); if (h) { h.r.done = true; RockActions.save('✅ Big rock done: ' + h.r.title); RockActions.undo('Marked done', () => { const h2 = RockActions.find(id); if (h2) { h2.r.done = false; RockActions.save(); } }); } }
+    else if (a === 'drop') RockActions.setAside(id, 'dropped');
+    else { if (a === 'tomorrow') d.setDate(d.getDate() + 1); RockActions.move(id, d); }
+    try { Track.hit('triage_done'); } catch (e) {}
+  },
+
+  build() {
+    const el = document.createElement('section');
+    el.className = 'lk-bt';
+    el.setAttribute('aria-label', 'Daily plan');
+    el.innerHTML =
+      '<div class="lk-bt-main"><div class="lk-bt-head"></div>' +
+        '<div class="lk-bt-strip" role="tablist" aria-label="Days"></div>' +
+        '<div class="lk-bt-review"></div><div class="lk-bt-list"></div>' +
+        '<form class="lk-bt-comp bt-comp" autocomplete="off"><input type="text" maxlength="200" aria-label="New Priority" enterkeyhint="done">' +
+          '<div class="bt-datechip"><button type="button" class="bt-date" data-bt="datechip" aria-haspopup="menu" aria-expanded="false"></button><div class="bt-menu" role="menu" hidden></div></div>' +
+          '<button type="submit" class="bt-add">Add</button><div class="bt-hint" hidden></div></form></div>' +
+      '<aside class="lk-bt-rail" aria-label="Calendar"></aside>';
+    el.addEventListener('click', (e) => {
+      const d = e.target.closest('[data-btd]');
+      if (d) { TodayBeta.draft = +d.getAttribute('data-btd'); TodayBeta.menu(false); TodayBeta.chip(); el.querySelector('.bt-comp input').focus(); return; }
+      if (!e.target.closest('.bt-datechip')) TodayBeta.menu(false);
+      const day = e.target.closest('[data-bto]');
+      if (day) { TodayBeta.pick(+day.getAttribute('data-bto')); return; }
+      const tr = e.target.closest('[data-tr]');
+      if (tr) { TodayBeta.triage(tr); return; }
+      const b = e.target.closest('[data-bt]');
+      if (b) { e.preventDefault(); TodayBeta.act(b); }
+    });
+    el.addEventListener('keydown', (e) => {
+      const day = e.target.closest && e.target.closest('.lk-bt-day');
+      if (day && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { e.preventDefault(); TodayBeta.pick(+day.getAttribute('data-bto') + (e.key === 'ArrowRight' ? 1 : -1), true); }
+      if (e.key === 'Escape' && !el.querySelector('.bt-menu').hidden) { e.stopPropagation(); TodayBeta.menu(false); el.querySelector('.bt-date').focus(); }
+    });
+    const inp = el.querySelector('.bt-comp input');
+    inp.addEventListener('input', () => {
+      const v = inp.value.trim();
+      if (v && TodayBeta.draft == null) TodayBeta.draft = TodayBeta.target();
+      if (!v) TodayBeta.draft = null;
+      TodayBeta.chip();
+    });
+    el.querySelector('.bt-comp').addEventListener('submit', (e) => { e.preventDefault(); TodayBeta.add(); });
+    TodayBeta.el = el;
+    return el;
+  },
+  /* "Today's routines": the part of the page that is always today's. */
+  routines(feed) {
+    let h = feed.querySelector('.lk-bt-routines');
+    const first = feed.querySelector(':scope > .td-group, :scope > #flow-td-meals, :scope > #flow-td-habits');
+    if (!first) { if (h) h.remove(); return; }
+    if (!h) { h = document.createElement('div'); h.className = 'lk-bt-routines'; h.innerHTML = '<h3>Today’s routines</h3><p>Habits, training and meals are always today’s, whichever day you plan above.</p>'; }
+    if (h.nextElementSibling !== first) first.before(h);
+  },
+  paint() {
+    const B = TodayBeta;
+    const on = B.on();
+    if (document.documentElement.getAttribute('data-today-beta') !== (on ? 'on' : 'off')) document.documentElement.setAttribute('data-today-beta', on ? 'on' : 'off');
+    if (!on) return;
+    const feed = document.getElementById('today-feed');
+    const head = feed && feed.querySelector('.td-head');
+    if (!head) return;
+    B.fresh();
+    const el = B.el || B.build();
+    const anchor = feed.querySelector(':scope > .lk-hero') || feed.querySelector(':scope > .lk-dayview') || feed.querySelector(':scope > .lk-strip') || head;
+    const hadFocus = el.contains(document.activeElement) && document.activeElement.matches('.bt-comp input');
+    if (el.previousElementSibling !== anchor) anchor.after(el);
+    const put = (sel, html) => TodayLook.put(el.querySelector(sel), html);
+    put('.lk-bt-head', B.headHtml());
+    put('.lk-bt-strip', B.stripHtml());
+    el.querySelector('.lk-bt-strip').classList.toggle('weekmode', B.view === 'week');
+    put('.lk-bt-review', B.reviewHtml());
+    put('.lk-bt-list', B.listHtml());
+    put('.lk-bt-rail', B.calHtml());
+    B.chip();
+    if (B.refocus || hadFocus) { const i = el.querySelector('.bt-comp input'); if (document.activeElement !== i) i.focus({ preventScroll: true }); }
+    B.refocus = false;
+    B.routines(feed);
+  }
+};
+window.FlowTodayBeta = TodayBeta;
 
 /* ── Simple: the same pages, without the decoration ─────────────────────
  * Every page in Simple is the page Advanced has — same markup, same
@@ -13630,8 +13998,8 @@ const Connect = {
 
     if (!c.configured) {
       return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
-        '<div class="conn-t"><b>' + esc(c.name) + '</b><span>Not set up on this server yet.</span></div>' +
-        '<button type="button" class="flow-btn sm" disabled>Connect</button></div>';
+        '<div class="conn-t"><b>' + esc(c.name) + '</b><span>' + (/gmail|google/i.test(c.id + ' ' + c.name) ? 'Coming soon — waiting for Google’s approval.' : 'Not set up on this server yet.') + '</span></div>' +
+        '<button type="button" class="flow-btn sm" disabled>' + (/gmail|google/i.test(c.id + ' ' + c.name) ? 'Soon' : 'Connect') + '</button></div>';
     }
     if (!accts.length) {
       return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +

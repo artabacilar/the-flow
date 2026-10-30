@@ -365,6 +365,8 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Other apps you use, connected to this account. Each one asks for the least it needs, and you can disconnect it here at any time.": "Kullandığın diğer uygulamalar, bu hesaba bağlı. Her biri yalnızca gerçekten ihtiyaç duyduğunu ister ve bağlantıyı istediğin an buradan kesebilirsin.",
   "Your name and profile photo, from your Google account.": "Google hesabından adın ve profil fotoğrafın.",
   "Not set up on this server yet.": "Bu sunucuda henüz kurulmadı.",
+  "Coming soon — waiting for Google’s approval.": "Yakında — Google’ın onayı bekleniyor.",
+  "Soon": "Yakında",
   "More apps are on the way.": "Başka uygulamalar da yolda.",
   "Connect": "Bağlan",
   "Trial · {} of {} places used": "Deneme · {} / {} yer dolu",
