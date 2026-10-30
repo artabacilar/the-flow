@@ -3963,19 +3963,19 @@ const Theme = {
      across the top of every screen. */
   LIST: [
     { id: 'signature', name: 'Signature', sub: 'the original',
-      dot: 'linear-gradient(135deg,#00e88a,#0093e7)', tc: '#0a0b0d' },
+      dot: 'linear-gradient(135deg,#00e88a,#0093e7)', tc: '#0a0b0d', sdot: '#FF6B3D,#C8F26B' },
     { id: 'bloom',     name: 'Bloom',     sub: 'soft light',
-      dot: 'linear-gradient(135deg,#f5dfe4,#b0648a)', tc: '#fdf8f7' },
+      dot: 'linear-gradient(135deg,#f5dfe4,#b0648a)', tc: '#fdf8f7', sdot: '#B0648A,#F6DCE3' },
     { id: 'aurora',    name: 'Aurora',    sub: 'violet night',
-      dot: 'linear-gradient(135deg,#c084fc,#5eead4)', tc: '#12101e' },
+      dot: 'linear-gradient(135deg,#c084fc,#5eead4)', tc: '#12101e', sdot: '#C084FC,#5EEAD4' },
     { id: 'paper',     name: 'Paper',     sub: 'warm light',
-      dot: 'linear-gradient(135deg,#f8f5ef,#2f6f5e)', tc: '#f8f5ef' },
+      dot: 'linear-gradient(135deg,#f8f5ef,#2f6f5e)', tc: '#f8f5ef', sdot: '#2F6F5E,#D3E6C8' },
     { id: 'calm',      name: 'Calm',      sub: 'quiet blue',
-      dot: 'linear-gradient(135deg,#7fa8dd,#2a2f36)', tc: '#0c0e11' },
+      dot: 'linear-gradient(135deg,#7fa8dd,#2a2f36)', tc: '#0c0e11', sdot: '#7FA8DD,#A9D8C8' },
     { id: 'bold',      name: 'Bold',      sub: 'loud and square',
-      dot: 'linear-gradient(135deg,#ffe600,#ff3b30)', tc: '#000000' },
+      dot: 'linear-gradient(135deg,#ffe600,#ff3b30)', tc: '#000000', sdot: '#FF3B30,#FFE600' },
     { id: 'operator',  name: 'Operator',  sub: 'monospaced',
-      dot: 'linear-gradient(135deg,#00e08a,#06090a)', tc: '#06090a' }
+      dot: 'linear-gradient(135deg,#00e08a,#06090a)', tc: '#06090a', sdot: '#00E08A,#B8FF5C' }
   ],
   DEFAULT: 'signature',
 
@@ -3993,6 +3993,25 @@ const Theme = {
     return Theme.RETIRED[id] || Theme.DEFAULT;
   },
   meta(id) { return Theme.LIST.find(t => t.id === Theme.resolve(id)) || Theme.LIST[0]; },
+  /* Every theme has a Simple version too (its --lk-* palette in the
+     stylesheet). In Simple the swatch shows that version's two colours — the
+     accent and the block colour — split down the middle, rather than the
+     Advanced gradient, so what you tap is what you get. */
+  dot(t) {
+    let simple = false;
+    try { simple = TodayLook.on(); } catch (e) {}
+    if (!simple || !t.sdot) return t.dot;
+    const [a, b] = t.sdot.split(',');
+    return 'linear-gradient(135deg,' + a + ' 0 50%,' + b + ' 50% 100%)';
+  },
+  /* Repaint the swatches in place, for when the interface switches while
+     Settings is open. */
+  paintDots() {
+    document.querySelectorAll('.theme-swatch[data-theme] .sw-dot').forEach((d) => {
+      const t = Theme.meta(d.parentNode.getAttribute('data-theme'));
+      d.style.setProperty('--d', Theme.dot(t));
+    });
+  },
   current() { return Theme.resolve(document.documentElement.getAttribute('data-flow-theme')); },
 
   /* Paint it now. `save !== false` also persists it. */
@@ -4096,7 +4115,7 @@ const SettingsUI = {
         <p class="flow-sub">Pick a colour theme. It applies the instant you tap it — no reload — and is saved to your account (or kept on this device while you're just looking around).</p>
         <div class="theme-grid">
           ${Theme.LIST.map(t => `<button type="button" class="theme-swatch${Theme.current() === t.id ? ' on' : ''}" data-theme="${t.id}">
-            <span class="sw-dot" style="--d:${t.dot}"></span>
+            <span class="sw-dot" style="--d:${Theme.dot(t)}"></span>
             <span class="sw-tx"><span class="sw-nm" data-i18n="off">${t.name}</span><span class="sw-sub">${t.sub}</span></span>
           </button>`).join('')}
         </div>
@@ -7246,6 +7265,7 @@ const Auth = {
         <div class="fa-or"><span>or</span></div>
         <button class="flow-btn ghost" id="fa-guest">Have a look around first</button>
         <p class="fa-fine">No account, nothing saved to the server. You can keep your work if you sign up afterwards.</p>
+        <p class="fa-fine fa-legal" style="margin:14px 0 0;text-align:center"><a href="/about" target="_blank" rel="noopener">About</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a> · <a href="/terms" target="_blank" rel="noopener">Terms</a></p>
       </div>`;
     document.body.appendChild(el);
 
@@ -9408,11 +9428,12 @@ const HealthNight = {
 window.FlowHealthNight = HealthNight;
 
 /* ── Today, the new look ──────────────────────────────────────────────────
- * The Signature theme's Today screen: a greeting instead of a page title,
- * the week as a strip of days, one plain sentence about what is left to do,
- * Big Rocks on a solid colour card, and the numbers as bento tiles. The
- * pieces added here are small and read the same data the feed already
- * shows; other themes hide them and keep the page as it was.
+ * Simple's Today screen: a greeting instead of a page title, the week as a
+ * strip of days, one plain sentence about what is left to do, Big Rocks on a
+ * solid colour card, and the numbers as bento tiles. The pieces added here
+ * are small and read the same data the feed already shows. Every colour
+ * theme has a Simple version (flow-pack.css, the --lk-* palettes); Advanced
+ * hides these pieces and keeps the page as it was.
  *
  * The feed is redrawn whenever anything changes, so this re-adds its parts
  * after each redraw rather than holding on to nodes that no longer exist.
@@ -9433,6 +9454,7 @@ const TodayLook = {
     try { Sections.apply(); } catch (e) {}
     try { SimpleSkin.sync(); } catch (e) {}
     try { Vocab.sync(); } catch (e) {}
+    try { Theme.paintDots(); } catch (e) {}
     document.querySelectorAll('[data-fn-ui]').forEach((b) => {
       const mine = b.getAttribute('data-fn-ui') === (on ? 'simple' : 'advanced');
       b.classList.toggle('on', mine); b.setAttribute('aria-pressed', String(mine));

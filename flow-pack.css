@@ -2503,25 +2503,95 @@ html.fl-hide-money svg [data-flm]{filter:none;fill:transparent}
 html.fl-hide-money input[data-flm]::placeholder{color:transparent;text-shadow:0 0 9px rgba(127,127,127,.9)}
 
 /* ══════════════════════════════════════════════════════════════════════════
- * The new look — Signature theme: Today, the tab bar and the + menu
- * Near-black, solid colour blocks with dark text on them, one coral accent,
- * big tight type, round corners. No gradients on cards, no glow but the +.
- * Other themes hide the added pieces and keep their own Today.
+ * Simple (the new look): Today, the tab bar and the + menu
+ * Solid colour blocks with dark text on them, one accent, big tight type,
+ * round corners. No gradients on cards, no glow but the +.
+ *
+ * Every theme has a Simple version. The rules below are written once, against
+ * the --lk-* tokens; a theme only says which colours fill them. Signature is
+ * the original — near-black with coral and lime — and the others keep their
+ * own character: Bloom and Paper are light, Aurora violet, Calm blue, Bold
+ * loud, Operator green. --lk-bg is each theme's theme-color, so the strip
+ * behind the status bar matches in both interfaces.
+ *   --lk-coral   the accent: the + button, the main action, focus
+ *   --lk-lime    the Priorities card and other big blocks (dark ink on it)
+ *   --lk-*-ink   the text that sits on that colour
+ *   --lk-*-a     the same colour as an r,g,b triple, for soft tints
  * ══════════════════════════════════════════════════════════════════════════ */
 :root{
   --lk-bg:#0A0A0B; --lk-s1:#141416; --lk-s2:#1D1D20; --lk-line:rgba(255,255,255,.07);
   --lk-ink:#F4F4F2; --lk-mute:#8E8E94; --lk-dim:#5E5E64;
   --lk-coral:#FF6B3D; --lk-coral-ink:#1F0A03; --lk-lime:#C8F26B; --lk-lime-ink:#15190A;
   --lk-aqua:#3FD6C6; --lk-lilac:#C7B8FF; --lk-sun:#FFD25E;
+  --lk-coral-hi:#ff7d55; --lk-coral-a:255,107,61; --lk-lime-a:200,242,107;
+  --lk-bar:rgba(14,14,16,.94); --lk-pal:rgba(20,20,22,.98); --lk-scrim:10,10,11;
+  --lk-soft:rgba(255,255,255,.08); --lk-row:#c9c9ce; --lk-shade:rgba(0,0,0,.45);
+  --lk-good:var(--lk-lime); --lk-warn:var(--lk-sun);
 }
-html:not([data-flow-theme="signature"][data-flow-look="new"]) :is(.lk-hello,.lk-strip,.lk-hero,.lk-acts){display:none !important}
+html[data-flow-theme="calm"][data-flow-look="new"]{
+  --lk-bg:#0c0e11; --lk-s1:#151a20; --lk-s2:#1e242c; --lk-line:rgba(190,210,235,.08);
+  --lk-ink:#E9EEF4; --lk-mute:#8A95A3; --lk-dim:#5C6672;
+  --lk-coral:#7FA8DD; --lk-coral-ink:#08131F; --lk-lime:#A9D8C8; --lk-lime-ink:#0B1D17;
+  --lk-aqua:#6FC3DF; --lk-lilac:#B9C4F5; --lk-sun:#EBD392;
+  --lk-coral-hi:#93b7e4; --lk-coral-a:127,168,221; --lk-lime-a:169,216,200;
+  --lk-bar:rgba(17,21,26,.94); --lk-pal:rgba(21,26,32,.98); --lk-scrim:8,10,13;
+  --lk-soft:rgba(190,210,235,.08); --lk-row:#c3ccd7; --lk-shade:rgba(0,0,0,.45);
+}
+html[data-flow-theme="aurora"][data-flow-look="new"]{
+  --lk-bg:#12101e; --lk-s1:#1C1830; --lk-s2:#262040; --lk-line:rgba(200,180,255,.09);
+  --lk-ink:#F2EEFF; --lk-mute:#9C93BC; --lk-dim:#6A628A;
+  --lk-coral:#C084FC; --lk-coral-ink:#1E0838; --lk-lime:#5EEAD4; --lk-lime-ink:#032622;
+  --lk-aqua:#67E8F9; --lk-lilac:#F0ABFC; --lk-sun:#FDE68A;
+  --lk-coral-hi:#cd9cfd; --lk-coral-a:192,132,252; --lk-lime-a:94,234,212;
+  --lk-bar:rgba(22,19,38,.94); --lk-pal:rgba(28,24,48,.98); --lk-scrim:10,8,20;
+  --lk-soft:rgba(200,180,255,.09); --lk-row:#d2cbe8; --lk-shade:rgba(0,0,0,.5);
+}
+html[data-flow-theme="bold"][data-flow-look="new"]{
+  --lk-bg:#000000; --lk-s1:#121212; --lk-s2:#1E1E1E; --lk-line:rgba(255,255,255,.1);
+  --lk-ink:#FFFFFF; --lk-mute:#9E9E9E; --lk-dim:#666666;
+  --lk-coral:#FF3B30; --lk-coral-ink:#1A0200; --lk-lime:#FFE600; --lk-lime-ink:#1A1700;
+  --lk-aqua:#00D1FF; --lk-lilac:#B69CFF; --lk-sun:#FF9F0A;
+  --lk-coral-hi:#ff5a50; --lk-coral-a:255,59,48; --lk-lime-a:255,230,0;
+  --lk-bar:rgba(10,10,10,.95); --lk-pal:rgba(18,18,18,.98); --lk-scrim:0,0,0;
+  --lk-soft:rgba(255,255,255,.1); --lk-row:#d0d0d0; --lk-shade:rgba(0,0,0,.6);
+}
+html[data-flow-theme="operator"][data-flow-look="new"]{
+  --lk-bg:#06090a; --lk-s1:#0E1415; --lk-s2:#152022; --lk-line:rgba(120,255,190,.08);
+  --lk-ink:#D9F7E8; --lk-mute:#6F9282; --lk-dim:#47615A;
+  --lk-coral:#00E08A; --lk-coral-ink:#00170D; --lk-lime:#B8FF5C; --lk-lime-ink:#0F1A00;
+  --lk-aqua:#46E3FF; --lk-lilac:#A6B4FF; --lk-sun:#FFD166;
+  --lk-coral-hi:#2ff0a2; --lk-coral-a:0,224,138; --lk-lime-a:184,255,92;
+  --lk-bar:rgba(9,14,15,.95); --lk-pal:rgba(14,20,21,.98); --lk-scrim:3,6,6;
+  --lk-soft:rgba(120,255,190,.08); --lk-row:#b9dccb; --lk-shade:rgba(0,0,0,.5);
+}
+html[data-flow-theme="paper"][data-flow-look="new"]{
+  --lk-good:#3E7A4F; --lk-warn:#9A6A12;
+  --lk-bg:#f8f5ef; --lk-s1:#FFFFFF; --lk-s2:#F1ECE2; --lk-line:rgba(29,26,21,.09);
+  --lk-ink:#1D1A15; --lk-mute:#6F675B; --lk-dim:#A39B8D;
+  --lk-coral:#2F6F5E; --lk-coral-ink:#FFFFFF; --lk-lime:#D3E6C8; --lk-lime-ink:#16301F;
+  --lk-aqua:#2F8F86; --lk-lilac:#CFC6EA; --lk-sun:#F2C76B;
+  --lk-coral-hi:#3a826f; --lk-coral-a:47,111,94; --lk-lime-a:120,170,110;
+  --lk-bar:rgba(255,253,249,.94); --lk-pal:rgba(255,255,255,.98); --lk-scrim:60,52,40;
+  --lk-soft:rgba(29,26,21,.06); --lk-row:#3d382f; --lk-shade:rgba(60,52,40,.14);
+}
+html[data-flow-theme="bloom"][data-flow-look="new"]{
+  --lk-good:#3F7F6A; --lk-warn:#9C6418;
+  --lk-bg:#fdf8f7; --lk-s1:#FFFFFF; --lk-s2:#F8EDEC; --lk-line:rgba(43,32,36,.08);
+  --lk-ink:#2B2024; --lk-mute:#7D6A71; --lk-dim:#B3A2A8;
+  --lk-coral:#B0648A; --lk-coral-ink:#FFFFFF; --lk-lime:#F6DCE3; --lk-lime-ink:#4A1F33;
+  --lk-aqua:#6FBFB2; --lk-lilac:#DCCBF2; --lk-sun:#F5D08A;
+  --lk-coral-hi:#be769a; --lk-coral-a:176,100,138; --lk-lime-a:214,140,165;
+  --lk-bar:rgba(255,252,251,.94); --lk-pal:rgba(255,255,255,.98); --lk-scrim:70,40,52;
+  --lk-soft:rgba(43,32,36,.06); --lk-row:#4a3b41; --lk-shade:rgba(70,40,52,.14);
+}
+html:not([data-flow-look="new"]) :is(.lk-hello,.lk-strip,.lk-hero,.lk-acts){display:none !important}
 
 /* ---- head: greeting replaces the page title ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head{padding:2px 2px 14px;align-items:flex-end}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head :is(.td-date,.td-title,.td-wk){display:none}
-html[data-flow-theme="signature"][data-flow-look="new"] .lk-date{font-size:13px;font-weight:500;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] .lk-greet{font-size:30px;font-weight:800;letter-spacing:-.035em;line-height:1.1;color:var(--lk-ink);margin-top:2px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-quote{margin-top:10px;font-size:13px;opacity:.75}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-head{padding:2px 2px 14px;align-items:flex-end}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-head :is(.td-date,.td-title,.td-wk){display:none}
+html[data-flow-theme][data-flow-look="new"] .lk-date{font-size:13px;font-weight:500;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] .lk-greet{font-size:30px;font-weight:800;letter-spacing:-.035em;line-height:1.1;color:var(--lk-ink);margin-top:2px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-quote{margin-top:10px;font-size:13px;opacity:.75}
 
 /* ---- the week as a strip of days ---- */
 .lk-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:0 0 12px}
@@ -2568,7 +2638,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-quo
 .lk-dv-add button{appearance:none;border:0;border-radius:14px;min-height:44px;padding:0 18px;background:var(--lk-coral);color:var(--lk-coral-ink);font:inherit;font-size:14px;font-weight:800;cursor:pointer}
 .lk-dv-week{appearance:none;border:0;background:none;color:var(--lk-mute);font:inherit;font-size:13px;font-weight:700;padding:12px 2px 2px;cursor:pointer}
 .lk-dv-week:hover{color:var(--lk-ink)}
-html:not([data-flow-theme="signature"][data-flow-look="new"]) .lk-dayview{display:none !important}
+html:not([data-flow-look="new"]) .lk-dayview{display:none !important}
 
 /* ---- one sentence about the day ---- */
 .lk-hero{display:flex;flex-direction:column;width:100%;background:var(--lk-s1);color:var(--lk-ink);border-radius:28px;padding:18px 18px 16px;margin:0 0 12px}
@@ -2596,103 +2666,103 @@ html:not([data-flow-theme="signature"][data-flow-look="new"]) .lk-dayview{displa
 }
 
 /* ---- actions: coral primary, quiet pills ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-today-actions > button{border-radius:999px;background:var(--lk-s1);border-color:transparent;color:var(--lk-ink);min-height:48px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary{background:var(--lk-coral);border-color:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800;min-height:52px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary .fn-i{stroke:var(--lk-coral-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-today-actions > button{border-radius:999px;background:var(--lk-s1);border-color:transparent;color:var(--lk-ink);min-height:48px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary{background:var(--lk-coral);border-color:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800;min-height:52px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary .fn-i{stroke:var(--lk-coral-ink)}
 @media (hover:hover){
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary:hover{background:#ff7d55;border-color:#ff7d55}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-today-actions > button:not(.flow-today-primary):hover{background:var(--lk-s2);border-color:transparent}
+  html[data-flow-theme][data-flow-look="new"] #today-feed .flow-today-actions > .flow-today-primary:hover{background:var(--lk-coral-hi);border-color:var(--lk-coral-hi)}
+  html[data-flow-theme][data-flow-look="new"] #today-feed .flow-today-actions > button:not(.flow-today-primary):hover{background:var(--lk-s2);border-color:transparent}
 }
 
 /* ---- the week-plan prompt ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-plan{background:var(--lk-s1);border:0;border-radius:28px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-plan .flow-btn.primary{background:var(--lk-ink);border-color:var(--lk-ink);color:var(--lk-bg);border-radius:999px}
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-avatar:not(.has-face){background:var(--lk-lilac);color:#16122A}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-plan{background:var(--lk-s1);border:0;border-radius:28px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-plan .flow-btn.primary{background:var(--lk-ink);border-color:var(--lk-ink);color:var(--lk-bg);border-radius:999px}
+html[data-flow-theme][data-flow-look="new"] .fn-avatar:not(.has-face){background:var(--lk-lilac);color:#16122A}
 
 /* ---- numbers as bento tiles ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-pulse{gap:8px;margin:12px 0 4px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile{background:var(--lk-s1);border:0;border-radius:22px;padding:14px 14px 13px;gap:2px;min-height:104px;justify-content:space-between}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile .l{font-size:10.5px;letter-spacing:.1em;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile .v{font-size:27px;letter-spacing:-.035em;margin-top:auto}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile .s{font-size:11.5px;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile.good .v{color:var(--lk-lime)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile.warn .v{color:var(--lk-sun)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile.bad{border:0;box-shadow:inset 0 0 0 1.5px rgba(255,107,61,.45)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile.bad .v{color:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-pulse{gap:8px;margin:12px 0 4px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile{background:var(--lk-s1);border:0;border-radius:22px;padding:14px 14px 13px;gap:2px;min-height:104px;justify-content:space-between}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile .l{font-size:10.5px;letter-spacing:.1em;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile .v{font-size:27px;letter-spacing:-.035em;margin-top:auto}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile .s{font-size:11.5px;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile.good .v{color:var(--lk-good)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile.warn .v{color:var(--lk-warn)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile.bad{border:0;box-shadow:inset 0 0 0 1.5px rgba(var(--lk-coral-a),.45)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile.bad .v{color:var(--lk-coral)}
 @media (max-width:760px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-pulse{grid-template-columns:repeat(2,minmax(0,1fr))}
+  html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-pulse{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 /* ---- Big Rocks on a solid lime card ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks{background:var(--lk-lime);color:var(--lk-lime-ink);border:0;border-radius:28px;padding:18px 18px 10px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks-head .lbl{font-size:15px;font-weight:800;letter-spacing:-.01em;text-transform:none;color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks-head .cnt{font-size:12px;font-weight:800;color:var(--lk-lime-ink);background:rgba(0,0,0,.1);padding:4px 10px;border-radius:99px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock{border-top:1px solid rgba(21,25,10,.12);align-items:flex-start}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock:first-of-type{border-top:0}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .dot{width:20px;height:20px;border-radius:7px;background:transparent;border:2px solid var(--lk-lime-ink);margin-top:1px;position:relative}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .dot.high{border-color:#C23A12}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock.done .dot{background:var(--lk-lime-ink);border-color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock.done .dot::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--lk-lime);border-width:0 2px 2px 0;transform:rotate(45deg)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .rk-title{font-size:15.5px;font-weight:650;color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock.done .rk-title{color:rgba(21,25,10,.5);text-decoration:line-through}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock :is(.rk-meta,.td-rk-note){color:rgba(21,25,10,.62)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .rk-meta{font-size:13px;font-weight:600}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rock .rk-late{color:#B8320F}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks :is(a,.flow-link){color:var(--lk-lime-ink);text-decoration:underline}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks-empty{color:rgba(21,25,10,.7)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .flow-chip{background:rgba(0,0,0,.1);color:var(--lk-lime-ink);border-color:transparent}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks{background:var(--lk-lime);color:var(--lk-lime-ink);border:0;border-radius:28px;padding:18px 18px 10px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks-head .lbl{font-size:15px;font-weight:800;letter-spacing:-.01em;text-transform:none;color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks-head .cnt{font-size:12px;font-weight:800;color:var(--lk-lime-ink);background:rgba(0,0,0,.1);padding:4px 10px;border-radius:99px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock{border-top:1px solid rgba(21,25,10,.12);align-items:flex-start}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock:first-of-type{border-top:0}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .dot{width:20px;height:20px;border-radius:7px;background:transparent;border:2px solid var(--lk-lime-ink);margin-top:1px;position:relative}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .dot.high{border-color:#C23A12}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock.done .dot{background:var(--lk-lime-ink);border-color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock.done .dot::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--lk-lime);border-width:0 2px 2px 0;transform:rotate(45deg)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-title{font-size:15.5px;font-weight:650;color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock.done .rk-title{color:rgba(21,25,10,.5);text-decoration:line-through}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock :is(.rk-meta,.td-rk-note){color:rgba(21,25,10,.62)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-meta{font-size:13px;font-weight:600}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-late{color:#B8320F}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks :is(a,.flow-link){color:var(--lk-lime-ink);text-decoration:underline}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks-empty{color:rgba(21,25,10,.7)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .flow-chip{background:rgba(0,0,0,.1);color:var(--lk-lime-ink);border-color:transparent}
 /* The meeting folded under a Big Rock was still drawn in the dark theme's
    white on the lime card — unreadable. Ink on lime, like the rock itself. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks :is(.td-meet,.td-meet-tg,.td-meet-people,.td-meet-acts small){color:rgba(21,25,10,.68)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body{background:rgba(255,255,255,.38);border-color:rgba(21,25,10,.14);color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body h5{color:rgba(21,25,10,.62)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-meet-body :is(p,li,b,strong){color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks .td-ts{background:rgba(21,25,10,.12);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks :is(.td-meet,.td-meet-tg,.td-meet-people,.td-meet-acts small){color:rgba(21,25,10,.68)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .td-meet-body{background:rgba(255,255,255,.38);border-color:rgba(21,25,10,.14);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .td-meet-body h5{color:rgba(21,25,10,.62)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .td-meet-body :is(p,li,b,strong){color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .td-ts{background:rgba(21,25,10,.12);color:var(--lk-lime-ink)}
 
 /* ---- every other section as a quiet card with a real heading ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-sec,.td-group){background:var(--lk-s1);border-radius:24px;padding:14px 16px 6px;margin:12px 0 0}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-head{border-bottom:0;padding-bottom:4px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-head .l,.td-group-head .g-lbl){font-size:17px;font-weight:800;letter-spacing:-.02em;text-transform:none;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-head .c,.td-group-head .g-cnt){font-size:12px;font-weight:700;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-head .c.ok,.td-group-head .g-cnt:not(.zero)){color:var(--lk-lime)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-row{border-bottom-color:var(--lk-line)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-row .bx{border-radius:7px;border-color:var(--lk-dim)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td-row.done .bx,.flow-today-check[aria-checked="true"] .bx){background:var(--lk-lime);border-color:var(--lk-lime);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-sec,.td-group){background:var(--lk-s1);border-radius:24px;padding:14px 16px 6px;margin:12px 0 0}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-head{border-bottom:0;padding-bottom:4px}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-head .l,.td-group-head .g-lbl){font-size:17px;font-weight:800;letter-spacing:-.02em;text-transform:none;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-head .c,.td-group-head .g-cnt){font-size:12px;font-weight:700;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-head .c.ok,.td-group-head .g-cnt:not(.zero)){color:var(--lk-good)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-row{border-bottom-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-row .bx{border-radius:7px;border-color:var(--lk-dim)}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-row.done .bx,.flow-today-check[aria-checked="true"] .bx){background:var(--lk-lime);border-color:var(--lk-lime);color:var(--lk-lime-ink)}
 
 /* ---- the tab bar floats; the + is the one thing that glows ---- */
 @media (max-width:760px){
-  html[data-flow-theme="signature"][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 44px) !important}
+  html[data-flow-theme][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 44px) !important}
   /* The bar sits on the bottom edge, like Advanced's: a floating pill left a
      strip of the page readable underneath it and rows sliding out below the
      +. Rounded on top, blurred, and the page keeps room above it. */
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar{left:0;right:0;bottom:0;padding:8px 8px calc(10px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid var(--lk-line);border-bottom:0;background:rgba(14,14,16,.94);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 -10px 40px rgba(0,0,0,.45);align-items:center}
-  html[data-flow-theme="signature"][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 72px) !important}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button{color:var(--lk-dim);min-height:52px;justify-content:center}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button.on{color:var(--lk-ink)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar button .fn-lb{font-size:10.5px;font-weight:650}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar .fn-cap .fn-knob{width:56px;height:56px;border-radius:50%;margin-top:-26px;background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(255,107,61,.4),0 0 0 5px rgba(14,14,16,.94)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-tabbar .fn-cap .fn-i{width:26px;height:26px;stroke-width:2.6}
-  html[data-flow-theme="signature"][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar .fn-cap .fn-knob{transform:rotate(45deg)}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar{left:0;right:0;bottom:0;padding:8px 8px calc(10px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid var(--lk-line);border-bottom:0;background:var(--lk-bar);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 -10px 40px var(--lk-shade);align-items:center}
+  html[data-flow-theme][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 72px) !important}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar button{color:var(--lk-dim);min-height:52px;justify-content:center}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar button.on{color:var(--lk-ink)}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar button .fn-lb{font-size:10.5px;font-weight:650}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar .fn-cap .fn-knob{width:56px;height:56px;border-radius:50%;margin-top:-26px;background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(var(--lk-coral-a),.4),0 0 0 5px var(--lk-bar)}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar .fn-cap .fn-i{width:26px;height:26px;stroke-width:2.6}
+  html[data-flow-theme][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar .fn-cap .fn-knob{transform:rotate(45deg)}
 }
 
 /* ---- the + menu: a stack of pills above the + ---- */
 @media (max-width:760px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-scrim{background:rgba(10,10,11,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{background:transparent;border:0;box-shadow:none;left:0;right:0;bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 34px);padding:0 24px;max-height:none;overflow:visible}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet > :is(.fn-grab,h4,.fn-sub,.fn-capture-close){display:none}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid{display:flex;flex-direction:column;align-items:center;gap:9px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button{flex-direction:row;justify-content:flex-start;gap:11px;width:min(240px,100%);min-height:50px;padding:0 20px;border-radius:999px;border:0;background:var(--lk-ink);color:var(--lk-bg);font-size:15px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.35)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button .fn-i{display:none}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button::before{content:"";width:11px;height:11px;border-radius:50%;flex:none;background:var(--lk-dim)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="note"]::before{background:var(--lk-lilac)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="quad"]::before{background:var(--lk-lime)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="finance"]::before{background:var(--lk-sun)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="training"]::before{background:var(--lk-coral)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="habits"]::before{background:var(--lk-aqua)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="diet"]::before{background:#FF9F6B}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="sleep"]::before{background:#8FA8FF}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-scrim{background:rgba(var(--lk-scrim),.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{background:transparent;border:0;box-shadow:none;left:0;right:0;bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 34px);padding:0 24px;max-height:none;overflow:visible}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet > :is(.fn-grab,h4,.fn-sub,.fn-capture-close){display:none}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid{display:flex;flex-direction:column;align-items:center;gap:9px}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button{flex-direction:row;justify-content:flex-start;gap:11px;width:min(240px,100%);min-height:50px;padding:0 20px;border-radius:999px;border:0;background:var(--lk-ink);color:var(--lk-bg);font-size:15px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button .fn-i{display:none}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button::before{content:"";width:11px;height:11px;border-radius:50%;flex:none;background:var(--lk-dim)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="note"]::before{background:var(--lk-lilac)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="quad"]::before{background:var(--lk-lime)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="finance"]::before{background:var(--lk-sun)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="training"]::before{background:var(--lk-coral)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="habits"]::before{background:var(--lk-aqua)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="diet"]::before{background:#FF9F6B}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="sleep"]::before{background:#8FA8FF}
   /* The bar stays above the menu, so the turned + closes it. */
-  html[data-flow-theme="signature"][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar{z-index:970}
+  html[data-flow-theme][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar{z-index:970}
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2721,94 +2791,95 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.flow-td
   html[data-flow-look="new"] #flow-side .fn-sideadd span{display:none}
 }
 
-/* ---- Simple, Signature theme: every page in the new colours ----
+/* ---- Simple: every page in the theme's Simple colours ----
    The host and the pack both read their colours from tokens, so the whole
-   app follows by changing the tokens, not by restyling each page. */
-html[data-flow-theme="signature"][data-flow-look="new"]{
-  --bg:#0A0A0B; --card:#141416; --card2:#1D1D20; --border:rgba(255,255,255,.08);
-  --text:#F4F4F2; --muted:#8E8E94; --accent:#FF6B3D; --green:#C8F26B; --teal:#3FD6C6;
-  --purple:#C7B8FF; --orange:#FFD25E; --rail:#0A0A0B; --muted2:#5E5E64; --text2:#C9C9CE; --accentOn:#FF8A63;
-  background:#0A0A0B;
+   app follows by pointing those tokens at the --lk-* set, not by restyling
+   each page. Which theme is on only changes what --lk-* holds. */
+html[data-flow-theme][data-flow-look="new"]{
+  --bg:var(--lk-bg); --card:var(--lk-s1); --card2:var(--lk-s2); --border:var(--lk-line);
+  --text:var(--lk-ink); --muted:var(--lk-mute); --accent:var(--lk-coral); --green:var(--lk-good); --teal:var(--lk-aqua);
+  --purple:var(--lk-lilac); --orange:var(--lk-warn); --rail:var(--lk-bg); --muted2:var(--lk-dim); --text2:var(--lk-row); --accentOn:var(--lk-coral-hi);
+  background:var(--lk-bg);
 }
-html[data-flow-theme="signature"][data-flow-look="new"] body{background-color:#0A0A0B;background-image:none}
-html[data-flow-theme="signature"][data-flow-look="new"] .flow-x{
-  --f-surface:#141416; --f-surface-2:#1D1D20; --f-plane:#0A0A0B; --f-ink:#F4F4F2; --f-muted:#8E8E94;
-  --f-line:rgba(255,255,255,.07); --f-accent:#FF6B3D; --f-accent-soft:rgba(255,107,61,.16); --f-accent-2:#C8F26B; --f-radius:22px;
+html[data-flow-theme][data-flow-look="new"] body{background-color:var(--lk-bg);background-image:none}
+html[data-flow-theme][data-flow-look="new"] .flow-x{
+  --f-surface:var(--lk-s1); --f-surface-2:var(--lk-s2); --f-plane:var(--lk-bg); --f-ink:var(--lk-ink); --f-muted:var(--lk-mute);
+  --f-line:var(--lk-line); --f-accent:var(--lk-coral); --f-accent-soft:rgba(var(--lk-coral-a),.16); --f-accent-2:var(--lk-good); --f-radius:22px;
 }
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.stat){border-color:transparent;border-radius:22px}
+html[data-flow-theme][data-flow-look="new"] :is(.panel,.stat){border-color:transparent;border-radius:22px}
 
-/* ---- Simple on a desktop, Signature theme: the Mac design ---- */
+/* ---- Simple on a desktop: the Mac design ---- */
 @media (min-width:761px){
-  html[data-flow-theme="signature"][data-flow-look="new"] body{background:var(--lk-bg)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side{background:var(--lk-bg);border-right-color:var(--lk-line);gap:3px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-k{border-radius:999px;background:var(--lk-s1);border-color:var(--lk-line)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-sideadd{background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(255,107,61,.28)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-sideadd:hover{background:#ff7d55}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link{font-size:14px;font-weight:650;color:var(--lk-ink);border-radius:12px;padding:6px 12px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link:hover{background:var(--lk-s1)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-link.on{background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-grouplbl{color:var(--lk-dim)}
-  html[data-flow-theme="signature"][data-flow-look="new"] .fn-ui{background:var(--lk-s1);border-color:var(--lk-line)}
-  html[data-flow-theme="signature"][data-flow-look="new"] .fn-ui button.on{background:var(--lk-ink);color:var(--lk-bg)}
+  html[data-flow-theme][data-flow-look="new"] body{background:var(--lk-bg)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side{background:var(--lk-bg);border-right-color:var(--lk-line);gap:3px}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-k{border-radius:999px;background:var(--lk-s1);border-color:var(--lk-line)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-sideadd{background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(var(--lk-coral-a),.28)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-sideadd:hover{background:var(--lk-coral-hi)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-link{font-size:14px;font-weight:650;color:var(--lk-ink);border-radius:12px;padding:6px 12px}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-link:hover{background:var(--lk-s1)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-link.on{background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-grouplbl{color:var(--lk-dim)}
+  html[data-flow-theme][data-flow-look="new"] .fn-ui{background:var(--lk-s1);border-color:var(--lk-line)}
+  html[data-flow-theme][data-flow-look="new"] .fn-ui button.on{background:var(--lk-ink);color:var(--lk-bg)}
 }
 
 @media (min-width:1181px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-side .fn-grouplbl{padding-top:10px}
+  html[data-flow-theme][data-flow-look="new"] #flow-side .fn-grouplbl{padding-top:10px}
 }
 
 /* Today as a bento: greeting and actions on one line, the week strip, then
    the summary beside the tiles and Big Rocks beside the calendar. */
 @media (min-width:1100px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:16px;align-items:stretch}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > *{grid-column:1 / -1;order:6;min-width:0}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #td-weekplan{order:2}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #flow-markets{order:3;margin-top:12px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-head{grid-column:span 7;order:0}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions{grid-column:span 5;order:0;align-self:end;justify-content:flex-end;margin:0 0 14px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > button{min-height:44px;flex:0 0 auto}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-today-actions > .flow-today-primary{min-height:46px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-strip{order:1}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-dayview{order:1;margin-bottom:16px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:3;margin:0;padding:24px 26px 22px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:16px;align-items:stretch}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > *{grid-column:1 / -1;order:6;min-width:0}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > #td-weekplan{order:2}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > #flow-markets{order:3;margin-top:12px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .td-head{grid-column:span 7;order:0}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .flow-today-actions{grid-column:span 5;order:0;align-self:end;justify-content:flex-end;margin:0 0 14px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .flow-today-actions > button{min-height:44px;flex:0 0 auto}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .flow-today-actions > .flow-today-primary{min-height:46px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .lk-strip{order:1}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .lk-dayview{order:1;margin-bottom:16px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .lk-hero{grid-column:span 7;order:3;margin:0;padding:24px 26px 22px}
   /* The sentence fills the card and sits in its middle; the actions keep
      to the foot, whatever height the tiles beside give the card. */
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero > .lk-hero-main{flex:1;display:flex;flex-direction:column;justify-content:center}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .lk-hero > .lk-acts{margin-top:18px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:3;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> .flow-td-pulse)) > .lk-hero{grid-column:1 / -1}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > .td-rocks:not(#td-cal){grid-column:span 7;order:4;margin-top:16px;align-self:start}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #td-cal{grid-column:span 5;order:5;margin-top:16px;align-self:start}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed:not(:has(> #td-cal)) > .td-rocks{grid-column:1 / -1}
-  html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .lk-line{font-size:36px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .lk-hero > .lk-hero-main{flex:1;display:flex;flex-direction:column;justify-content:center}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .lk-hero > .lk-acts{margin-top:18px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .flow-td-pulse{grid-column:span 5;order:3;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;gap:12px}
+  html[data-flow-theme][data-flow-look="new"] #today-feed:not(:has(> .flow-td-pulse)) > .lk-hero{grid-column:1 / -1}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > .td-rocks:not(#td-cal){grid-column:span 7;order:4;margin-top:16px;align-self:start}
+  html[data-flow-theme][data-flow-look="new"] #today-feed > #td-cal{grid-column:span 5;order:5;margin-top:16px;align-self:start}
+  html[data-flow-theme][data-flow-look="new"] #today-feed:not(:has(> #td-cal)) > .td-rocks{grid-column:1 / -1}
+  html[data-flow-theme][data-flow-look="new"] #today-feed .lk-line{font-size:36px}
 }
 
 /* The greeting is the title in Simple; the host sets the old one inline. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-head .td-title{display:none !important}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-head .td-title{display:none !important}
 @media (min-width:761px){
-  html[data-flow-theme="signature"][data-flow-look="new"] .header :is(h1,.sub){display:none !important}
+  html[data-flow-theme][data-flow-look="new"] .header :is(h1,.sub){display:none !important}
   /* The greeting already says the day; the badge said it again, in capitals,
      on the other side of the screen. With it gone the old header holds
      nothing in Simple, so it takes no room either. */
-  html[data-flow-theme="signature"][data-flow-look="new"] .header .datebadge{display:none !important}
-  html[data-flow-theme="signature"][data-flow-look="new"] .header{padding:0 !important;margin:0 !important;min-height:0 !important;border:0 !important}
+  html[data-flow-theme][data-flow-look="new"] .header .datebadge{display:none !important}
+  html[data-flow-theme][data-flow-look="new"] .header{padding:0 !important;margin:0 !important;min-height:0 !important;border:0 !important}
 }
 
 /* Prices as tiles like the others. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-mkt-tile{background:var(--lk-s1);border:0;border-radius:20px}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-mkt-row{gap:8px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-mkt-tile{background:var(--lk-s1);border:0;border-radius:20px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-mkt-row{gap:8px}
 
 /* The calendar is its own card, not a second lime one. Events have no
    tick box; your own planned items keep theirs. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rock:not(.td-plan) > .dot{display:none}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal{background:var(--lk-s1);color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rocks-head .lbl{color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rocks-head .cnt{color:var(--lk-mute);background:var(--lk-s2)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rock{border-top-color:var(--lk-line)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rock .rk-title{color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rock :is(.rk-meta,.td-rk-note){color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .td-rock .dot{border-color:var(--lk-dim)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal :is(a,.flow-link){color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .flow-chip{background:var(--lk-s2);color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rock:not(.td-plan) > .dot{display:none}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal{background:var(--lk-s1);color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rocks-head .lbl{color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rocks-head .cnt{color:var(--lk-mute);background:var(--lk-s2)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rock{border-top-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rock .rk-title{color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rock :is(.rk-meta,.td-rk-note){color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .td-rock .dot{border-color:var(--lk-dim)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal :is(a,.flow-link){color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-cal .flow-chip{background:var(--lk-s2);color:var(--lk-ink)}
 
 /* ── Event brief (Today · Calendar) ────────────────────────────────────── */
 .eb{margin-top:8px}
@@ -2857,16 +2928,16 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-cal .flo
 }
 
 /* The brief in the Simple interface: same parts, the new colours. */
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-tg{background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-dot{background:var(--lk-lime);box-shadow:0 0 0 3px rgba(200,242,107,.18)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-body{border-left-color:var(--lk-line)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-meta button{color:var(--lk-coral)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-tabs button{background:var(--lk-s2);border-color:transparent;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-tabs button.on{background:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-me{background:var(--lk-lime);color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-pane li.eb-you{background:rgba(200,242,107,.08)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-open li.done .eb-bx{background:var(--lk-lime);border-color:var(--lk-lime)}
-html[data-flow-theme="signature"][data-flow-look="new"] .eb-pane :is(.eb-tbc,li.eb-warn){color:var(--lk-sun)}
+html[data-flow-theme][data-flow-look="new"] .eb-tg{background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .eb-dot{background:var(--lk-lime);box-shadow:0 0 0 3px rgba(var(--lk-lime-a),.18)}
+html[data-flow-theme][data-flow-look="new"] .eb-body{border-left-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] .eb-meta button{color:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] .eb-tabs button{background:var(--lk-s2);border-color:transparent;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] .eb-tabs button.on{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] .eb-me{background:var(--lk-lime);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] .eb-pane li.eb-you{background:rgba(var(--lk-lime-a),.08)}
+html[data-flow-theme][data-flow-look="new"] .eb-open li.done .eb-bx{background:var(--lk-lime);border-color:var(--lk-lime)}
+html[data-flow-theme][data-flow-look="new"] .eb-pane :is(.eb-tbc,li.eb-warn){color:var(--lk-warn)}
 /* A brief that is open keeps the event's dot at the top of the row. */
 #td-cal .td-rock:has(.eb-body){align-items:flex-start}
 #td-cal .td-rock:has(.eb-body) > .dot{margin-top:7px}
@@ -2883,62 +2954,64 @@ html[data-flow-theme="signature"][data-flow-look="new"] .eb-pane :is(.eb-tbc,li.
 html[data-flow-look="new"] .lk-emo{display:none}
 
 /* type: page title, intro that folds, section headings */
-html[data-flow-theme="signature"][data-flow-look="new"] .section-header{font-size:30px;font-weight:800;letter-spacing:-.035em;line-height:1.1;margin-bottom:6px}
-html[data-flow-theme="signature"][data-flow-look="new"] .lk-intro{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;max-width:72ch}
-html[data-flow-theme="signature"][data-flow-look="new"] .lk-intro.lk-open{display:block;-webkit-line-clamp:unset}
-html[data-flow-theme="signature"][data-flow-look="new"] .section-sub{font-size:14px;color:var(--lk-mute);line-height:1.5}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.panel,.flow-card) > h3:first-child{font-size:17px;font-weight:800;letter-spacing:-.02em}
+html[data-flow-theme][data-flow-look="new"] .section-header{font-size:30px;font-weight:800;letter-spacing:-.035em;line-height:1.1;margin-bottom:6px}
+html[data-flow-theme][data-flow-look="new"] .lk-intro{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;max-width:72ch}
+html[data-flow-theme][data-flow-look="new"] .lk-intro.lk-open{display:block;-webkit-line-clamp:unset}
+html[data-flow-theme][data-flow-look="new"] .section-sub{font-size:14px;color:var(--lk-mute);line-height:1.5}
+html[data-flow-theme][data-flow-look="new"] :is(.panel,.flow-card) > h3:first-child{font-size:17px;font-weight:800;letter-spacing:-.02em}
 
 /* surfaces: flat cards, one radius, no edges or gradients */
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) :is(.panel,.stat,.flow-card){background-color:var(--lk-s1);background-image:none;border-color:transparent;border-radius:22px;box-shadow:none}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) .panel .panel{background-color:var(--lk-s2);border-radius:16px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) :is(.mission,.ws-north,.ws-problem,.whoop-panel){background:var(--lk-s1);border-color:transparent;border-radius:22px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.ws-north,.ws-problem) h4{color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) :is(.panel,.stat,.flow-card){background-color:var(--lk-s1);background-image:none;border-color:transparent;border-radius:22px;box-shadow:none}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) .panel .panel{background-color:var(--lk-s2);border-radius:16px}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) :is(.mission,.ws-north,.ws-problem,.whoop-panel){background:var(--lk-s1);border-color:transparent;border-radius:22px}
+html[data-flow-theme][data-flow-look="new"] :is(.ws-north,.ws-problem) h4{color:var(--lk-mute)}
 /* progress fills: one solid colour, lime for on track, sun and coral for warnings */
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.bar .fill,.habit-progress .hp-fill,.fin-fill.ok,.nbar .nfill){background:var(--lk-lime)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fin-fill.warn{background:var(--lk-sun)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fin-fill.over{background:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] :is(.bar .fill,.habit-progress .hp-fill,.fin-fill.ok,.nbar .nfill){background:var(--lk-lime)}
+html[data-flow-theme][data-flow-look="new"] .fin-fill.warn{background:var(--lk-sun)}
+html[data-flow-theme][data-flow-look="new"] .fin-fill.over{background:var(--lk-coral)}
 
 /* fields: the app's font, a calm box, coral when you are in it */
 html[data-flow-look="new"] :is(input,select,textarea,button){font-family:inherit}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section,.fn-sheetwrap,#flow-pal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea){background:var(--lk-bg);border:1px solid var(--lk-line);border-radius:12px;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section,.fn-sheetwrap,#flow-pal) :is(input,select,textarea):focus{outline:none;border-color:var(--lk-coral);box-shadow:0 0 0 3px rgba(255,107,61,.18)}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(input[type=checkbox],input[type=radio],input[type=range],progress){accent-color:var(--lk-lime)}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section,.fn-sheetwrap,#flow-pal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea){background:var(--lk-bg);border:1px solid var(--lk-line);border-radius:12px;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section,.fn-sheetwrap,#flow-pal) :is(input,select,textarea):focus{outline:none;border-color:var(--lk-coral);box-shadow:0 0 0 3px rgba(var(--lk-coral-a),.18)}
+html[data-flow-theme][data-flow-look="new"] :is(input[type=checkbox],input[type=radio],input[type=range],progress){accent-color:var(--lk-good)}
 
 /* buttons: coral with dark ink (white on coral is 2.8:1), quiet ones as pills */
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.btn-primary,.r-btn,.wform button,#flow-capture .fn-acts button.pri,.pl-acts .flow-btn.primary,#flow-focus .fc-acts button[data-fc="start"],#flow-ra .flow-btn.primary){background:var(--lk-coral);border-color:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.btn-primary,.r-btn,.wform button,#flow-capture .fn-acts button.pri):hover{background:#ff7d55}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-pal .fn-row.on{background:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fl-mask-btn[aria-pressed="true"]{background:var(--lk-ink);border-color:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) :is(.btn,.flow-btn){border-radius:999px;min-height:36px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) .btn-ghost{background:var(--lk-s2);border-color:transparent}
+html[data-flow-theme][data-flow-look="new"] :is(.btn-primary,.r-btn,.wform button,#flow-capture .fn-acts button.pri,.pl-acts .flow-btn.primary,#flow-focus .fc-acts button[data-fc="start"],#flow-ra .flow-btn.primary){background:var(--lk-coral);border-color:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800}
+html[data-flow-theme][data-flow-look="new"] :is(.btn-primary,.r-btn,.wform button,#flow-capture .fn-acts button.pri):hover{background:var(--lk-coral-hi)}
+/* the host's green add buttons: the theme's block colour, with its own ink, so it reads on light themes too */
+html[data-flow-theme][data-flow-look="new"] .btn-green{background:var(--lk-lime);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #flow-pal .fn-row.on{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] .fl-mask-btn[aria-pressed="true"]{background:var(--lk-ink);border-color:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) :is(.btn,.flow-btn){border-radius:999px;min-height:36px}
+html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) .btn-ghost{background:var(--lk-s2);border-color:transparent}
 @media (max-width:760px){
-  html[data-flow-theme="signature"][data-flow-look="new"] :is(.section,.flow-section) :is(.btn,.flow-btn){min-height:40px}
+  html[data-flow-theme][data-flow-look="new"] :is(.section,.flow-section) :is(.btn,.flow-btn){min-height:40px}
 }
 
 /* ---- Today ---- */
 /* Done Big Rocks move under the open ones. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal){display:flex;flex-direction:column}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > *{order:3}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rocks-head{order:0}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock{order:1}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock.done{order:2}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock:not(.done) + .td-rock.done,
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock.done:first-of-type{border-top:1px solid rgba(21,25,10,.12)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal){display:flex;flex-direction:column}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > *{order:3}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rocks-head{order:0}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock{order:1}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock.done{order:2}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock:not(.done) + .td-rock.done,
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) > .td-rock.done:first-of-type{border-top:1px solid rgba(21,25,10,.12)}
 /* a note under a rock is two lines at most */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) .td-rk-note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;margin-top:3px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks:not(#td-cal) .td-rk-note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;margin-top:3px}
 /* the summary carries the week as a bar */
 .lk-prog{height:6px;border-radius:99px;background:var(--lk-s2);margin-top:16px;overflow:hidden}
 .lk-prog i{display:block;height:100%;border-radius:inherit;background:var(--lk-lime);transition:width .3s ease}
 /* tiles with nothing in them */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-tile.lk-empty .v{color:var(--lk-dim);font-size:22px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-tile.lk-empty .v{color:var(--lk-dim);font-size:22px}
 /* the line beside the date: quiet, in the app's type */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-quote{font-family:inherit;font-style:normal;font-size:13px;color:var(--lk-mute);opacity:1}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .flow-td-quote *{font-family:inherit;font-style:normal}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-quote{font-family:inherit;font-style:normal;font-size:13px;color:var(--lk-mute);opacity:1}
+html[data-flow-theme][data-flow-look="new"] #today-feed .flow-td-quote *{font-family:inherit;font-style:normal}
 /* folded sections open from a full-height row */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed :is(.td-group-head,.flow-fold > .flow-td-head){min-height:44px;align-items:center}
+html[data-flow-theme][data-flow-look="new"] #today-feed :is(.td-group-head,.flow-fold > .flow-td-head){min-height:44px;align-items:center}
 /* widget chips as pills */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-widgets button{border-radius:99px;min-height:32px;padding:0 12px;background:var(--lk-s1);border-color:transparent}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-widgets button{border-radius:99px;min-height:32px;padding:0 12px;background:var(--lk-s1);border-color:transparent}
 
 /* ---- the sidebar's Add ---- */
 html[data-flow-look="new"] #flow-side .fn-sideadd kbd{font:inherit;font-size:11px;font-weight:800;opacity:.55;border:1.5px solid currentColor;border-radius:6px;padding:0 5px;line-height:16px;margin-left:2px}
@@ -2946,37 +3019,37 @@ html[data-flow-look="new"] #flow-side .fn-sideadd kbd{font:inherit;font-size:11p
 
 /* ---- the + menu on a desktop: a list under Add, not a dialog ---- */
 @media (min-width:761px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-scrim{background:rgba(10,10,11,.4)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{position:fixed;left:12px;top:150px;bottom:auto;right:auto;transform:none;width:212px;max-width:none;padding:6px;border-radius:18px;background:var(--lk-s2);border:1px solid var(--lk-line);box-shadow:0 24px 60px rgba(0,0,0,.55);animation:lkMenu .14s ease;transform-origin:top left}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet > :is(.fn-grab,h4,.fn-sub,.fn-capture-close){display:none}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid{display:flex;flex-direction:column;gap:2px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button{flex-direction:row;justify-content:flex-start;gap:10px;min-height:38px;padding:0 10px;border:0;border-radius:12px;background:none;color:var(--lk-ink);font-size:14px;font-weight:650}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button:is(:hover,:focus-visible){background:var(--lk-s1);outline:none}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button .fn-i{width:16px;height:16px;color:var(--lk-mute)}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button::after{margin-left:auto;font-size:11px;font-weight:800;color:var(--lk-dim);border:1px solid var(--lk-line);border-radius:6px;padding:0 5px;line-height:18px}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="note"]::after{content:"N"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="quad"]::after{content:"T"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="finance"]::after{content:"E"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="training"]::after{content:"S"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="habits"]::after{content:"H"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="diet"]::after{content:"M"}
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture [data-fn-cap="sleep"]::after{content:"L"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-scrim{background:rgba(var(--lk-scrim),.4)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{position:fixed;left:12px;top:150px;bottom:auto;right:auto;transform:none;width:212px;max-width:none;padding:6px;border-radius:18px;background:var(--lk-s2);border:1px solid var(--lk-line);box-shadow:0 24px 60px rgba(0,0,0,.55);animation:lkMenu .14s ease;transform-origin:top left}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet > :is(.fn-grab,h4,.fn-sub,.fn-capture-close){display:none}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid{display:flex;flex-direction:column;gap:2px}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button{flex-direction:row;justify-content:flex-start;gap:10px;min-height:38px;padding:0 10px;border:0;border-radius:12px;background:none;color:var(--lk-ink);font-size:14px;font-weight:650}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button:is(:hover,:focus-visible){background:var(--lk-s1);outline:none}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button .fn-i{width:16px;height:16px;color:var(--lk-mute)}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button::after{margin-left:auto;font-size:11px;font-weight:800;color:var(--lk-dim);border:1px solid var(--lk-line);border-radius:6px;padding:0 5px;line-height:18px}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="note"]::after{content:"N"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="quad"]::after{content:"T"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="finance"]::after{content:"E"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="training"]::after{content:"S"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="habits"]::after{content:"H"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="diet"]::after{content:"M"}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture [data-fn-cap="sleep"]::after{content:"L"}
 }
 @media (min-width:761px) and (max-width:1180px){
-  html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{left:72px;top:96px}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-sheet{left:72px;top:96px}
 }
 
 /* ---- sheets: the quick note, Plan today, Focus, search ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap .fn-scrim{background:rgba(10,10,11,.66);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap .fn-sheet{background:var(--lk-s1);border-color:var(--lk-line);border-radius:26px 26px 0 0}
-@media (min-width:761px){ html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap .fn-sheet{border-radius:24px} }
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap h4{font-size:20px;font-weight:800;letter-spacing:-.025em;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap .fn-sub{color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] .fn-sheetwrap .fn-capture-close{background:var(--lk-s2);border-color:transparent;border-radius:50%}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-capture .fn-acts button:not(.pri){background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-pal .fn-scrim{background:rgba(10,10,11,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-pal .fn-box{background:rgba(20,20,22,.98);border-color:var(--lk-line);border-radius:22px}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-pal .fn-row{border-radius:12px;color:#c9c9ce}
+html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap .fn-scrim{background:rgba(var(--lk-scrim),.66);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap .fn-sheet{background:var(--lk-s1);border-color:var(--lk-line);border-radius:26px 26px 0 0}
+@media (min-width:761px){ html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap .fn-sheet{border-radius:24px} }
+html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap h4{font-size:20px;font-weight:800;letter-spacing:-.025em;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap .fn-sub{color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] .fn-sheetwrap .fn-capture-close{background:var(--lk-s2);border-color:transparent;border-radius:50%}
+html[data-flow-theme][data-flow-look="new"] #flow-capture .fn-acts button:not(.pri){background:var(--lk-s2);border-color:transparent;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] #flow-pal .fn-scrim{background:rgba(var(--lk-scrim),.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+html[data-flow-theme][data-flow-look="new"] #flow-pal .fn-box{background:var(--lk-pal);border-color:var(--lk-line);border-radius:22px}
+html[data-flow-theme][data-flow-look="new"] #flow-pal .fn-row{border-radius:12px;color:var(--lk-row)}
 @keyframes lkMenu{from{opacity:0;transform:scale(.97) translateY(-4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){ html[data-flow-look="new"] #flow-capture .fn-sheet{animation:none} }
 
@@ -3009,15 +3082,15 @@ html[data-flow-theme="signature"][data-flow-look="new"] #flow-pal .fn-row{border
 .pt-hb.open .pt-hb-b{display:block}
 
 /* Simple: the read in the new colours */
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-head{font-size:19px;font-weight:800;letter-spacing:-.025em;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-list li{border-top-color:var(--lk-line)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-area{background:var(--lk-s2);color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-good .pt-area{background:var(--lk-lime);color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-watch .pt-area{background:var(--lk-sun);color:#2A1F00}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-next{background:var(--lk-s2);border-radius:18px}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-next li::before{background:var(--lk-coral)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-link{color:var(--lk-coral)}
-html[data-flow-theme="signature"][data-flow-look="new"] .pt-hb{border-top-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] .pt-head{font-size:19px;font-weight:800;letter-spacing:-.025em;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .pt-list li{border-top-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] .pt-area{background:var(--lk-s2);color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] .pt-good .pt-area{background:var(--lk-lime);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] .pt-watch .pt-area{background:var(--lk-sun);color:#2A1F00}
+html[data-flow-theme][data-flow-look="new"] .pt-next{background:var(--lk-s2);border-radius:18px}
+html[data-flow-theme][data-flow-look="new"] .pt-next li::before{background:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] .pt-link{color:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] .pt-hb{border-top-color:var(--lk-line)}
 
 /* ── Coming up (Today) ─────────────────────────────────────────────────── */
 .ah-tabs{display:inline-flex;gap:3px;padding:3px;border-radius:99px;background:var(--card2);margin:4px 0 10px}
@@ -3059,22 +3132,22 @@ html[data-flow-theme="signature"][data-flow-look="new"] .pt-hb{border-top-color:
 @media (max-width:620px){ .ah-tm{width:48px} .ah-by{width:74px} }
 
 /* Simple */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #flow-td-ahead{order:5}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-tabs{background:var(--lk-s2)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-tabs button.on{background:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-read{background:var(--lk-s2);border-radius:18px}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-head{font-size:17px;font-weight:800;letter-spacing:-.02em}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(.ah-prep li,.ah-row){border-top-color:var(--lk-line)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-by,html[data-flow-theme="signature"][data-flow-look="new"] .ah-row.big .ah-tm{color:var(--lk-coral)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-watch li{color:var(--lk-sun)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-chip{background:var(--lk-s1);border-color:transparent;color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-chip.on{background:var(--lk-lime);color:var(--lk-lime-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-bell{background:var(--lk-s2);border-color:transparent}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-bell.on{background:var(--lk-coral);color:var(--lk-coral-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-bell b{background:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu{background:var(--lk-s2);border-color:var(--lk-line);border-radius:16px}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button:hover{background:var(--lk-s1)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button.on{color:var(--lk-lime)}
+html[data-flow-theme][data-flow-look="new"] #today-feed > #flow-td-ahead{order:5}
+html[data-flow-theme][data-flow-look="new"] .ah-tabs{background:var(--lk-s2)}
+html[data-flow-theme][data-flow-look="new"] .ah-tabs button.on{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] .ah-read{background:var(--lk-s2);border-radius:18px}
+html[data-flow-theme][data-flow-look="new"] .ah-head{font-size:17px;font-weight:800;letter-spacing:-.02em}
+html[data-flow-theme][data-flow-look="new"] :is(.ah-prep li,.ah-row){border-top-color:var(--lk-line)}
+html[data-flow-theme][data-flow-look="new"] .ah-by,html[data-flow-theme][data-flow-look="new"] .ah-row.big .ah-tm{color:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] .ah-watch li{color:var(--lk-warn)}
+html[data-flow-theme][data-flow-look="new"] .ah-chip{background:var(--lk-s1);border-color:transparent;color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .ah-chip.on{background:var(--lk-lime);color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] .ah-bell{background:var(--lk-s2);border-color:transparent}
+html[data-flow-theme][data-flow-look="new"] .ah-bell.on{background:var(--lk-coral);color:var(--lk-coral-ink)}
+html[data-flow-theme][data-flow-look="new"] .ah-bell b{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] .ah-menu{background:var(--lk-s2);border-color:var(--lk-line);border-radius:16px}
+html[data-flow-theme][data-flow-look="new"] .ah-menu button:hover{background:var(--lk-s1)}
+html[data-flow-theme][data-flow-look="new"] .ah-menu button.on{color:var(--lk-good)}
 .ah-more{padding:6px 0 8px 68px;font-size:13px}
 @media (max-width:620px){ .ah-more{padding-left:60px} }
 
@@ -3115,7 +3188,7 @@ html[data-flow-theme="signature"][data-flow-look="new"] .ah-menu button.on{color
 .ra-week .ra-wt{flex:1;min-width:0;overflow-wrap:anywhere}
 .ra-week li.dropped .ra-wt{color:var(--muted,#8a8f98);text-decoration:line-through;text-decoration-color:rgba(127,127,127,.5)}
 .ra-week .ra-wm{font-size:12px;color:var(--muted,#8a8f98)}
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed > #flow-td-waiting{order:5}
+html[data-flow-theme][data-flow-look="new"] #today-feed > #flow-td-waiting{order:5}
 
 /* ── Coming up: counts on the tabs, clearer reminder chips, row actions ── */
 .ah-tabs button i{font-style:normal;font-weight:600;opacity:.6;margin-left:3px}
@@ -3229,30 +3302,30 @@ html[data-flow-look="new"] .rp-keep.on{background:var(--lk-coral,#FF6B3D);border
 /* Simple: My day changed and Overdue are cards in a sheet, not a table —
    each rock its own soft row, the minutes a plain field, Keep a pill, and
    the one button that moves things in coral. */
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .fn-sub{font-size:14px;line-height:1.4;margin-bottom:14px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage,#rv-evidence) .ra-k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-mute);margin:14px 2px 6px}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-replan .ra-k small{margin-top:3px;color:var(--lk-coral);font-weight:600}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-row{border:0;background:var(--lk-s2);border-radius:18px;padding:12px 12px 12px 16px;gap:10px;margin-top:8px;grid-template-columns:minmax(0,1fr) auto auto}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-row.mv{opacity:1;box-shadow:inset 0 0 0 1.5px rgba(255,107,61,.42)}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-row .rp-t{font-size:15px;font-weight:700;line-height:1.3}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-row .rp-t small{color:var(--lk-mute);font-size:12.5px;margin-top:2px}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-row.mv .rp-t small{color:var(--lk-coral)}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-dur{gap:5px;color:var(--lk-mute);font-weight:600}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-dur input{width:58px;min-height:40px;padding:0 8px;border:0;border-radius:12px;background:var(--lk-bg);color:var(--lk-ink);font-weight:700;font-variant-numeric:tabular-nums}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-keep{border:0;background:rgba(255,255,255,.08);color:var(--lk-ink);min-height:40px;padding:0 14px;font-size:13px}
-html[data-flow-theme="signature"][data-flow-look="new"] .rp-ok{margin:14px 2px 4px;font-size:14px;color:var(--lk-mute)}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end{margin-top:18px;gap:10px}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn{border:0;border-radius:999px;min-height:48px;padding:0 20px;background:var(--lk-s2);color:var(--lk-ink);font-weight:700}
-html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn.primary{background:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800}
-html[data-flow-theme="signature"][data-flow-look="new"] .tg-row{border:0;background:var(--lk-s2);border-radius:18px;padding:12px 14px;margin-top:8px}
-html[data-flow-theme="signature"][data-flow-look="new"] .tg-row .tg-t{font-size:15px;font-weight:700;margin-bottom:8px}
-html[data-flow-theme="signature"][data-flow-look="new"] .tg-row .tg-t small{color:var(--lk-mute);font-weight:500}
-html[data-flow-theme="signature"][data-flow-look="new"] .tg-acts button{border:0;border-radius:999px;min-height:36px;padding:0 13px;background:rgba(255,255,255,.08);color:var(--lk-ink);font:inherit;font-size:13px;font-weight:700}
-html[data-flow-theme="signature"][data-flow-look="new"] .tg-acts button.ra-drop{color:var(--lk-coral);background:rgba(255,107,61,.12)}
+html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .fn-sub{font-size:14px;line-height:1.4;margin-bottom:14px}
+html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage,#rv-evidence) .ra-k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-mute);margin:14px 2px 6px}
+html[data-flow-theme][data-flow-look="new"] #flow-replan .ra-k small{margin-top:3px;color:var(--lk-coral);font-weight:600}
+html[data-flow-theme][data-flow-look="new"] .rp-row{border:0;background:var(--lk-s2);border-radius:18px;padding:12px 12px 12px 16px;gap:10px;margin-top:8px;grid-template-columns:minmax(0,1fr) auto auto}
+html[data-flow-theme][data-flow-look="new"] .rp-row.mv{opacity:1;box-shadow:inset 0 0 0 1.5px rgba(var(--lk-coral-a),.42)}
+html[data-flow-theme][data-flow-look="new"] .rp-row .rp-t{font-size:15px;font-weight:700;line-height:1.3}
+html[data-flow-theme][data-flow-look="new"] .rp-row .rp-t small{color:var(--lk-mute);font-size:12.5px;margin-top:2px}
+html[data-flow-theme][data-flow-look="new"] .rp-row.mv .rp-t small{color:var(--lk-coral)}
+html[data-flow-theme][data-flow-look="new"] .rp-dur{gap:5px;color:var(--lk-mute);font-weight:600}
+html[data-flow-theme][data-flow-look="new"] .rp-dur input{width:58px;min-height:40px;padding:0 8px;border:0;border-radius:12px;background:var(--lk-bg);color:var(--lk-ink);font-weight:700;font-variant-numeric:tabular-nums}
+html[data-flow-theme][data-flow-look="new"] .rp-keep{border:0;background:var(--lk-soft);color:var(--lk-ink);min-height:40px;padding:0 14px;font-size:13px}
+html[data-flow-theme][data-flow-look="new"] .rp-ok{margin:14px 2px 4px;font-size:14px;color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end{margin-top:18px;gap:10px}
+html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn{border:0;border-radius:999px;min-height:48px;padding:0 20px;background:var(--lk-s2);color:var(--lk-ink);font-weight:700}
+html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn.primary{background:var(--lk-coral);color:var(--lk-coral-ink);font-weight:800}
+html[data-flow-theme][data-flow-look="new"] .tg-row{border:0;background:var(--lk-s2);border-radius:18px;padding:12px 14px;margin-top:8px}
+html[data-flow-theme][data-flow-look="new"] .tg-row .tg-t{font-size:15px;font-weight:700;margin-bottom:8px}
+html[data-flow-theme][data-flow-look="new"] .tg-row .tg-t small{color:var(--lk-mute);font-weight:500}
+html[data-flow-theme][data-flow-look="new"] .tg-acts button{border:0;border-radius:999px;min-height:36px;padding:0 13px;background:var(--lk-soft);color:var(--lk-ink);font:inherit;font-size:13px;font-weight:700}
+html[data-flow-theme][data-flow-look="new"] .tg-acts button.ra-drop{color:var(--lk-coral);background:rgba(var(--lk-coral-a),.12)}
 @media (max-width:760px){
-  html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end{flex-wrap:nowrap}
-  html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn{flex:1;min-width:0}
-  html[data-flow-theme="signature"][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn.primary{flex:1.6}
+  html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end{flex-wrap:nowrap}
+  html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn{flex:1;min-width:0}
+  html[data-flow-theme][data-flow-look="new"] :is(#flow-replan,#flow-triage) .ra-row.ra-end .flow-btn.primary{flex:1.6}
 }
 html[data-flow-look="new"] #plusCard .plus-day{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 html[data-flow-look="new"] #plusCard .plus-day label{display:flex;align-items:center;gap:6px;font-size:13px}
@@ -3263,10 +3336,10 @@ html[data-flow-look="new"] #plusCard .plus-day .flow-in{max-width:110px}
 .ra-rep .flow-btn.on{background:var(--accent);border-color:var(--accent);color:#06131c}
 .ra-repnote{font-size:12.5px;color:var(--muted);margin:8px 0 2px;line-height:1.4}
 .ra-repnote b{display:block;font-weight:700;color:var(--text)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ra-repnote b{color:var(--lk-ink)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ra-rep .flow-btn{border:0;background:var(--lk-s2);color:var(--lk-ink);border-radius:999px;min-height:38px;padding:0 14px;font-weight:700}
-html[data-flow-theme="signature"][data-flow-look="new"] .ra-rep .flow-btn.on{background:var(--lk-ink);color:var(--lk-bg)}
-html[data-flow-theme="signature"][data-flow-look="new"] .ra-repnote{color:var(--lk-mute)}
+html[data-flow-theme][data-flow-look="new"] .ra-repnote b{color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .ra-rep .flow-btn{border:0;background:var(--lk-s2);color:var(--lk-ink);border-radius:999px;min-height:38px;padding:0 14px;font-weight:700}
+html[data-flow-theme][data-flow-look="new"] .ra-rep .flow-btn.on{background:var(--lk-ink);color:var(--lk-bg)}
+html[data-flow-theme][data-flow-look="new"] .ra-repnote{color:var(--lk-mute)}
 .rk-rep{display:inline-flex;align-items:center;margin-left:6px;vertical-align:-2px;color:var(--lk-mute,#8E8E94)}
 .rk-rep-i{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 html:not([data-flow-look="new"]) .rk-rep{display:none}
@@ -3274,8 +3347,8 @@ html:not([data-flow-look="new"]) .rk-rep{display:none}
 /* Simple: Today does not carry the Diet checklist or the Sharpen the Blade
    list. Ticking "Breakfast" tells nobody anything, and the Blade is a weekly
    commitment, so it lives in the week's review instead. Advanced keeps both. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:has([data-diet]),
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:has([data-saw]){display:none !important}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-group:has([data-diet]),
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-group:has([data-saw]){display:none !important}
 /* the Blade in the review sheet: eight ticks, this week's */
 .rv-saw{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
 .rv-saw button{appearance:none;display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;min-height:34px;padding:0 12px 0 9px;background:rgba(255,255,255,.07);color:var(--lk-ink,#F4F4F2);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
@@ -3285,14 +3358,14 @@ html[data-flow-theme="signature"][data-flow-look="new"] #today-feed .td-group:ha
 
 /* Simple: the Widgets row (which prices show) is a setting, not a part of
    the day — it stays in Settings → Today; the price strip's note links there. */
-html[data-flow-theme="signature"][data-flow-look="new"] #today-feed #td-widgets{display:none !important}
+html[data-flow-theme][data-flow-look="new"] #today-feed #td-widgets{display:none !important}
 .flow-mkt-editwrap{display:none}
-html[data-flow-theme="signature"][data-flow-look="new"] .flow-mkt-editwrap{display:inline}
+html[data-flow-theme][data-flow-look="new"] .flow-mkt-editwrap{display:inline}
 .flow-mkt-edit{appearance:none;border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
-html[data-flow-theme="signature"][data-flow-look="new"] .flow-mkt-edit:hover{color:var(--lk-ink)}
+html[data-flow-theme][data-flow-look="new"] .flow-mkt-edit:hover{color:var(--lk-ink)}
 
 /* ---- Meals: the card on Today and the sheet (Simple) ---- */
-html:not([data-flow-theme="signature"][data-flow-look="new"]) #flow-td-meals{display:none !important}
+html:not([data-flow-look="new"]) #flow-td-meals{display:none !important}
 #flow-td-meals .ml-row{position:relative;padding-right:34px}
 #flow-td-meals .ml-row .tx small{display:block;margin-top:2px;color:var(--lk-mute,#8E8E94);font-weight:500}
 #flow-td-meals .ml-x{position:absolute;right:0;top:50%;transform:translateY(-50%);appearance:none;border:0;background:var(--lk-s2,#1D1D20);color:var(--lk-mute,#8E8E94);width:26px;height:26px;border-radius:50%;font:inherit;font-size:16px;line-height:1;cursor:pointer}
@@ -3342,9 +3415,9 @@ html:not([data-flow-theme="signature"][data-flow-look="new"]) #flow-td-meals{dis
 @media (max-width:480px){ #flow-meal .ml-nums{grid-template-columns:repeat(2,minmax(0,1fr))} }
 
 /* ---- A habit, done from the habit (Simple) ---- */
-html[data-flow-theme="signature"][data-flow-look="new"] .hd-door{cursor:pointer}
-html[data-flow-theme="signature"][data-flow-look="new"] #flow-td-habits .hb .tx.hd-door::after,html[data-flow-theme="signature"][data-flow-look="new"] #habitsList .habit-name.hd-door::after{content:"›";margin-left:8px;color:var(--lk-mute);font-weight:800}
-html[data-flow-theme="signature"][data-flow-look="new"] .hd-door:focus-visible{outline:2px solid var(--lk-coral);outline-offset:3px;border-radius:8px}
+html[data-flow-theme][data-flow-look="new"] .hd-door{cursor:pointer}
+html[data-flow-theme][data-flow-look="new"] #flow-td-habits .hb .tx.hd-door::after,html[data-flow-theme][data-flow-look="new"] #habitsList .habit-name.hd-door::after{content:"›";margin-left:8px;color:var(--lk-mute);font-weight:800}
+html[data-flow-theme][data-flow-look="new"] .hd-door:focus-visible{outline:2px solid var(--lk-coral);outline-offset:3px;border-radius:8px}
 #flow-hdo .hd-k{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-mute,#8E8E94);margin-bottom:4px}
 #flow-hdo .hd-name{margin:0 0 4px;font-size:21px;line-height:1.2}
 #flow-hdo .hd-kinds{display:flex;gap:6px;margin:12px 0 14px}

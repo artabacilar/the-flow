@@ -709,9 +709,17 @@ canvas{width:100%;height:120px;}
   .wc-btn{ padding:7px 11px; }
   /* Cards a touch roomier */
   .day, .panel, .stat{ border-radius:16px; }
-  body{ overscroll-behavior-y:contain; }
+  /* The page scrolls as one thing — the viewport. overflow-x:hidden on both
+     html and body made body a scroll box of its own (one that never has
+     anything to scroll), and the overscroll rule on it then stopped the
+     finger's swipe from passing up to the page: on Android, Chrome would not
+     scroll at all, and a tap that moved a pixel was read as a failed scroll.
+     clip trims the sideways overflow without making a scroll box, and the
+     overscroll rule sits on the root, where it governs the page's own edge. */
+  html{ overscroll-behavior-y:contain; }
   /* ── Overflow safety: never let long URLs / words push the layout wide ── */
-  html, body{ max-width:100%; overflow-x:hidden; }
+  html, body{ max-width:100%; overflow-x:clip; }
+  @supports not (overflow-x:clip){ html{ overflow-x:visible; } body{ overflow-x:hidden; } }
   .chip{ overflow-wrap:anywhere; word-break:break-word; }
   a, code, .rk-t, .j-msg, .wc-link a, .ns-view{ overflow-wrap:anywhere; word-break:break-word; }
   /* Calendar/export links and .ics box shouldn't overflow */

@@ -501,10 +501,10 @@ const legalPage = (title, sub, body) => `<!doctype html>
   <h1>${title}</h1>
   <p class="sub">${sub}</p>
   ${body}
-  <div class="foot">The Flow · <a href="/">theflow.today</a> · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></div>
+  <div class="foot">The Flow · <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a> · <a href="/">Open the app</a></div>
 </div></body></html>`;
 
-const PRIVACY_UPDATED = '23 October 2026';
+const PRIVACY_UPDATED = '30 October 2026';
 
 const PRIVACY_HTML = legalPage('Privacy Policy',
   'Last updated ' + PRIVACY_UPDATED + '. This describes what the software does, not what we would like you to believe it does.',
@@ -561,12 +561,15 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
             chose, so the app can show it as yours. No Google token is kept.</li>
         <li><b>Google Calendar</b> keeps a read-only token so today's events can be shown on
             Today. Events are read when you open the app and are not stored.</li>
-        <li><b>Gmail</b> keeps a read-only token. The Flow reads only the sender, subject and date
-            of messages you have starred, and only when you press the button that turns them into
-            Big Rocks. It never reads message bodies, never sends mail and never changes anything.</li>
-        <li><b>Outlook</b> keeps a read-only Microsoft token, to show today's events on Today and,
-            when you press the button, turn the sender and subject of flagged emails into Big Rocks.
-            It never reads message bodies, never sends mail and never changes anything.</li>
+        <li><b>Gmail</b> keeps a read-only token, for two things only. When you press the button
+            that turns starred messages into Big Rocks, it reads the sender, subject and date of
+            your starred messages. And for an event brief (above), it searches for emails that
+            mention the event and reads their text to write the brief; the text is not kept. It
+            never sends mail, never deletes or changes anything, and reads nothing else.</li>
+        <li><b>Outlook</b> keeps a read-only Microsoft token, to show today's events on Today; when
+            you press the button, to turn the sender and subject of flagged emails into Big Rocks;
+            and, for an event brief, to read the emails that mention the event, as for Gmail. It
+            never sends mail, never deletes or changes anything, and reads nothing else.</li>
         <li><b>Fathom</b> keeps the API key you paste, to read your meetings' titles, summaries and
             action items when you press Import. What is imported becomes part of your Journal and
             Big Rocks.</li>
@@ -577,7 +580,10 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
       </ul>
       Keys and tokens are kept on the server, outside your data, and are never sent back to the
       app. Google data is used only to show it to you, under Google's Limited Use rules: it is
-      not used for advertising, not sold, and not read by people. Disconnecting in Settings, or
+      not used for advertising, not sold, not used to train any AI model, and not read by people.
+      The Flow's use and transfer to any other app of information received from Google APIs will
+      adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google
+      API Services User Data Policy</a>, including the Limited Use requirements. Disconnecting in Settings, or
       deleting your account, removes all of it, and disconnecting Google Calendar or Gmail also
       revokes The Flow's access at Google.</li>
   </ul>
@@ -649,6 +655,99 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
   <p>Questions, requests, or anything that reads wrong here:
      <a href="mailto:artur.abacilar@abko.com.tr">artur.abacilar@abko.com.tr</a>.</p>
   `);
+
+/* The public front door: what The Flow is, what it asks to read from Google
+   and Microsoft and why, and where the policies are. It has to exist without
+   signing in — Google and Microsoft both check, before they let a sign-in
+   screen show the app's name, that the app has a homepage saying what it does
+   and linking its privacy policy, on its own domain. */
+const ABOUT_HTML = legalPage('About The Flow',
+  'A planner for the week, built around the few things that matter. On the web, iPhone, iPad, Mac, Android and Apple Watch.',
+  `
+  <h2>What it is</h2>
+  <p>The Flow is one place for the week: a handful of <b>Priorities</b> on the days you will do them,
+     the <b>habits</b> you are building, your <b>training</b>, <b>meals</b>, <b>sleep</b> and mood, a
+     <b>journal</b>, and where the time and money went. Today shows what is left of the day and
+     what slipped; once a week you look back and plan the next one.</p>
+  <ul>
+    <li><b>Today</b> — today's Priorities, habits and calendar events on one screen.</li>
+    <li><b>Plan</b> — the week laid out by day; repeating Priorities; a weekly review.</li>
+    <li><b>Body</b> — training days, meals (by photo if you like), sleep and recovery.</li>
+    <li><b>Record</b> — journal, notes, where the hours and the money went.</li>
+    <li><b>Ask</b> — questions about your own record, answered from it. It reads; it never changes anything.</li>
+  </ul>
+
+  <h2>Connecting your calendar and email</h2>
+  <p>Connecting another service is optional, done by you in Settings → Connections, and can be
+     undone there at any time. Each connection is read-only.</p>
+  <ul>
+    <li><b>Google Calendar</b> (read-only) — your events appear on Today beside your Priorities,
+        so the day is in one place.</li>
+    <li><b>Gmail</b> (read-only) — on request, starred emails become Priorities (sender, subject
+        and date); and for a big event on your calendar, the emails about it are read to write a
+        short brief: the timetable, your part, who to call, what is still open.</li>
+    <li><b>Outlook and Microsoft 365</b> (read-only) — the same, for a Microsoft calendar and mailbox.</li>
+  </ul>
+  <p>The Flow never sends, deletes or changes anything in these accounts, does not use what it
+     reads for advertising or to train AI models, and does not sell it. What exactly is read and
+     kept is set out in the <a href="/privacy">privacy policy</a>.</p>
+
+  <h2>Who makes it</h2>
+  <p>The Flow is made by ABKO İç ve Dış Ticaret Limited Şirketi. Questions, problems and
+     requests to delete data: <a href="mailto:artur.abacilar@abko.com.tr">artur.abacilar@abko.com.tr</a>,
+     or see <a href="/support">Support</a>.</p>
+  <p><a href="/">Open The Flow →</a></p>
+`);
+
+const TERMS_UPDATED = '30 October 2026';
+const TERMS_HTML = legalPage('Terms of Service',
+  'Last updated ' + TERMS_UPDATED + '. Plain terms for a small product.',
+  `
+  <h2>Who these are between</h2>
+  <p>These terms are between you and ABKO İç ve Dış Ticaret Limited Şirketi ("we"), which makes
+     The Flow at theflow.today and in its apps. By making an account or using The Flow you agree to them.</p>
+
+  <h2>Your account and your data</h2>
+  <ul>
+    <li>Your entries are yours. We hold them to run the service for you, as described in the
+        <a href="/privacy">privacy policy</a>, and for no other purpose.</li>
+    <li>Keep your password and recovery codes safe. Anyone who has them can use your account.</li>
+    <li>You can export everything at any time (Settings → Export everything) and delete your
+        account at any time (<a href="/delete-account">how</a>); deleting it removes your data.</li>
+  </ul>
+
+  <h2>Connected services</h2>
+  <p>If you connect Google, Microsoft or another service, you authorise The Flow to read from it
+     what the privacy policy describes, read-only, on your behalf. You can disconnect at any time
+     in Settings, or from the other service's own account settings. Your use of those services
+     stays subject to their own terms.</p>
+
+  <h2>Acceptable use</h2>
+  <p>Do not use The Flow to break the law, to store content you have no right to, to attack or
+     overload the service, or to get at anyone else's account.</p>
+
+  <h2>Paid plans</h2>
+  <p>Some features are part of Flow Plus. Prices, the billing period and how to cancel are shown
+     before you buy. Purchases made through Apple or Google are handled under their terms,
+     including refunds.</p>
+
+  <h2>The assistant and suggestions</h2>
+  <p>Summaries, briefs, patterns and suggestions are written by an AI model from your own record.
+     They can be wrong. Treat them as suggestions, not advice, and check anything that matters.</p>
+
+  <h2>Availability and changes</h2>
+  <p>We work to keep The Flow running and your data safe, but provide it "as is", without a
+     guarantee that it will always be available or free of errors. We may change features. If we
+     change these terms in a way that matters, we will say so in the app before the change applies.</p>
+
+  <h2>Liability</h2>
+  <p>To the extent the law allows, we are not liable for indirect or consequential losses arising
+     from using The Flow. Nothing here limits rights you have that cannot be limited by law.</p>
+
+  <h2>Law</h2>
+  <p>These terms are governed by the laws of the Republic of Türkiye. Questions:
+     <a href="mailto:artur.abacilar@abko.com.tr">artur.abacilar@abko.com.tr</a>.</p>
+`);
 
 const SUPPORT_HTML = legalPage('Support',
   'A short page, because The Flow is a small piece of software with one person behind it.',
@@ -781,6 +880,14 @@ const server = http.createServer(async (req, res) => {
     }
     /* What a watch asks you to open: the app, at the box for its code. */
     if (p === '/watch' || p === '/watch/') { res.writeHead(302, { Location: '/?go=watch' }); return res.end(); }
+    if (p === '/about' || p === '/home') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(ABOUT_HTML);
+    }
+    if (p === '/terms' || p === '/tos') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(TERMS_HTML);
+    }
     if (p === '/support' || p === '/help') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
       return res.end(SUPPORT_HTML);
