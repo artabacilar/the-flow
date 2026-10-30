@@ -38,6 +38,17 @@ function wav() {
   const long = X.parseDo(JSON.stringify({ say: 'x'.repeat(2000), actions: [], end: true }), {});
   ok('an answer may run to a few sentences, and "end" closes the conversation', long.say.length === 900 && long.end === true);
 
+  console.log('\n— Sunday is Sunday —');
+  const cal = X.doCalendar('2026-10-30').split('\n');
+  ok('the model gets a calendar to copy dates from, each with its weekday and week', cal[0] === 'Friday 2026-10-30 (today) · this week' && cal[2] === 'Sunday 2026-11-01 · this week' && cal[3] === 'Monday 2026-11-02 · next week', cal.slice(0, 4));
+  ok('and is told never to work a date out, and that Sunday is never a Monday', /never work a date out yourself/.test(X.DO_SYSTEM) && /Sunday is never a Monday/.test(X.DO_SYSTEM));
+  const fx = (said, date) => X.fixWeekdays(said, [{ type: 'rock', title: 'x', date }], '2026-10-30')[0].date;
+  ok('"Sunday" put on Monday by the model is moved back to Sunday', fx('call mum on Sunday', '2026-11-02') === '2026-11-01');
+  ok('"Sunday next week" keeps the model\'s week, on the Sunday', fx('Sunday next week call mum', '2026-11-09') === '2026-11-08');
+  ok('a correct Sunday is left alone', fx('Sunday', '2026-11-01') === '2026-11-01');
+  ok('Turkish too: "pazar günü" lands on Sunday, "pazartesi" stays Monday', fx('pazar günü annemi ara', '2026-11-02') === '2026-11-01' && fx('pazartesi toplantı', '2026-11-02') === '2026-11-02');
+  ok('two weekdays in one sentence are not guessed at; "sat"/"sunny" are not days', fx('Saturday and Sunday', '2026-11-02') === '2026-11-02' && X.weekdaysSaid('I sat on the sunny side').length === 0 && X.weekdaysSaid('FRIDAY')[0] === 5);
+
   console.log('\n— questions, with their data and the conversation —');
   const calls = [];
   X.setPoster(async (url, h, payload) => { calls.push(payload); return { status: 200, body: { content: [{ type: 'text', text: '{"say":"Seven hours on average this week, sir.","actions":[]}' }] } }; });
