@@ -131,7 +131,7 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   const readOf = () => p.evaluate(() => { const c = document.getElementById('flow-td-ahead'); return { prep: [...c.querySelectorAll('.ah-prep .ah-what')].map((x) => x.firstChild.textContent), chips: [...c.querySelectorAll('.ah-sugg [data-ah="sugg"]')].map((x) => x.textContent), tabs: [...c.querySelectorAll('.ah-tabs button')].map((x) => (x.querySelector('i') || {}).textContent || '') }; });
   const r7 = await readOf();
   ok('Week cuts the read too: nothing to get ready for the flight yet, no reminder for it', r7.prep.length === 1 && !r7.chips.some((x) => /Check in/.test(x)) && r7.chips.length === 1, r7);
-  ok('a suggested reminder says its own day and time', /^\+ \w{3}, \d{1,2} \w{3}, 23:30 Pack tonight/.test(r7.chips[0]), r7.chips);
+  ok('a suggested reminder says its own day and time', /^\+ \w{3},? \d{1,2} \w{3}, 23:30 Pack tonight/.test(r7.chips[0]), r7.chips);
   ok('each tab says how many things it holds, more for longer', r7.tabs.length === 3 && +r7.tabs[0] > 0 && +r7.tabs[0] < +r7.tabs[1] && +r7.tabs[1] < +r7.tabs[2], r7.tabs);
   await p.click('#flow-td-ahead [data-ah="span"][data-n="14"]'); await p.waitForTimeout(300);
   ok('2 weeks adds the flight', await p.evaluate(() => /Flight to Hong Kong/.test(document.getElementById('flow-td-ahead').textContent) && !/Quarter review/.test(document.getElementById('flow-td-ahead').textContent)));

@@ -4,8 +4,8 @@
  * check they say the same thing it does: the greeting uses your name, the
  * strip is this week with today marked and a dot on days that still have a
  * Big Rock, the summary counts what is open and overdue, and it all follows
- * a change. Then the + menu opens and the same + closes it, and switching to
- * another theme takes every added piece away. */
+ * a change. Then the + menu opens and the same + closes it, every colour
+ * theme keeps Simple in its own palette, and Advanced takes the pieces away. */
 const submitAuth = require('./submit-auth.js');
 const { chromium } = require('playwright');
 const H = 'http://localhost:4222';
@@ -143,16 +143,38 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   }));
   await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 
-  console.log('\n— other themes keep their own Today —');
-  await p.evaluate(async () => { Flow.Theme.apply('paper', false); });
+  console.log('\n— every theme has a Simple version —');
+  const simpleIn = (th) => p.evaluate(async (th) => {
+    Flow.Theme.apply(th, false); await new Promise((r) => setTimeout(r, 350));
+    const cs = (sel) => { const e = document.querySelector(sel); return e ? getComputedStyle(e) : null; };
+    return {
+      shown: [...document.querySelectorAll('.lk-hello, .lk-strip, .lk-hero')].every((e) => getComputedStyle(e).display !== 'none'),
+      title: cs('#today-feed .td-title').display,
+      page: getComputedStyle(document.body).backgroundColor,
+      card: cs('#today-feed .td-rocks:not(#td-cal)').backgroundColor,
+      ink: cs('#today-feed .td-rocks:not(#td-cal) .rk-title').color,
+      plus: cs('#flow-tabbar .fn-cap .fn-knob').backgroundColor,
+      dot: (document.querySelector('.theme-swatch[data-theme="' + th + '"] .sw-dot') || { style: { getPropertyValue: () => '' } }).style.getPropertyValue('--d')
+    };
+  }, th);
+  const seen = {};
+  for (const th of ['signature', 'paper', 'bloom', 'aurora', 'calm', 'bold', 'operator']) seen[th] = await simpleIn(th);
+  ok('every theme keeps the greeting, the week strip and the summary', Object.values(seen).every((x) => x.shown && x.title === 'none'), seen);
+  ok('Signature is unchanged: near-black page, lime Priorities card, coral +', seen.signature.page === 'rgb(10, 10, 11)' && seen.signature.card === 'rgb(200, 242, 107)' && seen.signature.plus === 'rgb(255, 107, 61)', seen.signature);
+  ok('Paper is light, with its green accent and a pale green card', seen.paper.page === 'rgb(248, 245, 239)' && seen.paper.plus === 'rgb(47, 111, 94)' && seen.paper.card === 'rgb(211, 230, 200)', seen.paper);
+  ok('Bloom is light, with rose', seen.bloom.page === 'rgb(253, 248, 247)' && seen.bloom.plus === 'rgb(176, 100, 138)', seen.bloom);
+  ok('the dark ones keep dark pages in their own colour', seen.aurora.page === 'rgb(18, 16, 30)' && seen.calm.page === 'rgb(12, 14, 17)' && seen.bold.page === 'rgb(0, 0, 0)' && seen.operator.page === 'rgb(6, 9, 10)', [seen.aurora.page, seen.calm.page, seen.bold.page, seen.operator.page]);
+  ok('the seven look different from each other', new Set(Object.values(seen).map((x) => x.page + x.card + x.plus)).size === 7);
+  /* light text on a light page, or dark on dark, is the failure that matters */
+  const lum = (c) => { const m = (c.match(/\d+(\.\d+)?/g) || []).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const weak = Object.entries(seen).filter(([, x]) => ratio(x.ink, x.card) < 4.5).map(([k, x]) => [k, x.ink, x.card]);
+  ok('a Priority reads on its card in every theme', weak.length === 0, weak);
+  await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(900);
+  const dots = await p.evaluate(() => Object.fromEntries([...document.querySelectorAll('.theme-swatch[data-theme] .sw-dot')].map((d) => [d.parentNode.getAttribute('data-theme'), d.style.getPropertyValue('--d')])));
+  ok('in Simple the swatches show the Simple colours', /#FF6B3D 0 50%/.test(dots.signature || '') && /#2F6F5E 0 50%/.test(dots.paper || ''), dots);
+  await p.evaluate(async () => { Flow.Theme.apply('signature', false); Flow.Nav.go('today'); });
   await p.waitForTimeout(500);
-  const paper = await p.evaluate(() => ({
-    hidden: [...document.querySelectorAll('.lk-hello, .lk-strip, .lk-hero')].every((e) => getComputedStyle(e).display === 'none'),
-    title: getComputedStyle(document.querySelector('#today-feed .td-title')).display
-  }));
-  ok('the added pieces disappear', paper.hidden, paper);
-  ok('and the page title comes back', paper.title !== 'none', paper);
-  await p.evaluate(async () => { Flow.Theme.apply('signature', false); });
 
   console.log('\n— and back —');
   await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(900);
