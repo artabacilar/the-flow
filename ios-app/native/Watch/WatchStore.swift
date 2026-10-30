@@ -129,6 +129,8 @@ struct WatchDay: Codable, Equatable {
     let week: Week
     let updated: String
     let lang: String?
+    /// The name they gave their assistant in the app ("J.A.R.V.I.S."), if any.
+    var assistant: String? = nil
 
     var openToday: Int { counts.today }
     var progress: Double { week.total > 0 ? Double(week.done) / Double(week.total) : 0 }
@@ -190,6 +192,27 @@ enum WatchAPI {
         let d = try JSONDecoder().decode(WatchDay.self, from: try await call("api/watch", method: "POST", body: b))
         WatchStore.lastDay = d
         WatchStore.reloadComplications()
+        return d
+    }
+
+    /// A question for the assistant; the answer is text, read from their own
+    /// data on the server. Nothing on the board changes.
+    struct Answer: Decodable { let say: String? }
+    static func ask(_ text: String) async throws -> String {
+        let now = Date()
+        let day = DateFormatter(); day.locale = Locale(identifier: "en_US_POSIX"); day.dateFormat = "yyyy-MM-dd"
+        let clock = DateFormatter(); clock.locale = Locale(identifier: "en_US_POSIX"); clock.dateFormat = "HH:mm"
+        let name = DateFormatter(); name.locale = Locale(identifier: "en_US_POSIX"); name.dateFormat = "EEEE"
+        let data = try await call("api/watch/ask", method: "POST", body: [
+            "text": text, "lang": Words.lang, "today": day.string(from: now), "time": clock.string(from: now), "weekday": name.string(from: now)
+        ])
+        let a = try JSONDecoder().decode(Answer.self, from: data)
+        return (a.say ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    /// The premium voice for an answer, as audio — nil when the server has no
+    /// premium voice for this account, and the watch's own voice reads it.
+    static func voice(_ text: String) async -> Data? {
+        guard let d = try? await call("api/watch/speak", method: "POST", body: ["text": text]), d.count > 512 else { return nil }
         return d
     }
 

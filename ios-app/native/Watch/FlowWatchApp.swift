@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import AVFoundation
 
 /// The Flow on Apple Watch.
 ///
@@ -163,6 +164,9 @@ struct TodayView: View {
     /// Done or Note.
     @State private var heard: Heard?
     @State private var listenAgain = false
+    /// A question for the assistant, waiting for its answer.
+    @State private var question: Heard?
+    @State private var askAgain = false
     @State private var askUnlink = false
     /// An overdue Priority tapped: Done, Today or Tomorrow.
     @State private var late: WatchDay.Rock?
@@ -189,11 +193,15 @@ struct TodayView: View {
                             label(Words.t("Habits", "Alışkanlıklar")).id("habits")
                             ForEach(day.habits) { h in habitRow(h) }
                         }
+                        Button { askByVoice() } label: {
+                            Label(askLabel(day), systemImage: "waveform").frame(maxWidth: .infinity)
+                        }
+                        .tint(.orange)
+                        .padding(.top, 6)
                         Button { addByVoice() } label: {
                             Label(Words.t("Add by voice", "Sesle ekle"), systemImage: "mic.fill").frame(maxWidth: .infinity)
                         }
                         .tint(.green)
-                        .padding(.top, 6)
                         Button(role: .destructive) { askUnlink = true } label: {
                             Text(Words.t("Unlink this watch", "Bu saatin bağlantısını kaldır")).font(.footnote).frame(maxWidth: .infinity)
                         }
@@ -220,6 +228,7 @@ struct TodayView: View {
                     case "write": writing = d.habits.first { $0.door == "write" }
                     case "timer": timing = d.habits.first { $0.door == "timer" }
                     case "add": adding = true
+                    case "ask": question = Heard(text: Words.t("What is left today?", "Bugün ne kaldı?"))
                     case "heard": heard = Heard(text: Words.t("Call the dentist about Friday", "Cuma için dişçiyi ara"))
                     default: break
                     }
@@ -241,6 +250,13 @@ struct TodayView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { addByVoice() }
             }) { h in
                 HeardView(text: h.text, done: { d in day = d }, onUnlinked: { onUnlinked() }, again: { listenAgain = true })
+            }
+            .sheet(item: $question, onDismiss: {
+                guard askAgain else { return }
+                askAgain = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { askByVoice() }
+            }) { q in
+                AskView(question: q.text, name: day?.assistant, onUnlinked: { onUnlinked() }, again: { askAgain = true })
             }
             .sheet(item: $late) { r in LateView(rock: r) { d in day = d } onUnlinked: { onUnlinked() } }
             .sheet(item: $writing) { h in WriteView(habit: h) { d in day = d } onUnlinked: { onUnlinked() } }
@@ -284,6 +300,21 @@ struct TodayView: View {
 
     private func label(_ text: String) -> some View {
         Text(text.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 6)
+    }
+
+    /// "Ask J.A.R.V.I.S." — or "Ask" until they name their assistant in the app.
+    private func askLabel(_ d: WatchDay) -> String {
+        if let n = d.assistant, !n.isEmpty { return Words.t("Ask ", "Sor: ") + n }
+        return Words.t("Ask", "Sor")
+    }
+
+    /// Straight into dictation, then the answer.
+    private func askByVoice() {
+        if Shots.on { question = Heard(text: Words.t("What is left today?", "Bugün ne kaldı?")); return }
+        let opened = Dictate.ask { said in
+            if let said = said { question = Heard(text: said) }
+        }
+        if !opened { question = Heard(text: "") }
     }
 
     /// "Add by voice" goes straight to dictation — no field to tap, no mic
@@ -486,6 +517,137 @@ struct HeardView: View {
             WKInterfaceDevice.current().play(.failure)
         }
         busy = false
+    }
+}
+
+// MARK: - Ask the assistant
+
+/// The question, then the answer — read aloud in the premium voice when the
+/// account has one, in the watch's own British voice when not.
+struct AskView: View {
+    let question: String
+    let name: String?
+    let onUnlinked: () -> Void
+    let again: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var answer: String?
+    @State private var error: String?
+    @State private var busy = false
+    @StateObject private var voice = WatchVoice()
+
+    init(question: String, name: String?, onUnlinked: @escaping () -> Void, again: @escaping () -> Void) {
+        self.question = question; self.name = name; self.onUnlinked = onUnlinked; self.again = again
+        _text = State(initialValue: question)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text((name?.isEmpty == false ? name! : Words.t("Assistant", "Asistan")).uppercased())
+                    .font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                if question.isEmpty && answer == nil && !busy {
+                    TextField(Words.t("Ask anything", "Bir şey sor"), text: $text)
+                    Button { Task { await go() } } label: { Text(Words.t("Ask", "Sor")).frame(maxWidth: .infinity) }
+                        .tint(.orange)
+                        .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+                } else {
+                    Text("“" + text + "”").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if busy { HStack { Spacer(); ProgressView(); Spacer() }.padding(.vertical, 6) }
+                if let a = answer {
+                    Text(a).font(.body).fixedSize(horizontal: false, vertical: true)
+                    if voice.speaking {
+                        Button { voice.stop() } label: { Label(Words.t("Stop", "Durdur"), systemImage: "stop.fill").font(.footnote).frame(maxWidth: .infinity) }
+                    }
+                }
+                if let e = error { Text(e).font(.footnote).foregroundStyle(.orange) }
+                if answer != nil || error != nil {
+                    HStack(spacing: 6) {
+                        Button { voice.stop(); again(); dismiss() } label: {
+                            Label(Words.t("Again", "Tekrar"), systemImage: "waveform").font(.footnote).frame(maxWidth: .infinity)
+                        }
+                        Button { voice.stop(); dismiss() } label: {
+                            Text(Words.t("Done", "Tamam")).font(.footnote).frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .task { if !question.isEmpty { await go() } }
+        .onDisappear { voice.stop() }
+    }
+
+    @MainActor private func go() async {
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !busy else { return }
+        busy = true; error = nil
+        do {
+            let a = try await WatchAPI.ask(q)
+            answer = a.isEmpty ? Words.t("I could not find an answer to that.", "Buna bir cevap bulamadım.") : a
+            WKInterfaceDevice.current().play(.click)
+            busy = false
+            await voice.say(answer ?? "")
+        } catch WatchAPI.Failure.unlinked { busy = false; dismiss(); onUnlinked() }
+        catch {
+            busy = false
+            self.error = (error as? LocalizedError)?.errorDescription ?? Words.t("Could not ask that.", "Sorulamadı.")
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+}
+
+/// Speaks an answer: the premium voice from the server when there is one,
+/// otherwise the best British voice on the watch. A dotted name
+/// ("J.A.R.V.I.S.") is said as the word.
+@MainActor final class WatchVoice: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
+    @Published var speaking = false
+    private var player: AVAudioPlayer?
+    private let synth = AVSpeechSynthesizer()
+
+    override init() { super.init(); synth.delegate = self }
+
+    static func sayable(_ s: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: "\\b((?:[A-Za-z]\\.){3,}[A-Za-z]?\\.?)") else { return s }
+        var out = s
+        for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)).reversed() {
+            guard let r = Range(m.range, in: out) else { continue }
+            let w = out[r].replacingOccurrences(of: ".", with: "")
+            out.replaceSubrange(r, with: w.prefix(1).uppercased() + w.dropFirst().lowercased())
+        }
+        return out
+    }
+
+    func say(_ text: String) async {
+        let t = WatchVoice.sayable(text)
+        guard !t.isEmpty else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        speaking = true
+        if let data = await WatchAPI.voice(t), let p = try? AVAudioPlayer(data: data) {
+            player = p; p.delegate = self
+            if p.play() { return }
+        }
+        let u = AVSpeechUtterance(string: t)
+        let lang = Words.lang == "tr" ? "tr-TR" : "en-GB"
+        u.voice = AVSpeechSynthesisVoice.speechVoices().first { $0.language == lang && $0.quality == .enhanced }
+            ?? AVSpeechSynthesisVoice.speechVoices().first { $0.language == lang && $0.name.contains("Daniel") }
+            ?? AVSpeechSynthesisVoice(language: lang)
+        synth.speak(u)
+    }
+
+    func stop() {
+        player?.stop(); player = nil
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        speaking = false
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.speaking = false }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.speaking = false }
     }
 }
 
