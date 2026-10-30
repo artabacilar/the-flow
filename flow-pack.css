@@ -3510,3 +3510,4 @@ html:not([data-flow-look="new"]) .lk-rk-add{display:none}
 #flow-say .sy-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0}
 #flow-say .sy-opt span{font-weight:600;color:var(--lk-ink,#F4F4F2)}
 #flow-say .sy-opt select{min-height:38px;border-radius:12px;padding:0 10px;font:inherit;font-size:14px;max-width:62%}
+#flow-say .sy-opt input[type=text]{min-height:38px;border-radius:12px;padding:0 12px;font:inherit;font-size:15px;width:62%;max-width:62%;box-sizing:border-box}

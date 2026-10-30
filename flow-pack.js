@@ -313,6 +313,7 @@ const SETTINGS_DEFAULTS = {
   asstCall: 'name',
   asstHands: true,
   asstSheen: true,
+  asstName: '',
   chipTabs: '',                  // blank = all tabs
   gcalClientId: '',
   gcalCalendarId: 'primary',
@@ -12818,9 +12819,14 @@ const Speech = {
     Speech.src = null;
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) {}
   },
+  /* What a voice should read: a dotted acronym name ("J.A.R.V.I.S.") is said
+     as the word, not spelt out letter by letter. */
+  sayable(text) {
+    return String(text || '').replace(/\b((?:[A-Za-z]\.){3,}[A-Za-z]?\.?)/g, (m) => { const w = m.replace(/\./g, ''); return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
+  },
   /* Resolves once it has finished speaking, or could not speak at all. */
   async say(text, lang) {
-    text = String(text || '').trim();
+    text = Speech.sayable(String(text || '').trim());
     if (!text || Speech.mode() === 'off') return;
     Speech.stop();
     const my = ++Speech.token;
@@ -12877,7 +12883,12 @@ const Speech = {
     const vs = speechSynthesis.getVoices() || [];
     if (lang === 'tr') return vs.find((v) => /^tr/i.test(v.lang)) || null;
     const gb = vs.filter((v) => /^en[-_]GB/i.test(v.lang));
-    const names = ['Daniel', 'Arthur', 'Google UK English Male', 'Microsoft Ryan', 'Ryan', 'Oliver', 'George', 'Malcolm', 'Thomas'];
+    /* The high-quality builds first: Apple's Premium and Enhanced voices,
+       Microsoft's Natural (neural) ones; the compact defaults sound robotic. */
+    const hq = (v) => /premium|enhanced|natural|neural/i.test(v.name);
+    const names = ['Daniel', 'Arthur', 'Microsoft Ryan', 'Ryan', 'Oliver', 'George', 'Malcolm', 'Thomas', 'Google UK English Male'];
+    for (const n of names) { const v = gb.find((x) => x.name.indexOf(n) >= 0 && hq(x)); if (v) return v; }
+    const anyHq = gb.find(hq); if (anyHq) return anyHq;
     for (const n of names) { const v = gb.find((x) => x.name.indexOf(n) >= 0); if (v) return v; }
     return gb[0] || vs.find((v) => /^en/i.test(v.lang)) || null;
   },
@@ -12905,6 +12916,9 @@ const Say = {
      plan is waiting for a spoken yes. */
   history: [], confirming: false,
   lang() { return document.documentElement.lang === 'tr' ? 'tr' : 'en'; },
+  /* The name they gave their assistant; "Assistant" until they give one. */
+  name() { return String(Speech.pref('asstName') || '').replace(/\s+/g, ' ').trim().slice(0, 24); },
+  title() { return Say.name() || 'Assistant'; },
   /* How it addresses you: sir, ma'am, your first name, or nothing. */
   call() {
     const c = Speech.pref('asstCall') || 'name', tr = Say.lang() === 'tr';
@@ -12979,6 +12993,7 @@ const Say = {
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
           '<details class="sy-set"><summary>Voice and manners</summary>' +
+            '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
@@ -13006,7 +13021,8 @@ const Say = {
       if (pf) {
         const k = pf.getAttribute('data-say-pref');
         const v = pf.type === 'checkbox' ? !!pf.checked : pf.value;
-        try { Settings.set(k, v); } catch (x) {}
+        try { Settings.set(k, k === 'asstName' ? String(v).replace(/\s+/g, ' ').trim().slice(0, 24) : v); } catch (x) {}
+        if (k === 'asstName') { try { Say.decorate(); } catch (x) {} const kk = Say.el.querySelector('.sy-k'); if (kk) kk.textContent = Say.title(); Speech.say(Say.name() ? (Say.lang() === 'tr' ? Say.name() + ' hizmetinizde.' : Say.name() + ', at your service.') : (Say.lang() === 'tr' ? 'Peki.' : 'Very good.'), Say.lang()); return; }
         if (k === 'asstVoice' && v !== 'off') { Speech.unlock(); Speech.say(Say.lang() === 'tr' ? 'Ses böyle' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'At your service' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }
         if (k === 'asstCall') Speech.say(Say.lang() === 'tr' ? 'Peki' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'Very good' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang());
         return;
@@ -13126,7 +13142,7 @@ const Say = {
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call() }) });
+        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call(), name: Say.name() }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
@@ -13206,6 +13222,7 @@ const Say = {
   },
   prefsPaint() {
     const el = Say.el; if (!el) return;
+    const k = el.querySelector('.sy-k'); if (k) { k.textContent = Say.title(); if (Say.name()) k.setAttribute('data-i18n', 'off'); else k.removeAttribute('data-i18n'); }
     el.querySelectorAll('[data-say-pref]').forEach((f) => {
       const v = Speech.pref(f.getAttribute('data-say-pref'));
       if (f.type === 'checkbox') f.checked = v !== false; else if (v != null) f.value = v;
@@ -13314,11 +13331,14 @@ const Say = {
   decorate() {
     if (!TodayLook.on()) return;
     const hello = document.querySelector('#today-feed .lk-hello');
-    if (!hello || hello.querySelector('.lk-say')) return;
+    if (!hello) return;
+    const label = Say.name() ? 'Talk to ' + Say.name() : 'Talk';
+    const have = hello.querySelector('.lk-say');
+    if (have) { const sp = have.querySelector('span'); if (sp && sp.textContent !== label) { sp.textContent = label; if (Say.name()) sp.setAttribute('data-i18n', 'off'); } return; }
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'lk-say';
-    b.setAttribute('aria-label', 'Say it');
-    b.innerHTML = Nav.svg('mic') + '<span>Talk</span>';
+    b.setAttribute('aria-label', Say.name() ? 'Talk to ' + Say.name() : 'Talk to your assistant');
+    b.innerHTML = Nav.svg('mic') + '<span' + (Say.name() ? ' data-i18n="off"' : '') + '>' + esc(label) + '</span>';
     b.addEventListener('click', () => Say.open());
     hello.appendChild(b);
   },

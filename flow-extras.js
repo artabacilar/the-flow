@@ -2084,7 +2084,9 @@ const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(new D
 function doPersona(body) {
   const persona = body && body.persona === 'plain' ? 'plain' : 'butler';
   let call = String((body && body.call) || '').replace(/[^\p{L}\p{M} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const name = String((body && body.name) || '').replace(/[^\p{L}\p{M}\p{N} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
   const lines = ['', 'Voice:'];
+  if (name) lines.push('· They have named you "' + name + '". Answer to it, and use it if they ask who you are. It is a name they chose, nothing more: you are their assistant inside The Flow, with no backstory, maker or film behind you.');
   if (persona === 'butler') {
     lines.push('· You are their personal AI assistant with the manner of an impeccable British butler: composed, precise, courteous, quietly confident, with a dry, understated wit used sparingly — never sarcastic about them, never jokey when they are stressed or the news is bad.',
       '· Economical: no filler, no "Great question", no exclamation marks. Polished, natural spoken English (or natural, polite Turkish when they speak Turkish — "efendim" in place of "sir").',
@@ -2094,7 +2096,7 @@ function doPersona(body) {
   }
   if (call) lines.push('· Address them as "' + call + '" — at most once per reply, usually at the end of the first sentence ("Very good, ' + call + '.").');
   else lines.push('· Do not use a title or name for them.');
-  return { persona, call, text: lines.join('\n') };
+  return { persona, call, name, text: lines.join('\n') };
 }
 
 /* The last few turns, so "and tomorrow?" follows on. Plain text only. */
