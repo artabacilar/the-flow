@@ -62,6 +62,12 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   ok('marked as from the Wear OS watch', /added on Wear OS watch/.test(st.m.ld_journal));
   await W.act(st, { action: 'add', text: 'Pick up the suit', day: 'tomorrow' }, { now: late });
   ok('or tomorrow', JSON.parse(st.m.ld_compass).rocks['2026-W44'].find((r) => r.title === 'Pick up the suit').day === 3);
+  await W.act(st, { action: 'add', text: 'Booked the photographer', done: true }, { now: late });
+  const dn = JSON.parse(st.m.ld_compass).rocks['2026-W44'].find((r) => r.title === 'Booked the photographer');
+  ok('"Done today" adds it to today, already done', dn && dn.day === 2 && dn.done === true, dn);
+  ok('and the journal says it was added done', /added done on Apple Watch/.test(st.m.ld_journal));
+  await W.act(st, { action: 'add', text: 'Not yet', day: 'tomorrow', done: true }, { now: late });
+  ok('tomorrow can not be done yet', JSON.parse(st.m.ld_compass).rocks['2026-W44'].find((r) => r.title === 'Not yet').done === false);
   await W.act(st, { action: 'add', kind: 'note', text: 'The venue wants a deposit by Friday' }, { now: late });
   const j = JSON.parse(st.m['flow:journal']);
   ok('a note goes to the journal, on the person\'s date', j.length === 1 && j[0].date === '2026-10-28' && j[0].tags.includes('watch'), j[0]);
