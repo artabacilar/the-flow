@@ -297,13 +297,13 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
     const gu = new URL(JSON.parse(sr.body).url);
     ok('Calendar asks for a code, offline, read-only calendar and nothing more',
        gu.searchParams.get('response_type') === 'code' && gu.searchParams.get('access_type') === 'offline' &&
-       gu.searchParams.get('scope') === 'openid email https://www.googleapis.com/auth/calendar.readonly');
+       gu.searchParams.get('scope') === 'openid email https://www.googleapis.com/auth/calendar.events.readonly');
     ok('and comes back through Google\'s already-registered callback',
        gu.searchParams.get('redirect_uri') === 'https://theflow.today/api/connect/google/callback');
     const gstate = gu.searchParams.get('state');
 
     let calls = [];
-    let scopeBack = 'openid https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email';
+    let scopeBack = 'openid https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/userinfo.email';
     const idt = 'x.' + Buffer.from(JSON.stringify({ sub: '42', email: 'artur@gmail.com', email_verified: true })).toString('base64url') + '.y';
     const gFetch = async (u, o) => {
       calls.push({ u: String(u), o: o || {} });
@@ -486,7 +486,7 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
     ok('a connection saved before accounts existed is read as one account', lg.connected && lg.accounts.length === 1 && lg.accounts[0].email === 'old@gmail.com');
 
     const mkTok = (sub, email) => ({ access_token: 'acc-' + sub, refresh_token: 'ref-' + sub, expires_in: 3600,
-      scope: 'openid https://www.googleapis.com/auth/calendar.readonly',
+      scope: 'openid https://www.googleapis.com/auth/calendar.events.readonly',
       id_token: 'x.' + Buffer.from(JSON.stringify({ sub, email, email_verified: true })).toString('base64url') + '.y' });
     let nextTok = null, calls = [];
     const gF = async (u, o) => {
