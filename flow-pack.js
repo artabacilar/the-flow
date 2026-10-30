@@ -314,6 +314,8 @@ const SETTINGS_DEFAULTS = {
   asstHands: true,
   asstSheen: true,
   asstName: '',
+  asstGreet: true,               // a spoken hello when the app opens, once per part of the day
+  asstMemory: [],                // what you told the assistant about yourself: [{ id, text, at }]
   /* Today, merged — a beta in Simple; the Focus pinned on it, and its colour. */
   todayBeta: false,
   todayBetaLime: false,
@@ -13309,6 +13311,7 @@ const Say = {
   call() {
     const c = Speech.pref('asstCall') || 'name', tr = Say.lang() === 'tr';
     if (c === 'sir') return tr ? 'efendim' : 'sir';
+    if (c === 'dear') return tr ? 'efendim' : 'dear';
     if (c === 'madam') return tr ? 'hanımefendi' : 'ma\'am';
     if (c === 'none') return '';
     return String(Speech.pref('displayName') || '').trim().split(/\s+/)[0].slice(0, 30);
@@ -13358,6 +13361,42 @@ const Say = {
   findRock(id) { const hit = RockActions.find(id); return hit ? hit.r : null; },
   habitName(id) { const h = HabitDo.habit(id); return h ? h.name : ''; },
 
+  /* ---- what he knows about you ----
+     Short facts you told him ("Wife is called Elif"), kept in your settings
+     so they follow you to every device and the watch. He adds them when you
+     tell him something lasting; you can read and remove them here. */
+  memory() { const v = Speech.pref('asstMemory'); return Array.isArray(v) ? v.filter((m) => m && m.id && m.text) : []; },
+  async remember(text) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!t) return false;
+    const list = Say.memory();
+    if (list.some((m) => m.text.toLowerCase() === t.toLowerCase())) return false;
+    list.push({ id: 'm' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36), text: t, at: new Date().toISOString() });
+    await Settings.set('asstMemory', list.slice(-80));
+    Say.memPaint();
+    return true;
+  },
+  async forget(id) { await Settings.set('asstMemory', Say.memory().filter((m) => m.id !== String(id))); Say.memPaint(); },
+  memPaint() {
+    const box = Say.el && Say.el.querySelector('.sy-mem'); if (!box) return;
+    const list = Say.memory();
+    box.innerHTML = list.length ? list.slice().reverse().map((m) => '<li data-i18n="off"><span>' + esc(m.text) + '</span><button type="button" data-say="memdrop" data-id="' + esc(m.id) + '" aria-label="Forget: ' + esc(m.text) + '">×</button></li>').join('')
+      : '<li class="sy-mem-none">Nothing yet. Tell him about yourself — “remember that I train on Mondays” — or add a line here.</li>';
+  },
+  /* ---- the presence: an orb that listens, thinks and speaks ---- */
+  mode(st) {
+    if (!Say.el) return;
+    Say.el.setAttribute('data-sy', st || 'idle');
+    const h = Say.el.querySelector('.sy-hello');
+    if (h && st && st !== 'idle') h.classList.add('quiet');
+  },
+  part(hh) { return hh < 5 ? 'evening' : hh < 12 ? 'morning' : hh < 18 ? 'afternoon' : 'evening'; },
+  helloLine() {
+    const c = Say.call(), tr = Say.lang() === 'tr', p = Say.part(new Date().getHours());
+    if (tr) return ({ morning: 'Günaydın', afternoon: 'Tünaydın', evening: 'İyi akşamlar' }[p]) + (c ? ', ' + c : '') + '. Sizi dinliyorum.';
+    return 'Good ' + p + (c ? ', ' + c : '') + '. What can I do for you?';
+  },
+
   /* ---- the sheet ---- */
   build() {
     if (Say.el) return Say.el;
@@ -13372,6 +13411,8 @@ const Say = {
         '<div class="fn-grab" data-say="close"></div>' +
         '<button type="button" class="fn-capture-close" data-say="close" aria-label="Close">×</button>' +
         '<div class="sy-k">Assistant</div>' +
+        '<div class="sy-orb" aria-hidden="true"><i></i><i></i><i></i></div>' +
+        '<div class="sy-hello" data-i18n="off"></div>' +
         '<div class="sy-log" aria-live="polite"></div>' +
         '<div class="sy-ask">' +
           '<div class="sy-state" aria-live="polite"></div>' +
@@ -13381,9 +13422,13 @@ const Say = {
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
-            '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
+            '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="dear">Dear</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstSheen"> AI finish on the premium voice</label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
+            '<div class="sy-memk">What he knows about you</div>' +
+            '<ul class="sy-mem"></ul>' +
+            '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
             '<div class="sy-ex sy-premium"></div>' +
           '</details>' +
           '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
@@ -13399,6 +13444,8 @@ const Say = {
       if (a === 'send') return Say.send();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
+      if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
+      if (a === 'memadd') { const i = Say.el.querySelector('#sy-mem-in'); const v = i.value; i.value = ''; Say.remember(v).then((ok) => { if (ok) Speech.say(Say.lang() === 'tr' ? 'Not aldım.' : 'Noted' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }); return; }
       if (a === 'drop') { const i = +b.getAttribute('data-i'); if (Say.plan) { Say.plan.actions.splice(i, 1); Say.paintPlan(); } return; }
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
@@ -13424,6 +13471,7 @@ const Say = {
     });
     wrap.addEventListener('keydown', (e) => {
       if (e.target.id === 'sy-text' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); Say.send(); }
+      if (e.target.id === 'sy-mem-in' && e.key === 'Enter') { e.preventDefault(); const b = Say.el.querySelector('[data-say="memadd"]'); if (b) b.click(); }
     });
     /* A real keystroke means typing — the answer is read, not spoken. The
        microphone writes with a synthetic event; Wispr Flow is dictation. */
@@ -13433,10 +13481,10 @@ const Say = {
     try {
       if (window.FlowVoice) FlowVoice.on((state) => {
         if (!Say.waiting) return;
-        if (state === 'listening') { Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
-        if (state === 'error') { Say.waiting = false; Say.paintMic(); return; }
+        if (state === 'listening') { Say.mode('listening'); Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
+        if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); return; }
         if (state === 'idle') {
-          Say.waiting = false; Say.paintMic();
+          Say.waiting = false; Say.paintMic(); Say.mode('idle');
           const t = (document.getElementById('sy-text') || {}).value || '';
           if (!Say.el.classList.contains('on')) return;
           if (t.trim() && Say.plan && Say.confirming) { Say.spoken = !Say.typed; Say.confirmBy(t.trim()); }
@@ -13479,6 +13527,8 @@ const Say = {
     Say.el.querySelector('.sy-ask').hidden = false;
     Say.el.querySelector('.sy-plan').hidden = true;
     Say.state('');
+    const hi = Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
+    Say.mode('idle'); Say.memPaint();
     Say.el.classList.add('on');
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
@@ -13491,6 +13541,7 @@ const Say = {
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
     Speech.stop();
     Say.waiting = false; Say.confirming = false;
+    Say.mode('idle');
     Say.el.classList.remove('on');
   },
   listen() {
@@ -13524,11 +13575,11 @@ const Say = {
     try { if (Say.own()) Say.spoken = true; } catch (e) {}
     Say.typed = false;
     Say.busy = true; Say.said = text; Say.confirming = false;
-    Say.state('Working it out…');
+    Say.state('Working it out…'); Say.mode('thinking');
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call(), name: Say.name() }) });
+        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
@@ -13539,6 +13590,16 @@ const Say = {
       /* Going somewhere is not a change to anything; on its own it just goes. */
       if (acts.length === 1 && acts[0].type === 'open') {
         Say.speak(reply); Say.close(); Nav.go(acts[0].page); return;
+      }
+      /* Something about them to keep: saved at once, no "Do it" needed. */
+      if (acts.length && acts.every((a) => a.type === 'remember' || a.type === 'forget')) {
+        let n = 0;
+        for (const a of acts) { try { if (a.type === 'remember') { if (await Say.remember(a.fact)) n++; } else { await Say.forget(a.memory); n++; } } catch (x) {} }
+        Say.plan = null; Say.askView(); Say.logPaint(); Say.state('');
+        if (n) toast(acts[0].type === 'forget' ? 'Forgotten' : 'Remembered ✓', null, 1600);
+        await Say.speak(reply);
+        Say.follow(false);
+        return;
       }
       if (j.end) { Say.plan = null; Say.askView(); Say.logPaint(); Say.state(''); await Say.speak(reply); Say.close(); return; }
       if (acts.length) {
@@ -13554,7 +13615,7 @@ const Say = {
       await Say.speak(reply);
       Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
-    finally { Say.busy = false; go.disabled = false; }
+    finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); }
   },
   /* Back to the conversation: the box, empty; no plan on screen. */
   askView() {
@@ -13598,7 +13659,8 @@ const Say = {
      kept for when they spoke. */
   speak(text) {
     if (!text) return Promise.resolve();
-    return Speech.say(text, Say.lang());
+    Say.mode('speaking');
+    return Promise.resolve(Speech.say(text, Say.lang())).finally(() => { if (Say.el && Say.el.getAttribute('data-sy') === 'speaking') Say.mode('idle'); });
   },
   logPaint() {
     const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
@@ -13635,6 +13697,8 @@ const Say = {
     if (a.type === 'move') { const r = Say.findRock(a.rock); return '<div class="sy-card">' + head('Move', r ? r.title : '') + Say.dayChips(i, a.date) + '</div>'; }
     if (a.type === 'done') { const r = Say.findRock(a.rock); return '<div class="sy-card">' + head('Mark done', r ? r.title : '') + '</div>'; }
     if (a.type === 'open') return '<div class="sy-card">' + head('Open', Say.PAGE_NAMES[a.page] || a.page) + '</div>';
+    if (a.type === 'remember') return '<div class="sy-card">' + head('Remember', '') + '<input class="flow-in" data-sy-edit="fact" data-i="' + i + '" value="' + esc(a.fact) + '"></div>';
+    if (a.type === 'forget') { const m = Say.memory().find((x) => x.id === a.memory); return '<div class="sy-card">' + head('Forget', m ? m.text : '') + '</div>'; }
     return '';
   },
   paintPlan() {
@@ -13689,6 +13753,8 @@ const Say = {
           } else if (a.type === 'done') {
             TodayFix.done(a.rock); did++;
           } else if (a.type === 'open') { open = a.page; }
+          else if (a.type === 'remember') { if (await Say.remember(a.fact)) did++; }
+          else if (a.type === 'forget') { await Say.forget(a.memory); did++; }
         } catch (e) { console.warn('[Flow] say', a.type, e); }
       }
       if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
@@ -13747,6 +13813,125 @@ const Say = {
   }
 };
 window.FlowSay = Say;
+
+/* ── He greets you ───────────────────────────────────────────────────────
+ * Opening the app in a new part of the day — morning, afternoon, evening —
+ * he says hello, out loud, with one or two things worth knowing from your
+ * own record: how you slept, what today holds, the next meeting. Once per
+ * part of the day, per device. A browser only lets a page speak after a tap,
+ * so where it cannot speak straight away it does so at your first touch —
+ * unless that touch is Talk, which starts a conversation instead. The words
+ * stay on Today, under the greeting, until you close them. */
+const Greet = {
+  pending: false, text: '',
+  on() { try { return TodayLook.on() && Speech.pref('asstGreet') !== false; } catch (e) { return false; } },
+  key() { const d = new Date(); return 'flow:greeted:' + RockActions.iso(d) + ':' + Say.part(d.getHours()); },
+  seen() { try { return localStorage.getItem(Greet.key()) === '1'; } catch (e) { return true; } },
+  mark() { try { localStorage.setItem(Greet.key(), '1'); } catch (e) {} },
+  hours(h) {
+    const m = Math.round(h * 60), hh = Math.floor(m / 60), mm = m % 60;
+    return hh + ' hour' + (hh === 1 ? '' : 's') + (mm >= 10 ? ' ' + mm + ' minutes' : '');
+  },
+  line() {
+    const now = new Date(), part = Say.part(now.getHours()), c = Say.call(), at = c ? ', ' + c : '';
+    const tr = Say.lang() === 'tr';
+    const out = [];
+    if (tr) out.push(({ morning: 'Günaydın', afternoon: 'Tünaydın', evening: 'İyi akşamlar' }[part]) + at + '.');
+    else out.push('Good ' + part + at + '.');
+    /* sleep: last night only, and only before the evening */
+    try {
+      const n = HealthNight.night(HealthNight.days());
+      if (n && n.fresh && part !== 'evening' && n.n.hours != null) {
+        const h = Number(n.n.hours);
+        if (!tr) {
+          if (h < 6) out.push('You slept only ' + Greet.hours(h) + ' last night. I would keep today light, and turn in early.');
+          else if (h < 7) out.push('A little short on sleep — ' + Greet.hours(h) + '. An early night would serve you well.');
+          else if (h >= 8) out.push('A good ' + Greet.hours(h) + ' of sleep. You should be sharp today.');
+        } else if (h < 6.5) out.push('Dün gece ' + Greet.hours(h).replace(/hours?/, 'saat').replace(/minutes/, 'dakika') + ' uyudunuz; bugünü hafif tutmanızı öneririm.');
+      }
+    } catch (e) {}
+    /* today's Priorities */
+    try {
+      const k = TodayLook.heroPick(TodayLook.rocks(), (now.getDay() + 6) % 7);
+      const n = k.today.length, late = k.late.length;
+      if (tr) {
+        if (n) out.push('Bugün ' + n + ' önceliğiniz var' + (late ? ', ' + late + ' tanesi de geçen günlerden kaldı' : '') + '.');
+      } else if (part === 'evening') {
+        if (n) out.push(n + (n === 1 ? ' Priority is' : ' Priorities are') + ' still open today. Say the word and I will move ' + (n === 1 ? 'it' : 'them') + ' to tomorrow.');
+        else if (k.doneToday) out.push('Everything for today is done. Well played.');
+      } else if (n) {
+        const first = TodayBeta.title(k.today[0]);
+        out.push('You have ' + n + (n === 1 ? ' Priority' : ' Priorities') + ' today' + (late ? ', and ' + late + ' carried over from earlier in the week' : '') + '.' + (first && first.length <= 70 ? ' First up: ' + first + '.' : ''));
+      } else if (late) out.push(late + (late === 1 ? ' Priority' : ' Priorities') + ' from earlier in the week still ' + (late === 1 ? 'needs' : 'need') + ' a decision.');
+      else out.push('Nothing is planned for today yet — a good moment to choose one thing that matters.');
+    } catch (e) {}
+    /* the next meeting today */
+    try {
+      if (!tr && out.length < 4) {
+        const iso = RockActions.iso(now), hm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+        const ev = Ahead.items().find((x) => x.kind === 'event' && x.date === iso && x.time && x.time > hm);
+        if (ev) out.push('Your next meeting, ' + String(ev.title).slice(0, 60) + ', is at ' + ev.time + '.');
+      }
+    } catch (e) {}
+    return out.join(' ');
+  },
+  paint() {
+    const hello = document.querySelector('#today-feed .lk-hello');
+    let card = document.querySelector('#today-feed .lk-jv');
+    if (!Greet.text || !Greet.on() || !hello) { if (card) card.remove(); return; }
+    if (!card) {
+      card = document.createElement('div'); card.className = 'lk-jv'; card.setAttribute('data-i18n', 'off');
+      card.innerHTML = '<span class="lk-jv-dot" aria-hidden="true"></span><p></p><button type="button" class="lk-jv-play" aria-label="Hear it again">▶</button><button type="button" class="lk-jv-x" aria-label="Close">×</button>';
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.lk-jv-x')) { Greet.text = ''; Speech.stop(); card.remove(); return; }
+        if (e.target.closest('.lk-jv-play')) { Speech.unlock(); Greet.say(); }
+      });
+    }
+    if (card.parentNode !== hello) hello.appendChild(card);
+    const p = card.querySelector('p'); if (p.textContent !== Greet.text) p.textContent = Greet.text;
+  },
+  say() {
+    const card = document.querySelector('#today-feed .lk-jv');
+    if (card) card.classList.add('speaking');
+    return Promise.resolve(Speech.say(Greet.text, Say.lang())).finally(() => { if (card) card.classList.remove('speaking'); });
+  },
+  /* Can this page make a sound right now, without a tap? */
+  async canSpeak() {
+    if (Speech.mode() === 'off') return false;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+      if (!Speech.ac) Speech.ac = new AC();
+      if (Speech.ac.state !== 'running') await Promise.race([Speech.ac.resume(), new Promise((r) => setTimeout(r, 400))]);
+      return Speech.ac.state === 'running';
+    } catch (e) { return false; }
+  },
+  async run() {
+    if (!Greet.on() || Greet.seen() || Greet.pending) return;
+    if (!document.querySelector('#tab-today.active, #today-feed')) return;
+    Greet.pending = true;
+    Greet.text = Greet.line(); Greet.mark(); Greet.paint();
+    if (await Greet.canSpeak()) { Greet.pending = false; Greet.say(); return; }
+    const first = (e) => {
+      document.removeEventListener('pointerdown', first, true); document.removeEventListener('keydown', first, true);
+      Greet.pending = false;
+      /* a tap on Talk starts the conversation; he does not talk over it */
+      if (e && e.target && e.target.closest && e.target.closest('.lk-say, #flow-say, .lk-jv')) return;
+      if (document.querySelector('#flow-say.on')) return;
+      Speech.unlock(); Greet.say();
+    };
+    document.addEventListener('pointerdown', first, true); document.addEventListener('keydown', first, true);
+  },
+  boot() {
+    /* automated browsers (the test suites) are not greeted unless they ask */
+    if (navigator.webdriver && !window.__flowGreetTest) return;
+    const go = () => setTimeout(() => { try { Greet.run(); } catch (e) {} }, 1800);
+    go();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') go(); });
+    let queued = false;
+    try { new MutationObserver(() => { if (queued || !Greet.text) return; queued = true; requestAnimationFrame(() => { queued = false; Greet.paint(); }); }).observe(document.getElementById('today-feed') || document.body, { childList: true, subtree: true }); } catch (e) {}
+  }
+};
+window.FlowGreet = Greet;
 
 /* ── Open one Big Rock ────────────────────────────────────────────────────
  * A reminder or a widget row names a rock; tapping it should land on that
@@ -17315,6 +17500,7 @@ async function boot() {
   try { Meals.boot(); } catch (e) { console.warn('[Flow] meals', e); }
   try { HabitDo.boot(); } catch (e) { console.warn('[Flow] habit do', e); }
   try { Say.boot(); } catch (e) { console.warn('[Flow] say', e); }
+  try { Greet.boot(); } catch (e) { console.warn('[Flow] greet', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }
   try { Track.boot(); } catch (e) {}

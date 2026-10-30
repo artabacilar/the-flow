@@ -1109,9 +1109,9 @@ async function gate(req, res) {
     const set = st && typeof st === 'object' ? st : {};
     const lang = b.lang === 'tr' ? 'tr' : 'en';
     const c = set.asstCall || 'name';
-    const call = c === 'sir' ? (lang === 'tr' ? 'efendim' : 'sir') : c === 'madam' ? (lang === 'tr' ? 'hanımefendi' : "ma'am") : c === 'none' ? '' : String(set.displayName || me.name || '').trim().split(/\s+/)[0] || '';
+    const call = c === 'sir' || c === 'dear' ? (lang === 'tr' ? 'efendim' : c) : c === 'madam' ? (lang === 'tr' ? 'hanımefendi' : "ma'am") : c === 'none' ? '' : String(set.displayName || me.name || '').trim().split(/\s+/)[0] || '';
     const fwd = p === '/api/watch/ask'
-      ? { text: String(b.text || ''), lang, persona: 'butler', call, name: String(set.asstName || ''), watch: true,
+      ? { text: String(b.text || ''), lang, persona: 'butler', call, name: String(set.asstName || ''), watch: true, memory: Array.isArray(set.asstMemory) ? set.asstMemory : [],
           ctx: { today: b.today, weekday: b.weekday, time: b.time, rocks: [], habits: [] } }
       : { text: String(b.text || '') };
     try {

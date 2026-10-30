@@ -2033,7 +2033,7 @@ const DO_FREE_WEEKLY = 15;
 const doCountKey = () => 'don:' + new Date().toISOString().slice(0, 10);
 let doPost = (...a) => postJSON(...a);
 const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
-const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open'];
+const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget'];
 
 const DO_SYSTEM = [
   'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
@@ -2050,7 +2050,9 @@ const DO_SYSTEM = [
   '    { "type": "journal", "text": "what they want written down, in their words", "title": "" },',
   '    { "type": "move",    "rock": "<priority id from the list>", "date": "YYYY-MM-DD" },',
   '    { "type": "done",    "rock": "<priority id from the list>" },',
-  '    { "type": "open",    "page": "one of: ' + DO_PAGES.join(', ') + '" }',
+  '    { "type": "open",    "page": "one of: ' + DO_PAGES.join(', ') + '" },',
+  '    { "type": "remember", "fact": "Is vegetarian" },',
+  '    { "type": "forget",  "memory": "<memory id from the list>" }',
   '  ]',
   '}',
   '',
@@ -2062,6 +2064,10 @@ const DO_SYSTEM = [
   '· journal: a note, a thought, how the day went, three sentences before bed, an idea to keep. Keep their words; clean up only the filler ("um", "like"). Several sentences are fine.',
   '· move / done: only for a Priority in the list; pick its id. "Push X to Friday" is move; "I sent the contract" is done.',
   '· open: they want to go somewhere in the app ("show my habits", "open the journal").',
+  '· remember: something lasting about them, worth knowing next time — who people are ("my wife is Elif"), preferences, routines, goals, health, work ("I run the sales team at ABKO"). When they say "remember…", or tell you about themselves. One short fact per action, in the third person without their name ("Wife is called Elif"). Not for tasks (that is rock) or diary entries (journal). Never store passwords, card numbers or codes.',
+  '· forget: they ask you to forget something you know; pick its memory id.',
+  '· When the only actions are remember/forget, they are saved at once: "say" confirms it as done ("Noted, sir — I shall remember that."). Do not repeat back sensitive details.',
+  '· WHAT YOU KNOW ABOUT THEM (below) is what they told you before. Use it naturally where it helps — never recite it, and never contradict it without asking.',
   '',
   'Rules:',
   '· One request can hold several actions; keep their order. At most 12.',
@@ -2163,6 +2169,7 @@ function parseDo(text, known) {
   known = known || {};
   const rockIds = new Set((known.rocks || []).map((r) => String(r.id)));
   const habitIds = new Set((known.habits || []).map((h) => String(h.id)));
+  const memIds = new Set((known.memory || []).map((m) => String(m.id)));
   const today = isIso(known.today) ? known.today : new Date().toISOString().slice(0, 10);
   const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
   const out = [];
@@ -2187,6 +2194,12 @@ function parseDo(text, known) {
       if (rockIds.has(String(a.rock))) out.push({ type: 'done', rock: String(a.rock) });
     } else if (a.type === 'open') {
       if (DO_PAGES.indexOf(a.page) >= 0) out.push({ type: 'open', page: a.page });
+    } else if (a.type === 'remember') {
+      const fact = str(a.fact, 200);
+      /* never a secret: long digit runs (cards, IBANs, codes) or password talk */
+      if (fact && !/\d[\d\s-]{9,}\d/.test(fact) && !/(password|passcode|pin code|şifre|parola)/i.test(fact)) out.push({ type: 'remember', fact });
+    } else if (a.type === 'forget') {
+      if (memIds.has(String(a.memory))) out.push({ type: 'forget', memory: String(a.memory) });
     }
   }
   return { say: str(j.say, 900), actions: out, end: j.end === true };
@@ -2201,7 +2214,15 @@ function doContext(body) {
   const habits = (Array.isArray(c.habits) ? c.habits : []).slice(0, 60)
     .map((h) => h && { id: str(h.id, 60), name: str(h.name, 120), done: !!h.done })
     .filter((h) => h && h.id && h.name);
-  return { today: isIso(c.today) ? c.today : new Date().toISOString().slice(0, 10), weekday: str(c.weekday, 20), time: str(c.time, 5), rocks, habits };
+  const memory = doMemory(body);
+  return { today: isIso(c.today) ? c.today : new Date().toISOString().slice(0, 10), weekday: str(c.weekday, 20), time: str(c.time, 5), rocks, habits, memory };
+}
+/* What they have told the assistant about themselves: short facts with ids,
+   kept in their settings (asstMemory) and sent with each request. */
+function doMemory(body) {
+  return (Array.isArray(body && body.memory) ? body.memory : []).slice(-80)
+    .map((m) => m && { id: String(m.id == null ? '' : m.id).replace(/[^\w-]/g, '').slice(0, 40), text: String(m.text == null ? '' : m.text).replace(/\s+/g, ' ').trim().slice(0, 200) })
+    .filter((m) => m && m.id && m.text);
 }
 
 async function handleDo(p, req, res, ctx) {
@@ -2238,6 +2259,8 @@ async function handleDo(p, req, res, ctx) {
     known.rocks.length ? known.rocks.map((r) => r.id + ' | ' + r.title + ' | ' + (r.date || '?') + ' | ' + (r.done ? 'done' : 'open')).join('\n') : '(none)',
     'Habits (id | name | ticked today):',
     known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
+    'WHAT YOU KNOW ABOUT THEM (memory id | fact):',
+    known.memory.length ? known.memory.map((m) => m.id + ' | ' + m.text).join('\n') : '(nothing yet)',
     '',
     onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
@@ -2390,7 +2413,7 @@ module.exports._internals.ahead = {
 };
 module.exports._internals.wellFormed = wellFormed;
 module.exports._internals.say = {
-  parseDo, doContext, doPersona, doHistory, doCalendar, fixWeekdays, weekdaysSaid, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
+  parseDo, doContext, doMemory, doPersona, doHistory, doCalendar, fixWeekdays, weekdaysSaid, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
   setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
 };
 module.exports._internals.speak = {
