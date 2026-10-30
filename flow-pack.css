@@ -3441,6 +3441,8 @@ html[data-flow-look="new"] .lk-stale-body .flow-td-row{opacity:.85}
 
 /* ── Say it: the voice assistant's sheet and the Talk button on Today ── */
 #flow-say .sy-k{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-mute,#8E8E94);margin-bottom:8px}
+#flow-say .sy-own{display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:var(--lk-mute,#8E8E94);cursor:pointer}
+#flow-say .sy-own input{width:16px;height:16px;accent-color:var(--lk-lime,#C6F432);margin:0}
 #flow-say .sy-state{min-height:20px;font-size:14px;font-weight:600;color:var(--lk-ink,#F4F4F2);margin-bottom:8px}
 #flow-say #sy-text{width:100%;min-height:96px;resize:vertical;font-size:17px;line-height:1.45}
 #flow-say .sy-ex{margin-top:8px;font-size:12.5px;color:var(--lk-mute,#8E8E94)}

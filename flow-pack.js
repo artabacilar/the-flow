@@ -12675,6 +12675,9 @@ const Say = {
     if (Say.el) return Say.el;
     const wrap = document.createElement('div');
     wrap.id = 'flow-say'; wrap.className = 'fn-sheetwrap';
+    /* Its one checkbox is a setting, not a task: no 🕘 time chip. The tip
+       says "Big Rocks" so the Simple wording turns it into "Priorities". */
+    wrap.setAttribute('data-flow-no-chip', '');
     wrap.innerHTML =
       '<div class="fn-scrim" data-say="close"></div>' +
       '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Say it">' +
@@ -12684,7 +12687,8 @@ const Say = {
         '<div class="sy-ask">' +
           '<div class="sy-state" aria-live="polite"></div>' +
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
-          '<div class="sy-ex">Priorities, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
+          '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
+          '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
           '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
@@ -12700,6 +12704,11 @@ const Say = {
       if (a === 'do') return Say.apply();
       if (a === 'drop') { const i = +b.getAttribute('data-i'); if (Say.plan) { Say.plan.actions.splice(i, 1); Say.paintPlan(); } return; }
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
+    });
+    wrap.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-say-own]')) return;
+      Say.own(e.target.checked);
+      if (e.target.checked) { try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {} Say.waiting = false; Say.paintMic(); Say.listen(); }
     });
     wrap.addEventListener('input', (e) => {
       const f = e.target.closest('[data-sy-edit]'); if (!f || !Say.plan) return;
@@ -12728,6 +12737,12 @@ const Say = {
     return wrap;
   },
   state(t) { const el = Say.el && Say.el.querySelector('.sy-state'); if (el) el.textContent = t || ''; },
+  /* Wispr Flow (or any keyboard's own dictation) types into the box itself;
+     the built-in microphone would only fight it. Remembered per device. */
+  own(v) {
+    try { if (v === undefined) return localStorage.getItem('flow:say-own') === '1'; localStorage.setItem('flow:say-own', v ? '1' : '0'); } catch (e) {}
+    return !!v;
+  },
   paintMic() {
     const b = Say.el && Say.el.querySelector('.sy-mic'); if (!b) return;
     const can = !!(window.FlowVoice && FlowVoice.available);
@@ -12745,6 +12760,7 @@ const Say = {
     Say.el.querySelector('.sy-plan').hidden = true;
     Say.state('');
     Say.el.classList.add('on');
+    const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
     /* Straight to listening, which is the point: one tap, then talk. */
@@ -12760,6 +12776,7 @@ const Say = {
   listen() {
     const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
     try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+    if (Say.own()) { Say.state('Dictate with Wispr Flow or your keyboard, then press Go.'); return; }
     if (!(window.FlowVoice && FlowVoice.available)) { Say.state('Type it here — this browser cannot listen.'); return; }
     Say.waiting = true;
     try { FlowVoice.start(ta); } catch (e) { Say.waiting = false; }
