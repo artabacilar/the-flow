@@ -32,7 +32,7 @@ function wav() {
   ok('it is told not to claim to be, or quote, any character', /Do not claim to be any film or comic character/.test(sir.text));
   ok('what they asked to be called is cleaned of anything but letters', odd.call === 'bSirb DROP', odd.call);
   ok('plain is plain, and no title when none was chosen', plain.persona === 'plain' && /Do not use a title/.test(plain.text));
-  ok('the reply is written to be spoken: no markdown, no lists', /spoken aloud by a voice: plain sentences, no markdown/.test(X.DO_SYSTEM));
+  ok('the reply is written to be spoken: no markdown, no lists, short, the point first', /spoken aloud by a voice: plain sentences, no markdown/.test(X.DO_SYSTEM) && /the point first, in at most three or four short sentences/.test(X.DO_SYSTEM));
   const long = X.parseDo(JSON.stringify({ say: 'x'.repeat(2000), actions: [], end: true }), {});
   ok('an answer may run to a few sentences, and "end" closes the conversation', long.say.length === 900 && long.end === true);
 
