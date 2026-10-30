@@ -36,6 +36,11 @@ function wav() {
   ok('plain is plain, and no title when none was chosen', plain.persona === 'plain' && /Do not use a title/.test(plain.text));
   ok('the reply is written to be spoken: no markdown, no lists, short, the point first', /spoken aloud by a voice: plain sentences, no markdown/.test(X.DO_SYSTEM) && /the point first, in at most three or four short sentences/.test(X.DO_SYSTEM));
   const long = X.parseDo(JSON.stringify({ say: 'x'.repeat(2000), actions: [], end: true }), {});
+  const memP = X.parseDo(JSON.stringify({ say: 'ok', actions: [{ type: 'remember', fact: 'Wife is called Elif' }, { type: 'remember', fact: 'Card 4111 1111 1111 1111' }, { type: 'remember', fact: 'His bank password is hunter2' }, { type: 'forget', memory: 'm1' }, { type: 'forget', memory: 'made-up' }] }), { today: '2026-10-30', memory: [{ id: 'm1', text: 'x' }] });
+  ok('server: remember keeps a fact, never a card number or a password; forget needs a real memory id', JSON.stringify(memP.actions) === JSON.stringify([{ type: 'remember', fact: 'Wife is called Elif' }, { type: 'forget', memory: 'm1' }]), memP.actions);
+  const km = X.doContext({ ctx: {}, memory: [{ id: 'm 1<>', text: '  Runs   the sales team ' }, { id: '', text: 'no id' }, null] }).memory;
+  ok('server: what he knows is cleaned and capped before it reaches the model', km.length === 1 && km[0].id === 'm1' && km[0].text === 'Runs the sales team', km);
+  ok('server: the instructions say what to remember and that memory is used, not recited', /remember: something lasting about them/.test(X.DO_SYSTEM) && /never recite it/.test(X.DO_SYSTEM));
   ok('an answer may run to a few sentences, and "end" closes the conversation', long.say.length === 900 && long.end === true);
 
   console.log('\n— Sunday is Sunday —');
@@ -205,6 +210,68 @@ function wav() {
   ok('the request carries the name; spoken replies say "Jarvis"', dos[dos.length - 1].name === 'J.A.R.V.I.S.' && speak.includes('Jarvis here, sir.'), { name: dos[dos.length - 1].name, speak });
   await p.evaluate(() => FlowSay.close());
   await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'name'); await Flow.Settings.set('asstVoice', 'premium'); await Flow.Settings.set('asstName', ''); });
+
+  console.log('\n— what he knows about you —');
+  await p.evaluate(async () => { await Flow.Settings.set('asstMemory', []); await Flow.Settings.set('asstCall', 'sir'); });
+  doReply = { ok: true, say: 'Noted, sir — I shall remember that.', actions: [{ type: 'remember', fact: 'Wife is called Elif' }] };
+  await p.evaluate(() => FlowSay.open()); await p.waitForTimeout(300);
+  speak.length = 0;
+  await ask('remember that my wife is called Elif', true);
+  const mem = await p.evaluate(() => ({ saved: (Flow.Settings.get('asstMemory') || []).map((m) => m.text), plan: !document.querySelector('#flow-say .sy-plan').hidden, open: document.querySelector('#flow-say').classList.contains('on'), list: [...document.querySelectorAll('#flow-say .sy-mem li span')].map((x) => x.textContent) }));
+  ok('"remember that…" is saved at once — no "Do it" — and he says so', mem.saved.join() === 'Wife is called Elif' && !mem.plan && mem.open && speak.includes('Noted, sir — I shall remember that.'), mem);
+  ok('and it is listed under "What he knows about you"', mem.list.indexOf('Wife is called Elif') >= 0, mem.list);
+  doReply = { ok: true, say: 'Your wife is Elif, sir.', actions: [] };
+  await ask('what is my wife called?', true);
+  const sentMem = dos[dos.length - 1].memory || [];
+  ok('every request carries what he knows, with ids', sentMem.length === 1 && sentMem[0].text === 'Wife is called Elif' && /^m/.test(sentMem[0].id), sentMem);
+  const mid = sentMem[0] && sentMem[0].id;
+  doReply = { ok: true, say: 'Forgotten, sir.', actions: [{ type: 'forget', memory: mid }] };
+  await ask('forget about my wife', true);
+  ok('"forget…" removes it', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).length === 0));
+  await p.evaluate(() => { document.querySelector('#flow-say .sy-set').open = true; });
+  await p.fill('#sy-mem-in', 'Trains Monday, Wednesday and Friday'); await p.press('#sy-mem-in', 'Enter'); await p.waitForTimeout(400);
+  ok('a fact can be added by hand', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).some((m) => /Trains Monday/.test(m.text))));
+  await p.click('#flow-say .sy-mem [data-say="memdrop"]'); await p.waitForTimeout(400);
+  ok('and removed with ×', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).length === 0));
+  doReply = { ok: true, say: 'One Priority and a fact to keep.', actions: [{ type: 'rock', title: 'Book dinner for Elif', date: new Date().toISOString().slice(0, 10) }, { type: 'remember', fact: 'Anniversary is 12 June' }] };
+  await ask('book dinner for Elif, our anniversary is 12 June', true);
+  const mix = await p.evaluate(() => ({ kinds: [...document.querySelectorAll('#flow-say .sy-card .sy-kind')].map((x) => x.textContent), saved: (Flow.Settings.get('asstMemory') || []).length }));
+  ok('mixed with other things, "Remember" waits on the card with the rest', mix.kinds.indexOf('Remember') >= 0 && mix.saved === 0, mix);
+  await p.click('#flow-say [data-say="do"]'); await p.waitForTimeout(700);
+  ok('and is kept on "Do it"', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).some((m) => m.text === 'Anniversary is 12 June')));
+
+  console.log('\n— the presence —');
+  const pres = await p.evaluate(async () => {
+    FlowSay.close(); FlowSay.open(); await new Promise((r) => setTimeout(r, 300));
+    const el = document.querySelector('#flow-say');
+    const r = { orb: !!el.querySelector('.sy-orb'), hello: el.querySelector('.sy-hello').textContent, st: el.getAttribute('data-sy') };
+    FlowSay.mode('thinking'); r.thinking = getComputedStyle(el.querySelector('.sy-orb')).animationName;
+    const pr = FlowSay.speak('Very good, sir.'); r.speaking = el.getAttribute('data-sy'); await pr; r.after = el.getAttribute('data-sy');
+    return r;
+  });
+  ok('Talk opens on an orb and a hello for the time of day, in his manner', pres.orb && /^Good (morning|afternoon|evening), sir\. What can I do for you\?$/.test(pres.hello), pres);
+  ok('the orb turns while he thinks, and moves while he speaks, then rests', pres.thinking === 'syTurn' && pres.speaking === 'speaking' && pres.after === 'idle', pres);
+  await p.evaluate(() => FlowSay.close());
+  const dear = await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'dear'); FlowSay.open(); await new Promise((r) => setTimeout(r, 200)); const h = document.querySelector('#flow-say .sy-hello').textContent; FlowSay.close(); await Flow.Settings.set('asstCall', 'sir'); return h; });
+  ok('"Call me: Dear" is an option too', /, dear\. What can I do/.test(dear), dear);
+
+  console.log('\n— his hello when the app opens —');
+  speak.length = 0;
+  const gr = await p.evaluate(async () => {
+    Object.keys(localStorage).filter((k) => k.startsWith('flow:greeted')).forEach((k) => localStorage.removeItem(k));
+    FlowGreet.pending = false; await FlowGreet.run(); await new Promise((r) => setTimeout(r, 600));
+    const card = document.querySelector('#today-feed .lk-jv');
+    const r = { text: FlowGreet.text, card: !!card && card.textContent.indexOf(FlowGreet.text) >= 0, again: FlowGreet.seen() };
+    FlowGreet.pending = false; const before = FlowGreet.text; FlowGreet.text = ''; await FlowGreet.run(); r.second = FlowGreet.text; FlowGreet.text = before; FlowGreet.paint();
+    return r;
+  });
+  ok('he greets you by the time of day, with what today holds, and the words stay on Today', /^Good (morning|afternoon|evening), sir\./.test(gr.text) && /Priorit|planned|done/.test(gr.text) && gr.card, gr);
+  ok('once per part of the day — opening again does not repeat it', gr.again && gr.second === '', gr);
+  await p.waitForTimeout(400);
+  ok('and he says it out loud (or at the first tap, where the browser needs one)', speak.some((t) => /^Good (morning|afternoon|evening), sir\./.test(t)) || await p.evaluate(() => FlowGreet.pending), speak);
+  await p.click('#today-feed .lk-jv .lk-jv-x');
+  ok('× puts it away', await p.evaluate(() => !document.querySelector('#today-feed .lk-jv')));
+  await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'name'); });
 
   console.log('\n— Siri —');
   const siri = await p.evaluate(async () => { FlowSay.close(); window.__flowPendingTalk = true; FlowSay.boot(); await new Promise((r) => setTimeout(r, 900)); return { open: document.querySelector('#flow-say').classList.contains('on'), left: window.__flowPendingTalk }; });
