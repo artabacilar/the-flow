@@ -271,7 +271,7 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
   const server = fs.readFileSync(path.join(__dirname, '..', 'life-os-server.js'), 'utf8');
   ok('the privacy policy says what each connection keeps, and how Gmail is limited',
      /<b>Google<\/b> stores the name, email address and profile photo/.test(server) &&
-     /never reads message bodies/.test(server) && /<b>Fathom<\/b>/.test(server) && /<b>Notion<\/b>/.test(server) && /Limited Use/.test(server));
+     /never sends mail, never deletes or changes anything, and reads nothing else/.test(server) && /for an event brief/.test(server) && /<b>Fathom<\/b>/.test(server) && /<b>Notion<\/b>/.test(server) && /including the Limited Use requirements/.test(server) && /api-services-user-data-policy/.test(server));
 
   /* ================================================================ */
   console.log('\n— Google Calendar and Gmail: a token, kept and refreshed —');
