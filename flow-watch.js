@@ -336,9 +336,12 @@ async function act(store, b, opts) {
     if (!c.rocks[wid]) c.rocks[wid] = [];
     if (c.rocks[wid].length >= 200) throw new WatchError('That week is full.');
     const title = text.slice(0, 300);
-    c.rocks[wid].push({ id: newId(), title, role: '', day, time: '', end: '', prio: 'med', note: '', done: false });
+    /* "Done today": something already done, said to the watch so it counts.
+       Only today can be done — tomorrow has not happened yet. */
+    const doneNow = b.done === true && b.day !== 'tomorrow';
+    c.rocks[wid].push({ id: newId(), title, role: '', day, time: '', end: '', prio: 'med', note: '', done: doneNow });
     await writeJSON(store, 'ld_compass', c);
-    await note(store, '🪨 Big rock added on ' + via + ' (' + wid + '): ' + title);
+    await note(store, (doneNow ? '✅ Big rock added done on ' : '🪨 Big rock added on ') + via + ' (' + wid + '): ' + title);
     return;
   }
 
