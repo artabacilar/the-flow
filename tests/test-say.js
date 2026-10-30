@@ -128,6 +128,23 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.evaluate(() => FlowSay.open({ text: 'show my habits' })); await p.waitForTimeout(900);
   ok('"show my habits" opens Habits with nothing to confirm', await p.evaluate(() => !document.querySelector('#flow-say.on') && document.querySelector('.tab.active[data-tab="habits"]')));
 
+  console.log('\n— Wispr Flow / keyboard dictation —');
+  const own = await p.evaluate(async () => {
+    FlowSay.open(); await new Promise((r) => setTimeout(r, 300));
+    const box = document.querySelector('#flow-say [data-say-own]');
+    const before = { shown: !!box, checked: box && box.checked };
+    const chipless = !document.querySelector('#flow-say [data-label*="time"], #flow-say .flow-x'); const tip = document.querySelector('#flow-say .sy-ex').textContent;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    FlowSay.close(); FlowSay.open(); await new Promise((r) => setTimeout(r, 300));
+    const r = { before, chipless, tip, remembered: document.querySelector('#flow-say [data-say-own]').checked, listening: !!(window.FlowVoice && FlowVoice.listening),
+      focused: document.activeElement && document.activeElement.id === 'sy-text', state: document.querySelector('#flow-say .sy-state').textContent };
+    document.querySelector('#flow-say [data-say-own]').checked = false; FlowSay.own(false); FlowSay.close();
+    return r;
+  });
+  ok('a switch for dictating with Wispr Flow or the keyboard, off at first', own.before.shown && own.before.checked === false, own.before);
+  ok('the sheet has no 🕘 time chip, and its tip says Priorities, not Open loops', own.chipless && /^Priorities, habits/.test(own.tip), own);
+  ok('when on, it is remembered and the box waits, focused, without listening', own.remembered && !own.listening && own.focused && /Wispr Flow/.test(own.state), own);
+
   console.log('\n— Advanced —');
   await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); renderToday(); }); await p.waitForTimeout(700);
   ok('no Talk button in Advanced', await p.evaluate(() => { const b = document.querySelector('.lk-say'); return !b || getComputedStyle(b).display === 'none'; }));
