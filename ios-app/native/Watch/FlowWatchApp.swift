@@ -159,6 +159,10 @@ struct TodayView: View {
     @State private var note: String?
     @State private var busy = Set<String>()
     @State private var adding = false
+    /// What was just said into "Add by voice", waiting for Today, Tomorrow,
+    /// Done or Note.
+    @State private var heard: Heard?
+    @State private var listenAgain = false
     @State private var askUnlink = false
     /// An overdue Priority tapped: Done, Today or Tomorrow.
     @State private var late: WatchDay.Rock?
@@ -185,7 +189,7 @@ struct TodayView: View {
                             label(Words.t("Habits", "Alışkanlıklar")).id("habits")
                             ForEach(day.habits) { h in habitRow(h) }
                         }
-                        Button { adding = true } label: {
+                        Button { addByVoice() } label: {
                             Label(Words.t("Add by voice", "Sesle ekle"), systemImage: "mic.fill").frame(maxWidth: .infinity)
                         }
                         .tint(.green)
@@ -216,6 +220,7 @@ struct TodayView: View {
                     case "write": writing = d.habits.first { $0.door == "write" }
                     case "timer": timing = d.habits.first { $0.door == "timer" }
                     case "add": adding = true
+                    case "heard": heard = Heard(text: Words.t("Call the dentist about Friday", "Cuma için dişçiyi ara"))
                     default: break
                     }
                 }
@@ -224,10 +229,19 @@ struct TodayView: View {
             .navigationTitle("The Flow")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel(Words.t("Add", "Ekle"))
+                    Button { addByVoice() } label: { Image(systemName: "plus") }.accessibilityLabel(Words.t("Add", "Ekle"))
                 }
             }
             .sheet(isPresented: $adding) { AddView { d in day = d } }
+            /* Dictation opens from Today, not from over a sheet: "Again"
+               lets the sheet go all the way down, then listens again. */
+            .sheet(item: $heard, onDismiss: {
+                guard listenAgain else { return }
+                listenAgain = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { addByVoice() }
+            }) { h in
+                HeardView(text: h.text, done: { d in day = d }, onUnlinked: { onUnlinked() }, again: { listenAgain = true })
+            }
             .sheet(item: $late) { r in LateView(rock: r) { d in day = d } onUnlinked: { onUnlinked() } }
             .sheet(item: $writing) { h in WriteView(habit: h) { d in day = d } onUnlinked: { onUnlinked() } }
             .sheet(item: $timing) { h in TimerView(habit: h) { d in day = d } onUnlinked: { onUnlinked() } }
@@ -270,6 +284,17 @@ struct TodayView: View {
 
     private func label(_ text: String) -> some View {
         Text(text.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 6)
+    }
+
+    /// "Add by voice" goes straight to dictation — no field to tap, no mic
+    /// to press. What was said then gets one tap: Today, Tomorrow, Done or
+    /// Note. A watch that cannot open dictation here gets the field instead.
+    private func addByVoice() {
+        if Shots.on { adding = true; return }
+        let opened = Dictate.ask { said in
+            if let said = said { heard = Heard(text: said) }
+        }
+        if !opened { adding = true }
     }
 
     private func rockRow(_ r: WatchDay.Rock) -> some View {
@@ -367,7 +392,104 @@ struct TodayView: View {
     }
 }
 
-// MARK: - Add by voice
+// MARK: - Dictation, straight away
+
+struct Heard: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+enum Dictate {
+    /// Opens the watch's dictation screen at once. An empty list of
+    /// suggestions with plain input skips the menu and starts listening.
+    /// Returns false when there is no screen to open it from — the caller
+    /// shows a field instead. `said` is nil when nothing was said.
+    @discardableResult
+    static func ask(_ said: @escaping (String?) -> Void) -> Bool {
+        guard let vc = WKApplication.shared().visibleInterfaceController else { return false }
+        vc.presentTextInputController(withSuggestions: [], allowedInputMode: .plain) { result in
+            let text = (result?.first as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            DispatchQueue.main.async { said(text.isEmpty ? nil : text) }
+        }
+        return true
+    }
+}
+
+/// What was said, and where it goes: one tap. Say it again or edit it if the
+/// watch heard it wrong.
+struct HeardView: View {
+    let done: (WatchDay) -> Void
+    let onUnlinked: () -> Void
+    let again: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var editing = false
+    @State private var busy = false
+    @State private var error: String?
+
+    init(text: String, done: @escaping (WatchDay) -> Void, onUnlinked: @escaping () -> Void, again: @escaping () -> Void) {
+        _text = State(initialValue: text)
+        self.done = done
+        self.onUnlinked = onUnlinked
+        self.again = again
+    }
+
+    private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(Words.t("YOU SAID", "SÖYLEDİĞİN")).font(.caption2.weight(.bold)).foregroundStyle(.green)
+                if editing {
+                    TextField(Words.t("Say the Priority", "Önceliği söyle"), text: $text)
+                } else {
+                    Text(text).font(.headline).fixedSize(horizontal: false, vertical: true)
+                        .onTapGesture { editing = true }
+                }
+                if let e = error { Text(e).font(.footnote).foregroundStyle(.orange) }
+                Button { Task { await go(["action": "add", "text": text, "day": "today"]) } } label: {
+                    Label(Words.t("Today", "Bugün"), systemImage: "sun.max.fill").frame(maxWidth: .infinity)
+                }.tint(.green)
+                Button { Task { await go(["action": "add", "text": text, "day": "tomorrow"]) } } label: {
+                    Label(Words.t("Tomorrow", "Yarın"), systemImage: "arrow.right").frame(maxWidth: .infinity)
+                }
+                Button { Task { await go(["action": "add", "text": text, "day": "today", "done": true]) } } label: {
+                    Label(Words.t("Done today", "Bugün yapıldı"), systemImage: "checkmark").frame(maxWidth: .infinity)
+                }
+                Button { Task { await go(["action": "add", "text": text, "kind": "note"]) } } label: {
+                    Label(Words.t("Note", "Not"), systemImage: "note.text").frame(maxWidth: .infinity)
+                }
+                HStack(spacing: 6) {
+                    Button { again(); dismiss() } label: {
+                        Label(Words.t("Again", "Tekrar"), systemImage: "mic.fill").font(.footnote).frame(maxWidth: .infinity)
+                    }
+                    Button { editing = true } label: {
+                        Label(Words.t("Edit", "Düzenle"), systemImage: "pencil").font(.footnote).frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .disabled(busy)
+        }
+    }
+
+    @MainActor private func go(_ body: [String: Any]) async {
+        guard !empty else { editing = true; return }
+        busy = true; error = nil
+        do {
+            let d = try await WatchAPI.act(body)
+            WKInterfaceDevice.current().play(.success)
+            done(d); dismiss()
+        } catch WatchAPI.Failure.unlinked { dismiss(); onUnlinked() }
+        catch {
+            self.error = (error as? LocalizedError)?.errorDescription ?? Words.t("Could not add that.", "Eklenemedi.")
+            WKInterfaceDevice.current().play(.failure)
+        }
+        busy = false
+    }
+}
+
+// MARK: - Add by voice (the field, where dictation cannot open directly)
 
 struct AddView: View {
     let done: (WatchDay) -> Void
@@ -386,7 +508,7 @@ struct AddView: View {
                 TextField(kind == "rock" ? Words.t("Say the Priority", "Önceliği söyle") : Words.t("Say the note", "Notu söyle"), text: $text)
                 choice([("rock", Words.t("Priority", "Öncelik")), ("note", Words.t("Note", "Not"))], $kind)
                 if kind == "rock" {
-                    choice([("today", Words.t("Today", "Bugün")), ("tomorrow", Words.t("Tomorrow", "Yarın"))], $when)
+                    choice([("today", Words.t("Today", "Bugün")), ("tomorrow", Words.t("Tomorrow", "Yarın")), ("done", Words.t("Done", "Yapıldı"))], $when)
                 }
                 if let e = error { Text(e).font(.footnote).foregroundStyle(.orange) }
                 Button {
@@ -421,7 +543,7 @@ struct AddView: View {
         saving = true; error = nil
         do {
             var b: [String: Any] = ["action": "add", "text": text, "kind": kind]
-            if kind == "rock" { b["day"] = when }
+            if kind == "rock" { b["day"] = when == "done" ? "today" : when; if when == "done" { b["done"] = true } }
             let d = try await WatchAPI.act(b)
             WKInterfaceDevice.current().play(.success)
             done(d); dismiss()

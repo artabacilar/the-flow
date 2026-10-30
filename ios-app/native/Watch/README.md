@@ -28,7 +28,11 @@ Settings → Watch (or theflow.today/watch).
   and today is ticked; a timed one ("Meditate 10 min") opens its clock, which
   survives the wrist going down and taps when it ends. The door is read from
   the name, or as chosen in the app.
-- **Add by voice**: a Priority for today or tomorrow, or a note.
+- **Add by voice**: goes straight to dictation — no field to tap, no mic to
+  press. What was heard then takes one tap: **Today**, **Tomorrow**, **Done
+  today** (already done, so it counts) or **Note** (to the journal); **Again**
+  listens once more, **Edit** fixes a word. A watch that cannot open
+  dictation directly gets the field instead.
 - **Language**: English or Turkish, following the watch's own language; the
   server writes the headline in the same one.
 - **Complications**: circular, corner, inline and rectangular — Priorities
