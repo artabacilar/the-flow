@@ -13154,7 +13154,7 @@ const Say = {
       if (acts.length === 1 && acts[0].type === 'open') {
         Say.speak(reply); Say.close(); Nav.go(acts[0].page); return;
       }
-      if (j.end) { Say.plan = null; Say.askView(); Say.logPaint(); Say.state(''); await Say.speak(reply); if (Say.spoken) Say.close(); return; }
+      if (j.end) { Say.plan = null; Say.askView(); Say.logPaint(); Say.state(''); await Say.speak(reply); Say.close(); return; }
       if (acts.length) {
         Say.paintPlan();
         await Say.speak(reply);
@@ -13207,9 +13207,11 @@ const Say = {
     Say.el.querySelector('#sy-text').value = t;
     Say.send();
   },
-  /* Spoken back only when it was spoken to: a typed request reads the answer. */
+  /* He always answers out loud — typed, dictated (Wispr Flow) or spoken —
+     unless the voice is set to Silent. Only listening again afterwards is
+     kept for when they spoke. */
   speak(text) {
-    if (!Say.spoken || !text) return Promise.resolve();
+    if (!text) return Promise.resolve();
     return Speech.say(text, Say.lang());
   },
   logPaint() {
@@ -13324,7 +13326,8 @@ const Say = {
     }
     Say.close();
     if (did) toast(did === 1 ? 'Done ✓' : did + ' things done ✓', null, 1800);
-    if (open) { if (Say.spoken) Say.speak(Say.doneLine(Math.max(did, 1), false)); Nav.go(open); }
+    if (did || open) Speech.say(Say.doneLine(Math.max(did, 1), false), Say.lang());
+    if (open) Nav.go(open);
   },
 
   /* A "Talk" button on Today, beside the greeting. */
