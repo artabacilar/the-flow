@@ -27,6 +27,24 @@ enum WatchStore {
     }
     static var isLinked: Bool { !(token ?? "").isEmpty }
 
+    /// The code being shown, and the server's id for it, until it is linked
+    /// or runs out. Kept so that the watch going dark while the person types
+    /// the code on their phone does not throw it away: the screen comes back
+    /// to the same code and goes on asking for that one, which is the one the
+    /// server is holding the token for.
+    struct Pending: Codable { let id: String; let code: String; let until: Date }
+    static var pending: Pending? {
+        get {
+            guard let d = defaults.data(forKey: "watch.pair"),
+                  let p = try? JSONDecoder().decode(Pending.self, from: d), p.until > Date() else { return nil }
+            return p
+        }
+        set {
+            if let v = newValue, let d = try? JSONEncoder().encode(v) { defaults.set(d, forKey: "watch.pair") }
+            else { defaults.removeObject(forKey: "watch.pair") }
+        }
+    }
+
     /// When a habit's clock, started on the wrist, is due to end — kept so
     /// that lowering the wrist (and the app being suspended) does not lose it.
     static func timerEnd(_ habit: String) -> Date? {
@@ -186,7 +204,9 @@ enum WatchAPI {
     static func pollPairing(_ id: String) async throws -> PairPoll {
         var comps = URLComponents(url: WatchStore.origin.appendingPathComponent("api/watch/pair"), resolvingAgainstBaseURL: false)!
         comps.queryItems = [URLQueryItem(name: "id", value: id)]
-        let (data, resp) = try await URLSession.shared.data(from: comps.url!)
+        var req = URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        req.setValue("watchOS", forHTTPHeaderField: "X-Flow-Device")
+        let (data, resp) = try await URLSession.shared.data(for: req)
         if (resp as? HTTPURLResponse)?.statusCode == 404 { return PairPoll(status: "expired", token: nil, who: nil) }
         return try JSONDecoder().decode(PairPoll.self, from: data)
     }

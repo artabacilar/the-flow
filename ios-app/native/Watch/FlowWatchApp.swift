@@ -54,6 +54,7 @@ struct RootView: View {
 
 struct PairView: View {
     let onLinked: () -> Void
+    @Environment(\.scenePhase) private var phase
     @State private var code = ""
     @State private var error: String?
     @State private var task: Task<Void, Never>?
@@ -84,29 +85,62 @@ struct PairView: View {
             .padding(.horizontal, 4)
         }
         .onAppear { start() }
-        .onDisappear { task?.cancel() }
+        .onDisappear { task?.cancel(); task = nil }
+        /* Raising the wrist again: ask straight away rather than waiting
+           for a screen that may not reappear to call onAppear. */
+        .onChange(of: phase) { p in if p == .active { start() } }
     }
 
-    private func start() {
+    /// Picks up the code already on screen if there is one — the person may
+    /// have typed it in while the watch was dark, and the token is waiting
+    /// under that code's id, not a new one. Only a code that has run out, or
+    /// none at all, asks the server for another.
+    private func start(fresh: Bool = false) {
         task?.cancel()
-        error = nil; code = ""
+        error = nil
         task = Task {
             do {
-                let p = try await WatchAPI.startPairing()
-                await MainActor.run { code = p.code }
-                let every = UInt64(max(2, p.poll ?? 3)) * 1_000_000_000
+                var p: WatchStore.Pending
+                if !fresh, let keep = WatchStore.pending {
+                    p = keep
+                } else {
+                    await MainActor.run { code = "" }
+                    let s = try await WatchAPI.startPairing()
+                    /* The server keeps a linked code's token for five minutes past
+                       its own expiry; keep asking for that long too. */
+                    p = WatchStore.Pending(id: s.id, code: s.code, until: Date().addingTimeInterval(TimeInterval(max(60, s.expiresIn) + 300)))
+                    WatchStore.pending = p
+                }
+                let shown = p.code
+                await MainActor.run { code = shown }
+                var misses = 0
                 while !Task.isCancelled {
-                    try await Task.sleep(nanoseconds: every)
-                    let r = try await WatchAPI.pollPairing(p.id)
+                    /* First ask at once (it may already be linked), then every
+                       three seconds; a dropped request is retried, not fatal. */
+                    let r: WatchAPI.PairPoll
+                    do { r = try await WatchAPI.pollPairing(p.id); misses = 0 }
+                    catch is CancellationError { return }
+                    catch {
+                        misses += 1
+                        if misses >= 20 { throw error }
+                        try await Task.sleep(nanoseconds: 3_000_000_000)
+                        continue
+                    }
                     if r.status == "linked", let t = r.token {
                         WatchStore.token = t
                         WatchStore.who = r.who ?? ""
+                        WatchStore.pending = nil
                         WKInterfaceDevice.current().play(.success)
                         _ = try? await WatchAPI.today()
                         await MainActor.run { onLinked() }
                         return
                     }
-                    if r.status == "expired" { await MainActor.run { start() }; return }
+                    if r.status == "expired" {
+                        WatchStore.pending = nil
+                        await MainActor.run { start(fresh: true) }
+                        return
+                    }
+                    try await Task.sleep(nanoseconds: 3_000_000_000)
                 }
             } catch is CancellationError {
             } catch {
