@@ -134,8 +134,11 @@ const PROVIDERS = {
     fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    scope: 'openid email https://www.googleapis.com/auth/calendar.readonly',
-    need: 'https://www.googleapis.com/auth/calendar.readonly',
+    /* events.readonly, not calendar.readonly: only events on the primary
+       calendar are ever read (gcalEvents), and Google verifies the narrowest
+       scope that does the job. */
+    scope: 'openid email https://www.googleapis.com/auth/calendar.events.readonly',
+    need: 'https://www.googleapis.com/auth/calendar.events.readonly',
     needWhy: 'Tick the box that lets The Flow see your calendar, then try again.',
     extra: { response_type: 'code', access_type: 'offline', prompt: 'consent select_account' },
     finish: finishCode,
