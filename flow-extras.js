@@ -2337,14 +2337,14 @@ async function handleSpeak(p, req, res, ctx) {
   const text = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
   if (!text) { ctx.json(res, 400, { error: 'Nothing to say.' }); return true; }
   const voice = TTS_VOICE(), model = TTS_MODEL();
-  const ck = require('crypto').createHash('sha256').update(voice + '|' + model + '|' + text).digest('hex');
+  const ck = require('crypto').createHash('sha256').update('v2|' + voice + '|' + model + '|' + text).digest('hex');
   const send = (buf) => { res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400' }); res.end(buf); };
   if (ttsCache.has(ck)) { const b = ttsCache.get(ck); ttsCache.delete(ck); ttsCache.set(ck, b); send(b); return true; }
   const spent = (await ctx.counter.get(ttsCountKey())) || 0;
   if (TTS_DAILY_CHARS > 0 && spent + text.length > TTS_DAILY_CHARS) { ctx.json(res, 429, { fallback: true, error: 'That is the premium voice for today.' }); return true; }
   try {
     const r = await ttsPost('https://api.elevenlabs.io/v1/text-to-speech/' + voice + '?output_format=mp3_44100_128', { 'xi-api-key': key },
-      { text, model_id: model, voice_settings: { stability: 0.55, similarity_boost: 0.8, style: 0.12, use_speaker_boost: true } }, 30000);
+      { text, model_id: model, voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } }, 30000);
     if (r.status < 200 || r.status >= 300 || !/audio/.test(r.type) || !r.body.length) {
       console.warn('[flow/assistant] speak: ElevenLabs answered ' + r.status + ' ' + String(r.body || '').slice(0, 160));
       ctx.json(res, 502, { fallback: true, error: 'The premium voice is unavailable just now.' }); return true;

@@ -1950,6 +1950,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Nothing": "Hiçbir şey",
   "Keep listening after it answers": "Cevap verdikten sonra dinlemeye devam et",
   "AI finish on the premium voice": "Premium seste yapay zekâ dokusu",
+  "Robotic AI effect on the voice (off is the clean voice)": "Seste robotik yapay zekâ efekti (kapalıyken temiz ses)",
   "The premium voice is on for this account.": "Bu hesapta premium ses açık.",
   "The premium voice is not available here yet — it uses this device's best British voice.": "Premium ses burada henüz yok — bu cihazın en iyi İngiliz sesi kullanılıyor.",
   "Say “yes” to do it, “no” to leave it — or say what to change.": "Yapmam için “evet”, bırakmam için “hayır” de — ya da neyin değişeceğini söyle.",

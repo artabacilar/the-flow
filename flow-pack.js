@@ -313,6 +313,7 @@ const SETTINGS_DEFAULTS = {
   asstCall: 'name',
   asstHands: true,
   asstSheen: true,
+  asstFx: false,                 // the robotic 'AI finish' on the premium voice: off = the clean voice
   asstName: '',
   asstGreet: true,               // a spoken hello when the app opens, once per part of the day
   asstMemory: [],                // what you told the assistant about yourself: [{ id, text, at }]
@@ -13174,7 +13175,7 @@ window.FlowHabitDo = HabitDo;
  * ====================================================================== */
 /* ── The assistant's voice ──────────────────────────────────────────────
  * Premium: a neural voice from the server (/api/flow/speak, ElevenLabs),
- * played through Web Audio with a light AI finish — a little presence and a
+ * played through Web Audio, clean (an optional robotic effect adds a little presence and a
  * very short shimmer under the voice. Otherwise, or whenever that is refused,
  * the device's best British voice, so it never just goes quiet. Sound is
  * unlocked on the tap that opens the assistant — iOS allows playback only
@@ -13249,19 +13250,19 @@ const Speech = {
       try { src.start(0); } catch (e) { Speech.src = null; ok(false); }
     });
   },
-  /* The AI finish: a clean low end, a little presence, gentle compression,
-     and an 11 ms shimmer mixed well under the voice. Off in the settings. */
+  /* The optional robotic effect (Voice and manners); off by default. */
   chain(ac) {
     const input = ac.createGain(), output = ac.createGain();
-    if (Speech.pref('asstSheen') === false) { input.connect(output); return { input, output }; }
-    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
-    const pres = ac.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3200; pres.Q.value = 0.9; pres.gain.value = 2.5;
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.2;
-    const dly = ac.createDelay(0.05); dly.delayTime.value = 0.011;
-    const fb = ac.createGain(); fb.gain.value = 0.28;
-    const wet = ac.createGain(); wet.gain.value = 0.16;
-    input.connect(hp); hp.connect(pres); pres.connect(comp); comp.connect(output);
-    comp.connect(dly); dly.connect(fb); fb.connect(dly); dly.connect(wet); wet.connect(output);
+    /* Clean by default: the voice exactly as recorded. The old finish (an
+       11 ms echo fed back into itself) read as a metallic ring behind him.
+       Asked for, the effect is now a light touch with no feedback. */
+    if (Speech.pref('asstFx') !== true) { input.connect(output); return { input, output }; }
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 80;
+    const pres = ac.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3200; pres.Q.value = 0.9; pres.gain.value = 1.5;
+    const dly = ac.createDelay(0.05); dly.delayTime.value = 0.009;
+    const wet = ac.createGain(); wet.gain.value = 0.07;
+    input.connect(hp); hp.connect(pres); pres.connect(output);
+    pres.connect(dly); dly.connect(wet); wet.connect(output);
     return { input, output };
   },
   /* The device's best British voice: Daniel on Apple, Google UK English Male
@@ -13424,7 +13425,7 @@ const Say = {
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="dear">Dear</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
-            '<label class="sy-own"><input type="checkbox" data-say-pref="asstSheen"> AI finish on the premium voice</label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
             '<div class="sy-memk">What he knows about you</div>' +
             '<ul class="sy-mem"></ul>' +
