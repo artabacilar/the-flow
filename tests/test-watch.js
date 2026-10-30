@@ -140,6 +140,13 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   ok('with it, the watch reads the day', day.rocks && day.rocks.some((r) => r.id === 'w1') && day.headline, day.headline);
   const after = await (await watch.request.post(H + '/api/watch', { headers: auth, data: { action: 'rock', id: 'w1', done: true } })).json();
   ok('and a tick comes back as the new day in one round trip', after.rocks.find((r) => r.id === 'w1').done === true);
+  const askNo = await watch.request.post(H + '/api/watch/ask', { data: { text: 'what is left today?' } });
+  ok('asking the assistant from a watch needs its token', askNo.status() === 401);
+  const ask = await watch.request.post(H + '/api/watch/ask', { headers: auth, data: { text: 'what is left today?', lang: 'en' } });
+  const askB = await ask.json().catch(() => ({}));
+  ok('with it, the question reaches the assistant (off on this test server, so it says so)', ask.status() === 503 && /assistant/i.test(askB.error || ''), { s: ask.status(), b: askB });
+  const spk = await watch.request.post(H + '/api/watch/speak', { headers: auth, data: { text: 'Very good, sir.' } });
+  ok('and the premium voice is asked the same way — falling back when it is not set up', spk.status() === 503 && (await spk.json()).fallback === true);
   const Q = await pair('watchos', 'Series 9');
   await p.evaluate(async (code) => fetch('/api/flow/watch/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }), Q.code);
   const got2 = await (await poll(Q.id)).json();

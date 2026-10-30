@@ -56,6 +56,11 @@ function wav() {
   ok('the conversation so far goes with the question', /Conversation so far:\nThey: what is left today\?\nYou: Two Priorities, sir\./.test(sent.messages[0].content), sent.messages && sent.messages[0].content);
   ok('and the manner, with "sir"', /butler/.test(sys) && /"sir"/.test(sys));
 
+  X.setPoster(async (url, h, payload) => { calls.push(payload); return { status: 200, body: { content: [{ type: 'text', text: '{"say":"Shall I add it, sir?","actions":[{"type":"habit","name":"Floss"}]}' }] } }; });
+  const wq = mk(); wq.out.req = JSON.stringify({ text: 'add flossing', watch: true, call: 'sir', ctx: { rocks: [], habits: [] } });
+  await X.handle('/api/flow/do', { method: 'POST' }, wq.res, wq.ctx);
+  ok('asked on a watch it answers only — no actions, and it is told so', wq.out.status === 200 && wq.out.body.actions.length === 0 && /Asked on their Apple Watch/.test(calls[calls.length - 1].messages[0].content), wq.out.body);
+
   console.log('\n— the premium voice —');
   delete process.env.ELEVENLABS_API_KEY;
   const g0 = mk(); await T.handle('/api/flow/speak', { method: 'GET' }, g0.res, g0.ctx);
@@ -189,6 +194,10 @@ function wav() {
   await p.evaluate(() => FlowSay.close());
   await p.evaluate(async () => { await Flow.Settings.set('asstCall', 'name'); await Flow.Settings.set('asstVoice', 'premium'); await Flow.Settings.set('asstName', ''); });
 
+  console.log('\n— Siri —');
+  const siri = await p.evaluate(async () => { FlowSay.close(); window.__flowPendingTalk = true; FlowSay.boot(); await new Promise((r) => setTimeout(r, 900)); return { open: document.querySelector('#flow-say').classList.contains('on'), left: window.__flowPendingTalk }; });
+  ok('"Talk to The Flow" from Siri, before the page was ready, opens the assistant once it is', siri.open && siri.left === false, siri);
+  await p.evaluate(() => FlowSay.close());
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');
