@@ -880,6 +880,14 @@ const server = http.createServer(async (req, res) => {
     }
     /* What a watch asks you to open: the app, at the box for its code. */
     if (p === '/watch' || p === '/watch/') { res.writeHead(302, { Location: '/?go=watch' }); return res.end(); }
+    /* Google Search Console's proof that theflow.today belongs to the Google
+       account that owns the OAuth app — Google will not show the app's name
+       and logo on its sign-in screen without it. Keep it: removing the file
+       un-verifies the site. The name is public by design. */
+    if (p === '/googled3790ef8e619ca92.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('google-site-verification: googled3790ef8e619ca92.html');
+    }
     if (p === '/about' || p === '/home') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
       return res.end(ABOUT_HTML);
