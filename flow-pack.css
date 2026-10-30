@@ -3495,3 +3495,18 @@ html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-
 html[data-flow-theme][data-flow-look="new"] #today-feed .lk-rk-add button{appearance:none;border:0;border-radius:14px;min-height:44px;padding:0 18px;background:var(--lk-lime-ink);color:var(--lk-lime);font:inherit;font-size:14px;font-weight:800;cursor:pointer;flex:0 0 auto}
 html:not([data-flow-look="new"]) .lk-rk-add{display:none}
 @media (max-width:480px){html[data-flow-theme][data-flow-look="new"] #today-feed .lk-rk-add{flex-wrap:wrap}html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add input[type=text]:not([type=checkbox]){flex-basis:100%}html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add select:not([multiple]):not([size]){flex:1 1 auto;max-width:none}}
+
+/* ── Simple: the assistant's conversation and its voice settings ── */
+#flow-say .sy-log{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto;margin:4px 0 12px;-webkit-overflow-scrolling:touch}
+#flow-say .sy-log[hidden]{display:none}
+#flow-say .sy-b{max-width:86%;padding:10px 14px;border-radius:18px;font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+#flow-say .sy-b.u{align-self:flex-end;background:var(--lk-s2,#1D1D20);color:var(--lk-ink,#F4F4F2);border-bottom-right-radius:6px}
+#flow-say .sy-b.a{align-self:flex-start;background:transparent;color:var(--lk-ink,#F4F4F2);border:1px solid var(--lk-line,rgba(255,255,255,.1));border-bottom-left-radius:6px}
+#flow-say .sy-set{margin:10px 0 2px;font-size:13px;color:var(--lk-mute,#8E8E94)}
+#flow-say .sy-set summary{cursor:pointer;font-weight:700;padding:6px 0;list-style:none}
+#flow-say .sy-set summary::-webkit-details-marker{display:none}
+#flow-say .sy-set summary::before{content:"▸ ";}
+#flow-say .sy-set[open] summary::before{content:"▾ ";}
+#flow-say .sy-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0}
+#flow-say .sy-opt span{font-weight:600;color:var(--lk-ink,#F4F4F2)}
+#flow-say .sy-opt select{min-height:38px;border-radius:12px;padding:0 10px;font:inherit;font-size:14px;max-width:62%}

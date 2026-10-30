@@ -2041,7 +2041,8 @@ const DO_SYSTEM = [
   '',
   'Return ONLY a JSON object, no prose around it:',
   '{',
-  '  "say": "one or two short sentences, spoken back to them, in their language",',
+  '  "say": "what you say back, spoken aloud, in their language",',
+  '  "end": false,',
   '  "actions": [',
   '    { "type": "rock",    "title": "Call the venue", "date": "YYYY-MM-DD", "time": "10:00", "note": "" },',
   '    { "type": "habit",   "name": "Read 20 minutes" },',
@@ -2064,7 +2065,11 @@ const DO_SYSTEM = [
   'Rules:',
   '· One request can hold several actions; keep their order. At most 12.',
   '· Never invent ids. If they mention a Priority or habit that is not in the list, use rock/habit to create it instead, and say so.',
-  '· A question about their day ("what is left today?") gets an answer in "say" from the lists, and no actions.',
+  '· A question ("what is left today?", "how did I sleep this week?", "what should I focus on?", "how much did I spend on food?") gets a real answer in "say", from the lists and from THEIR DATA below, and no actions. Be specific; cite what you saw. If the data does not show it, say so — never invent numbers, entries or dates.',
+  '· Advice is welcome when asked: brief, concrete, grounded in their own data.',
+  '· "say" is spoken aloud by a voice: plain sentences, no markdown, no lists or bullet points, no emoji, no URLs. Numbers and times as a person says them. Two short sentences for a confirmation; up to five for an answer.',
+  '· The conversation so far is given when there is one: follow on from it ("and tomorrow?", "move that one too").',
+  '· "end": true only when they are closing the conversation ("thanks, that is all", "goodbye", "nothing else") — then a brief sign-off in "say" and no actions.',
   '· If a writing habit is in the list and they are recording their day before bed, also tick that habit.',
   '· Titles are short and start with a capital; keep the language they spoke in.',
   '· "say" confirms what you understood ("Two Priorities and a note.") — never claims it is done; the person still confirms.',
@@ -2072,6 +2077,32 @@ const DO_SYSTEM = [
 ].join('\n');
 
 const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(new Date(String(s) + 'T00:00:00'));
+
+/* The voice it speaks in. "butler" is an original character in the spirit of
+   a film AI butler — composed, British, quietly witty — not an impression of
+   any real or fictional person. "plain" is the app's ordinary voice. */
+function doPersona(body) {
+  const persona = body && body.persona === 'plain' ? 'plain' : 'butler';
+  let call = String((body && body.call) || '').replace(/[^\p{L}\p{M} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const lines = ['', 'Voice:'];
+  if (persona === 'butler') {
+    lines.push('· You are their personal AI assistant with the manner of an impeccable British butler: composed, precise, courteous, quietly confident, with a dry, understated wit used sparingly — never sarcastic about them, never jokey when they are stressed or the news is bad.',
+      '· Economical: no filler, no "Great question", no exclamation marks. Polished, natural spoken English (or natural, polite Turkish when they speak Turkish — "efendim" in place of "sir").',
+      '· Do not claim to be any film or comic character, and do not quote one. You are simply The Flow\'s assistant.');
+  } else {
+    lines.push('· Friendly, plain and brief.');
+  }
+  if (call) lines.push('· Address them as "' + call + '" — at most once per reply, usually at the end of the first sentence ("Very good, ' + call + '.").');
+  else lines.push('· Do not use a title or name for them.');
+  return { persona, call, text: lines.join('\n') };
+}
+
+/* The last few turns, so "and tomorrow?" follows on. Plain text only. */
+function doHistory(body) {
+  const h = Array.isArray(body && body.history) ? body.history.slice(-8) : [];
+  return h.map((t) => t && { who: t.role === 'assistant' ? 'You' : 'They', text: String(t.text || '').replace(/\s+/g, ' ').trim().slice(0, 600) })
+    .filter((t) => t && t.text);
+}
 
 function parseDo(text, known) {
   const s = String(text || '');
@@ -2108,7 +2139,7 @@ function parseDo(text, known) {
       if (DO_PAGES.indexOf(a.page) >= 0) out.push({ type: 'open', page: a.page });
     }
   }
-  return { say: str(j.say, 400), actions: out };
+  return { say: str(j.say, 900), actions: out, end: j.end === true };
 }
 
 function doContext(body) {
@@ -2141,6 +2172,11 @@ async function handleDo(p, req, res, ctx) {
   if (DO_DAILY_CAP > 0 && spent >= DO_DAILY_CAP) { ctx.json(res, 429, { error: 'That is ' + spent + ' requests today. They reset at midnight UTC.', used: spent, cap: DO_DAILY_CAP }); return true; }
   const known = doContext(body);
   const lang = body.lang === 'tr' ? 'Turkish' : 'English';
+  const voice = doPersona(body);
+  const past = doHistory(body);
+  /* Their own record, read here, so a question gets a real answer. */
+  let snapshot = '';
+  try { if (ctx.mine) snapshot = await buildContext(ctx.mine); } catch (e) {}
   const lines = [
     'TODAY: ' + known.today + (known.weekday ? ' (' + known.weekday + ')' : '') + (known.time ? ', now ' + known.time : ''),
     'App language: ' + lang + ' (reply in the language they spoke).',
@@ -2149,11 +2185,18 @@ async function handleDo(p, req, res, ctx) {
     'Habits (id | name | ticked today):',
     known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
     '',
+    past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
     'They said: "' + said + '"'
   ].join('\n');
+  const system = [{ type: 'text', text: DO_SYSTEM + '\n' + voice.text }];
+  if (snapshot) {
+    const data = { type: 'text', text: '# THEIR DATA (read-only, for answering questions)\n\n' + snapshot };
+    if (data.text.length >= CACHE_MIN_CHARS) data.cache_control = { type: 'ephemeral' };
+    system.push(data);
+  }
   try {
     const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      { model: CHAT_MODEL, max_tokens: 1200, system: DO_SYSTEM, messages: [{ role: 'user', content: lines }] }, 45000);
+      { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] }, 45000);
     if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true; }
     if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' }); return true; }
     if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
@@ -2162,9 +2205,76 @@ async function handleDo(p, req, res, ctx) {
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: out.actions, used: spent + 1, cap: DO_DAILY_CAP });
+    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP });
   } catch (e) {
     ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
+  }
+  return true;
+}
+
+/* ==========================================================================
+ * The assistant's voice — ElevenLabs
+ * --------------------------------------------------------------------------
+ * POST /api/flow/speak {text} → audio/mpeg. Off until ELEVENLABS_API_KEY is
+ * set on the server; then the app asks here first and falls back to the
+ * device's own best British voice on any refusal, so speech never just stops.
+ * Plus (and the owner); a free account hears the device voice. A per-person
+ * daily character budget, and a small cache, because "Very good, sir." is
+ * said a great many times and needs paying for once.
+ *   FLOW_TTS_VOICE  default Daniel (British, authoritative) onwK4e9ZLuTAKqWW03F9
+ *   FLOW_TTS_MODEL  default eleven_multilingual_v2 (highest quality; Turkish too)
+ *   FLOW_TTS_DAILY_CHARS  default 20000 per person per day
+ * ========================================================================== */
+const TTS_VOICE = () => String(process.env.FLOW_TTS_VOICE || 'onwK4e9ZLuTAKqWW03F9').replace(/[^A-Za-z0-9]/g, '').slice(0, 40) || 'onwK4e9ZLuTAKqWW03F9';
+const TTS_MODEL = () => String(process.env.FLOW_TTS_MODEL || 'eleven_multilingual_v2').replace(/[^a-z0-9_]/g, '').slice(0, 60) || 'eleven_multilingual_v2';
+const TTS_DAILY_CHARS = (() => { const n = parseInt(process.env.FLOW_TTS_DAILY_CHARS || '20000', 10); return Number.isFinite(n) && n >= 0 ? n : 20000; })();
+const ttsCountKey = () => 'tts:' + new Date().toISOString().slice(0, 10);
+const ttsCache = new Map();
+function postAudio(url, headers, payload, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const u = new URL(url);
+    const req = https.request({ method: 'POST', hostname: u.hostname, path: u.pathname + u.search,
+      headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': body.length, Accept: 'audio/mpeg' }, headers) }, (res) => {
+      const chunks = []; let n = 0;
+      res.on('data', (c) => { chunks.push(c); n += c.length; if (n > 8e6) req.destroy(new Error('too large')); });
+      res.on('end', () => resolve({ status: res.statusCode, type: String(res.headers['content-type'] || ''), body: Buffer.concat(chunks) }));
+    });
+    req.setTimeout(timeoutMs || 30000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+let ttsPost = postAudio;
+async function handleSpeak(p, req, res, ctx) {
+  if (p !== '/api/flow/speak') return false;
+  const key = process.env.ELEVENLABS_API_KEY || '';
+  if (req.method === 'GET') { ctx.json(res, 200, { premium: !!key && !freeTier(ctx), voice: key ? TTS_VOICE() : null }); return true; }
+  if (req.method !== 'POST') return false;
+  if (!key) { ctx.json(res, 503, { fallback: true, error: 'The premium voice is not set up on this server.' }); return true; }
+  if (freeTier(ctx)) { ctx.json(res, 402, { fallback: true, error: 'The premium voice is part of Flow Plus.' }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const text = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+  if (!text) { ctx.json(res, 400, { error: 'Nothing to say.' }); return true; }
+  const voice = TTS_VOICE(), model = TTS_MODEL();
+  const ck = require('crypto').createHash('sha256').update(voice + '|' + model + '|' + text).digest('hex');
+  const send = (buf) => { res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400' }); res.end(buf); };
+  if (ttsCache.has(ck)) { const b = ttsCache.get(ck); ttsCache.delete(ck); ttsCache.set(ck, b); send(b); return true; }
+  const spent = (await ctx.counter.get(ttsCountKey())) || 0;
+  if (TTS_DAILY_CHARS > 0 && spent + text.length > TTS_DAILY_CHARS) { ctx.json(res, 429, { fallback: true, error: 'That is the premium voice for today.' }); return true; }
+  try {
+    const r = await ttsPost('https://api.elevenlabs.io/v1/text-to-speech/' + voice + '?output_format=mp3_44100_128', { 'xi-api-key': key },
+      { text, model_id: model, voice_settings: { stability: 0.55, similarity_boost: 0.8, style: 0.12, use_speaker_boost: true } }, 30000);
+    if (r.status < 200 || r.status >= 300 || !/audio/.test(r.type) || !r.body.length) {
+      console.warn('[flow/assistant] speak: ElevenLabs answered ' + r.status + ' ' + String(r.body || '').slice(0, 160));
+      ctx.json(res, 502, { fallback: true, error: 'The premium voice is unavailable just now.' }); return true;
+    }
+    await ctx.counter.set(ttsCountKey(), spent + text.length);
+    if (text.length <= 300) { ttsCache.set(ck, r.body); while (ttsCache.size > 80) ttsCache.delete(ttsCache.keys().next().value); }
+    send(r.body);
+  } catch (e) {
+    ctx.json(res, 502, { fallback: true, error: 'The premium voice is unavailable just now.' });
   }
   return true;
 }
@@ -2183,6 +2293,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleAhead(p, req, res, ctx)) return true;
   if (await handleMeal(p, req, res, ctx)) return true;
   if (await handleDo(p, req, res, ctx)) return true;
+  if (await handleSpeak(p, req, res, ctx)) return true;
   return false;
 };
 module.exports._internals.meal = {
@@ -2223,6 +2334,10 @@ module.exports._internals.ahead = {
 };
 module.exports._internals.wellFormed = wellFormed;
 module.exports._internals.say = {
-  parseDo, doContext, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
+  parseDo, doContext, doPersona, doHistory, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
   setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
+};
+module.exports._internals.speak = {
+  handle: handleSpeak, cache: ttsCache, config: () => ({ voice: TTS_VOICE(), model: TTS_MODEL(), cap: TTS_DAILY_CHARS }),
+  setPoster(fn) { ttsPost = fn || postAudio; }
 };

@@ -307,6 +307,12 @@ const SETTINGS_DEFAULTS = {
   /* The new look (Today, tab bar, + menu) is a preview you switch on; off
      is the design as it was before 25 October. */
   newLook: false,
+  /* The assistant: premium voice (falls back to the device's), how it
+     addresses you, whether it keeps listening, and its AI finish. */
+  asstVoice: 'premium',
+  asstCall: 'name',
+  asstHands: true,
+  asstSheen: true,
   chipTabs: '',                  // blank = all tabs
   gcalClientId: '',
   gcalCalendarId: 'primary',
@@ -12777,8 +12783,148 @@ window.FlowHabitDo = HabitDo;
  * recognition through the shell, and the browser's on Android and the web.
  * Where neither exists the box is simply typed into. Simple only.
  * ====================================================================== */
+/* ── The assistant's voice ──────────────────────────────────────────────
+ * Premium: a neural voice from the server (/api/flow/speak, ElevenLabs),
+ * played through Web Audio with a light AI finish — a little presence and a
+ * very short shimmer under the voice. Otherwise, or whenever that is refused,
+ * the device's best British voice, so it never just goes quiet. Sound is
+ * unlocked on the tap that opens the assistant — iOS allows playback only
+ * after a touch. */
+const Speech = {
+  ac: null, src: null, premium: null, token: 0, primed: false,
+  pref(k) { try { return Settings.get(k); } catch (e) { return undefined; } },
+  mode() { const v = Speech.pref('asstVoice'); return v === 'device' || v === 'off' ? v : 'premium'; },
+  unlock() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        if (!Speech.ac) Speech.ac = new AC();
+        if (Speech.ac.state === 'suspended') Speech.ac.resume();
+        const b = Speech.ac.createBuffer(1, 1, 22050), s0 = Speech.ac.createBufferSource();
+        s0.buffer = b; s0.connect(Speech.ac.destination); s0.start(0);
+      }
+    } catch (e) {}
+    try { if (window.speechSynthesis && !Speech.primed) { Speech.primed = true; const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } } catch (e) {}
+  },
+  async premiumOn() {
+    if (Speech.premium !== null) return Speech.premium;
+    try { const r = await fetch('/api/flow/speak', { credentials: 'same-origin' }); const j = await r.json(); Speech.premium = !!(r.ok && j.premium); } catch (e) { Speech.premium = false; }
+    return Speech.premium;
+  },
+  speaking() { return !!Speech.src || !!(window.speechSynthesis && speechSynthesis.speaking); },
+  stop() {
+    Speech.token++;
+    try { if (Speech.src) Speech.src.stop(); } catch (e) {}
+    Speech.src = null;
+    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) {}
+  },
+  /* Resolves once it has finished speaking, or could not speak at all. */
+  async say(text, lang) {
+    text = String(text || '').trim();
+    if (!text || Speech.mode() === 'off') return;
+    Speech.stop();
+    const my = ++Speech.token;
+    if (Speech.mode() === 'premium' && await Speech.premiumOn()) {
+      try {
+        const r = await fetch('/api/flow/speak', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang }) });
+        if (my !== Speech.token) return;
+        if (r.ok && /audio/.test(r.headers.get('content-type') || '')) {
+          const buf = await r.arrayBuffer();
+          if (my !== Speech.token) return;
+          if (await Speech.play(buf, my)) return;
+        }
+      } catch (e) {}
+      if (my !== Speech.token) return;
+    }
+    return Speech.device(text, lang, my);
+  },
+  async play(buf, my) {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+    if (!Speech.ac) Speech.ac = new AC();
+    const ac = Speech.ac;
+    try { if (ac.state === 'suspended') await ac.resume(); } catch (e) {}
+    let audio;
+    try { audio = await new Promise((ok, no) => { const pr = ac.decodeAudioData(buf.slice(0), ok, no); if (pr && pr.then) pr.then(ok, no); }); } catch (e) { return false; }
+    if (my !== Speech.token) return true;
+    const src = ac.createBufferSource(); src.buffer = audio;
+    const chain = Speech.chain(ac);
+    src.connect(chain.input); chain.output.connect(ac.destination);
+    Speech.src = src;
+    return new Promise((ok) => {
+      src.onended = () => { if (Speech.src === src) Speech.src = null; ok(true); };
+      try { src.start(0); } catch (e) { Speech.src = null; ok(false); }
+    });
+  },
+  /* The AI finish: a clean low end, a little presence, gentle compression,
+     and an 11 ms shimmer mixed well under the voice. Off in the settings. */
+  chain(ac) {
+    const input = ac.createGain(), output = ac.createGain();
+    if (Speech.pref('asstSheen') === false) { input.connect(output); return { input, output }; }
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    const pres = ac.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3200; pres.Q.value = 0.9; pres.gain.value = 2.5;
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.2;
+    const dly = ac.createDelay(0.05); dly.delayTime.value = 0.011;
+    const fb = ac.createGain(); fb.gain.value = 0.28;
+    const wet = ac.createGain(); wet.gain.value = 0.16;
+    input.connect(hp); hp.connect(pres); pres.connect(comp); comp.connect(output);
+    comp.connect(dly); dly.connect(fb); fb.connect(dly); dly.connect(wet); wet.connect(output);
+    return { input, output };
+  },
+  /* The device's best British voice: Daniel on Apple, Google UK English Male
+     on Android and Chrome, Ryan on Windows. */
+  voice(lang) {
+    if (!window.speechSynthesis) return null;
+    const vs = speechSynthesis.getVoices() || [];
+    if (lang === 'tr') return vs.find((v) => /^tr/i.test(v.lang)) || null;
+    const gb = vs.filter((v) => /^en[-_]GB/i.test(v.lang));
+    const names = ['Daniel', 'Arthur', 'Google UK English Male', 'Microsoft Ryan', 'Ryan', 'Oliver', 'George', 'Malcolm', 'Thomas'];
+    for (const n of names) { const v = gb.find((x) => x.name.indexOf(n) >= 0); if (v) return v; }
+    return gb[0] || vs.find((v) => /^en/i.test(v.lang)) || null;
+  },
+  device(text, lang, my) {
+    return new Promise((ok) => {
+      try {
+        if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return ok();
+        const u = new SpeechSynthesisUtterance(text);
+        const v = Speech.voice(lang); if (v) u.voice = v;
+        u.lang = v ? v.lang : (lang === 'tr' ? 'tr-TR' : 'en-GB');
+        u.rate = 1; u.pitch = 0.95;
+        let done = false; const fin = () => { if (!done) { done = true; ok(); } };
+        u.onend = fin; u.onerror = fin;
+        setTimeout(fin, 1500 + text.length * 90);  /* a voice that never reports its end */
+        speechSynthesis.cancel(); speechSynthesis.speak(u);
+      } catch (e) { ok(); }
+    });
+  }
+};
+window.FlowSpeech = Speech;
+
 const Say = {
   el: null, busy: false, waiting: false, spoken: false, plan: null, said: '',
+  /* The conversation: what was said both ways, newest last, and whether a
+     plan is waiting for a spoken yes. */
+  history: [], confirming: false,
+  lang() { return document.documentElement.lang === 'tr' ? 'tr' : 'en'; },
+  /* How it addresses you: sir, ma'am, your first name, or nothing. */
+  call() {
+    const c = Speech.pref('asstCall') || 'name', tr = Say.lang() === 'tr';
+    if (c === 'sir') return tr ? 'efendim' : 'sir';
+    if (c === 'madam') return tr ? 'hanımefendi' : 'ma\'am';
+    if (c === 'none') return '';
+    return String(Speech.pref('displayName') || '').trim().split(/\s+/)[0].slice(0, 30);
+  },
+  /* A spoken "done" — said in the assistant's own manner, a little varied. */
+  doneLine(n, more) {
+    const c = Say.call(), tr = Say.lang() === 'tr';
+    const at = c ? ', ' + c : '';
+    const en = n > 1 ? ['All ' + n + ' done' + at + '.', 'Consider all ' + n + ' done' + at + '.', 'That\'s ' + n + ' things taken care of' + at + '.']
+      : ['Done' + at + '.', 'Consider it done' + at + '.', 'It\'s taken care of' + at + '.', 'All in hand' + at + '.'];
+    const trl = n > 1 ? [n + ' işin hepsi tamam' + at + '.', 'Hepsi halloldu' + at + '.'] : ['Tamamdır' + at + '.', 'Hallettim' + at + '.', 'İşlendi' + at + '.'];
+    const list = tr ? trl : en;
+    let line = list[Math.floor(Math.random() * list.length)];
+    if (more) line += tr ? ' Başka bir şey?' : ' Anything else?';
+    return line;
+  },
   PAGE_NAMES: { today: 'Today', compass: 'Week', quad: 'Open loops', habits: 'Habits', journal: 'Journal', training: 'Training', diet: 'Diet', sleep: 'Sleep & mood', finance: 'Finances', time: 'Time', brainstorm: 'Brainstorm', settings: 'Settings' },
   host() { return { c: (typeof cData !== 'undefined' && cData) ? cData : null, hb: TodayPlus.host('hbData'), S: TodayPlus.host('S') }; },
   iso(d) { return RockActions.iso(d); },
@@ -12825,12 +12971,20 @@ const Say = {
       '<div class="fn-sheet" role="dialog" aria-modal="true" aria-label="Say it">' +
         '<div class="fn-grab" data-say="close"></div>' +
         '<button type="button" class="fn-capture-close" data-say="close" aria-label="Close">×</button>' +
-        '<div class="sy-k">Say it</div>' +
+        '<div class="sy-k">Assistant</div>' +
+        '<div class="sy-log" aria-live="polite"></div>' +
         '<div class="sy-ask">' +
           '<div class="sy-state" aria-live="polite"></div>' +
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
+          '<details class="sy-set"><summary>Voice and manners</summary>' +
+            '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
+            '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstSheen"> AI finish on the premium voice</label>' +
+            '<div class="sy-ex sy-premium"></div>' +
+          '</details>' +
           '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
@@ -12848,6 +13002,15 @@ const Say = {
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
     wrap.addEventListener('change', (e) => {
+      const pf = e.target.closest('[data-say-pref]');
+      if (pf) {
+        const k = pf.getAttribute('data-say-pref');
+        const v = pf.type === 'checkbox' ? !!pf.checked : pf.value;
+        try { Settings.set(k, v); } catch (x) {}
+        if (k === 'asstVoice' && v !== 'off') { Speech.unlock(); Speech.say(Say.lang() === 'tr' ? 'Ses böyle' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'At your service' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }
+        if (k === 'asstCall') Speech.say(Say.lang() === 'tr' ? 'Peki' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'Very good' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang());
+        return;
+      }
       if (!e.target.matches('[data-say-own]')) return;
       Say.own(e.target.checked);
       if (e.target.checked) { try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {} Say.waiting = false; Say.paintMic(); Say.listen(); }
@@ -12860,18 +13023,23 @@ const Say = {
     wrap.addEventListener('keydown', (e) => {
       if (e.target.id === 'sy-text' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); Say.send(); }
     });
+    /* A real keystroke means typing — the answer is read, not spoken. The
+       microphone writes with a synthetic event; Wispr Flow is dictation. */
+    wrap.addEventListener('input', (e) => { if (e.target.id === 'sy-text' && e.isTrusted) { let own = false; try { own = Say.own(); } catch (x) {} if (!own) Say.typed = true; } });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Say.close(); });
     /* The turn ends by itself after a pause; what was said goes off then. */
     try {
       if (window.FlowVoice) FlowVoice.on((state) => {
         if (!Say.waiting) return;
-        if (state === 'listening') { Say.state('Listening… say it, then pause.'); Say.paintMic(); return; }
+        if (state === 'listening') { Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
         if (state === 'error') { Say.waiting = false; Say.paintMic(); return; }
         if (state === 'idle') {
           Say.waiting = false; Say.paintMic();
           const t = (document.getElementById('sy-text') || {}).value || '';
-          if (t.trim() && Say.el.classList.contains('on') && !Say.plan) { Say.spoken = true; Say.send(); }
-          else if (!t.trim()) Say.state('Nothing heard. Tap the microphone, or type.');
+          if (!Say.el.classList.contains('on')) return;
+          if (t.trim() && Say.plan && Say.confirming) { Say.spoken = !Say.typed; Say.confirmBy(t.trim()); }
+          else if (t.trim() && !Say.plan) { Say.spoken = !Say.typed; Say.send(); }
+          else if (!t.trim()) { Say.confirming = false; Say.state(Say.history.length ? (Say.lang() === 'tr' ? 'Buradayım — mikrofona dokun.' : 'I\'m here when you need me — tap the microphone.') : 'Nothing heard. Tap the microphone, or type.'); }
         }
       });
     } catch (e) {}
@@ -12893,10 +13061,18 @@ const Say = {
     b.classList.toggle('on', on);
     b.innerHTML = Nav.svg('mic') + '<span>' + (on ? 'Stop' : 'Talk') + '</span>';
   },
+  listeningLine() {
+    const c = Say.call(), tr = Say.lang() === 'tr';
+    if (Say.history.length) return tr ? 'Dinliyorum…' : 'Listening…';
+    return tr ? 'Dinliyorum' + (c ? ', ' + c : '') + '…' : 'Yes' + (c ? ', ' + c : '') + '? Go ahead — I\'m listening.';
+  },
   open(opts) {
     if (!TodayLook.on()) return;
     Say.build();
-    Say.plan = null; Say.spoken = false; Say.busy = false;
+    Speech.unlock();
+    Say.plan = null; Say.spoken = false; Say.typed = false; Say.busy = false; Say.confirming = false;
+    Say.history = []; Say.logPaint();
+    Say.prefsPaint();
     const ta = Say.el.querySelector('#sy-text'); ta.value = (opts && opts.text) || '';
     Say.el.querySelector('.sy-ask').hidden = false;
     Say.el.querySelector('.sy-plan').hidden = true;
@@ -12911,8 +13087,8 @@ const Say = {
   close() {
     if (!Say.el) return;
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
-    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) {}
-    Say.waiting = false;
+    Speech.stop();
+    Say.waiting = false; Say.confirming = false;
     Say.el.classList.remove('on');
   },
   listen() {
@@ -12925,7 +13101,7 @@ const Say = {
     Say.paintMic();
   },
   again() {
-    Say.plan = null;
+    Say.plan = null; Say.confirming = false; Speech.stop();
     Say.el.querySelector('.sy-plan').hidden = true;
     Say.el.querySelector('.sy-ask').hidden = false;
     const ta = Say.el.querySelector('#sy-text'); ta.value = '';
@@ -12937,37 +13113,106 @@ const Say = {
     const ta = Say.el.querySelector('#sy-text');
     const text = String(ta.value || '').trim();
     if (!text) { Say.state('Say or type what you want first.'); return; }
+    /* Sent by hand while the microphone was open: stop it without its "idle"
+       sending this again or calling it spoken. */
+    Say.waiting = false;
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.stop(); } catch (e) {}
-    Say.busy = true; Say.said = text;
+    Speech.stop();
+    if (Say.typed) Say.spoken = false;
+    try { if (Say.own()) Say.spoken = true; } catch (e) {}
+    Say.typed = false;
+    Say.busy = true; Say.said = text; Say.confirming = false;
     Say.state('Working it out…');
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang: (document.documentElement.lang === 'tr' ? 'tr' : 'en'), ctx: Say.context() }) });
+        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call() }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
-      Say.plan = { say: j.say || '', actions: Array.isArray(j.actions) ? j.actions : [] };
+      const reply = String(j.say || '');
+      Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply });
+      Say.plan = { say: reply, actions: Array.isArray(j.actions) ? j.actions : [] };
+      const acts = Say.plan.actions;
       /* Going somewhere is not a change to anything; on its own it just goes. */
-      if (Say.plan.actions.length === 1 && Say.plan.actions[0].type === 'open') {
-        Say.speak(Say.plan.say); Say.close(); Nav.go(Say.plan.actions[0].page); return;
+      if (acts.length === 1 && acts[0].type === 'open') {
+        Say.speak(reply); Say.close(); Nav.go(acts[0].page); return;
       }
-      Say.speak(Say.plan.say);
-      Say.paintPlan();
+      if (j.end) { Say.plan = null; Say.askView(); Say.logPaint(); Say.state(''); await Say.speak(reply); if (Say.spoken) Say.close(); return; }
+      if (acts.length) {
+        Say.paintPlan();
+        await Say.speak(reply);
+        Say.follow(true);
+        return;
+      }
+      /* An answer: it stays a conversation — the answer in the log, the box
+         empty for whatever comes next. */
+      Say.plan = null; Say.askView(); Say.state('');
+      Say.logPaint();
+      await Say.speak(reply);
+      Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
     finally { Say.busy = false; go.disabled = false; }
   },
+  /* Back to the conversation: the box, empty; no plan on screen. */
+  askView() {
+    if (!Say.el) return;
+    Say.el.querySelector('.sy-plan').hidden = true;
+    Say.el.querySelector('.sy-ask').hidden = false;
+    const ta = Say.el.querySelector('#sy-text'); if (ta) ta.value = '';
+  },
+  /* Hands-free: once it has finished speaking, it listens again — for a yes
+     or no when something is waiting to be done, for the next thing if not. */
+  follow(confirm) {
+    if (!Say.spoken || Speech.pref('asstHands') === false || !Say.el || !Say.el.classList.contains('on')) return;
+    try { if (Say.own()) return; } catch (e) {}
+    Say.confirming = !!confirm;
+    const ta = Say.el.querySelector('#sy-text'); if (ta) ta.value = '';
+    Say.listen();
+  },
+  confirmBy(t) {
+    const yes = /^(yes|yeah|yep|yup|sure|ok(ay)?|do it|go ahead|please( do)?|confirm(ed)?|correct|that'?s (right|it|fine)|sounds good|perfect|evet|tamam|olur|yap|onayla)\b/i;
+    const no = /^(no|nope|cancel|stop|never ?mind|don'?t|leave it|scrap (it|that)|hayır|iptal|vazgeç|boş ver)\b/i;
+    Say.confirming = false;
+    if (yes.test(t)) { Say.apply(); return; }
+    if (no.test(t)) {
+      Say.plan = null;
+      Say.el.querySelector('.sy-plan').hidden = true; Say.el.querySelector('.sy-ask').hidden = false;
+      const line = Say.lang() === 'tr' ? 'Peki' + (Say.call() ? ', ' + Say.call() : '') + '. Hiçbir şeyi değiştirmedim.' : 'Very well' + (Say.call() ? ', ' + Say.call() : '') + '. Nothing has been changed.';
+      Say.history.push({ role: 'user', text: t }, { role: 'assistant', text: line });
+      Say.logPaint(); Say.state('');
+      Say.speak(line).then(() => Say.follow(false));
+      return;
+    }
+    /* Anything else is a correction or a new request; the conversation so
+       far goes with it, so "make it Friday instead" works. */
+    Say.plan = null;
+    Say.el.querySelector('.sy-plan').hidden = true; Say.el.querySelector('.sy-ask').hidden = false;
+    Say.el.querySelector('#sy-text').value = t;
+    Say.send();
+  },
   /* Spoken back only when it was spoken to: a typed request reads the answer. */
   speak(text) {
-    if (!Say.spoken || !text) return;
-    try {
-      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = document.documentElement.lang === 'tr' ? 'tr-TR' : 'en-GB';
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
-    } catch (e) {}
+    if (!Say.spoken || !text) return Promise.resolve();
+    return Speech.say(text, Say.lang());
   },
-
+  logPaint() {
+    const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
+    /* While a plan is on screen its own lines say the last turn. */
+    const turns = Say.plan && Say.plan.actions && Say.plan.actions.length ? Say.history.slice(0, -2) : Say.history;
+    box.innerHTML = turns.slice(-6).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) + '</div>').join('');
+    box.hidden = !turns.length;
+    box.scrollTop = box.scrollHeight;
+  },
+  prefsPaint() {
+    const el = Say.el; if (!el) return;
+    el.querySelectorAll('[data-say-pref]').forEach((f) => {
+      const v = Speech.pref(f.getAttribute('data-say-pref'));
+      if (f.type === 'checkbox') f.checked = v !== false; else if (v != null) f.value = v;
+    });
+    const note = el.querySelector('.sy-premium');
+    if (note) Speech.premiumOn().then((on) => { note.textContent = on ? 'The premium voice is on for this account.' : 'The premium voice is not available here yet — it uses this device\'s best British voice.'; });
+  },
   /* ---- the cards ---- */
   dayChips(i, iso) {
     const opts = [[Say.plusDays(0), 'Today'], [Say.plusDays(1), 'Tomorrow']];
@@ -12988,6 +13233,7 @@ const Say = {
     return '';
   },
   paintPlan() {
+    Say.logPaint();
     const box = Say.el.querySelector('.sy-plan');
     Say.el.querySelector('.sy-ask').hidden = true;
     box.hidden = false;
@@ -12996,6 +13242,7 @@ const Say = {
       '<div class="sy-heard" data-i18n="off">“' + esc(Say.said) + '”</div>' +
       (Say.plan.say ? '<div class="sy-say" data-i18n="off">' + esc(Say.plan.say) + '</div>' : '') +
       '<div class="sy-cards">' + Say.plan.actions.map((a, i) => Say.card(a, i)).join('') + '</div>' +
+      (n && Say.spoken && Speech.pref('asstHands') !== false ? '<div class="sy-ex">Say “yes” to do it, “no” to leave it — or say what to change.</div>' : '') +
       '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-say="again">' + Nav.svg('mic') + '<span>Say again</span></button>' +
       (n ? '<button type="button" class="flow-btn primary" data-say="do">Do it' + (n > 1 ? ' (' + n + ')' : '') + '</button>' : '<button type="button" class="flow-btn primary" data-say="close">Close</button>') + '</div>';
   },
@@ -13043,9 +13290,24 @@ const Say = {
       try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
       try { TodayLook.paint(); } catch (e) {}
     } finally { Say.busy = false; }
+    /* Spoken to, it answers in kind and the conversation carries on; typed,
+       the sheet goes and a toast says it. */
+    if (Say.spoken && !open && Say.el.classList.contains('on')) {
+      const hands = Speech.pref('asstHands') !== false;
+      const line = did ? Say.doneLine(did, hands) : (Say.lang() === 'tr' ? 'Yapılacak bir şey kalmadı.' : 'Nothing there needed doing.');
+      Say.plan = null; Say.confirming = false;
+      Say.history.push({ role: 'assistant', text: line });
+      Say.el.querySelector('.sy-plan').hidden = true; Say.el.querySelector('.sy-ask').hidden = false;
+      Say.el.querySelector('#sy-text').value = '';
+      Say.logPaint(); Say.state('');
+      if (did) toast(did === 1 ? 'Done ✓' : did + ' things done ✓', null, 1800);
+      await Say.speak(line);
+      Say.follow(false);
+      return;
+    }
     Say.close();
     if (did) toast(did === 1 ? 'Done ✓' : did + ' things done ✓', null, 1800);
-    if (open) Nav.go(open);
+    if (open) { if (Say.spoken) Say.speak(Say.doneLine(Math.max(did, 1), false)); Nav.go(open); }
   },
 
   /* A "Talk" button on Today, beside the greeting. */
