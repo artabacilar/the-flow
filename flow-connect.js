@@ -146,6 +146,15 @@ const PROVIDERS = {
     kind: 'oauth',
     via: 'google',
     name: 'Gmail',
+    /* Paused until Google has verified the Gmail scope. gmail.readonly is a
+       "restricted" scope: every scope an app asks for is reviewed together,
+       and this one also needs a yearly third-party security assessment
+       (CASA). Asking for it would hold Google Calendar's verification hostage
+       to that, and keep the "Google hasn't verified this app" screen in front
+       of everybody meanwhile. So by default the button is not offered, no
+       sign-in asks for mail, and connections made earlier are not read.
+       FLOW_GMAIL=on brings it back (tests, and once CASA is passed). */
+    paused: () => process.env.FLOW_GMAIL !== 'on',
     blurb: 'Emails you star become Big Rocks. For big calendar events, the emails about them are read to write a brief on Today.',
     clientId: () => process.env.GOOGLE_CLIENT_ID || '',
     secret: () => process.env.GOOGLE_CLIENT_SECRET || '',
@@ -214,6 +223,7 @@ const PROVIDERS = {
 const kindOf = (pv) => pv.kind || 'oauth';
 const configured = (pv) => {
   if (!pv) return false;
+  if (pv.paused && pv.paused()) return false;
   if (kindOf(pv) === 'key') return true;
   return !!(pv.clientId() && (!pv.secret || pv.secret()));
 };
@@ -911,6 +921,7 @@ async function handle(req, res, ctx) {
      uses the account named by ?aid=, or the first. */
   if (pv.actions && pv.actions[step]) {
     if (!me) return json(res, 401, { error: 'auth required' }), true;
+    if (pv.paused && pv.paused()) return json(res, 503, { error: pv.name + ' is switched off for now.' }), true;
     const all = await readAccounts(raw, me.id, pv.id);
     if (!all.length) return json(res, 409, { error: pv.name + ' is not connected.' }), true;
     const want = ctx.query.get('aid');
