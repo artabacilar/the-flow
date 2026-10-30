@@ -13423,7 +13423,7 @@ const Say = {
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
-            '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="dear">Dear</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
+            '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
@@ -13534,14 +13534,33 @@ const Say = {
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
-    /* Straight to listening, which is the point: one tap, then talk. */
-    setTimeout(() => Say.listen(), 120);
+    /* He answers the door: "Good evening, sir. What can I do for you?" out
+       loud, then listens — only once he has finished, so the microphone does
+       not hear him. Typing, or tapping the microphone meanwhile, wins. With
+       the voice set to Silent he simply listens. */
+    const tok = ++Say.openTok;
+    const ta2 = Say.el.querySelector('#sy-text'); try { ta2.focus({ preventScroll: true }); } catch (e) {}
+    const go = () => {
+      if (tok !== Say.openTok || !Say.el.classList.contains('on') || Say.busy || Say.plan) return;
+      if (window.FlowVoice && FlowVoice.listening) return;
+      if (String(ta2.value || '').trim()) return;
+      Say.listen();
+    };
+    if (Speech.mode() === 'off' || (opts && opts.quiet)) { setTimeout(go, 120); return; }
+    const hello = Say.helloLine();
+    /* Opened by Siri, with no tap, a page may not be allowed to make a sound:
+       then he listens straight away rather than wait on silence. */
+    Promise.resolve(Greet.canSpeak()).catch(() => false).then((can) => {
+      if (!can) return go();
+      return Promise.race([Say.speak(hello), new Promise((r) => setTimeout(r, 9000))]).then(() => setTimeout(go, 150));
+    });
   },
+  openTok: 0,
   close() {
     if (!Say.el) return;
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
     Speech.stop();
-    Say.waiting = false; Say.confirming = false;
+    Say.waiting = false; Say.confirming = false; Say.openTok++;
     Say.mode('idle');
     Say.el.classList.remove('on');
   },
