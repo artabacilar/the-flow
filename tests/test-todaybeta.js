@@ -58,6 +58,10 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('the panel sits right under the greeting', on.panel && on.afterHead, on);
   ok('the strip, the hero card, the Priorities card, Coming up and the old buttons step aside', on.old.length === 0, on.old);
   ok('"Today\'s routines" heads habits, training and meals', on.routines, on);
+  const tl = await p.evaluate(() => { const rail = document.querySelector('#today-feed .lk-bt-rail'); const t = rail && rail.querySelector('.lk-bt-tiles > .flow-td-pulse'); const r = t && t.getBoundingClientRect(), c = rail && rail.querySelector('.lk-bt-cal').getBoundingClientRect(); return { inRail: !!t, n: t ? t.querySelectorAll('.flow-td-tile').length : 0, loose: !!document.querySelector('#today-feed > .flow-td-pulse'), above: !!r && r.bottom <= c.top + 1, cols: t ? getComputedStyle(t).gridTemplateColumns.split(' ').length : 0 }; });
+  ok('Recovery, Meetings, Focus and Spend sit in the side column, 2 × 2, above the calendar — not beside the greeting', tl.inRail && tl.n === 4 && !tl.loose && tl.above && tl.cols === 2, tl);
+  await p.evaluate(() => renderToday()); await p.waitForTimeout(700);
+  ok('and stay there when Today redraws', await p.evaluate(() => document.querySelectorAll('.flow-td-pulse').length === 1 && !!document.querySelector('#today-feed .lk-bt-tiles > .flow-td-pulse')));
 
   console.log('\n— the day —');
   const day = await p.evaluate(() => {
@@ -164,6 +168,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.click('#today-feed .lk-bt [data-bt="classic"]'); await p.waitForTimeout(800);
   const back = await p.evaluate(() => { const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; }; return { attr: document.documentElement.getAttribute('data-today-beta'), saved: Flow.Settings.get('todayBeta'), panel: vis('#today-feed .lk-bt'), strip: vis('.lk-strip'), hero: vis('.lk-hero'), rocks: vis('#today-feed > .td-rocks') }; });
   ok('"Classic" brings the old Today back exactly, and remembers', back.attr === 'off' && back.saved === false && !back.panel && back.strip && back.hero && back.rocks, back);
+  ok('with the tiles back in their old place', await p.evaluate(() => { const t = document.querySelector('#today-feed > .flow-td-pulse'); return !!t && getComputedStyle(t).display !== 'none' && document.querySelectorAll('.flow-td-pulse').length === 1; }));
   await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(700);
   const sw = await p.$('#todayBetaRow input[data-s="todayBeta"]');
   ok('Settings has the switch too', !!sw);
