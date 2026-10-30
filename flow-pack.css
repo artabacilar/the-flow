@@ -2708,7 +2708,7 @@ html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock.done .rk-title{
 html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock :is(.rk-meta,.td-rk-note){color:rgba(21,25,10,.62)}
 html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-meta{font-size:13px;font-weight:600}
 html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-late{color:#B8320F}
-html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks :is(a,.flow-link){color:var(--lk-lime-ink);text-decoration:underline}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks :is(a,.flow-link){color:#1D4ED8;text-decoration:underline;text-underline-offset:2px}
 html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks-empty{color:rgba(21,25,10,.7)}
 html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .flow-chip{background:rgba(0,0,0,.1);color:var(--lk-lime-ink);border-color:transparent}
 /* The meeting folded under a Big Rock was still drawn in the dark theme's
@@ -3470,3 +3470,28 @@ html:not([data-flow-look="new"]) .lk-say{display:none !important}
 .lk-say{display:inline-flex;align-items:center;gap:7px;margin-top:10px;min-height:36px;padding:0 14px 0 11px;border:0;border-radius:999px;background:var(--lk-s1,#141416);color:var(--lk-ink,#F4F4F2);font:inherit;font-size:13.5px;font-weight:750;cursor:pointer}
 .lk-say .fn-i{width:17px;height:17px;fill:none;stroke:var(--lk-coral,#FF6B3D);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 
+
+/* ── Simple: a Priority's notes and links, and adding one on the card ── */
+html[data-flow-theme][data-flow-look="new"]{--lk-link:#7DB4FF}
+html:is([data-flow-theme="paper"],[data-flow-theme="bloom"])[data-flow-look="new"]{--lk-link:#1D4ED8}
+#flow-ra .ra-note{width:100%;min-height:88px;resize:vertical;font:inherit;font-size:15px;line-height:1.45;padding:10px 12px;box-sizing:border-box}
+#flow-ra .ra-links:empty{display:none}
+#flow-ra .ra-lk{display:flex;align-items:center;gap:8px;padding:6px 0;min-width:0}
+#flow-ra .ra-lk .fn-i{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:var(--lk-link,#3B82F6);stroke-width:2;stroke-linecap:round}
+#flow-ra .ra-link{flex:1 1 auto;min-width:0;color:var(--lk-link,#3B82F6);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+#flow-ra .ra-lkx{appearance:none;border:0;background:transparent;color:var(--lk-mute,#8a8f98);font-size:20px;line-height:1;width:32px;height:32px;border-radius:50%;cursor:pointer;flex:0 0 auto}
+#flow-ra .ra-lkx:hover{background:rgba(127,127,127,.15)}
+#flow-ra .ra-linkadd{flex-wrap:nowrap}
+#flow-ra .ra-linkadd input{flex:1 1 auto;min-width:0}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px;min-width:0;max-width:100%}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-links a{display:inline-flex;align-items:center;gap:5px;font-size:13.5px;font-weight:600;color:#1D4ED8;max-width:100%;min-width:0}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-links a span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rock .rk-links .fn-i{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+html[data-flow-theme][data-flow-look="new"] #today-feed .lk-rk-add{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(0,0,0,.1)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add input[type=text]:not([type=checkbox]){flex:1 1 auto;min-width:0;min-height:44px;border-radius:14px;border:1px solid rgba(0,0,0,.14);background:rgba(255,255,255,.55);color:var(--lk-lime-ink);font:inherit;font-size:16px;padding:0 14px}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add input[type=text]:not([type=checkbox])::placeholder{color:rgba(21,25,10,.5)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add input[type=text]:not([type=checkbox]):focus{outline:none;border-color:var(--lk-lime-ink)}
+html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add select:not([multiple]):not([size]){flex:0 0 auto;min-height:44px;border-radius:14px;border:1px solid rgba(0,0,0,.14);background:rgba(255,255,255,.35);color:var(--lk-lime-ink);font:inherit;font-size:14px;font-weight:700;padding:0 10px;max-width:9.5em}
+html[data-flow-theme][data-flow-look="new"] #today-feed .lk-rk-add button{appearance:none;border:0;border-radius:14px;min-height:44px;padding:0 18px;background:var(--lk-lime-ink);color:var(--lk-lime);font:inherit;font-size:14px;font-weight:800;cursor:pointer;flex:0 0 auto}
+html:not([data-flow-look="new"]) .lk-rk-add{display:none}
+@media (max-width:480px){html[data-flow-theme][data-flow-look="new"] #today-feed .lk-rk-add{flex-wrap:wrap}html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add input[type=text]:not([type=checkbox]){flex-basis:100%}html[data-flow-theme][data-flow-look="new"] #today-feed .td-rocks .lk-rk-add.lk-rk-add select:not([multiple]):not([size]){flex:1 1 auto;max-width:none}}

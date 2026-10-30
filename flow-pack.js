@@ -8035,6 +8035,7 @@ const Profile = {
 
 const NAV_ICONS = {
   mic:      '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  link:     '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/>',
   dots:     '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   bell:     '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   today:    '<path d="M3 5h18v16H3z"/><path d="M8 3v4M16 3v4M3 11h18"/>',
@@ -11820,6 +11821,7 @@ const RockActions = {
     rep.hidden = !TodayLook.on() || hit.r.day == null || hit.r.day < 0;
     rep.innerHTML = rep.hidden ? '' : Repeat.sectionHtml(hit.r, d);
     el.querySelector('.ra-dropsub').textContent = 'Not doing it. Leaves the list without counting as done';
+    RockActions.notesFill(hit.r);
     RockActions.mode('main');
     el.classList.add('on');
     setTimeout(() => { const b = el.querySelector('[data-ra="tomorrow"]'); if (b && matchMedia('(hover:hover)').matches) b.focus(); }, 60);
@@ -11846,6 +11848,7 @@ const RockActions = {
     el.querySelector('.fn-sub').textContent = RockActions.label(d) + (it.time ? ' · ' + it.time : '') + (it.kind === 'event' ? ' · Calendar' : ' · Task');
     el.querySelector('.ra-mv').hidden = true;
     el.querySelector('.ra-repwrap').hidden = true;
+    RockActions.notesFill(null);
     el.querySelector('.ra-dropsub').textContent = it.kind === 'event' ? 'Not going. It stays in your calendar; Coming up stops listing it' : 'Not doing it. Coming up stops listing it';
     const t = new Date(); t.setDate(t.getDate() + 1);
     el.querySelector('#ra-who').value = '';
@@ -11869,7 +11872,73 @@ const RockActions = {
     });
     try { Ahead.paint(); } catch (e) {}
   },
-  close() { if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; RockActions.item = null; },
+  close() {
+    RockActions.noteFlush(true);
+    if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; RockActions.item = null;
+    /* A note saved while typing shows on the row once the sheet goes down. */
+    if (RockActions.noteChanged) { RockActions.noteChanged = false; RockActions.rerender(); }
+  },
+
+  /* ---- notes and links on a Priority (Simple) ----
+     The note is the rock's own `note` — the same one Advanced edits and the
+     calendar export carries. Links are kept apart, in `links`, so they can be
+     shown as links (blue, tappable) on the row, the way Work's tasks do. */
+  notesFill(r) {
+    const el = RockActions.el; if (!el) return;
+    const box = el.querySelector('.ra-notes');
+    box.hidden = !r || !TodayLook.on();
+    clearTimeout(RockActions.noteT); RockActions.noteDirty = false;
+    if (box.hidden) return;
+    el.querySelector('#ra-note').value = r.note || '';
+    el.querySelector('#ra-link').value = '';
+    RockActions.linksPaint(r);
+  },
+  linksPaint(r) {
+    const list = Array.isArray(r && r.links) ? r.links : [];
+    RockActions.el.querySelector('.ra-links').innerHTML = list.map((u, i) =>
+      '<div class="ra-lk">' + Nav.svg('link') + '<a class="flow-link ra-link" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(RockActions.linkLabel(u)) + '</a>' +
+      '<button type="button" class="ra-lkx" data-ra-unlink="' + i + '" aria-label="Remove this link">×</button></div>').join('');
+  },
+  linkLabel(u) {
+    try { const x = new URL(u); const p = (x.pathname === '/' ? '' : x.pathname) + x.search; return (x.hostname.replace(/^www\./, '') + p).slice(0, 70) + ((x.hostname + p).length > 70 ? '…' : ''); } catch (e) { return String(u).slice(0, 70); }
+  },
+  /* "theflow.today/x" and "www…" become https://; anything that is not a
+     web address (javascript:, mailto: lookalikes, plain words) is refused. */
+  linkClean(v) {
+    let u = String(v || '').trim(); if (!u) return '';
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = 'https://' + u;
+    try { const x = new URL(u); if (!/^https?:$/.test(x.protocol) || !/\./.test(x.hostname)) return ''; return x.href.slice(0, 2000); } catch (e) { return ''; }
+  },
+  linkAdd() {
+    const el = RockActions.el, id = RockActions.cur, hit = id && !RockActions.item && RockActions.find(id); if (!hit) return;
+    const inp = el.querySelector('#ra-link');
+    const u = RockActions.linkClean(inp.value);
+    if (!u) { inp.focus(); toast('That does not look like a link.', 'warn'); return; }
+    if (!Array.isArray(hit.r.links)) hit.r.links = [];
+    if (hit.r.links.indexOf(u) < 0) { if (hit.r.links.length >= 20) { toast('Twenty links is the most one Priority keeps.', 'warn'); return; } hit.r.links.push(u); }
+    inp.value = '';
+    RockActions.noteFlush(true);
+    RockActions.save();
+    RockActions.linksPaint(hit.r);
+  },
+  linkDrop(i) {
+    const id = RockActions.cur, hit = id && RockActions.find(id); if (!hit || !Array.isArray(hit.r.links)) return;
+    hit.r.links.splice(i, 1); if (!hit.r.links.length) delete hit.r.links;
+    RockActions.save();
+    RockActions.linksPaint(hit.r);
+  },
+  /* Typing saves itself a moment after the last key, and on close. */
+  noteFlush(quiet) {
+    clearTimeout(RockActions.noteT);
+    if (!RockActions.noteDirty) return;
+    RockActions.noteDirty = false;
+    const el = RockActions.el, id = RockActions.cur, hit = el && id && !RockActions.item && RockActions.find(id); if (!hit) return;
+    const v = String(el.querySelector('#ra-note').value || '').replace(/\s+$/, '').slice(0, 4000);
+    if (v === String(hit.r.note || '')) return;
+    hit.r.note = v;
+    if (quiet) { try { cSave(); } catch (e) {} RockActions.noteChanged = true; return; }
+    RockActions.save();
+  },
   mode(m) {
     const el = RockActions.el; if (!el) return;
     el.querySelector('.ra-main').hidden = m !== 'main';
@@ -11894,6 +11963,16 @@ const RockActions = {
             '<button type="button" class="flow-btn" data-ra="moveto">Move</button>' +
           '</div></div>' +
           '<div class="ra-repwrap" hidden></div>' +
+          '<div class="ra-notes" hidden>' +
+            '<div class="ra-k">Notes</div>' +
+            '<textarea id="ra-note" class="flow-in ra-note" rows="3" maxlength="4000" placeholder="Details, context, who to ask, what done looks like…" aria-label="Notes for this Priority"></textarea>' +
+            '<div class="ra-k">Links</div>' +
+            '<div class="ra-links"></div>' +
+            '<div class="ra-row ra-linkadd">' +
+              '<input type="url" id="ra-link" class="flow-in" inputmode="url" autocomplete="off" placeholder="Paste a link" aria-label="Add a link">' +
+              '<button type="button" class="flow-btn" data-ra="addlink">Add link</button>' +
+            '</div>' +
+          '</div>' +
           '<div class="ra-k">Hand it off</div>' +
           '<button type="button" class="flow-btn ra-wide" data-ra="delegate">Delegate…<small>Someone else does it; you check back</small></button>' +
           '<div class="ra-k">Let it go</div>' +
@@ -11928,9 +12007,12 @@ const RockActions = {
         if (h2) wrap.querySelector('.ra-repwrap').innerHTML = Repeat.sectionHtml(h2.r, RockActions.dateOf(h2.w, h2.r.day));
         return;
       }
+      const un = e.target.closest('[data-ra-unlink]');
+      if (un) return RockActions.linkDrop(+un.getAttribute('data-ra-unlink'));
       const b = e.target.closest('[data-ra]'); if (!b) return;
       const a = b.getAttribute('data-ra'), id = RockActions.cur;
       if (a === 'close') return RockActions.close();
+      if (a === 'addlink') return RockActions.linkAdd();
       if (a === 'back') return RockActions.mode('main');
       if (a === 'delegate') return RockActions.mode('delegate');
       if (/^f\d$/.test(a)) { wrap.querySelector('#ra-follow').value = RockActions.iso(plus(+a.slice(1))); return; }
@@ -11940,6 +12022,11 @@ const RockActions = {
       if (a === 'moveto') { const d = RockActions.fromIso(wrap.querySelector('#ra-date').value); if (!d) return; RockActions.close(); return RockActions.move(id, d); }
       if (a === 'drop') { const it = RockActions.item; RockActions.close(); return it ? RockActions.asideItem(it, 'dropped') : RockActions.setAside(id, 'dropped'); }
     });
+    wrap.querySelector('#ra-note').addEventListener('input', () => {
+      RockActions.noteDirty = true; clearTimeout(RockActions.noteT);
+      RockActions.noteT = setTimeout(() => RockActions.noteFlush(true), 600);
+    });
+    wrap.querySelector('#ra-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); RockActions.linkAdd(); } });
     wrap.querySelector('.ra-del').addEventListener('submit', (e) => {
       e.preventDefault();
       const who = wrap.querySelector('#ra-who').value.replace(/\s+/g, ' ').trim();
@@ -11954,6 +12041,7 @@ const RockActions = {
   /* ---- the ⋯ on every rock ---- */
   more(id, label) { return '<button type="button" class="ra-more" data-ra-open="' + esc(String(id)) + '" aria-label="More for ' + esc(String(label || 'this Big Rock')) + '">' + Nav.svg('dots') + '</button>'; },
   decorate() {
+    if (TodayLook.on()) { RockActions.rowLinks(); RockActions.addForm(); }
     document.querySelectorAll('#today-feed .td-rocks:not(#td-cal) .td-rock[data-rockid]').forEach((row) => {
       if (row.querySelector('.ra-more')) return;
       const t = row.querySelector('.rk-title');
@@ -11963,6 +12051,59 @@ const RockActions = {
       if (ch.querySelector('.ra-more')) return;
       ch.insertAdjacentHTML('beforeend', RockActions.more(ch.getAttribute('data-rid'), ch.textContent.trim().slice(0, 60)));
     });
+  },
+
+  /* A Priority's links, under its title on Today: blue, and they open. */
+  rowLinks() {
+    document.querySelectorAll('#today-feed .td-rocks:not(#td-cal) .td-rock[data-rockid]').forEach((row) => {
+      const hit = RockActions.find(row.getAttribute('data-rockid'));
+      const list = hit && Array.isArray(hit.r.links) ? hit.r.links : [];
+      const sig = list.join('\n');
+      let box = row.querySelector('.rk-links');
+      if (box && box.getAttribute('data-sig') === sig) return;
+      if (!list.length) { if (box) box.remove(); return; }
+      const host = row.querySelector('.rk-title'); if (!host) return;
+      if (!box) { box = document.createElement('div'); box.className = 'rk-links'; box.setAttribute('data-i18n', 'off'); host.appendChild(box); }
+      box.setAttribute('data-sig', sig);
+      box.innerHTML = list.map((u) => '<a class="flow-link" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + Nav.svg('link') + '<span>' + esc(RockActions.linkLabel(u)) + '</span></a>').join('');
+    });
+  },
+  /* Add a Priority right on the card: today unless another day is picked. */
+  addForm() {
+    const card = document.querySelector('#today-feed .td-rocks:not(#td-cal)'); if (!card) return;
+    let f = card.querySelector('.lk-rk-add');
+    if (f && f === card.lastElementChild) return;
+    if (!f) {
+      f = document.createElement('form');
+      f.className = 'lk-rk-add flow-x';
+      f.setAttribute('data-flow-no-chip', '');
+      const opts = [];
+      for (let k = 0; k < 7; k++) {
+        const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + k);
+        opts.push('<option value="' + RockActions.iso(d) + '">' + (k === 0 ? 'Today' : k === 1 ? 'Tomorrow' : esc(RockActions.label(d))) + '</option>');
+      }
+      f.innerHTML = '<input type="text" maxlength="200" placeholder="Add a Priority…" aria-label="Add a Priority" value="' + esc(RockActions.draft || '') + '">' +
+        '<select aria-label="Which day">' + opts.join('') + '</select>' +
+        '<button type="submit">Add</button>';
+      f.addEventListener('input', (e) => { if (e.target.matches('input')) RockActions.draft = e.target.value; });
+      f.addEventListener('submit', (e) => { e.preventDefault(); RockActions.addFromCard(f); });
+    }
+    card.appendChild(f);
+  },
+  addFromCard(f) {
+    const inp = f.querySelector('input'), sel = f.querySelector('select');
+    const title = String(inp.value || '').replace(/\s+/g, ' ').trim();
+    if (!title) { inp.focus(); return; }
+    const d = RockActions.fromIso(sel.value) || new Date();
+    if (typeof addRock !== 'function') { toast('Open the Week Compass once, then try again.', 'warn'); return; }
+    const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
+    addRock(title.slice(0, 200), roles[0] || '', (d.getDay() + 6) % 7, '', weekId(d), { prio: 'med' });
+    RockActions.draft = '';
+    inp.value = '';
+    RockActions.rerender();
+    const again = document.querySelector('#today-feed .lk-rk-add input');
+    if (again) { try { again.focus({ preventScroll: true }); } catch (e) {} }
+    toast(sel.selectedIndex === 0 ? 'Added to today.' : 'Added to ' + sel.options[sel.selectedIndex].text + '.', null, 1400);
   },
 
   /* ---- Waiting on (Today) and the week's set-aside list (Week Compass) ---- */
@@ -12153,6 +12294,7 @@ const Repeat = {
       const w = weekId(n);
       const src = last.r;
       const r = { id, title: src.title, role: src.role || '', day: (n.getDay() + 6) % 7, time: src.time || '', end: src.end || '', prio: src.prio || 'med', note: src.note || '', done: false, repeat: rule, series: s };
+      if (Array.isArray(src.links) && src.links.length) r.links = src.links.slice(0, 20);
       if (!c.rocks[w]) c.rocks[w] = [];
       c.rocks[w].push(r);
       wrote++;

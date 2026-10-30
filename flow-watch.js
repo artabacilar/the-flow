@@ -151,6 +151,7 @@ function writeNext(c, rock, wid, todayStr) {
   const w = isoWeek(n);
   if (!c.rocks[w]) c.rocks[w] = [];
   const r = { id, title: rock.title, role: rock.role || '', day: dowOf(n), time: rock.time || '', end: rock.end || '', prio: rock.prio || 'med', note: rock.note || '', done: false, repeat: rule, series };
+  if (Array.isArray(rock.links) && rock.links.length) r.links = rock.links.slice(0, 20);
   c.rocks[w].push(r);
   return r;
 }
