@@ -172,7 +172,8 @@ function wav() {
   speak.length = 0; await p.evaluate(() => { window.__said.length = 0; });
   doReply = { ok: true, say: 'Two Priorities left.', actions: [] };
   await ask('what is left today?', false);
-  ok("typed, it answers in writing only — nothing is spoken", speak.length === 0 && (await p.evaluate(() => window.__said.length)) === 0, { speak, said: await p.evaluate(() => window.__said) });
+  ok('typed (or dictated with Wispr Flow), he still answers out loud', speak.length === 1 && /Two Priorities left/.test(speak[0]), { speak });
+  ok('but he does not start listening after a typed question', await p.evaluate(() => !FlowSay.waiting));
   await p.evaluate(() => { document.querySelector("#flow-say .sy-set").open = true; });
   await p.selectOption('#flow-say [data-say-pref="asstCall"]', 'sir'); await p.waitForTimeout(500);
   ok('"Call me: Sir" is saved, and it now says "sir"', await p.evaluate(() => Flow.Settings.get('asstCall') === 'sir' && FlowSay.call() === 'sir'));
