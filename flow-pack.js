@@ -9831,8 +9831,8 @@ const TodayBeta = {
     const on = TodayBeta.on();
     document.documentElement.setAttribute('data-today-beta', on ? 'on' : 'off');
     document.querySelectorAll('input[data-s="todayBeta"]').forEach((i) => { i.checked = !!Settings.get('todayBeta'); });
+    if (!on && TodayBeta.el) { TodayBeta.restore(); TodayBeta.el.remove(); }
     try { TodayLook.paint(); } catch (e) {}
-    if (!on && TodayBeta.el) TodayBeta.el.remove();
     if (!on) document.querySelectorAll('#today-feed .lk-bt-routines').forEach((x) => x.remove());
   },
 
@@ -10094,7 +10094,7 @@ const TodayBeta = {
         '<form class="lk-bt-comp bt-comp" autocomplete="off"><input type="text" maxlength="200" aria-label="New Priority" enterkeyhint="done">' +
           '<div class="bt-datechip"><button type="button" class="bt-date" data-bt="datechip" aria-haspopup="menu" aria-expanded="false"></button><div class="bt-menu" role="menu" hidden></div></div>' +
           '<button type="submit" class="bt-add">Add</button><div class="bt-hint" hidden></div></form></div>' +
-      '<aside class="lk-bt-rail" aria-label="Calendar"></aside>';
+      '<aside class="lk-bt-rail" aria-label="Your day and calendar"><div class="lk-bt-tiles" hidden></div><div class="lk-bt-cal"></div></aside>';
     el.addEventListener('click', (e) => {
       const d = e.target.closest('[data-btd]');
       if (d) { TodayBeta.draft = +d.getAttribute('data-btd'); TodayBeta.menu(false); TodayBeta.chip(); el.querySelector('.bt-comp input').focus(); return; }
@@ -10130,11 +10130,28 @@ const TodayBeta = {
     if (!h) { h = document.createElement('div'); h.className = 'lk-bt-routines'; h.innerHTML = '<h3>Today’s routines</h3><p>Habits, training and meals are always today’s, whichever day you plan above.</p>'; }
     if (h.nextElementSibling !== first) first.before(h);
   },
+  /* Recovery, Meetings, Focus and Spend: in the panel's side column, above
+     the calendar, instead of floating beside the greeting. The host redraws
+     them with Today, so each fresh set is moved in; switching off puts the
+     set back where the classic Today keeps it. */
+  tiles(feed) {
+    const slot = TodayBeta.el && TodayBeta.el.querySelector('.lk-bt-tiles'); if (!slot) return;
+    const fresh = feed.querySelector(':scope > .flow-td-pulse');
+    if (fresh) slot.replaceChildren(fresh);
+    slot.hidden = !slot.firstElementChild;
+  },
+  restore() {
+    const feed = document.getElementById('today-feed');
+    const t = TodayBeta.el && TodayBeta.el.querySelector('.lk-bt-tiles > .flow-td-pulse');
+    if (!feed || !t || feed.querySelector(':scope > .flow-td-pulse')) return;
+    const after = feed.querySelector(':scope > .flow-today-actions') || feed.querySelector(':scope > .lk-hero') || feed.querySelector(':scope > .td-head');
+    if (after) after.after(t); else feed.prepend(t);
+  },
   paint() {
     const B = TodayBeta;
     const on = B.on();
     if (document.documentElement.getAttribute('data-today-beta') !== (on ? 'on' : 'off')) document.documentElement.setAttribute('data-today-beta', on ? 'on' : 'off');
-    if (!on) return;
+    if (!on) { if (B.el && B.el.isConnected) { B.restore(); B.el.remove(); } return; }
     const feed = document.getElementById('today-feed');
     const head = feed && feed.querySelector('.td-head');
     if (!head) return;
@@ -10149,7 +10166,8 @@ const TodayBeta = {
     el.querySelector('.lk-bt-strip').classList.toggle('weekmode', B.view === 'week');
     put('.lk-bt-review', B.reviewHtml());
     put('.lk-bt-list', B.listHtml());
-    put('.lk-bt-rail', B.calHtml());
+    put('.lk-bt-cal', B.calHtml());
+    B.tiles(feed);
     B.chip();
     if (B.refocus || hadFocus) { const i = el.querySelector('.bt-comp input'); if (document.activeElement !== i) i.focus({ preventScroll: true }); }
     B.refocus = false;
