@@ -370,6 +370,9 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
     await conn.handle({ method: 'POST', headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, sr2,
       { path: '/api/connect/gmail/start', query: new URLSearchParams(), me: meX, raw: st2, json, readBody: async () => '{"app":true}' });
     const mu = new URL(JSON.parse(sr2.body).url);
+    { const was = process.env.FLOW_GMAIL; delete process.env.FLOW_GMAIL;
+      ok('Gmail is paused unless FLOW_GMAIL=on, so no sign-in asks for mail', I.PROVIDERS ? I.PROVIDERS.gmail.paused() : require('../flow-connect').PROVIDERS.gmail.paused());
+      process.env.FLOW_GMAIL = was; }
     ok('Gmail asks for read-only mail', mu.searchParams.get('scope') === 'openid email https://www.googleapis.com/auth/gmail.readonly');
     scopeBack = 'openid email';
     const cb2 = send();

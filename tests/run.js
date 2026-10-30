@@ -127,7 +127,7 @@ const SUITES = [
   ['week',     'test-week.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['voice',    'test-voice.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['whoop',    'test-whoop.js',    {}],
-  ['connect',  'test-connect.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein',
+  ['connect',  'test-connect.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_GMAIL: 'on',
                                     GOOGLE_CLIENT_ID: 'test-client.apps.googleusercontent.com' }],
   ['refresh',  'test-refresh.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   /* test-client signs up three ordinary people, so the owner rule would
