@@ -2175,6 +2175,9 @@ async function handleDo(p, req, res, ctx) {
   const known = doContext(body);
   const lang = body.lang === 'tr' ? 'Turkish' : 'English';
   const voice = doPersona(body);
+  /* Asked on a watch: it answers; changes are made with Add by voice there,
+     or in the app, so no actions are proposed. */
+  const onWatch = body.watch === true;
   const past = doHistory(body);
   /* Their own record, read here, so a question gets a real answer. */
   let snapshot = '';
@@ -2187,6 +2190,7 @@ async function handleDo(p, req, res, ctx) {
     'Habits (id | name | ticked today):',
     known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
     '',
+    onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
     'They said: "' + said + '"'
   ].join('\n');
@@ -2207,7 +2211,7 @@ async function handleDo(p, req, res, ctx) {
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP });
+    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP });
   } catch (e) {
     ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
   }

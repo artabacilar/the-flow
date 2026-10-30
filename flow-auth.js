@@ -296,6 +296,22 @@ async function userForToken(tok) {
   return { id: u.id, email: u.email, name: u.name, tokenName: rec.name || '' };
 }
 
+/* A reader locked to one account's namespace, for routes that resolve the
+   account from a bearer rather than a session. */
+function readerFor(uid) {
+  const pre = nsPrefix(uid);
+  return {
+    async get(key) {
+      const v = await raw.get(pre + key);
+      if (v == null) return null;
+      if (typeof v !== 'string') return v;
+      const t = v.trim();
+      if (t && (t[0] === '{' || t[0] === '[')) { try { return JSON.parse(t); } catch (e) {} }
+      return v;
+    }
+  };
+}
+
 function bearerOf(req) {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
   const m = String(h).match(/^Bearer\s+(.+)$/i);
@@ -1068,6 +1084,50 @@ async function gate(req, res) {
     }
     req.__flowUid = ww.id;
     return false;
+  }
+
+  /* ---- the watch asks the assistant ----
+     The same bearer as /api/watch. The question goes to the assistant exactly
+     as the app sends it — their own data, their manner, the name and title
+     they chose in the app — and the answer comes back as text; /speak gives
+     the premium voice for it. Nothing here changes their board: on the wrist
+     it answers, and saving stays with Add by voice. */
+  if ((p === '/api/watch/ask' || p === '/api/watch/speak') && extras) {
+    if (req.method === 'OPTIONS') return false;
+    if (req.method !== 'POST') { json(res, 405, { error: 'POST a question.' }); return true; }
+    const wt = bearerOf(req);
+    const me = wt ? await userForToken(wt) : null;
+    if (!me) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"');
+      json(res, 401, { error: 'This watch is not linked any more. Link it again from the watch.' });
+      return true;
+    }
+    let b = {};
+    try { b = JSON.parse(await readBody(req) || '{}') || {}; } catch (e) {}
+    const mine = readerFor(me.id);
+    const st = await mine.get('flow:settings');
+    const set = st && typeof st === 'object' ? st : {};
+    const lang = b.lang === 'tr' ? 'tr' : 'en';
+    const c = set.asstCall || 'name';
+    const call = c === 'sir' ? (lang === 'tr' ? 'efendim' : 'sir') : c === 'madam' ? (lang === 'tr' ? 'hanımefendi' : "ma'am") : c === 'none' ? '' : String(set.displayName || me.name || '').trim().split(/\s+/)[0] || '';
+    const fwd = p === '/api/watch/ask'
+      ? { text: String(b.text || ''), lang, persona: 'butler', call, name: String(set.asstName || ''), watch: true,
+          ctx: { today: b.today, weekday: b.weekday, time: b.time, rocks: [], habits: [] } }
+      : { text: String(b.text || '') };
+    try {
+      const plan = plus ? await plus.planOf(me, { getJSON }) : { tier: 'plus' };
+      const done = await extras.handle(p === '/api/watch/ask' ? '/api/flow/do' : '/api/flow/speak', { method: 'POST', headers: req.headers }, res, {
+        json, readBody: async () => JSON.stringify(fwd), user: me, mine, plan,
+        counter: {
+          get: (k) => getJSON('__auth:ctr:' + me.id + ':' + k, 0),
+          set: (k, v) => setJSON('__auth:ctr:' + me.id + ':' + k, v)
+        }
+      });
+      if (!done) json(res, 404, { error: 'The assistant is not available.' });
+    } catch (e) {
+      json(res, 502, { error: 'The assistant is unavailable right now.' });
+    }
+    return true;
   }
 
   /* ---- the home-screen widget ----

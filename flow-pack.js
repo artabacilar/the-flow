@@ -13353,6 +13353,8 @@ const Say = {
     });
     /* The home-screen shortcut and Siri / Assistant links land on /?say=1. */
     try { if (/[?&]say=1\b/.test(location.search)) setTimeout(() => Say.open(), 1200); } catch (e) {}
+    /* Siri, a Shortcut or theflow://talk asked before the page was ready. */
+    try { if (window.__flowPendingTalk) { window.__flowPendingTalk = false; setTimeout(() => Say.open(), 600); } } catch (e) {}
   }
 };
 window.FlowSay = Say;

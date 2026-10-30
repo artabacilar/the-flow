@@ -211,8 +211,12 @@ async function today(store, opts) {
     .slice(0, 30)
     .map((h) => ({ id: String(h.id), name: clean(h.name).slice(0, 60), done: !!(comp[h.id] && comp[h.id][L.date]), kind: habitKind(h.name, kinds[h.id]), minutes: habitMinutes(h.name) }));
 
+  /* The name they gave their assistant in the app, for the watch's Ask button. */
+  const prefs = await readJSON(store, 'flow:settings', {}) || {};
+  const assistant = clean(String(prefs.asstName || '')).slice(0, 24);
+
   return {
-    date: L.date, weekday: T.long[L.day], now: L.hhmm, tz, lang,
+    date: L.date, weekday: T.long[L.day], now: L.hhmm, tz, lang, assistant,
     counts: { today: openToday.length, todayDone: mine.length - openToday.length, overdue: late.length },
     headline: headline(openToday.length, late.length, mine.length, week, lang),
     next, rocks, habits,
