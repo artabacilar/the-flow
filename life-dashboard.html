@@ -1731,6 +1731,46 @@ function syncPaint(){
   }
   window.__flowEmptierWeek = emptierWeek;
 
+  /* ── A planner that never saw your history ───────────────────────────
+     31 October 2026: a device holding a blank, default Week Compass (it had
+     never loaded the real one) added one Priority and pushed the whole blank
+     planner up — default roles, no history, one rock — over weeks of real
+     ones. The empty-week check above did not catch it: the week had one rock.
+     So: a copy that would drop Priorities the server has, when this device
+     did not start from the server's copy, is not an edit of it. It is merged
+     instead: everything the server has, plus whatever is new here. */
+  function parseC(s){ let v=JSON.parse(s); if(typeof v==='string') v=JSON.parse(v); return v; }
+  function rockIds(c){ const m={}; const r=(c&&c.rocks)||{}; Object.keys(r).forEach(w=>(r[w]||[]).forEach(x=>{ if(x&&x.id!=null) m[String(x.id)]=w; })); return m; }
+  const DEF_ROLES='Work|Health & Body|Money|Relationships|Learning|Something creative';
+  function compassLoss(localStr, serverStr){
+    try{
+      const L=parseC(localStr), S=parseC(serverStr);
+      const li=rockIds(L), si=rockIds(S);
+      const gone=Object.keys(si).filter(id=>!(id in li)), lost=gone.length;
+      const weeks=new Set(gone.map(id=>si[id]));
+      const rolesReset=Array.isArray(L&&L.roles) && L.roles.join('|')===DEF_ROLES && Array.isArray(S&&S.roles) && S.roles.join('|')!==DEF_ROLES;
+      return (lost>=3 && weeks.size>=2) || (lost>=1 && rolesReset);
+    }catch(e){ return false; }
+  }
+  function compassMerge(localStr, serverStr){
+    try{
+      const L=parseC(localStr), S=parseC(serverStr);
+      const out=JSON.parse(JSON.stringify(S));
+      out.rocks=out.rocks||{};
+      const si=rockIds(S);
+      Object.keys((L&&L.rocks)||{}).forEach(w=>(L.rocks[w]||[]).forEach(r=>{
+        if(!r||r.id==null||(String(r.id) in si)) return;
+        (out.rocks[w]=out.rocks[w]||[]).push(r);
+      }));
+      const asideIds={}; (out.aside||[]).forEach(a=>{ if(a&&a.id!=null) asideIds[String(a.id)]=1; });
+      ((L&&L.aside)||[]).forEach(a=>{ if(a&&a.id!=null&&!asideIds[String(a.id)]) (out.aside=out.aside||[]).push(a); });
+      const enc=JSON.stringify(out);
+      return typeof JSON.parse(serverStr)==='string' ? JSON.stringify(enc) : enc;
+    }catch(e){ return null; }
+  }
+  window.__flowCompassLoss = compassLoss;
+  window.__flowCompassMerge = compassMerge;
+
   function purgeLocal(keep){
     const del=[];
     try{
@@ -2025,6 +2065,14 @@ function syncPaint(){
         try{ localStorage.setItem('bak2_'+k, v); }catch(e){}
         delete dirty[k]; dropped.push(k);
         try{ sessionStorage.setItem('__flowSyncNote', JSON.stringify({at:new Date().toISOString(), what:'an empty week on this device gave way to the server\'s'})); }catch(e){}
+        return;
+      }
+      if(k==='ld_compass' && all[k]!=null && painted[k]!==all[k] && compassLoss(v, all[k])){
+        try{ localStorage.setItem('bak2_'+k, v); }catch(e){}
+        const m=compassMerge(v, all[k]);
+        if(m){ all[k]=m; push[k]=m; delete dirty[k]; }
+        else { delete dirty[k]; dropped.push(k); }
+        try{ sessionStorage.setItem('__flowSyncNote', JSON.stringify({at:new Date().toISOString(), what:'a planner on this device that never saw your history was merged into the server\'s, not pushed over it'})); }catch(e){}
         return;
       }
       push[k]=v;

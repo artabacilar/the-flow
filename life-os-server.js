@@ -1088,12 +1088,15 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/set' && req.method === 'POST') {
       const b = JSON.parse(await readBody(req));
       if (!b.key) return json(res, 400, { error: 'key required' });
-      await store.set(b.key, typeof b.value === 'string' ? b.value : JSON.stringify(b.value));
+      let v = typeof b.value === 'string' ? b.value : JSON.stringify(b.value);
+      if (b.key === 'ld_compass') v = guardCompass(await store.get('ld_compass'), v);
+      await store.set(b.key, v);
       return json(res, 200, { ok: true });
     }
     if (p === '/api/bulk' && req.method === 'POST') {
       const b = JSON.parse(await readBody(req)); const data = b.data || b; const clean = {};
       for (const k in data) clean[k] = typeof data[k] === 'string' ? data[k] : JSON.stringify(data[k]);
+      if (clean.ld_compass != null) clean.ld_compass = guardCompass(await store.get('ld_compass'), clean.ld_compass);
       await store.bulk(clean);
       return json(res, 200, { ok: true, saved: Object.keys(clean).length });
     }
@@ -1103,6 +1106,8 @@ const server = http.createServer(async (req, res) => {
   } catch (err) { json(res, 500, { error: err.message }); }
 });
 
+
+const { guardCompass } = require('./flow-guard');
 flowAuth.attach(server);
 
 /* Read the pack once, at boot. Re-reading it per request would let a deploy be
