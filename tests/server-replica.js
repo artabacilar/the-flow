@@ -1,7 +1,7 @@
 const http=require('http'), fs=require('fs'), path=require('path');
 const PORT=process.env.PORT||4222;
 const flowAuth = require('../flow-auth');                    // EDIT 1
-const { guardCompass } = require('../flow-guard');
+const { guardCompass, merged: guardMerged } = require('../flow-guard');
 let mcp=null; try{ mcp=require('../flow-mcp'); }catch(e){ mcp=null; }
 /* SEED for small fixtures; SEED_FILE for realistic ones — a megabyte of
    JSON does not fit in an environment variable. */
@@ -111,14 +111,16 @@ const server=http.createServer(async(req,res)=>{
     if(p==='/api/set'&&req.method==='POST'){const b=JSON.parse(await readBody(req));
       if(!b.key) return json(res,400,{error:'key required'});
       let v=typeof b.value==='string'?b.value:JSON.stringify(b.value);
-      if(b.key==='ld_compass') v=guardCompass(await store.get('ld_compass'), v);   // as life-os-server.js
+      let caught=false;
+      if(b.key==='ld_compass'){ v=guardCompass(await store.get('ld_compass'), v); caught=guardMerged(); }   // as life-os-server.js
       await store.set(b.key, v);
-      return json(res,200,{ok:true});}
+      return json(res,200,caught?{ok:true,merged:[b.key]}:{ok:true});}
     if(p==='/api/bulk'&&req.method==='POST'){const b=JSON.parse(await readBody(req));const d=b.data||b;const clean={};
       for(const k in d) clean[k]= typeof d[k]==='string'?d[k]:JSON.stringify(d[k]);
-      if(clean.ld_compass!=null) clean.ld_compass=guardCompass(await store.get('ld_compass'), clean.ld_compass);
+      let caught=false;
+      if(clean.ld_compass!=null){ clean.ld_compass=guardCompass(await store.get('ld_compass'), clean.ld_compass); caught=guardMerged(); }
       for(const k in clean) await store.set(k,clean[k]);
-      return json(res,200,{ok:true,saved:Object.keys(clean).length});}
+      return json(res,200,caught?{ok:true,saved:Object.keys(clean).length,merged:['ld_compass']}:{ok:true,saved:Object.keys(clean).length});}
     if(p==='/api/export') return json(res,200,{exported:new Date().toISOString(),app:'artur-life-dashboard-v2',data:await store.all()});
     /* The pack is served alongside the shell, exactly as production does — and
        with the same content-hash version, so a test that passes here is not
