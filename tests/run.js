@@ -91,6 +91,7 @@ const SUITES = [
   ['watch',    'test-watch.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['plus',     'test-plus.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_PLUS_LAUNCH: '2000-01-01', FLOW_FIRSTRUN: '1', FLOW_SIMPLE_DEFAULT: '1', STRIPE_WEBHOOK_SECRET: 'whsec_test', REVENUECAT_WEBHOOK_AUTH: 'rc-test-secret' }],
   ['syncguard','test-syncguard.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['compassguard','test-compassguard.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['replan',   'test-replan.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['repeat',   'test-repeat.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['rocknotes','test-rocknotes.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],

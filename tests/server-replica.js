@@ -1,6 +1,7 @@
 const http=require('http'), fs=require('fs'), path=require('path');
 const PORT=process.env.PORT||4222;
 const flowAuth = require('../flow-auth');                    // EDIT 1
+const { guardCompass } = require('../flow-guard');
 let mcp=null; try{ mcp=require('../flow-mcp'); }catch(e){ mcp=null; }
 /* SEED for small fixtures; SEED_FILE for realistic ones — a megabyte of
    JSON does not fit in an environment variable. */
@@ -109,10 +110,13 @@ const server=http.createServer(async(req,res)=>{
     if(p==='/api/get') return json(res,200,{key:u.searchParams.get('key'),value:await store.get(u.searchParams.get('key'))});
     if(p==='/api/set'&&req.method==='POST'){const b=JSON.parse(await readBody(req));
       if(!b.key) return json(res,400,{error:'key required'});
-      await store.set(b.key, typeof b.value==='string'?b.value:JSON.stringify(b.value));
+      let v=typeof b.value==='string'?b.value:JSON.stringify(b.value);
+      if(b.key==='ld_compass') v=guardCompass(await store.get('ld_compass'), v);   // as life-os-server.js
+      await store.set(b.key, v);
       return json(res,200,{ok:true});}
     if(p==='/api/bulk'&&req.method==='POST'){const b=JSON.parse(await readBody(req));const d=b.data||b;const clean={};
       for(const k in d) clean[k]= typeof d[k]==='string'?d[k]:JSON.stringify(d[k]);
+      if(clean.ld_compass!=null) clean.ld_compass=guardCompass(await store.get('ld_compass'), clean.ld_compass);
       for(const k in clean) await store.set(k,clean[k]);
       return json(res,200,{ok:true,saved:Object.keys(clean).length});}
     if(p==='/api/export') return json(res,200,{exported:new Date().toISOString(),app:'artur-life-dashboard-v2',data:await store.all()});
