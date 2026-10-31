@@ -2183,6 +2183,8 @@ function syncPaint(){
         const r=await fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
           credentials:'same-origin',body:JSON.stringify({data:push})});
         if(!r.ok){ fail(); return; }
+        const j=await r.json().catch(()=>null);
+        if(j&&Array.isArray(j.merged)&&j.merged.length){ dirtyDrop(dirtyKeys); guardCaught(j.merged); return; }
       }catch(e){ fail(); return; }
       dirtyDrop(dirtyKeys);
     }
@@ -2212,6 +2214,22 @@ const writeSeq = {};
 function writeIssued(k){ return (writeSeq[k] = (writeSeq[k]||0) + 1); }
 function writeLanded(k, n){ if(writeSeq[k]===n) dirtyDrop([k]); }
 
+/* The server caught this save: it came from a copy of the planner that never
+   saw the real one (a page left open since before a restore, holding a blank
+   week in memory). The record was kept. This page must not keep saving its
+   copy, nor show it: take the server's record and start again from it. */
+async function guardCaught(keys){
+  try{
+    for(const k of keys){
+      const r=await fetch(DB_API+'/get?key='+encodeURIComponent(k),{credentials:'same-origin',cache:'no-store'});
+      const j=await r.json(); const v=j&&j.value;
+      if(v!=null) localStorage.setItem(k, typeof v==='string'?v:JSON.stringify(v));
+    }
+    dirtyDrop(keys);
+    try{ sessionStorage.setItem('__flowSyncNote', JSON.stringify({at:new Date().toISOString(), what:'this page held an old copy of the planner; it reloaded with the real one'})); }catch(e){}
+  }catch(e){}
+  if(!window.__flowGuardReloaded){ window.__flowGuardReloaded=true; location.reload(); }
+}
 function dbSet(fullKey, valueStr){
   if(window.__FLOW_SEEDING){ seedBuf[fullKey]=valueStr; return; }
   /* Queued BEFORE the request goes out, not only when one comes back broken.
@@ -2228,7 +2246,8 @@ function dbSet(fullKey, valueStr){
   try{
     fetch(DB_API+'/set',{method:'POST',headers:{'Content-Type':'application/json'},
       credentials:'same-origin',body:JSON.stringify({key:fullKey,value:valueStr})})
-      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); writeLanded(fullKey, n); })
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); writeLanded(fullKey, n); return r.json().catch(()=>null); })
+      .then(j=>{ if(j&&Array.isArray(j.merged)&&j.merged.length) guardCaught(j.merged); })
       .catch(()=>{ window.__DB_ON=false;
         try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
   }catch(e){ window.__DB_ON=false; }
@@ -2242,7 +2261,8 @@ function dbBulk(obj){
   try{
     fetch(DB_API+'/bulk',{method:'POST',headers:{'Content-Type':'application/json'},
       credentials:'same-origin',body:JSON.stringify({data:obj})})
-      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); keys.forEach(k=>writeLanded(k, ns[k])); })
+      .then(r=>{ if(!r.ok) throw new Error('http '+r.status); keys.forEach(k=>writeLanded(k, ns[k])); return r.json().catch(()=>null); })
+      .then(j=>{ if(j&&Array.isArray(j.merged)&&j.merged.length) guardCaught(j.merged); })
       .catch(()=>{ window.__DB_ON=false;
         try{ window.__flowSyncNow&&window.__flowSyncNow(); }catch(e){} });
   }catch(e){ window.__DB_ON=false; }

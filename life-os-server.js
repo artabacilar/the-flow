@@ -1089,16 +1089,18 @@ const server = http.createServer(async (req, res) => {
       const b = JSON.parse(await readBody(req));
       if (!b.key) return json(res, 400, { error: 'key required' });
       let v = typeof b.value === 'string' ? b.value : JSON.stringify(b.value);
-      if (b.key === 'ld_compass') v = guardCompass(await store.get('ld_compass'), v);
+      let caught = false;
+      if (b.key === 'ld_compass') { v = guardCompass(await store.get('ld_compass'), v); caught = guardMerged(); }
       await store.set(b.key, v);
-      return json(res, 200, { ok: true });
+      return json(res, 200, caught ? { ok: true, merged: [b.key] } : { ok: true });
     }
     if (p === '/api/bulk' && req.method === 'POST') {
       const b = JSON.parse(await readBody(req)); const data = b.data || b; const clean = {};
       for (const k in data) clean[k] = typeof data[k] === 'string' ? data[k] : JSON.stringify(data[k]);
-      if (clean.ld_compass != null) clean.ld_compass = guardCompass(await store.get('ld_compass'), clean.ld_compass);
+      let caught = false;
+      if (clean.ld_compass != null) { clean.ld_compass = guardCompass(await store.get('ld_compass'), clean.ld_compass); caught = guardMerged(); }
       await store.bulk(clean);
-      return json(res, 200, { ok: true, saved: Object.keys(clean).length });
+      return json(res, 200, caught ? { ok: true, saved: Object.keys(clean).length, merged: ['ld_compass'] } : { ok: true, saved: Object.keys(clean).length });
     }
     if (p === '/api/export') return json(res, 200, { exported: new Date().toISOString(), app: 'artur-life-dashboard-v2', data: await store.all() });
 
@@ -1107,7 +1109,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 
-const { guardCompass } = require('./flow-guard');
+const { guardCompass, merged: guardMerged } = require('./flow-guard');
 flowAuth.attach(server);
 
 /* Read the pack once, at boot. Re-reading it per request would let a deploy be
