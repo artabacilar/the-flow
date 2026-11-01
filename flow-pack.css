@@ -3729,52 +3729,12 @@ html[data-flow-look="new"] #today-feed .lk-jv button:hover{background:var(--lk-s
 html:not([data-flow-look="new"]) .lk-jv{display:none !important}
 
 /* ══ Today v3 (1 Nov 2026): the only Today in Simple ═══════════════════════
- * The plan wears the lime the classic Priorities card had; the side column
- * stays dark. Coming up sits under it, each day heading able to open that day
+ * The plan keeps the dark surface (the lime was tried and taken back on
+ * 1 Nov). Coming up sits under it, each day heading able to open that day
  * in the plan. Importance shows as a tag. */
-html[data-flow-look="new"] #today-feed .lk-bt-main{background:var(--lk-lime);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main :is(.bt-eyebrow,.bt-counts,.bt-sec,.bt-range,.bt-when,.bt-tt small,.bt-empty,.bt-donebar,.bt-hint){color:rgba(var(--lk-lime-ink-a,21,25,10),.64)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-title,html[data-flow-look="new"] #today-feed .lk-bt-main .bt-open,html[data-flow-look="new"] #today-feed .lk-bt-main .bt-empty b{color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-task.done .bt-open{color:rgba(21,25,10,.5);text-decoration-color:rgba(21,25,10,.35)}
-html[data-flow-look="new"] #today-feed .lk-bt-main :is(.bt-task,.bt-comp,.bt-review){border-color:rgba(21,25,10,.13)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-review,html[data-flow-look="new"] #today-feed .lk-bt-main .bt-review button{color:#8A4B00}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-triage{background:rgba(255,255,255,.45)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-trow{border-color:rgba(21,25,10,.12)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-trow small{color:#8A4B00}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-acts button{background:rgba(255,255,255,.6);border-color:rgba(21,25,10,.18);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-sec-f{color:#9C2A0E}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day{background:rgba(21,25,10,.07);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day :is(.w,.c){color:rgba(21,25,10,.6)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day.past .n{color:rgba(21,25,10,.45)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day.today .w,html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day.late .c{color:#9C2A0E}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day.clear .c{color:#2F6B12}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day[aria-selected="true"]{background:rgba(255,255,255,.58);border-color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .lk-bt-day[aria-selected="true"]::after{background:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-seg{background:rgba(21,25,10,.08)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-seg button{color:rgba(21,25,10,.6)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-seg button[aria-pressed="true"]{background:rgba(255,255,255,.62);color:var(--lk-lime-ink);box-shadow:none}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-btn{border-color:rgba(21,25,10,.22);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-btn:hover{background:rgba(21,25,10,.07)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-back{color:#9C2A0E;border-color:rgba(156,42,14,.4)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-chk{border-color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-chk[aria-checked="true"]{background:var(--lk-lime-ink);border-color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-chk[aria-checked="true"]::after{border-color:var(--lk-lime)}
-html[data-flow-look="new"] #today-feed .lk-bt-main :is(.bt-pin,.ra-more){color:rgba(21,25,10,.5)}
-html[data-flow-look="new"] #today-feed .lk-bt-main :is(.bt-pin,.ra-more):hover{background:rgba(21,25,10,.08);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main a.bt-link{color:#1D4ED8}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus,html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus.lime{background:var(--lk-lime-ink);border-color:transparent;color:var(--lk-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus :is(.bt-open,.bt-ftm){color:#F4F4F2}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus small,html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus .bt-unpin{color:rgba(244,244,242,.65);opacity:1}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-focus .bt-chk{border-color:#F4F4F2}
-html[data-flow-look="new"] #today-feed#today-feed .lk-bt-main .bt-comp.bt-comp input[type=text]{background:rgba(255,255,255,.62) !important;border-color:rgba(21,25,10,.2) !important;color:var(--lk-lime-ink) !important}
-html[data-flow-look="new"] #today-feed#today-feed .lk-bt-main .bt-comp.bt-comp input[type=text]::placeholder{color:rgba(21,25,10,.5)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-date{background:rgba(21,25,10,.08);border-color:rgba(21,25,10,.2);color:var(--lk-lime-ink)}
-html[data-flow-look="new"] #today-feed .lk-bt-main .bt-date.moved{border-color:#8A4B00;color:#8A4B00}
 html[data-flow-look="new"] #today-feed .lk-bt .bt-imp{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border-radius:99px;padding:1px 7px;margin-right:7px;vertical-align:2px;text-decoration:none}
-html[data-flow-look="new"] #today-feed .lk-bt .bt-imp.high{background:rgba(156,42,14,.14);color:#9C2A0E}
-html[data-flow-look="new"] #today-feed .lk-bt .bt-imp.low{background:rgba(21,25,10,.08);color:rgba(21,25,10,.6)}
-html[data-flow-look="new"] #today-feed .lk-bt .bt-focus .bt-imp.high{background:rgba(255,107,61,.2);color:#FF8A63}
-html[data-flow-look="new"] #today-feed .lk-bt .bt-focus .bt-imp.low{background:rgba(255,255,255,.1);color:rgba(244,244,242,.7)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-imp.high{background:rgba(var(--lk-coral-a),.16);color:var(--lk-coral)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-imp.low{background:var(--lk-soft);color:var(--lk-mute)}
 /* Coming up: "Plan this day ›" on each day heading, only where the plan is */
 .ah-day .ah-plan{display:none}
 html[data-flow-look="new"][data-today-beta="on"] #today-feed .ah-day{display:flex;justify-content:space-between;align-items:center;gap:10px}
