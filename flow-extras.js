@@ -1762,8 +1762,16 @@ const AHEAD_DAILY_CAP = (() => {
   const n = parseInt(process.env.FLOW_AHEAD_DAILY_CAP || '8', 10);
   return Number.isFinite(n) && n >= 0 ? n : 8;
 })();
+/* Rewrite has its own allowance. It used to share the 8 above with the
+   automatic reads, and a busy day of edits (every change to what is ahead is
+   a new read) spent them all — so Rewrite quietly showed the old read again. */
+const AHEAD_REWRITE_CAP = (() => {
+  const n = parseInt(process.env.FLOW_AHEAD_REWRITE_CAP || '6', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+})();
 const aheadDayKey = () => 'ahead:' + new Date().toISOString().slice(0, 10);
 const aheadCountKey = () => 'aheadn:' + new Date().toISOString().slice(0, 10);
+const aheadRewriteKey = () => 'aheadr:' + new Date().toISOString().slice(0, 10);
 const aheadJobs = new Map();
 let aheadPost = (...a) => postJSON(...a);
 
@@ -1868,22 +1876,26 @@ async function handleAhead(p, req, res, ctx) {
   if (!body.refresh) {
     for (const [jid, j] of aheadJobs) if (j.uid === uid && j.status === 'working') { ctx.json(res, 202, { ok: true, job: jid, joined: true }); return true; }
   }
-  const spent = (await ctx.counter.get(aheadCountKey())) || 0;
-  if (AHEAD_DAILY_CAP > 0 && spent >= AHEAD_DAILY_CAP) {
-    if (cached && cached.headline != null) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, stale: true, ahead: cached }); return true; }
-    ctx.json(res, 429, { error: 'Coming up was read ' + spent + ' times today. It resets at midnight UTC.', used: spent, cap: AHEAD_DAILY_CAP });
+  const ckey = body.refresh ? aheadRewriteKey() : aheadCountKey();
+  const cap = body.refresh ? AHEAD_REWRITE_CAP : AHEAD_DAILY_CAP;
+  const spent = (await ctx.counter.get(ckey)) || 0;
+  if (cap > 0 && spent >= cap) {
+    /* An automatic read past the cap shows the last one; a Rewrite says so
+       plainly, rather than looking as if nothing happened. */
+    if (!body.refresh && cached && cached.headline != null) { ctx.json(res, 200, { ok: true, status: 'done', cached: true, stale: true, ahead: cached }); return true; }
+    ctx.json(res, 429, { error: (body.refresh ? 'Rewritten ' + spent + ' times today' : 'Coming up was read ' + spent + ' times today') + '. It resets at midnight UTC.', used: spent, cap, resets: 'utc-midnight' });
     return true;
   }
   const id = crypto.randomBytes(12).toString('hex');
   const job = { uid, status: 'working', at: now };
   aheadJobs.set(id, job);
-  await ctx.counter.set(aheadCountKey(), spent + 1);
+  await ctx.counter.set(ckey, spent + 1);
   const counter = ctx.counter;
   writeAhead(body, key, ctx.mine)
     .then(async (out) => { job.result = out; job.status = 'done'; try { await counter.set(aheadDayKey(), out); } catch (e) {} })
     .catch(async (e) => { job.status = 'error'; job.error = friendlyUpstream(e) || 'Coming up could not be read just now.';
-      try { const n = (await counter.get(aheadCountKey())) || 0; if (n > 0) await counter.set(aheadCountKey(), n - 1); } catch (x) {} });
-  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: AHEAD_DAILY_CAP });
+      try { const n = (await counter.get(ckey)) || 0; if (n > 0) await counter.set(ckey, n - 1); } catch (x) {} });
+  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap });
   return true;
 }
 

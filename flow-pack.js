@@ -11393,6 +11393,12 @@ const Ahead = {
       let j = await r.json().catch(() => ({}));
       if (r.status === 503) { Ahead.off = true; throw new Error(''); }
       if (r.status === 402 && j.plus) { Ahead.needsPlus = true; if (force) Plus.refused(j, { open: true }); throw new Error(Plus.simple() ? '' : (j.error || '')); }
+      if (r.status === 429 && j.resets === 'utc-midnight') {
+        /* The allowance resets at midnight UTC: say when that is here. */
+        const n = new Date(); n.setUTCHours(24, 0, 0, 0);
+        throw new Error((force ? 'Rewritten ' + (j.used || '') + ' times today' : 'Read enough times today') + ' — the next one after ' + n.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + '.');
+      }
+      if (force && j.stale) throw new Error('Rewritten enough times today — try again tomorrow.');
       if (!r.ok && r.status !== 202) throw new Error(j.error || 'Coming up could not be read just now.');
       if (r.status === 202 && j.job) {
         for (let i = 0; i < 60; i++) {
