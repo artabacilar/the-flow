@@ -3786,3 +3786,6 @@ html[data-flow-look="new"][data-today-beta="on"] #today-feed .ah-day .ah-plan:ho
 #flow-ra .ra-imp .flow-btn[aria-pressed="true"]{background:var(--lk-ink,#F4F4F2);color:var(--lk-bg,#0A0A0B);border-color:transparent}
 #flow-ra .ra-imp .flow-btn.ra-hi[aria-pressed="true"]{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03)}
 #flow-ra .ra-sub2{font-size:12.5px;color:var(--lk-mute,#8E8E94);margin-top:4px}
+
+/* several in Focus at once */
+html[data-flow-look="new"] #today-feed .lk-bt .bt-focuses{display:flex;flex-direction:column;gap:8px}

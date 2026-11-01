@@ -9862,7 +9862,17 @@ const TodayBeta = {
   },
   late() { try { return Triage.late(); } catch (e) { return []; } },
   loops() { try { return Triage.loops(); } catch (e) { return []; } },
-  focusId() { try { const f = Settings.get('todayFocus'); return f && f.id ? String(f.id) : ''; } catch (e) { return ''; } },
+  /* Several things can be in Focus at once. Stored as { ids: [...] }; the
+     single { id } it was before is still read. */
+  focusIds() {
+    try {
+      const f = Settings.get('todayFocus');
+      if (f && Array.isArray(f.ids)) return f.ids.map(String);
+      return f && f.id ? [String(f.id)] : [];
+    } catch (e) { return []; }
+  },
+  focusId() { return TodayBeta.focusIds()[0] || ''; },
+  async setFocus(ids) { ids = [...new Set(ids.map(String))].slice(0, 12); await Settings.set('todayFocus', ids.length ? { ids, at: new Date().toISOString() } : null); },
 
   /* ---- markup ---- */
   title(r) { return String(r.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'); },
@@ -9890,11 +9900,11 @@ const TodayBeta = {
   focusCard(r) {
     const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
     let running = false; try { running = Focus.running(); } catch (e) {}
-    return '<div class="bt-sec bt-sec-f">Focus</div><div class="bt-focus' + (TodayBeta.lime() ? ' lime' : '') + '" data-btid="' + id + '">' +
+    return '<div class="bt-focus' + (TodayBeta.lime() ? ' lime' : '') + '" data-btid="' + id + '">' +
       '<button type="button" class="bt-chk" role="checkbox" aria-checked="false" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
       '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') +
         '<div class="bt-frow"><button type="button" class="bt-start" data-bt="focus">' + (running ? 'Focus running · open' : 'Start focus') + '</button>' +
-        '<button type="button" class="bt-unpin" data-bt="unpin">Unpin</button></div></div></div>';
+        '<button type="button" class="bt-unpin" data-bt="unpin" data-id="' + id + '">Unpin</button></div></div></div>';
   },
   headHtml() {
     const B = TodayBeta, t = B.todayO();
@@ -9957,11 +9967,11 @@ const TodayBeta = {
     if (B.view === 'day') {
       const all = B.rocksOn(B.sel).slice().sort((a, b) => (B.rank(a) - B.rank(b)) || B.byTime(a, b)), open = all.filter((r) => !r.done), done = all.filter((r) => r.done);
       const name = DOW[B.date(B.sel).getDay()];
-      const fid = B.focusId(), f = open.find((r) => String(r.id) === fid);
+      const fids = B.focusIds(), fs = open.filter((r) => fids.indexOf(String(r.id)) >= 0).sort((a, b) => fids.indexOf(String(a.id)) - fids.indexOf(String(b.id)));
       if (!all.length) h = '<div class="bt-empty"><b>' + (B.sel < t ? 'Nothing was planned for ' + esc(name) + '.' : 'Nothing planned for ' + esc(B.rel(B.sel) || name) + '.') + '</b>' + (B.sel < t ? '' : 'Add one below, or ask ' + esc(B.asst()) + '.') + '</div>';
       else if (!open.length) h = '<div class="bt-empty"><b>All done for ' + esc(B.rel(B.sel) ? B.rel(B.sel).toLowerCase() : name) + '.</b>' + (B.sel >= t ? 'Pull something forward, or enjoy it.' : '') + '</div>';
-      if (f) h += B.focusCard(f);
-      const rest = open.filter((r) => r !== f);
+      if (fs.length) h += '<div class="bt-sec bt-sec-f">Focus' + (fs.length > 1 ? ' · ' + fs.length : '') + '</div><div class="bt-focuses">' + fs.map(B.focusCard).join('') + '</div>';
+      const rest = open.filter((r) => fs.indexOf(r) < 0);
       if (rest.length) h += '<div class="bt-sec">Planned</div><div class="bt-rows">' + rest.map(B.row).join('') + '</div>';
       if (done.length) h += '<button type="button" class="bt-donebar" data-bt="done" aria-expanded="' + B.showDone + '">Done · ' + done.length + (B.showDone ? ' ▾' : ' ›') + '</button>' + (B.showDone ? '<div class="bt-rows">' + done.map(B.row).join('') + '</div>' : '');
     } else {
@@ -10042,7 +10052,7 @@ const TodayBeta = {
   tick(id) {
     const h = RockActions.find(id); if (!h) return;
     const r = h.r; r.done = !r.done;
-    if (r.done && TodayBeta.focusId() === String(id)) Settings.set('todayFocus', null);
+    if (r.done && TodayBeta.focusIds().indexOf(String(id)) >= 0) TodayBeta.setFocus(TodayBeta.focusIds().filter((x) => x !== String(id)));
     RockActions.save(r.done ? '🪨 Big rock done: ' + r.title : '');
     if (r.done) RockActions.undo('Done', () => { const h2 = RockActions.find(id); if (h2) { h2.r.done = false; RockActions.save(); } });
   },
@@ -10051,8 +10061,8 @@ const TodayBeta = {
     const t = B.todayO();
     if (a === 'tick') return B.tick(id);
     if (a === 'open') return RockActions.open(id);
-    if (a === 'pin') { await Settings.set('todayFocus', { id, at: new Date().toISOString() }); B.paint(); try { toast('Pinned as your Focus', null, 1400); } catch (e) {} return; }
-    if (a === 'unpin') { await Settings.set('todayFocus', null); B.paint(); return; }
+    if (a === 'pin') { const n = B.focusIds().filter((x) => x !== String(id)); n.push(String(id)); await B.setFocus(n); B.paint(); try { toast(n.length > 1 ? 'Added to your Focus · ' + n.length : 'Pinned as your Focus', null, 1400); } catch (e) {} return; }
+    if (a === 'unpin') { await B.setFocus(B.focusIds().filter((x) => x !== String(id))); B.paint(); return; }
     if (a === 'focus') { try { if (!Focus.running()) await Focus.start(); Focus.open(); } catch (e) {} return; }
     if (a === 'done') { B.showDone = !B.showDone; B.paint(); return; }
     if (a === 'vday') { B.view = 'day'; if (B.sel < B.week * 7 || B.sel > B.week * 7 + 6) B.sel = B.week === 0 ? t : B.week * 7; }
