@@ -114,12 +114,19 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
 
   console.log('\n— ticking, and the Focus —');
   await p.click('#today-feed .lk-bt-list .bt-task[data-btid="a"] .bt-pin'); await p.waitForTimeout(500);
-  const f = await p.evaluate(() => { const el = document.querySelector('#today-feed .lk-bt'); const c = el.querySelector('.bt-focus'); return { card: c && c.getAttribute('data-btid'), saved: (Flow.Settings.get('todayFocus') || {}).id, planned: [...el.querySelectorAll('.bt-rows .bt-task')].map((x) => x.getAttribute('data-btid')) }; });
-  ok('◎ pins one as the Focus, on top, out of the Planned list', f.card === 'a' && f.saved === 'a' && f.planned.indexOf('a') < 0, f);
+  const f = await p.evaluate(() => { const el = document.querySelector('#today-feed .lk-bt'); const c = el.querySelector('.bt-focus'); return { card: c && c.getAttribute('data-btid'), saved: (Flow.Settings.get('todayFocus') || {}).ids, planned: [...el.querySelectorAll('.bt-rows .bt-task')].map((x) => x.getAttribute('data-btid')) }; });
+  ok('◎ pins one as the Focus, on top, out of the Planned list', f.card === 'a' && f.saved && f.saved.join() === 'a' && f.planned.indexOf('a') < 0, f);
+  await p.click('#today-feed .lk-bt-list .bt-task[data-btid="b"] .bt-pin'); await p.waitForTimeout(500);
+  const f2 = await p.evaluate(() => { const el = document.querySelector('#today-feed .lk-bt'); return { cards: [...el.querySelectorAll('.bt-focus')].map((c) => c.getAttribute('data-btid')), head: el.querySelector('.bt-sec-f').textContent, saved: (Flow.Settings.get('todayFocus') || {}).ids, starts: el.querySelectorAll('.bt-focus .bt-start').length }; });
+  ok('a second ◎ adds it to the Focus too — two cards, each with its own Start focus', f2.cards.join() === 'a,b' && /Focus · 2/.test(f2.head) && f2.saved.join() === 'a,b' && f2.starts === 2, f2);
+  await p.click('#today-feed .bt-focus[data-btid="b"] .bt-unpin'); await p.waitForTimeout(500);
+  ok('Unpin on one card takes only that one out', await p.evaluate(() => { const ids = (Flow.Settings.get('todayFocus') || {}).ids || []; return ids.join() === 'a' && document.querySelectorAll('#today-feed .bt-focus').length === 1; }));
+  await p.click('#today-feed .lk-bt-list .bt-task[data-btid="b"] .bt-pin'); await p.waitForTimeout(500);
   ok('the Focus card stands out dark on the lime', await p.evaluate(() => getComputedStyle(document.querySelector('#today-feed .bt-focus')).backgroundColor === 'rgb(21, 25, 10)'));
   await p.click('#today-feed .bt-focus .bt-chk'); await p.waitForTimeout(600);
-  const tk = await p.evaluate(() => ({ done: window.FlowRockActions.find('a').r.done, pin: Flow.Settings.get('todayFocus'), card: !!document.querySelector('#today-feed .bt-focus'), undo: !!document.querySelector('#ra-undo.on'), counts: document.querySelector('#today-feed .bt-counts').textContent }));
-  ok('ticking it saves it done, unpins it, and offers Undo', tk.done === true && !tk.pin && !tk.card && tk.undo && /2 done/.test(tk.counts), tk);
+  const tk = await p.evaluate(() => ({ done: window.FlowRockActions.find('a').r.done, pin: (Flow.Settings.get('todayFocus') || {}).ids, cards: [...document.querySelectorAll('#today-feed .bt-focus')].map((c) => c.getAttribute('data-btid')), undo: !!document.querySelector('#ra-undo.on'), counts: document.querySelector('#today-feed .bt-counts').textContent }));
+  ok('ticking one saves it done, takes only it out of the Focus, and offers Undo', tk.done === true && tk.pin && tk.pin.join() === 'b' && tk.cards.join() === 'b' && tk.undo && /2 done/.test(tk.counts), tk);
+  await p.click('#today-feed .bt-focus[data-btid="b"] .bt-unpin'); await p.waitForTimeout(400);
   await p.click('#ra-undo button'); await p.waitForTimeout(500);
   ok('Undo makes it open again', await p.evaluate(() => window.FlowRockActions.find('a').r.done === false));
   await p.click('#today-feed .bt-donebar'); await p.waitForTimeout(300);
