@@ -8954,11 +8954,34 @@ const Meetings = {
       const g = await r.json();
       if (g && g.value != null) {
         const v = typeof g.value === 'string' ? JSON.parse(g.value) : g.value;
-        if (Array.isArray(v)) { try { localStorage.setItem('ld_meetings', JSON.stringify(v)); } catch (e) {} try { Meetings.apply(); } catch (e) {} Meetings.paint(); return true; }
+        if (Array.isArray(v)) { try { localStorage.setItem('ld_meetings', JSON.stringify(v)); } catch (e) {} try { Meetings.apply(); } catch (e) {} Meetings.paint(); try { if (TodayBeta.on()) TodayBeta.paint(); } catch (e) {} return true; }
       }
     } catch (e) {}
     finally { Meetings._fetching = false; }
     return false;
+  },
+  /* What "Show notes" opens: when, who, the recording, the summary, and
+     the meeting's other action items. Shared by both Todays. */
+  bodyHtml(m, r) {
+    const others = (m.actions || []).filter((a) => !(r && r.src) || a.n !== r.src.n);
+    const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
+    return '<p class="td-meet-people">' + (m.at ? esc(Meetings.when(m)) : '') + (people.length ? ' · ' + esc(people.join(', ')) : '') +
+        (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') + '</p>' +
+      (m.summary ? '<div class="td-meet-sum">' + Meetings.md(m.summary) + '</div>' : '<p class="flow-sub">No summary yet.</p>') +
+      (others.length ? '<p><b>Other action items</b></p><ul class="td-meet-acts">' + others.map((a) =>
+        '<li' + (a.done ? ' class="done"' : '') + '>' + esc(a.text) + ' <small>' + (a.mine ? 'you' : (a.who || 'unassigned')) + (a.due ? ' · ' + esc(a.due) : '') + '</small></li>').join('') + '</ul>' : '');
+  },
+  /* The same fold as markup, for the Simple Today (which paints from
+     strings). '' when the rock is not from a meeting; null when it is but
+     the meeting has not reached this device yet. */
+  foldHtml(r, open) {
+    if (!r || !r.src || r.src.k !== 'fathom') return '';
+    const m = Meetings.find(r.src.mid);
+    if (!m) return null;
+    const id = esc(String(r.id));
+    return '<div class="td-meet bt-meet"><div class="td-meet-line">🎙️ <span data-i18n="off">' + esc(m.title) + '</span>' +
+        ' · <button type="button" class="td-meet-tg" data-bt="meet" data-id="' + id + '" aria-expanded="' + !!open + '">' + (open ? 'Hide notes ▴' : 'Show notes ▾') + '</button></div>' +
+      (open ? '<div class="td-meet-body">' + Meetings.bodyHtml(m, r) + '</div>' : '') + '</div>';
   },
   /* The meeting behind a rock, folded under it on Today. */
   paint() {
@@ -8974,18 +8997,10 @@ const Meetings = {
       const note = row.querySelector('.td-rk-note');
       const box = document.createElement('div');
       box.className = 'td-meet';
-      const others = (m.actions || []).filter((a) => a.n !== hit.r.src.n);
-      const people = (m.people || []).map((p) => p.name || p.email).filter(Boolean);
       box.innerHTML =
         '<div class="td-meet-line">🎙️ <span data-i18n="off">' + esc(m.title) + '</span>' +
           ' · <button type="button" class="td-meet-tg">Show notes ▾</button></div>' +
-        '<div class="td-meet-body" hidden>' +
-          '<p class="td-meet-people">' + (m.at ? esc(Meetings.when(m)) : '') + (people.length ? ' · ' + esc(people.join(', ')) : '') +
-            (m.url ? ' · <a class="flow-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">Open recording</a>' : '') + '</p>' +
-          (m.summary ? '<div class="td-meet-sum">' + Meetings.md(m.summary) + '</div>' : '<p class="flow-sub">No summary yet.</p>') +
-          (others.length ? '<p><b>Other action items</b></p><ul class="td-meet-acts">' + others.map((a) =>
-            '<li' + (a.done ? ' class="done"' : '') + '>' + esc(a.text) + ' <small>' + (a.mine ? 'you' : (a.who || 'unassigned')) + (a.due ? ' · ' + esc(a.due) : '') + '</small></li>').join('') + '</ul>' : '') +
-        '</div>';
+        '<div class="td-meet-body" hidden>' + Meetings.bodyHtml(m, hit.r) + '</div>';
       box.querySelector('.td-meet-tg').addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
         const b = box.querySelector('.td-meet-body'); b.hidden = !b.hidden;
@@ -9884,25 +9899,34 @@ const TodayBeta = {
   },
   label(u) { try { return RockActions.linkLabel(u); } catch (e) { return String(u).replace(/^https?:\/\//, ''); } },
   row(r) {
-    const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
+    const id = esc(String(r.id)), t = TodayBeta.title(r), meet = TodayBeta.meet(r), note = meet ? '' : TodayLook.noteLine(r.note);
     const links = TodayBeta.links(r).slice(0, 3).map((u) => '<a class="bt-link" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"><span>' + esc(TodayBeta.label(u)) + '</span></a>').join('');
     let rep = ''; try { rep = Repeat.mark(r); } catch (e) {}
     return '<div class="bt-task' + (r.done ? ' done' : '') + '" data-btid="' + id + '">' +
       '<button type="button" class="bt-chk" role="checkbox" aria-checked="' + !!r.done + '" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
       '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + rep + '</button>' +
-        (note ? '<small>' + esc(note) + '</small>' : '') + (links ? '<div class="bt-links">' + links + '</div>' : '') + '</div>' +
+        (note ? '<small>' + esc(note) + '</small>' : '') + meet + (links ? '<div class="bt-links">' + links + '</div>' : '') + '</div>' +
       '<div class="bt-when">' + (r.time ? '<span>' + esc(r.time) + '</span>' : '') +
         (!r.done ? '<button type="button" class="bt-pin" data-bt="pin" data-id="' + id + '" title="Make this the Focus" aria-label="Make Focus: ' + esc(t) + '">' + Nav.svg('target', 'bt-i') + '</button>' : '') +
         RockActions.more(r.id, t) + '</div></div>';
   },
+  /* A Priority filed from a meeting shows the meeting, with its notes a tap
+     away, in place of the "From Fathom: …" line — as Advanced does. */
+  meetOpen: new Set(),
+  meet(r) {
+    let h = '';
+    try { h = Meetings.foldHtml(r, TodayBeta.meetOpen.has(String(r.id))); } catch (e) { h = ''; }
+    if (h === null) { try { Meetings.refetch().catch(() => {}); } catch (e) {} return ''; }
+    return h || '';
+  },
   imp(r) { return r.prio === 'high' ? '<span class="bt-imp high">High</span>' : r.prio === 'low' ? '<span class="bt-imp low">Low</span>' : ''; },
   rank(r) { return r.prio === 'high' ? 0 : r.prio === 'low' ? 2 : 1; },
   focusCard(r) {
-    const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
+    const id = esc(String(r.id)), t = TodayBeta.title(r), meet = TodayBeta.meet(r), note = meet ? '' : TodayLook.noteLine(r.note);
     let running = false; try { running = Focus.running(); } catch (e) {}
     return '<div class="bt-focus' + (TodayBeta.lime() ? ' lime' : '') + '" data-btid="' + id + '">' +
       '<button type="button" class="bt-chk" role="checkbox" aria-checked="false" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
-      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') +
+      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') + meet +
         '<div class="bt-frow"><button type="button" class="bt-start" data-bt="focus">' + (running ? 'Focus running · open' : 'Start focus') + '</button>' +
         '<button type="button" class="bt-unpin" data-bt="unpin" data-id="' + id + '">Unpin</button></div></div></div>';
   },
@@ -10061,6 +10085,7 @@ const TodayBeta = {
     const t = B.todayO();
     if (a === 'tick') return B.tick(id);
     if (a === 'open') return RockActions.open(id);
+    if (a === 'meet') { const k = String(id); if (B.meetOpen.has(k)) B.meetOpen.delete(k); else B.meetOpen.add(k); B.paint(); return; }
     if (a === 'pin') { const n = B.focusIds().filter((x) => x !== String(id)); n.push(String(id)); await B.setFocus(n); B.paint(); try { toast(n.length > 1 ? 'Added to your Focus · ' + n.length : 'Pinned as your Focus', null, 1400); } catch (e) {} return; }
     if (a === 'unpin') { await B.setFocus(B.focusIds().filter((x) => x !== String(id))); B.paint(); return; }
     if (a === 'focus') { try { if (!Focus.running()) await Focus.start(); Focus.open(); } catch (e) {} return; }

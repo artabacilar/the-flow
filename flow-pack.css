@@ -3595,6 +3595,15 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-tt{min-width:0;overflow-wrap:a
 html[data-flow-look="new"] #today-feed .lk-bt .bt-open{appearance:none;border:0;background:transparent;padding:0;margin:0;text-align:left;font-size:16px;font-weight:500;line-height:1.4;cursor:pointer;color:var(--lk-ink);width:100%}
 html[data-flow-look="new"] #today-feed .lk-bt .bt-task.done .bt-open{color:var(--lk-mute);text-decoration:line-through;text-decoration-color:var(--lk-dim)}
 html[data-flow-look="new"] #today-feed .lk-bt .bt-tt small{display:block;font-size:13px;color:var(--lk-mute);margin-top:2px}
+/* A Priority filed from a meeting: the meeting line and its notes, as Advanced has them */
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet{font-size:13px;color:var(--lk-mute);margin-top:3px;line-height:1.5}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-tg{color:var(--lk-mute);font-size:13px;text-underline-offset:2px}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-tg:hover{color:var(--lk-ink)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-body{margin:10px 0 4px;padding:12px 14px;border:1px solid var(--lk-line);border-radius:12px;background:var(--lk-soft);color:var(--lk-ink);font-size:13.5px;line-height:1.55;cursor:auto}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-body :is(p,li,b,strong){color:var(--lk-ink)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-body h5{color:var(--lk-mute)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet .td-meet-people{color:var(--lk-mute)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-meet small{display:inline;font-size:12px;margin:0;color:var(--lk-mute)}
 html[data-flow-look="new"] #today-feed .lk-bt .bt-links{display:flex;flex-direction:column;gap:2px;margin-top:3px;min-width:0}
 html[data-flow-look="new"] #today-feed .lk-bt a.bt-link{color:var(--lk-link,#7DB4FF);font-size:13px;text-decoration:underline;text-underline-offset:2px;min-width:0;max-width:100%;display:block}
 html[data-flow-look="new"] #today-feed .lk-bt a.bt-link span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
