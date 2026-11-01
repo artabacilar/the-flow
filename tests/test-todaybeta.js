@@ -182,6 +182,27 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.keyboard.press('7'); await p.waitForTimeout(300);
   ok('the 7 key picks Sunday on the strip', await p.evaluate(() => { const s = document.querySelector('#today-feed .lk-bt-day[aria-selected="true"]'); return !!s && /Sun/.test(s.textContent); }));
 
+  console.log('\n— a Priority from a meeting —');
+  await p.evaluate(() => {
+    const t = new Date(), w = weekId(t);
+    localStorage.setItem('ld_meetings', JSON.stringify([{ id: 'mt1', legacy: true, title: 'Sales sync', at: t.toISOString(), url: 'https://fathom.video/calls/1',
+      people: [{ name: 'Ozcan' }], summary: '## Purpose\nReview the lead ads [CPL went up](https://fathom.video/share/x?timestamp=354)\n- **Fix:** shorten the form',
+      actions: [{ n: 0, text: 'Shorten the lead form', mine: true }, { n: 1, text: 'Hire a qualifier', who: 'Tolga' }] }]));
+    cData.rocks[w].push({ id: 'mtr', title: 'Shorten the lead form', day: (t.getDay() + 6) % 7, time: '', prio: 'med', note: 'From Fathom: Sales sync — https://fathom.video/calls/1', done: false, src: { k: 'fathom', mid: 'mt1', n: 0 } });
+    cSave(); window.FlowTodayBeta.paint();
+  });
+  await p.waitForTimeout(500);
+  const mt = await p.evaluate(() => { const row = document.querySelector('#today-feed .lk-bt [data-btid="mtr"]'); return row && { line: (row.querySelector('.td-meet-line') || {}).textContent, note: !!row.querySelector('.bt-tt > small'), body: !!row.querySelector('.td-meet-body') }; });
+  ok('it shows the meeting and "Show notes ▾" instead of the "From Fathom" line, folded', mt && /Sales sync/.test(mt.line) && /Show notes/.test(mt.line) && !mt.note && !mt.body, mt);
+  await p.click('#today-feed .lk-bt [data-btid="mtr"] .td-meet-tg'); await p.waitForTimeout(400);
+  const mo = await p.evaluate(() => { const row = document.querySelector('#today-feed .lk-bt [data-btid="mtr"]'); const b = row.querySelector('.td-meet-body'); return { sheet: !!document.querySelector('#flow-ra.open, #flow-ra[open]'), tg: row.querySelector('.td-meet-tg').textContent, text: b && b.textContent, ts: b && (b.querySelector('a.td-ts') || {}).textContent, rec: b && !!b.querySelector('a[href="https://fathom.video/calls/1"]'), bg: b && getComputedStyle(b).backgroundColor }; });
+  ok('"Show notes" opens the summary, people, recording link and the other action items — and not the sheet', mo.text && /Ozcan/.test(mo.text) && /Hire a qualifier/.test(mo.text) && !/Shorten the lead form/.test(mo.text) && mo.rec && /Hide notes/.test(mo.tg) && !mo.sheet, mo);
+  ok('the moments in the summary are ▶ play chips', /▶ 5:54/.test(mo.ts || ''), mo.ts);
+  await p.evaluate(() => window.FlowTodayBeta.paint()); await p.waitForTimeout(200);
+  ok('it stays open when Today repaints', await p.evaluate(() => !!document.querySelector('#today-feed .lk-bt [data-btid="mtr"] .td-meet-body')));
+  await p.click('#today-feed .lk-bt [data-btid="mtr"] .td-meet-tg'); await p.waitForTimeout(300);
+  ok('"Hide notes" folds it again', await p.evaluate(() => !document.querySelector('#today-feed .lk-bt [data-btid="mtr"] .td-meet-body')));
+
   console.log('\n— in other themes, and on a phone —');
   for (const th of ['paper', 'bloom', 'aurora', 'calm', 'bold', 'operator']) {
     await p.evaluate((t) => Flow.Theme.apply(t, false), th); await p.waitForTimeout(300);
