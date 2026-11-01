@@ -4135,8 +4135,6 @@ const SettingsUI = {
         </div>
         <div class="flow-switch" style="margin-top:14px" id="newLookRow"><div class="t"><b>Simple interface</b><span>The new design — every page and every function, cleaner and bigger. Off is Advanced, the classic design. Nothing you wrote changes either way.</span></div>
           <input type="checkbox" data-s="newLook" data-type="bool" ${s.newLook ? 'checked' : ''}></div>
-        ${TodayLook.on() ? `<div class="flow-switch" id="todayBetaRow"><div class="t"><b>The new Today (beta)</b><span>One plan for the day you pick on the strip, a Focus to pin, overdue under Needs review, and your calendar beside it. Off is the classic Today; nothing you wrote changes either way.</span></div>
-          <input type="checkbox" data-s="todayBeta" data-type="bool" ${s.todayBeta ? 'checked' : ''}></div>` : ''}
         <div class="flow-switch"><div class="t"><b>Time chips on task rows</b><span>The 🕘 chip that gives a task a date, time, duration and alert. Turn off to hide them everywhere without losing anything you already scheduled.</span></div>
           <input type="checkbox" data-s="showTimeChips" data-type="bool" ${s.showTimeChips ? 'checked' : ''}></div>
         <div class="flow-switch"><div class="t"><b>Sharper breakdown charts</b><span>Cards headed “Visual breakdown” are redrawn as a crisp ring or bars. The original widget is hidden, never deleted.</span></div>
@@ -9591,8 +9589,7 @@ const TodayLook = {
        Open loops past their day — the ones the old card listed in red. */
     let late = 0; try { late = Triage.count(); } catch (e) {}
     return (late ? '<button type="button" class="lk-act hot" data-lk-act="triage">Overdue · ' + late + '</button>' : '') +
-      '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>'
-      + '<button type="button" class="lk-act lk-act-beta" data-lk-act="beta">Try the new Today <span>beta</span></button>';
+      '<button type="button" class="lk-act" data-lk-act="replan">' + Nav.svg('refresh', 'lk-act-i') + 'My day changed</button>';
   },
 
   /* A day in the strip opens that day right here: its Big Rocks, ticked off
@@ -9822,7 +9819,13 @@ window.FlowTodayLook = TodayLook;
 const TodayBeta = {
   view: 'day', sel: null, week: 0, showDone: false, reviewOpen: false,
   draft: null, dayKey: '', el: null, refocus: false,
-  on() { try { return TodayLook.on() && !!Settings.get('todayBeta'); } catch (e) { return false; } },
+  /* Since 1 November 2026 this is Simple's only Today: the classic one is
+     retired (Advanced keeps its own). The todayBeta setting is no longer read. */
+  on() { try { return TodayLook.on() && !TodayBeta.classic(); } catch (e) { return false; } },
+  /* An emergency way back, not in any menu: localStorage flow:classicToday=1
+     on a device shows the classic Simple Today there. The older test suites
+     use it to keep the classic code covered. */
+  classic() { try { return localStorage.getItem('flow:classicToday') === '1'; } catch (e) { return false; } },
   lime() { try { return !!Settings.get('todayBetaLime'); } catch (e) { return false; } },
   async set(v) {
     await Settings.set('todayBeta', !!v);
@@ -9876,18 +9879,20 @@ const TodayBeta = {
     let rep = ''; try { rep = Repeat.mark(r); } catch (e) {}
     return '<div class="bt-task' + (r.done ? ' done' : '') + '" data-btid="' + id + '">' +
       '<button type="button" class="bt-chk" role="checkbox" aria-checked="' + !!r.done + '" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
-      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + esc(t) + rep + '</button>' +
+      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + rep + '</button>' +
         (note ? '<small>' + esc(note) + '</small>' : '') + (links ? '<div class="bt-links">' + links + '</div>' : '') + '</div>' +
       '<div class="bt-when">' + (r.time ? '<span>' + esc(r.time) + '</span>' : '') +
         (!r.done ? '<button type="button" class="bt-pin" data-bt="pin" data-id="' + id + '" title="Make this the Focus" aria-label="Make Focus: ' + esc(t) + '">' + Nav.svg('target', 'bt-i') + '</button>' : '') +
         RockActions.more(r.id, t) + '</div></div>';
   },
+  imp(r) { return r.prio === 'high' ? '<span class="bt-imp high">High</span>' : r.prio === 'low' ? '<span class="bt-imp low">Low</span>' : ''; },
+  rank(r) { return r.prio === 'high' ? 0 : r.prio === 'low' ? 2 : 1; },
   focusCard(r) {
     const id = esc(String(r.id)), t = TodayBeta.title(r), note = TodayLook.noteLine(r.note);
     let running = false; try { running = Focus.running(); } catch (e) {}
     return '<div class="bt-sec bt-sec-f">Focus</div><div class="bt-focus' + (TodayBeta.lime() ? ' lime' : '') + '" data-btid="' + id + '">' +
       '<button type="button" class="bt-chk" role="checkbox" aria-checked="false" data-bt="tick" data-id="' + id + '" aria-label="Done: ' + esc(t) + '"></button>' +
-      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') +
+      '<div class="bt-tt"><button type="button" class="bt-open" data-bt="open" data-id="' + id + '">' + TodayBeta.imp(r) + esc(t) + (r.time ? ' <span class="bt-ftm">' + esc(r.time) + '</span>' : '') + '</button>' + (note ? '<small>' + esc(note) + '</small>' : '') +
         '<div class="bt-frow"><button type="button" class="bt-start" data-bt="focus">' + (running ? 'Focus running · open' : 'Start focus') + '</button>' +
         '<button type="button" class="bt-unpin" data-bt="unpin">Unpin</button></div></div></div>';
   },
@@ -9905,10 +9910,10 @@ const TodayBeta = {
     }
     const open = all.filter((r) => !r.done).length;
     const away = B.view === 'day' ? (B.sel !== t || B.week !== 0) : B.week !== 0;
-    return '<div class="lk-bt-in bt-hdr"><div class="bt-hl"><div class="bt-eyebrow">' + esc(eyebrow) + ' <span class="bt-beta">Beta</span></div>' +
+    return '<div class="lk-bt-in bt-hdr"><div class="bt-hl"><div class="bt-eyebrow">' + esc(eyebrow) + '</div>' +
       '<h2 class="bt-title">' + esc(title) + '</h2><div class="bt-counts">' + open + ' planned · ' + (all.length - open) + ' done</div></div>' +
       '<div class="bt-hr">' + (away ? '<button type="button" class="bt-back" data-bt="today">← Today</button>' : '') +
-      '<button type="button" class="bt-classic" data-bt="classic" title="Back to the classic Today">Classic</button></div></div>' +
+      '</div></div>' +
       '<div class="lk-bt-in bt-ctrls"><span class="bt-seg" role="group" aria-label="View">' +
         '<button type="button" data-bt="vday" aria-pressed="' + (B.view === 'day') + '">Day</button>' +
         '<button type="button" data-bt="vweek" aria-pressed="' + (B.view === 'week') + '">Week</button></span>' +
@@ -9950,7 +9955,7 @@ const TodayBeta = {
     const B = TodayBeta, t = B.todayO();
     let h = '';
     if (B.view === 'day') {
-      const all = B.rocksOn(B.sel).slice().sort(B.byTime), open = all.filter((r) => !r.done), done = all.filter((r) => r.done);
+      const all = B.rocksOn(B.sel).slice().sort((a, b) => (B.rank(a) - B.rank(b)) || B.byTime(a, b)), open = all.filter((r) => !r.done), done = all.filter((r) => r.done);
       const name = DOW[B.date(B.sel).getDay()];
       const fid = B.focusId(), f = open.find((r) => String(r.id) === fid);
       if (!all.length) h = '<div class="bt-empty"><b>' + (B.sel < t ? 'Nothing was planned for ' + esc(name) + '.' : 'Nothing planned for ' + esc(B.rel(B.sel) || name) + '.') + '</b>' + (B.sel < t ? '' : 'Add one below, or ask ' + esc(B.asst()) + '.') + '</div>';
@@ -9961,7 +9966,7 @@ const TodayBeta = {
       if (done.length) h += '<button type="button" class="bt-donebar" data-bt="done" aria-expanded="' + B.showDone + '">Done · ' + done.length + (B.showDone ? ' ▾' : ' ›') + '</button>' + (B.showDone ? '<div class="bt-rows">' + done.map(B.row).join('') + '</div>' : '');
     } else {
       for (let i = 0; i < 7; i++) {
-        const o = B.week * 7 + i, all = B.rocksOn(o).slice().sort((a, b) => (a.done - b.done) || B.byTime(a, b));
+        const o = B.week * 7 + i, all = B.rocksOn(o).slice().sort((a, b) => (a.done - b.done) || (B.rank(a) - B.rank(b)) || B.byTime(a, b));
         if (!all.length) continue;
         const open = all.filter((r) => !r.done).length;
         h += '<button type="button" class="bt-daygrp' + (o === t ? ' today' : '') + (o < t && open ? ' late' : '') + '" data-bto="' + o + '"><span>' + esc(B.longDate(o)) + (o === t ? ' · today' : '') + '</span><span>' + open + ' planned · ' + (all.length - open) + ' done</span></button>' +
@@ -9981,7 +9986,7 @@ const TodayBeta = {
     return '<div class="lk-bt-in"><div class="bt-eyebrow">Calendar · ' + esc(B.rel(o) || B.short(o)) + '</div>' +
       (rows || '<p class="bt-none">' + (past ? 'Past days are not shown.' : 'Nothing in your calendar.') + '</p>') +
       '<div class="bt-raillinks"><button type="button" class="bt-linkish" data-bt="compass">Open Week Compass ›</button><button type="button" class="bt-linkish" data-bt="weekreview">Review the week ›</button></div>' +
-      '<div class="bt-surf"><span>Focus card</span><span class="bt-seg sm" role="group" aria-label="Focus card colour"><button type="button" data-bt="quiet" aria-pressed="' + !B.lime() + '">Quiet</button><button type="button" data-bt="lime" aria-pressed="' + B.lime() + '">Lime</button></span></div></div>';
+'</div>';
   },
   dur(h) { const m = Math.round(h * 60); return m >= 60 ? (m / 60).toFixed(m % 60 ? 1 : 0) + ' h' : m + ' min'; },
   asst() { try { return Say.name(); } catch (e) { return 'J.A.R.V.I.S.'; } },
@@ -10086,7 +10091,18 @@ const TodayBeta = {
     try { Track.hit('triage_done'); } catch (e) {}
   },
 
+  /* "Plan this day ›" on a Coming up heading opens that day above. */
+  planDay(iso) {
+    const d = RockActions.fromIso(iso); if (!d) return;
+    const m = TodayBeta.date(0); m.setHours(0, 0, 0, 0); d.setHours(0, 0, 0, 0);
+    TodayBeta.pick(Math.round((d - m) / 864e5));
+    try { TodayBeta.el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+  },
   build() {
+    if (!TodayBeta.wired) {
+      TodayBeta.wired = true;
+      document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ah-plan]'); if (b && TodayBeta.on()) { e.preventDefault(); TodayBeta.planDay(b.getAttribute('data-ah-plan')); } });
+    }
     const el = document.createElement('section');
     el.className = 'lk-bt';
     el.setAttribute('aria-label', 'Daily plan');
@@ -11413,7 +11429,7 @@ const Ahead = {
         last = it.date;
         const d = new Date(it.date + 'T00:00:00');
         const label = it.date === today ? 'Today' : it.date === tomorrow ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-        rows += '<li class="ah-day"><span>' + esc(label) + '</span></li>';
+        rows += '<li class="ah-day"><span>' + esc(label) + '</span><button type="button" class="ah-plan" data-ah-plan="' + esc(it.date) + '">Plan this day ›</button></li>';
       }
       const rem = Ahead.remFor(it.key);
       const open = Ahead.menu === it.key;
@@ -12218,6 +12234,7 @@ const RockActions = {
     rep.innerHTML = rep.hidden ? '' : Repeat.sectionHtml(hit.r, d);
     el.querySelector('.ra-dropsub').textContent = 'Not doing it. Leaves the list without counting as done';
     RockActions.notesFill(hit.r);
+    RockActions.editFill(hit.r);
     RockActions.mode('main');
     el.classList.add('on');
     setTimeout(() => { const b = el.querySelector('[data-ra="tomorrow"]'); if (b && matchMedia('(hover:hover)').matches) b.focus(); }, 60);
@@ -12245,6 +12262,7 @@ const RockActions = {
     el.querySelector('.ra-mv').hidden = true;
     el.querySelector('.ra-repwrap').hidden = true;
     RockActions.notesFill(null);
+    RockActions.editFill(null);
     el.querySelector('.ra-dropsub').textContent = it.kind === 'event' ? 'Not going. It stays in your calendar; Coming up stops listing it' : 'Not doing it. Coming up stops listing it';
     const t = new Date(); t.setDate(t.getDate() + 1);
     el.querySelector('#ra-who').value = '';
@@ -12269,6 +12287,7 @@ const RockActions = {
     try { Ahead.paint(); } catch (e) {}
   },
   close() {
+    RockActions.titleFlush(true);
     RockActions.noteFlush(true);
     if (RockActions.el) RockActions.el.classList.remove('on'); RockActions.cur = null; RockActions.item = null;
     /* A note saved while typing shows on the row once the sheet goes down. */
@@ -12279,6 +12298,48 @@ const RockActions = {
      The note is the rock's own `note` — the same one Advanced edits and the
      calendar export carries. Links are kept apart, in `links`, so they can be
      shown as links (blue, tappable) on the row, the way Work's tasks do. */
+  /* ---- name, importance and time (Simple) ----
+     Importance is the rock's own `prio` (high / med / low) — the field the
+     app, the assistant, the MCP and the watch already read and write. */
+  editFill(r) {
+    const el = RockActions.el; if (!el) return;
+    const box = el.querySelector('.ra-edit');
+    box.hidden = !r || !TodayLook.on();
+    clearTimeout(RockActions.titleT); RockActions.titleDirty = false;
+    if (box.hidden) return;
+    el.querySelector('#ra-title').value = String(r.title || '');
+    el.querySelector('#ra-time').value = /^\d{2}:\d{2}$/.test(String(r.time || '')) ? r.time : '';
+    RockActions.impPaint(r.prio || 'med');
+  },
+  impPaint(v) { const el = RockActions.el; if (!el) return; el.querySelectorAll('[data-ra-imp]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-ra-imp') === v))); },
+  titleFlush(quiet) {
+    clearTimeout(RockActions.titleT);
+    if (!RockActions.titleDirty) return;
+    RockActions.titleDirty = false;
+    const el = RockActions.el, id = RockActions.cur, hit = el && id && !RockActions.item && RockActions.find(id); if (!hit) return;
+    const v = String(el.querySelector('#ra-title').value || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (!v || v === String(hit.r.title || '')) return;
+    hit.r.title = v;
+    el.querySelector('h4').textContent = v.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+    try { if (typeof J === 'function') J('planning', '✏️ Big rock renamed: ' + v); } catch (e) {}
+    if (quiet) { try { cSave(); } catch (e) {} RockActions.noteChanged = true; return; }
+    RockActions.save();
+  },
+  setImp(v) {
+    const id = RockActions.cur, hit = id && !RockActions.item && RockActions.find(id); if (!hit) return;
+    if (['high', 'med', 'low'].indexOf(v) < 0) return;
+    hit.r.prio = v; RockActions.impPaint(v);
+    try { cSave(); } catch (e) {} RockActions.noteChanged = true;
+  },
+  setTime(v) {
+    const id = RockActions.cur, hit = id && !RockActions.item && RockActions.find(id); if (!hit) return;
+    v = /^\d{2}:\d{2}$/.test(String(v || '')) ? v : '';
+    if (v === String(hit.r.time || '')) return;
+    hit.r.time = v;
+    const d = RockActions.dateOf(hit.w, hit.r.day);
+    RockActions.el.querySelector('.fn-sub').textContent = (hit.r.day >= 0 ? RockActions.label(d) : 'No day set') + (v ? ' · ' + v : '') + (hit.r.done ? ' · done' : '');
+    try { cSave(); } catch (e) {} RockActions.noteChanged = true;
+  },
   notesFill(r) {
     const el = RockActions.el; if (!el) return;
     const box = el.querySelector('.ra-notes');
@@ -12351,6 +12412,20 @@ const RockActions = {
         '<button type="button" class="fn-capture-close" data-ra="close" aria-label="Close">×</button>' +
         '<h4></h4><div class="fn-sub"></div>' +
         '<div class="ra-main">' +
+          /* Simple: the name, its importance and its time, editable in place. */
+          '<div class="ra-edit" hidden>' +
+            '<div class="ra-k">Name</div>' +
+            '<input type="text" id="ra-title" class="flow-in ra-title" maxlength="300" autocomplete="off" aria-label="Name">' +
+            '<div class="ra-k">Importance</div>' +
+            '<div class="ra-row ra-imp" role="group" aria-label="Importance">' +
+              '<button type="button" class="flow-btn ra-hi" data-ra-imp="high" aria-pressed="false">High</button>' +
+              '<button type="button" class="flow-btn" data-ra-imp="med" aria-pressed="false">Normal</button>' +
+              '<button type="button" class="flow-btn" data-ra-imp="low" aria-pressed="false">Low</button>' +
+            '</div>' +
+            '<div class="ra-sub2">High goes to the top of its day. Low sinks to the bottom.</div>' +
+            '<div class="ra-k">Time</div>' +
+            '<div class="ra-row"><input type="time" id="ra-time" class="flow-in ra-time" aria-label="Time"><button type="button" class="flow-btn sm" data-ra="notime">No time</button></div>' +
+          '</div>' +
           '<div class="ra-mv"><div class="ra-k">Move</div>' +
           '<div class="ra-row">' +
             '<button type="button" class="flow-btn" data-ra="tomorrow">Tomorrow</button>' +
@@ -12405,6 +12480,8 @@ const RockActions = {
       }
       const un = e.target.closest('[data-ra-unlink]');
       if (un) return RockActions.linkDrop(+un.getAttribute('data-ra-unlink'));
+      const im = e.target.closest('[data-ra-imp]');
+      if (im) return RockActions.setImp(im.getAttribute('data-ra-imp'));
       const b = e.target.closest('[data-ra]'); if (!b) return;
       const a = b.getAttribute('data-ra'), id = RockActions.cur;
       if (a === 'close') return RockActions.close();
@@ -12413,11 +12490,18 @@ const RockActions = {
       if (a === 'delegate') return RockActions.mode('delegate');
       if (/^f\d$/.test(a)) { wrap.querySelector('#ra-follow').value = RockActions.iso(plus(+a.slice(1))); return; }
       if (!id) return;
+      if (a === 'notime') { wrap.querySelector('#ra-time').value = ''; return RockActions.setTime(''); }
       if (a === 'tomorrow') { RockActions.close(); return RockActions.move(id, plus(1)); }
       if (a === 'nextweek') { const d = new Date(); d.setDate(d.getDate() + (7 - (d.getDay() + 6) % 7)); RockActions.close(); return RockActions.move(id, d); }
       if (a === 'moveto') { const d = RockActions.fromIso(wrap.querySelector('#ra-date').value); if (!d) return; RockActions.close(); return RockActions.move(id, d); }
       if (a === 'drop') { const it = RockActions.item; RockActions.close(); return it ? RockActions.asideItem(it, 'dropped') : RockActions.setAside(id, 'dropped'); }
     });
+    wrap.querySelector('#ra-title').addEventListener('input', () => {
+      RockActions.titleDirty = true; clearTimeout(RockActions.titleT);
+      RockActions.titleT = setTimeout(() => RockActions.titleFlush(true), 600);
+    });
+    wrap.querySelector('#ra-title').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); RockActions.titleFlush(true); e.target.blur(); } });
+    wrap.querySelector('#ra-time').addEventListener('change', (e) => RockActions.setTime(e.target.value));
     wrap.querySelector('#ra-note').addEventListener('input', () => {
       RockActions.noteDirty = true; clearTimeout(RockActions.noteT);
       RockActions.noteT = setTimeout(() => RockActions.noteFlush(true), 600);
