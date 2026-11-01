@@ -54,7 +54,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
       routines: (() => { const r = document.querySelector('#today-feed .lk-bt-routines'); return !!r && /Today’s routines/.test(r.textContent) && !!r.nextElementSibling && /td-group|flow-td-meals|flow-td-habits/.test(r.nextElementSibling.className + ' ' + r.nextElementSibling.id); })() };
   });
   ok('Simple shows it straight away', on.attr === 'on', on);
-  ok('the plan wears the lime of the classic Priorities card', on.lime === 'rgb(200, 242, 107)', on.lime);
+  ok('the plan keeps the dark surface (not lime)', on.lime !== 'rgb(200, 242, 107)', on.lime);
   ok('the panel sits right under the greeting', on.panel && on.afterHead, on);
   ok('the strip, the hero card, the Priorities card and the old buttons step aside', on.old.length === 0, on.old);
   ok('Coming up stays, right under the plan', on.ahead && on.aheadAfter, on);
@@ -122,7 +122,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.click('#today-feed .bt-focus[data-btid="b"] .bt-unpin'); await p.waitForTimeout(500);
   ok('Unpin on one card takes only that one out', await p.evaluate(() => { const ids = (Flow.Settings.get('todayFocus') || {}).ids || []; return ids.join() === 'a' && document.querySelectorAll('#today-feed .bt-focus').length === 1; }));
   await p.click('#today-feed .lk-bt-list .bt-task[data-btid="b"] .bt-pin'); await p.waitForTimeout(500);
-  ok('the Focus card stands out dark on the lime', await p.evaluate(() => getComputedStyle(document.querySelector('#today-feed .bt-focus')).backgroundColor === 'rgb(21, 25, 10)'));
+  ok('the Focus card stands out with a coral edge', await p.evaluate(() => /255, 107, 61/.test(getComputedStyle(document.querySelector('#today-feed .bt-focus')).borderTopColor)));
   await p.click('#today-feed .bt-focus .bt-chk'); await p.waitForTimeout(600);
   const tk = await p.evaluate(() => ({ done: window.FlowRockActions.find('a').r.done, pin: (Flow.Settings.get('todayFocus') || {}).ids, cards: [...document.querySelectorAll('#today-feed .bt-focus')].map((c) => c.getAttribute('data-btid')), undo: !!document.querySelector('#ra-undo.on'), counts: document.querySelector('#today-feed .bt-counts').textContent }));
   ok('ticking one saves it done, takes only it out of the Focus, and offers Undo', tk.done === true && tk.pin && tk.pin.join() === 'b' && tk.cards.join() === 'b' && tk.undo && /2 done/.test(tk.counts), tk);
