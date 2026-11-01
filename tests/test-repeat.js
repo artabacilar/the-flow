@@ -14,6 +14,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
 (async () => {
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  await p.addInitScript(() => { try { localStorage.setItem('flow:classicToday', '1'); } catch (e) {} });   /* the classic Simple Today, kept as a fallback */
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(H + '/', { waitUntil: 'load' }); await p.waitForTimeout(2500);
   await p.click('#fa-alt', { timeout: 2500 }).catch(() => {});

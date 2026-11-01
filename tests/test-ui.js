@@ -68,8 +68,16 @@ const controls = (p) => p.evaluate(() => {
     /* Two things Simple leaves off Today on purpose: the Diet checklist and
        the Sharpen the Blade list (the Blade is asked in the week's review). */
     const LEFT_OUT = /^div\|\|(Diet|Sharpen the Blade)\d/;
-    const miss = before[t].filter((x) => !now.has(x) && !now.has(simpleWord(x)) && !LEFT_OUT.test(x));
+    /* Today's three classic buttons have their places in the new Today:
+       Plan today → the Add field under the plan; Quick add → the coral + Add;
+       Review week → "Review the week" in the side column. Checked below. */
+    const MOVED = t === 'today' ? /^button\|\|(Plan today|Quick add|Review week)$/ : null;
+    const miss = before[t].filter((x) => !now.has(x) && !now.has(simpleWord(x)) && !LEFT_OUT.test(x) && !(MOVED && MOVED.test(x)));
     if (miss.length) gaps[t] = miss.slice(0, 6);
+    if (MOVED) {
+      const there = await p.evaluate(() => ({ add: !!document.querySelector('#today-feed .lk-bt .bt-comp input'), review: !!document.querySelector('#today-feed .lk-bt [data-bt="weekreview"]'), plus: !!document.getElementById('fn-sideadd') }));
+      if (!there.add || !there.review || !there.plus) gaps.todayMoved = there;
+    }
   }
   ok('every page has every control it has in Advanced', !Object.keys(gaps).length, gaps);
   await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(300);

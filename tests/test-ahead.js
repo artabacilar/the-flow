@@ -122,7 +122,7 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   await submitAuth(p); await p.waitForTimeout(4500);
   await p.evaluate(() => Flow.Nav.go('today'));
   await p.waitForFunction(() => document.querySelector('#flow-td-ahead .ah-head'), null, { timeout: 15000 }).catch(() => {});
-  const v = await p.evaluate(() => { const c = document.getElementById('flow-td-ahead'); return c && { rows: [...c.querySelectorAll('.ah-row .ah-t')].map((x) => x.firstChild.textContent), days: [...c.querySelectorAll('.ah-day')].map((x) => x.textContent), head: (c.querySelector('.ah-head') || {}).textContent, prep: c.querySelectorAll('.ah-prep li').length, big: c.querySelectorAll('.ah-row.big').length }; });
+  const v = await p.evaluate(() => { const c = document.getElementById('flow-td-ahead'); return c && { rows: [...c.querySelectorAll('.ah-row .ah-t')].map((x) => x.firstChild.textContent), days: [...c.querySelectorAll('.ah-day > span')].map((x) => x.textContent), head: (c.querySelector('.ah-head') || {}).textContent, prep: c.querySelectorAll('.ah-prep li').length, big: c.querySelectorAll('.ah-row.big').length }; });
   ok('the month was asked for once, from the calendar', rangeAsked >= 1, rangeAsked);
   ok('the next 7 days: the show tomorrow, the dentist, and Big Rocks on coming days', v && v.rows.includes('Vibe Show — Antalya') && v.rows.includes('Dentist') && !v.rows.includes('Flight to Hong Kong'), v);
   ok('grouped by day, starting Tomorrow', v.days[0] === 'Today' || v.days[0] === 'Tomorrow', v.days);

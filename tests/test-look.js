@@ -16,6 +16,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
+  await p.addInitScript(() => { try { localStorage.setItem('flow:classicToday', '1'); } catch (e) {} });   /* the classic Simple Today, kept as a fallback */
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(H + '/', { waitUntil: 'load' }); await p.waitForTimeout(2500);
   await p.click('#fa-alt', { timeout: 2500 }).catch(() => {});

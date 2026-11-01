@@ -42,21 +42,22 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   });
   await p.waitForTimeout(900);
 
-  console.log('\n— the way in —');
-  const entry = await p.evaluate(() => { const x = document.querySelector('#today-feed [data-lk-act="beta"]'); return x && x.getBoundingClientRect().height > 0 && /Try the new Today/.test(x.textContent); });
-  ok('Simple\'s Today offers "Try the new Today · beta"', entry);
-  ok('and the panel is not there until it is chosen', await p.evaluate(() => !document.querySelector('#today-feed .lk-bt') || getComputedStyle(document.querySelector('#today-feed .lk-bt')).display === 'none'));
-  await p.click('#today-feed [data-lk-act="beta"]'); await p.waitForTimeout(900);
+  console.log('\n— the only Today in Simple —');
+  ok('no "Try the new Today" chip, no Classic button, no switch in Settings: it simply is Today', await p.evaluate(() => !document.querySelector('[data-lk-act="beta"]') && !document.querySelector('[data-bt="classic"]') && !document.getElementById('todayBetaRow')));
   const on = await p.evaluate(() => {
     const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; };
     return { attr: document.documentElement.getAttribute('data-today-beta'), saved: Flow.Settings.get('todayBeta'), panel: vis('#today-feed .lk-bt'),
-      old: ['.lk-strip', '.lk-hero', '#today-feed > .td-rocks', '#flow-td-ahead', '.flow-today-actions'].filter(vis),
+      old: ['.lk-strip', '.lk-hero', '#today-feed > .td-rocks', '.flow-today-actions'].filter(vis), ahead: vis('#flow-td-ahead'),
+      aheadAfter: (() => { const a = document.getElementById('flow-td-ahead'), b = document.querySelector('#today-feed .lk-bt'); return !!a && !!b && !!(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING) && a.getBoundingClientRect().top >= b.getBoundingClientRect().bottom - 1; })(),
+      lime: (() => { const m = document.querySelector('#today-feed .lk-bt-main'); return m && getComputedStyle(m).backgroundColor; })(),
       afterHead: (() => { const el = document.querySelector('#today-feed .lk-bt'); let x = el && el.previousElementSibling; while (x && getComputedStyle(x).display === 'none') x = x.previousElementSibling; return !!x && x.classList.contains('td-head'); })(),
       routines: (() => { const r = document.querySelector('#today-feed .lk-bt-routines'); return !!r && /Today’s routines/.test(r.textContent) && !!r.nextElementSibling && /td-group|flow-td-meals|flow-td-habits/.test(r.nextElementSibling.className + ' ' + r.nextElementSibling.id); })() };
   });
-  ok('one tap turns it on and saves the choice', on.attr === 'on' && on.saved === true, on);
+  ok('Simple shows it straight away', on.attr === 'on', on);
+  ok('the plan wears the lime of the classic Priorities card', on.lime === 'rgb(200, 242, 107)', on.lime);
   ok('the panel sits right under the greeting', on.panel && on.afterHead, on);
-  ok('the strip, the hero card, the Priorities card, Coming up and the old buttons step aside', on.old.length === 0, on.old);
+  ok('the strip, the hero card, the Priorities card and the old buttons step aside', on.old.length === 0, on.old);
+  ok('Coming up stays, right under the plan', on.ahead && on.aheadAfter, on);
   ok('"Today\'s routines" heads habits, training and meals', on.routines, on);
   const tl = await p.evaluate(() => { const rail = document.querySelector('#today-feed .lk-bt-rail'); const t = rail && rail.querySelector('.lk-bt-tiles > .flow-td-pulse'); const r = t && t.getBoundingClientRect(), c = rail && rail.querySelector('.lk-bt-cal').getBoundingClientRect(); return { inRail: !!t, n: t ? t.querySelectorAll('.flow-td-tile').length : 0, loose: !!document.querySelector('#today-feed > .flow-td-pulse'), above: !!r && r.bottom <= c.top + 1, cols: t ? getComputedStyle(t).gridTemplateColumns.split(' ').length : 0 }; });
   ok('Recovery, Meetings, Focus and Spend sit in the side column, 2 × 2, above the calendar — not beside the greeting', tl.inRail && tl.n === 4 && !tl.loose && tl.above && tl.cols === 2, tl);
@@ -115,8 +116,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.click('#today-feed .lk-bt-list .bt-task[data-btid="a"] .bt-pin'); await p.waitForTimeout(500);
   const f = await p.evaluate(() => { const el = document.querySelector('#today-feed .lk-bt'); const c = el.querySelector('.bt-focus'); return { card: c && c.getAttribute('data-btid'), saved: (Flow.Settings.get('todayFocus') || {}).id, planned: [...el.querySelectorAll('.bt-rows .bt-task')].map((x) => x.getAttribute('data-btid')) }; });
   ok('◎ pins one as the Focus, on top, out of the Planned list', f.card === 'a' && f.saved === 'a' && f.planned.indexOf('a') < 0, f);
-  await p.click('#today-feed .lk-bt [data-bt="lime"]'); await p.waitForTimeout(400);
-  ok('the Focus card can be lime', await p.evaluate(() => document.querySelector('#today-feed .bt-focus').classList.contains('lime') && Flow.Settings.get('todayBetaLime') === true));
+  ok('the Focus card stands out dark on the lime', await p.evaluate(() => getComputedStyle(document.querySelector('#today-feed .bt-focus')).backgroundColor === 'rgb(21, 25, 10)'));
   await p.click('#today-feed .bt-focus .bt-chk'); await p.waitForTimeout(600);
   const tk = await p.evaluate(() => ({ done: window.FlowRockActions.find('a').r.done, pin: Flow.Settings.get('todayFocus'), card: !!document.querySelector('#today-feed .bt-focus'), undo: !!document.querySelector('#ra-undo.on'), counts: document.querySelector('#today-feed .bt-counts').textContent }));
   ok('ticking it saves it done, unpins it, and offers Undo', tk.done === true && !tk.pin && !tk.card && tk.undo && /2 done/.test(tk.counts), tk);
@@ -126,7 +126,30 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('"Done ›" opens the done ones', await p.evaluate(() => [...document.querySelectorAll('#today-feed .bt-task.done .bt-open')].some((x) => /CRM requirements/.test(x.textContent))));
   await p.click('#today-feed .bt-task[data-btid="b"] .bt-open'); await p.waitForTimeout(400);
   ok('tapping a title opens its sheet — notes, links, move, repeat', await p.evaluate(() => document.getElementById('flow-ra').classList.contains('on') && /Send ad creatives/.test(document.querySelector('#flow-ra h4').textContent)));
-  await p.evaluate(() => window.FlowRockActions.close());
+  console.log('\n— editing it: name, importance, time —');
+  const sh = await p.evaluate(() => { const el = document.getElementById('flow-ra'); return { edit: !el.querySelector('.ra-edit').hidden, name: el.querySelector('#ra-title').value, imp: [...el.querySelectorAll('[data-ra-imp]')].map((b) => b.textContent + ':' + b.getAttribute('aria-pressed')) }; });
+  ok('the sheet opens with the name editable, and High / Normal / Low on Normal', sh.edit && sh.name === 'Send ad creatives for review' && sh.imp.join() === 'High:false,Normal:true,Low:false', sh);
+  await p.fill('#ra-title', 'Send the October ad creatives for review'); await p.waitForTimeout(800);
+  await p.click('#flow-ra [data-ra-imp="high"]'); await p.waitForTimeout(200);
+  await p.fill('#ra-time', '16:30'); await p.waitForTimeout(300);
+  await p.evaluate(() => window.FlowRockActions.close()); await p.waitForTimeout(600);
+  const ed = await p.evaluate(() => { const r = window.FlowRockActions.find('b').r; const rows = [...document.querySelectorAll('#today-feed .bt-rows .bt-task')]; const first = rows[0]; return { title: r.title, prio: r.prio, time: r.time, firstId: first && first.getAttribute('data-btid'), tag: first && (first.querySelector('.bt-imp') || {}).textContent, shown: first && first.querySelector('.bt-open').textContent }; });
+  ok('renamed, set to High and given a time — all saved', ed.title === 'Send the October ad creatives for review' && ed.prio === 'high' && ed.time === '16:30', ed);
+  ok('High goes to the top of the day with a tag', ed.firstId === 'b' && ed.tag === 'High' && /October ad creatives/.test(ed.shown), ed);
+  await p.evaluate(() => { const r = window.FlowRockActions.find('b').r; r.prio = 'low'; cSave(); window.FlowTodayBeta.paint(); }); await p.waitForTimeout(300);
+  ok('Low sinks to the bottom, tagged', await p.evaluate(() => { const rows = [...document.querySelectorAll('#today-feed .bt-rows .bt-task:not(.done)')]; const last = rows[rows.length - 1]; return last.getAttribute('data-btid') === 'b' && /Low/.test(last.textContent); }));
+  await p.evaluate(() => { const r = window.FlowRockActions.find('b').r; r.prio = 'med'; r.title = 'Send ad creatives for review'; r.time = '15:00'; cSave(); window.FlowTodayBeta.paint(); });
+  ok('Advanced\'s sheet is unchanged: no edit fields there', await p.evaluate(async () => { await Flow.Settings.set('newLook', false); window.FlowTodayLook.applyLook(); window.FlowRockActions.open('b'); const hidden = document.querySelector('#flow-ra .ra-edit').hidden; window.FlowRockActions.close(); await Flow.Settings.set('newLook', true); window.FlowTodayLook.applyLook(); renderToday(); return hidden; }));
+  await p.waitForTimeout(600);
+
+  console.log('\n— Coming up opens a day —');
+  const cu = await p.evaluate(() => { const b = document.querySelector('#flow-td-ahead .ah-plan'); return b && { label: b.textContent, date: b.getAttribute('data-ah-plan'), vis: getComputedStyle(b).display !== 'none' }; });
+  if (cu) {
+    await p.click('#flow-td-ahead .ah-plan'); await p.waitForTimeout(500);
+    const picked = await p.evaluate((iso) => { const t = document.querySelector('#today-feed .bt-title').textContent; const d = new Date(iso + 'T12:00:00'); return { t, want: d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) }; }, cu.date);
+    ok('"Plan this day ›" on a Coming up day opens it in the plan', cu.vis && /Plan this day/.test(cu.label) && picked.t === picked.want, { cu, picked });
+    await p.click('#today-feed [data-bt="today"]').catch(() => {}); await p.waitForTimeout(300);
+  } else ok('(nothing in Coming up to open)', true);
 
   console.log('\n— Needs review —');
   if (!T.monday) {
@@ -164,22 +187,11 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('on a 375-wide phone it fits: no sideways scroll, all seven days visible, a tall enough field', ph.right <= ph.vw && ph.docW <= ph.vw && ph.fit && ph.input >= 44, ph);
   await p.setViewportSize({ width: 1280, height: 900 });
 
-  console.log('\n— switching back —');
-  await p.click('#today-feed .lk-bt [data-bt="classic"]'); await p.waitForTimeout(800);
-  const back = await p.evaluate(() => { const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; }; return { attr: document.documentElement.getAttribute('data-today-beta'), saved: Flow.Settings.get('todayBeta'), panel: vis('#today-feed .lk-bt'), strip: vis('.lk-strip'), hero: vis('.lk-hero'), rocks: vis('#today-feed > .td-rocks') }; });
-  ok('"Classic" brings the old Today back exactly, and remembers', back.attr === 'off' && back.saved === false && !back.panel && back.strip && back.hero && back.rocks, back);
-  ok('with the tiles back in their old place', await p.evaluate(() => { const t = document.querySelector('#today-feed > .flow-td-pulse'); return !!t && getComputedStyle(t).display !== 'none' && document.querySelectorAll('.flow-td-pulse').length === 1; }));
-  await p.evaluate(() => Flow.Nav.go('settings')); await p.waitForTimeout(700);
-  const sw = await p.$('#todayBetaRow input[data-s="todayBeta"]');
-  ok('Settings has the switch too', !!sw);
-  if (sw) { await sw.check(); await p.waitForTimeout(500); }
-  await p.evaluate(() => Flow.Nav.go('today')); await p.waitForTimeout(700);
-  ok('and it turns the new Today on from there', await p.evaluate(() => document.documentElement.getAttribute('data-today-beta') === 'on' && getComputedStyle(document.querySelector('#today-feed .lk-bt')).display !== 'none'));
-
   console.log('\n— Advanced —');
   await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); renderToday(); }); await p.waitForTimeout(800);
   const adv = await p.evaluate(() => { const bt = document.querySelector('#today-feed .lk-bt'); return { attr: document.documentElement.getAttribute('data-today-beta'), panel: !!bt && getComputedStyle(bt).display !== 'none', rocks: getComputedStyle(document.querySelector('#today-feed .td-rocks')).display !== 'none', row: !document.getElementById('todayBetaRow') || getComputedStyle(document.getElementById('todayBetaRow')).display === 'none' }; });
-  ok('Advanced never shows it, even with the switch on: its Today is as it was', adv.attr === 'off' && !adv.panel && adv.rocks, adv);
+  ok('Advanced never shows it: its Today is as it was', adv.attr === 'off' && !adv.panel && adv.rocks, adv);
+  ok('with the tiles back in their old place there', await p.evaluate(() => { const t = document.querySelector('#today-feed > .flow-td-pulse'); return !!t && getComputedStyle(t).display !== 'none' && document.querySelectorAll('.flow-td-pulse').length === 1; }));
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');

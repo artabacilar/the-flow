@@ -12,6 +12,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
 (async () => {
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1360, height: 900 } });
+  await p.addInitScript(() => { try { localStorage.setItem('flow:classicToday', '1'); } catch (e) {} });   /* the classic Simple Today, kept as a fallback */
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(H + '/', { waitUntil: 'load' }); await p.waitForTimeout(2500);
   await p.click('#fa-alt', { timeout: 2500 }).catch(() => {});
@@ -106,6 +107,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   console.log('\n— a phone —');
   const ctx = await b.newContext(Object.assign({}, devices['Pixel 7']));
   const q = await ctx.newPage();
+  await q.addInitScript(() => { try { localStorage.setItem('flow:classicToday', '1'); } catch (e) {} });   /* the classic Simple Today, kept as a fallback */
   const qerr = []; q.on('pageerror', (e) => qerr.push(e.message));
   const cdp = await ctx.newCDPSession(q);
   await q.goto(H + '/', { waitUntil: 'load' }); await q.waitForTimeout(2500);
