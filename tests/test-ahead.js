@@ -76,9 +76,15 @@ const plus = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.
   ok('a changed list is read again', a3.code === 202);
   await wait(a3.o.job);
   ok('an empty list is refused', (await call('POST', '/api/flow/ahead', { items: [] })).code === 400);
-  for (let i = 0; i < 8; i++) await call('POST', '/api/flow/ahead', { items, sig: 'z' + i, refresh: true });
-  const capped = await call('POST', '/api/flow/ahead', { items, sig: 'zz', refresh: true });
-  ok('past the daily cap, the last read is shown rather than an error', capped.code === 200 && capped.o.stale, capped);
+  for (let i = 0; i < 8; i++) { const x = await call('POST', '/api/flow/ahead', { items, sig: 'z' + i }); if (x.o.job) await wait(x.o.job); }
+  const capped = await call('POST', '/api/flow/ahead', { items, sig: 'zz' });
+  ok('past the daily cap, an automatic read shows the last one rather than an error', capped.code === 200 && capped.o.stale, capped);
+  const rw = await call('POST', '/api/flow/ahead', { items, sig: 'zz', refresh: true });
+  ok('Rewrite still works then: it has its own allowance', rw.code === 202, rw);
+  await wait(rw.o.job);
+  for (let i = 0; i < 5; i++) { const x = await call('POST', '/api/flow/ahead', { items, sig: 'r' + i, refresh: true }); if (x.o.job) await wait(x.o.job); }
+  const rcap = await call('POST', '/api/flow/ahead', { items, sig: 'rr', refresh: true });
+  ok('past its own cap, Rewrite says so (not a silent old read)', rcap.code === 429 && /Rewritten 6 times today/.test(rcap.o.error) && rcap.o.resets === 'utc-midnight', rcap);
   delete process.env.ANTHROPIC_API_KEY; A.setPoster(null);
 
   console.log('\n— on Today —');
