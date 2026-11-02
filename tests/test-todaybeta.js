@@ -189,7 +189,8 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
       people: [{ name: 'Ozcan' }], summary: '## Purpose\nReview the lead ads [CPL went up](https://fathom.video/share/x?timestamp=354)\n- **Fix:** shorten the form',
       actions: [{ n: 0, text: 'Shorten the lead form', mine: true }, { n: 1, text: 'Hire a qualifier', who: 'Tolga' }] }]));
     cData.rocks[w].push({ id: 'mtr', title: 'Shorten the lead form', day: (t.getDay() + 6) % 7, time: '', prio: 'med', note: 'From Fathom: Sales sync — https://fathom.video/calls/1', done: false, src: { k: 'fathom', mid: 'mt1', n: 0 } });
-    cSave(); window.FlowTodayBeta.paint();
+    const B = window.FlowTodayBeta; B.view = 'day'; B.week = 0; B.sel = B.todayO();   /* the step before picked Sunday */
+    cSave(); B.paint();
   });
   await p.waitForTimeout(500);
   const mt = await p.evaluate(() => { const row = document.querySelector('#today-feed .lk-bt [data-btid="mtr"]'); return row && { line: (row.querySelector('.td-meet-line') || {}).textContent, note: !!row.querySelector('.bt-tt > small'), body: !!row.querySelector('.td-meet-body') }; });

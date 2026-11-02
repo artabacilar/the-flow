@@ -93,6 +93,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   });
   await p.click('#today-feed .lk-say'); await p.waitForTimeout(500);
   ok('it opens ready to talk (or to type, where the browser cannot listen)', await p.evaluate(() => document.querySelector('#flow-say.on') && document.activeElement && document.activeElement.id === 'sy-text'));
+  ok('a browser shows no Microphone picker (only the Mac app can choose one)', await p.evaluate(() => { const m = document.querySelector('#flow-say .sy-micpick'); return !!m && m.hidden && getComputedStyle(m).display === 'none'; }));
   const nJ = await p.evaluate(() => Flow.Journal.entries.length);
   await p.fill('#sy-text', 'tomorrow at ten call the venue, start reading twenty minutes a day, tick cold shower, note today felt slow but I shipped the invoices, push the insurance to tomorrow, and I sent the invoices');
   await p.keyboard.press('Enter'); await p.waitForTimeout(900);

@@ -522,6 +522,31 @@ window.__fail = function (code) {
   });
   ok('the Mac app says where to turn it on: System Settings → Privacy & Security', /System Settings → Privacy & Security → Microphone/.test(newMac) && !/iPhone/.test(newMac), newMac);
   await c5.close();
+  /* the Mac app hears nothing from the chosen input (an audio interface with no voice on it) */
+  const c6 = await b.newContext();
+  await c6.addInitScript(`
+    window.FlowMac = { platform: 'macos' };
+    window.__inputs = [{ uid: 'ua', name: 'Universal Audio Thunderbolt', channels: 18, default: true, chosen: false }, { uid: 'cam', name: 'HD Pro Webcam C920', channels: 1, default: false, chosen: false }];
+    window.__set = [];
+    window.Capacitor = { Plugins: { FlowBridge: {
+      voiceStart: async () => { setTimeout(() => window.__flowVoiceEvent('error', { code: 'no-input', device: 'Universal Audio Thunderbolt' }), 50); return { ok: true }; },
+      voiceStop: async () => ({}), voiceCancel: async () => ({}),
+      voicePermission: async () => ({ mic: 'granted', speech: 'granted' }), voiceRequest: async () => ({ mic: 'granted', speech: 'granted' }),
+      voiceInputs: async () => ({ inputs: window.__inputs }), voiceSetInput: async (a) => { window.__set.push(a.uid); return { ok: true }; }
+    } } };
+  `);
+  const p6 = await c6.newPage();
+  await p6.goto(H + '/', { waitUntil: 'load' }); await p6.waitForTimeout(2600);
+  const ni = await p6.evaluate(async () => {
+    const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    window.FlowVoice.start(t); await new Promise((r) => setTimeout(r, 300));
+    const bub = document.querySelector('.fv-bubble');
+    const list = await window.FlowVoice.inputs(); await window.FlowVoice.setInput('cam');
+    return { said: bub ? bub.textContent : '', list: (list || []).map((x) => x.name), set: window.__set };
+  });
+  ok('no sound from the input: it names the device and points at Voice and manners → Microphone', /Universal Audio Thunderbolt/.test(ni.said) && /Voice and manners → Microphone/.test(ni.said), ni);
+  ok('the Mac app lists its microphones and remembers the one chosen', ni.list.length === 2 && ni.set[0] === 'cam', ni);
+  await c6.close();
 
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
