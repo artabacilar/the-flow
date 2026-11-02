@@ -243,7 +243,7 @@
       payload = payload || {};
       if (type === 'partial') live.partial(String(payload.text || ''));
       else if (type === 'final') { var s = String(payload.text || '').trim(); if (s) live.final(s); }
-      else if (type === 'error') live.error(String(payload.code || 'unknown'));
+      else if (type === 'error') { Native.device = String(payload.device || ''); live.error(String(payload.code || 'unknown')); }
       else if (type === 'end') { var h = live; live = null; h.end(); }
     };
 
@@ -295,7 +295,22 @@
         var p = plugin();
         if (!p || typeof p.voiceRequest !== 'function') return Promise.resolve(null);
         return p.voiceRequest();
-      }
+      },
+
+      /* The Mac app only: which microphone to listen to. A Mac with an
+         audio interface has several, and the system's input is often not
+         the one the person speaks into. */
+      inputs: function () {
+        var p = plugin();
+        if (!p || typeof p.voiceInputs !== 'function') return Promise.resolve(null);
+        return Promise.resolve(p.voiceInputs()).then(function (r) { return (r && r.inputs) || []; });
+      },
+      setInput: function (uid) {
+        var p = plugin();
+        if (!p || typeof p.voiceSetInput !== 'function') return Promise.resolve(null);
+        return p.voiceSetInput({ uid: String(uid || '') });
+      },
+      device: ''
     };
   })();
 
@@ -470,6 +485,11 @@
     if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'denied') {
       return t('The microphone is blocked. Allow it for this site and try again.');
     }
+    if (code === 'no-input') {
+      var dev = Native.device;
+      return dev ? t('No sound is reaching me from “{device}”. Choose the microphone you speak into under Voice and manners → Microphone.').replace('{device}', dev)
+                 : t('No sound is reaching me from the microphone. Choose the one you speak into under Voice and manners → Microphone.');
+    }
     if (code === 'no-speech') return t("I didn't hear anything.");
     if (code === 'network') return t('Dictation needs a connection right now.');
     if (code === 'audio-capture') return t('No microphone found.');
@@ -528,8 +548,9 @@
           say('');
         },
         error: function (code) {
-          say(explain(code), 'bad');
-          Voice.emit('error', { code: code });
+          var why = explain(code);
+          say(why, 'bad');
+          Voice.emit('error', { code: code, text: why });
         },
         end: function () {
           Voice.listening = false;
@@ -568,6 +589,10 @@
       if (b) b.cancel();
       Voice.emit('idle');
     },
+
+    /* The Mac app's microphone choice (null elsewhere). */
+    inputs: function () { return Native.capable() && Native.inputs ? Native.inputs() : Promise.resolve(null); },
+    setInput: function (uid) { return Native.capable() && Native.setInput ? Native.setInput(uid) : Promise.resolve(null); },
 
     /* What Settings shows. On iOS the shell can answer properly; in a browser
        the honest answer is that the browser asks when you press the button,

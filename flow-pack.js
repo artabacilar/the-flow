@@ -13549,6 +13549,7 @@ const Say = {
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
+            '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
@@ -13576,6 +13577,11 @@ const Say = {
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
     wrap.addEventListener('change', (e) => {
+      if (e.target.matches('[data-say-mic]')) {
+        try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {}
+        Promise.resolve(FlowVoice.setInput(e.target.value)).then(() => { Say.waiting = false; Say.paintMic(); Say.listen(); }).catch(() => {});
+        return;
+      }
       const pf = e.target.closest('[data-say-pref]');
       if (pf) {
         const k = pf.getAttribute('data-say-pref');
@@ -13605,10 +13611,10 @@ const Say = {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Say.close(); });
     /* The turn ends by itself after a pause; what was said goes off then. */
     try {
-      if (window.FlowVoice) FlowVoice.on((state) => {
+      if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
         if (state === 'listening') { Say.mode('listening'); Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
-        if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); return; }
+        if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); if (extra && extra.text) Say.state(extra.text); if (extra && extra.code === 'no-input') { const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics(); } return; }
         if (state === 'idle') {
           Say.waiting = false; Say.paintMic(); Say.mode('idle');
           const t = (document.getElementById('sy-text') || {}).value || '';
@@ -13623,6 +13629,18 @@ const Say = {
     return wrap;
   },
   state(t) { const el = Say.el && Say.el.querySelector('.sy-state'); if (el) el.textContent = t || ''; },
+  /* The Mac app: a Microphone choice under Voice and manners, listing what
+     this Mac has. Hidden wherever the shell cannot choose (browser, iPhone). */
+  async mics() {
+    const box = Say.el && Say.el.querySelector('.sy-micpick'); if (!box) return;
+    let list = null; try { list = window.FlowVoice && FlowVoice.inputs ? await FlowVoice.inputs() : null; } catch (e) {}
+    if (!Array.isArray(list) || !list.length) { box.hidden = true; return; }
+    const sel = box.querySelector('select'), def = list.find((x) => x.default), chosen = list.find((x) => x.chosen);
+    sel.innerHTML = '<option value="">The Mac\'s input' + (def ? ' (' + esc(def.name) + ')' : '') + '</option>' +
+      list.map((x) => '<option value="' + esc(x.uid) + '"' + (x.chosen ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('');
+    if (!chosen) sel.value = '';
+    box.hidden = false;
+  },
   /* Wispr Flow (or any keyboard's own dictation) types into the box itself;
      the built-in microphone would only fight it. Remembered per device. */
   own(v) {
@@ -13654,7 +13672,7 @@ const Say = {
     Say.el.querySelector('.sy-plan').hidden = true;
     Say.state('');
     const hi = Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
-    Say.mode('idle'); Say.memPaint();
+    Say.mode('idle'); Say.memPaint(); Say.mics().catch(() => {});
     Say.el.classList.add('on');
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
