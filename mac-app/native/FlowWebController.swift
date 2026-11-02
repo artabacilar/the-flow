@@ -198,6 +198,8 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
             answer(id, ["inputs": FlowSpeech.inputs()])
         case "voiceSetInput":
             FlowSpeech.choose((body["uid"] as? String) ?? ""); answer(id, ["ok": true])
+        case "voiceSetChannel":
+            FlowSpeech.chooseChannel((body["channel"] as? Int) ?? 0, uid: body["uid"] as? String); answer(id, ["ok": true])
         default:
             notes.handle(action: action, body: body, id: id)
         }

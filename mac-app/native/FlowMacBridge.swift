@@ -93,6 +93,7 @@ enum FlowMacBridge {
           voiceRequest:    function ()  { return call('voiceRequest'); },
           voiceInputs:     function ()  { return call('voiceInputs'); },
           voiceSetInput:   function (a) { return call('voiceSetInput', a); },
+          voiceSetChannel: function (a) { return call('voiceSetChannel', a); },
           setToken:        function ()  { return Promise.resolve({ supported: false }); },
           status:          function ()  { return Promise.resolve({ supported: false }); },
           clear:           function ()  { return Promise.resolve({ supported: false }); }

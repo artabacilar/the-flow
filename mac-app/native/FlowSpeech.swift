@@ -35,7 +35,10 @@ final class FlowSpeech: NSObject {
     private var peak: Float = 0
     private var heard = false
     private var deviceName = ""
+    private var deviceUID = ""
     private var turn = 0
+    private var feed: VoiceFeed?
+    private var sinceLevel = 0
 
     // MARK: - Permission
 
@@ -78,7 +81,8 @@ final class FlowSpeech: NSObject {
         teardown()
         audio = AVAudioEngine()
         peak = 0; heard = false; turn += 1
-        deviceName = FlowSpeech.useChosenInput(on: audio) ?? ""
+        let dev = FlowSpeech.useChosenInput(on: audio)
+        deviceName = dev?.name ?? ""; deviceUID = dev?.uid ?? ""
 
         var rec = SFSpeechRecognizer(locale: Locale(identifier: tag))
         if rec == nil || rec?.isAvailable != true { rec = SFSpeechRecognizer() }
@@ -100,15 +104,32 @@ final class FlowSpeech: NSObject {
         guard format.sampleRate > 0 else { teardown(); return "audio-capture" }
 
         /// An audio interface offers many inputs (a UA Apollo: 18 or more),
-        /// with the voice on one or two of them and silence on the rest. The
-        /// recogniser is given one channel — the loudest in each buffer.
-        let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false)
+        /// with the voice on one of them and silence or other sound on the
+        /// rest. VoiceFeed follows the input the voice is on (or the one
+        /// chosen), evens out a quiet preamp, and hands the recogniser
+        /// 16 kHz mono — the format it is happiest with at any device rate.
+        let fixed = FlowSpeech.channelChoice(deviceUID)
+        let feed = VoiceFeed(format: format, fixed: fixed > 0 ? fixed - 1 : nil)
+        self.feed = feed
+        sinceLevel = 0
+        let rate = format.sampleRate
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            guard let self = self else { return }
-            let (out, level) = FlowSpeech.loudest(buffer, mono: mono)
-            if level > self.peak { self.peak = level }
-            if let out = out { self.request?.append(out) }
+            guard let self = self, let feed = self.feed else { return }
+            if let out = feed.process(buffer) { self.request?.append(out) }
+            /// About four times a second: which input, and how loud — the
+            /// meter in the panel, and the answer to "is it hearing me".
+            self.sinceLevel += Int(buffer.frameLength)
+            if Double(self.sinceLevel) >= rate / 4 {
+                self.sinceLevel = 0
+                let peaks = feed.takePeaks()
+                let used = feed.used
+                let p = used < peaks.count ? peaks[used] : 0
+                if p > self.peak { self.peak = p }
+                let db = { (x: Float) -> Int in x > 0 ? Int((20 * log10(x)).rounded()) : -120 }
+                self.emit?("level", ["device": self.deviceName, "channels": feed.channels, "input": used + 1,
+                                     "chosen": feed.fixed != nil, "db": db(p), "inputs": peaks.prefix(32).map { db($0) }])
+            }
         }
 
         task = recogniser.recognitionTask(with: request) { [weak self] result, error in
@@ -189,8 +210,29 @@ final class FlowSpeech: NSObject {
             guard ch > 0 else { return nil }
             let uid = string(id, kAudioDevicePropertyDeviceUID) ?? ""
             return ["uid": uid, "name": string(id, kAudioObjectPropertyName) ?? "Microphone", "channels": ch,
-                    "default": id == def, "chosen": !chosen.isEmpty && uid == chosen]
+                    "default": id == def, "chosen": !chosen.isEmpty && uid == chosen, "channel": channelChoice(uid)]
         }
+    }
+
+    /// Which input of a many-input device to listen to: 0 = follow the
+    /// voice, k = input k. Remembered per device.
+    static let channelKey = "FlowVoiceChannels"
+    static func channelChoice(_ uid: String) -> Int {
+        let all = UserDefaults.standard.dictionary(forKey: channelKey) as? [String: Int] ?? [:]
+        return all[uid.isEmpty ? "default" : uid] ?? 0
+    }
+    static func chooseChannel(_ k: Int, uid: String?) {
+        var all = UserDefaults.standard.dictionary(forKey: channelKey) as? [String: Int] ?? [:]
+        let key = (uid ?? currentUID()) ?? "default"
+        all[key.isEmpty ? "default" : key] = max(0, k)
+        UserDefaults.standard.set(all, forKey: channelKey)
+    }
+    /// The device a turn would open now: the chosen one if plugged in, else the Mac's input.
+    static func currentUID() -> String? {
+        if let uid = UserDefaults.standard.string(forKey: inputKey), !uid.isEmpty,
+           allDevices().contains(where: { string($0, kAudioDevicePropertyDeviceUID) == uid && inputChannels($0) > 0 }) { return uid }
+        let d = defaultInput()
+        return d == 0 ? nil : string(d, kAudioDevicePropertyDeviceUID)
     }
 
     /// "" = the Mac's own input setting.
@@ -201,7 +243,7 @@ final class FlowSpeech: NSObject {
 
     /// Points the engine at the chosen microphone (if it is still plugged
     /// in) and returns the name of the one it will hear.
-    static func useChosenInput(on engine: AVAudioEngine) -> String? {
+    static func useChosenInput(on engine: AVAudioEngine) -> (name: String, uid: String)? {
         var dev = defaultInput()
         if let uid = UserDefaults.standard.string(forKey: inputKey), !uid.isEmpty,
            let id = allDevices().first(where: { string($0, kAudioDevicePropertyDeviceUID) == uid && inputChannels($0) > 0 }) {
@@ -211,7 +253,8 @@ final class FlowSpeech: NSObject {
                 AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &d, UInt32(MemoryLayout<AudioDeviceID>.size))
             }
         }
-        return dev == 0 ? nil : string(dev, kAudioObjectPropertyName)
+        guard dev != 0 else { return nil }
+        return (string(dev, kAudioObjectPropertyName) ?? "Microphone", string(dev, kAudioDevicePropertyDeviceUID) ?? "")
     }
 
     private static func allDevices() -> [AudioDeviceID] {
@@ -277,6 +320,7 @@ final class FlowSpeech: NSObject {
 
     private func teardown() {
         listening = false
+        feed = nil
         audio.inputNode.removeTap(onBus: 0)
         if audio.isRunning { audio.stop() }
         request?.endAudio()
@@ -285,5 +329,78 @@ final class FlowSpeech: NSObject {
         emit = nil
         recogniser = nil
         delivered = ""
+    }
+}
+
+
+/// One input out of many, evened out, at 16 kHz mono.
+final class VoiceFeed {
+    let channels: Int
+    let fixed: Int?
+    private(set) var used = 0
+    private var energy: [Float]
+    private var peaks: [Float]
+    private var gain: Float = 1
+    private let mono: AVAudioFormat
+    private let target: AVAudioFormat
+    private let converter: AVAudioConverter?
+
+    init?(format: AVAudioFormat, fixed: Int?) {
+        channels = max(1, Int(format.channelCount))
+        if let f = fixed, f >= 0, f < channels { self.fixed = f; used = f } else { self.fixed = nil }
+        energy = Array(repeating: 0, count: channels)
+        peaks = Array(repeating: 0, count: channels)
+        guard let m = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false),
+              let t = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else { return nil }
+        mono = m; target = t
+        converter = AVAudioConverter(from: m, to: t)
+    }
+
+    /// The loudest moment of each input since the last call.
+    func takePeaks() -> [Float] { let p = peaks; peaks = Array(repeating: 0, count: channels); return p }
+
+    func process(_ b: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let n = Int(b.frameLength)
+        guard n > 0, let data = b.floatChannelData else { return nil }
+        let chs = min(channels, Int(b.format.channelCount))
+        let inter = b.format.isInterleaved
+        let stride = Int(b.format.channelCount)
+        func s(_ c: Int, _ i: Int) -> Float { return inter ? data[0][i * stride + c] : data[c][i] }
+
+        for c in 0..<chs {
+            var e: Float = 0, p: Float = 0
+            for i in 0..<n { let v = s(c, i); e += v * v; let a = abs(v); if a > p { p = a } }
+            energy[c] = energy[c] * 0.92 + e / Float(n)
+            if p > peaks[c] { peaks[c] = p }
+        }
+        /// Follow the voice: move to another input only when it is clearly
+        /// louder, so a breath on the wrong one does not steal the turn.
+        if fixed == nil && chs > 1 {
+            var top = 0
+            for c in 1..<chs where energy[c] > energy[top] { top = c }
+            if top != used && energy[top] > energy[min(used, chs - 1)] * 2 && energy[top] > 1e-8 { used = top }
+        }
+        let ch = min(used, chs - 1)
+
+        guard let m = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: AVAudioFrameCount(n)), let dst = m.floatChannelData else { return nil }
+        var p: Float = 0
+        for i in 0..<n { let v = s(ch, i); dst[0][i] = v; let a = abs(v); if a > p { p = a } }
+        m.frameLength = AVAudioFrameCount(n)
+        /// A slow automatic gain, so a preamp set low still reaches the
+        /// recogniser at a level it can use. At most 30x.
+        if p > 0.0003 { let want = min(30, max(1, 0.3 / p)); gain = gain * 0.97 + want * 0.03 }
+        if gain > 1.01 { for i in 0..<n { dst[0][i] = max(-1, min(1, dst[0][i] * gain)) } }
+
+        guard let conv = converter else { return m }
+        let cap = AVAudioFrameCount(Double(n) * 16000 / mono.sampleRate) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: cap) else { return m }
+        var fed = false
+        var err: NSError?
+        let status = conv.convert(to: out, error: &err) { _, st in
+            if fed { st.pointee = .noDataNow; return nil }
+            fed = true; st.pointee = .haveData; return m
+        }
+        if status == .error || err != nil || out.frameLength == 0 { return m }
+        return out
     }
 }
