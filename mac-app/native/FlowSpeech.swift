@@ -109,7 +109,7 @@ final class FlowSpeech: NSObject {
         /// chosen), evens out a quiet preamp, and hands the recogniser
         /// 16 kHz mono — the format it is happiest with at any device rate.
         let fixed = FlowSpeech.channelChoice(deviceUID)
-        let feed = VoiceFeed(format: format, fixed: fixed > 0 ? fixed - 1 : nil)
+        guard let feed = VoiceFeed(format: format, fixed: fixed > 0 ? fixed - 1 : nil) else { teardown(); return "audio-capture" }
         self.feed = feed
         sinceLevel = 0
         let rate = format.sampleRate
@@ -165,7 +165,7 @@ final class FlowSpeech: NSObject {
         let mine = turn
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self = self, self.turn == mine, self.listening, !self.heard else { return }
-            if self.peak < 0.01 {
+            if self.peak < 0.002 {
                 let emit = self.emit
                 emit?("error", ["code": "no-input", "device": self.deviceName, "peak": Double(self.peak)])
                 self.task?.cancel()
