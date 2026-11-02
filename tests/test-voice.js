@@ -547,6 +547,38 @@ window.__fail = function (code) {
   ok('no sound from the input: it names the device and points at Voice and manners → Microphone', /Universal Audio Thunderbolt/.test(ni.said) && /Voice and manners → Microphone/.test(ni.said), ni);
   ok('the Mac app lists its microphones and remembers the one chosen', ni.list.length === 2 && ni.set[0] === 'cam', ni);
   await c6.close();
+  /* the iPhone/Mac recogniser never ends a turn by itself: a pause does, when asked */
+  const c7 = await b.newContext();
+  await c7.addInitScript(`
+    window.__stops = 0;
+    window.Capacitor = { Plugins: { FlowBridge: {
+      voiceStart: async () => { setTimeout(() => window.__flowVoiceEvent('partial', { text: 'call the' }), 50); setTimeout(() => window.__flowVoiceEvent('partial', { text: 'call the venue' }), 150); return { ok: true }; },
+      voiceStop: async () => { window.__stops++; setTimeout(() => { window.__flowVoiceEvent('final', { text: 'call the venue' }); window.__flowVoiceEvent('end', {}); }, 30); return {}; },
+      voiceCancel: async () => ({}),
+      voicePermission: async () => ({ mic: 'granted', speech: 'granted' }), voiceRequest: async () => ({ mic: 'granted', speech: 'granted' })
+    } } };
+  `);
+  const p7 = await c7.newPage();
+  await p7.goto(H + '/', { waitUntil: 'load' }); await p7.waitForTimeout(2600);
+  const pz = await p7.evaluate(async () => {
+    const seen = []; window.FlowVoice.on((st, x) => { if (st === 'partial') seen.push(x.text); });
+    const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    window.FlowVoice.start(t, { pauseEnd: 400 });
+    await new Promise((r) => setTimeout(r, 300));
+    const mid = { listening: window.FlowVoice.listening, stops: window.__stops };
+    await new Promise((r) => setTimeout(r, 600));
+    const after = { listening: window.FlowVoice.listening, stops: window.__stops, value: t.value }; const seen1 = seen.slice();
+    /* a plain field is never ended by a pause */
+    const t2 = document.createElement('textarea'); document.body.appendChild(t2); t2.focus();
+    window.FlowVoice.start(t2); await new Promise((r) => setTimeout(r, 900));
+    const plain = { listening: window.FlowVoice.listening, stops: window.__stops };
+    window.FlowVoice.cancel();
+    return { seen: seen1, mid, after, plain };
+  });
+  ok('the words as they come are passed on (the assistant shows them in its panel)', pz.seen.join('|') === 'call the|call the venue', pz.seen);
+  ok('after a pause it ends the turn itself and the words land in the field', pz.mid.listening && pz.mid.stops === 0 && !pz.after.listening && pz.after.stops === 1 && pz.after.value === 'call the venue', pz);
+  ok('ordinary dictation is not ended by a pause', pz.plain.listening && pz.plain.stops === 1, pz.plain);
+  await c7.close();
 
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
