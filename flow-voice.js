@@ -517,8 +517,15 @@
       }
     },
 
-    start: function (field) {
+    /* opts.pauseEnd (ms): end the turn on its own once the person has
+       spoken and then paused this long. The browser's recogniser does that
+       by itself; the iPhone's and the Mac's do not — they listen until told
+       to stop — so a "say it and it goes" panel (the assistant) asks for it.
+       Ordinary dictation into a field never does: a pause to think is not
+       the end of a journal entry. */
+    start: function (field, opts) {
       if (Voice.listening) return;
+      opts = opts || {};
       field = field || ui.field || doc.activeElement;
       if (!wants(field)) return;
 
@@ -536,9 +543,19 @@
       say('');
       Voice.emit('listening');
 
+      var pauseMs = +opts.pauseEnd || 0, pauseTimer = 0;
+      var armPause = function () {
+        if (!pauseMs || b.name === 'web') return;
+        if (pauseTimer) clearTimeout(pauseTimer);
+        pauseTimer = setTimeout(function () { pauseTimer = 0; if (Voice.listening && Voice.backend === b) Voice.stop(); }, pauseMs);
+      };
+      Voice.clearPause = function () { if (pauseTimer) { clearTimeout(pauseTimer); pauseTimer = 0; } };
+
       b.start(locale(), {
         partial: function (text) {
           say(text);
+          Voice.emit('partial', { text: text });
+          if (text && text.trim()) armPause();
         },
         final: function (text) {
           /* Straight into the field, at the caret, as a real edit — and the
@@ -553,6 +570,7 @@
           Voice.emit('error', { code: code, text: why });
         },
         end: function () {
+          if (Voice.clearPause) Voice.clearPause();
           Voice.listening = false;
           Voice.backend = null;
           if (ui.mic) ui.mic.classList.remove('live');

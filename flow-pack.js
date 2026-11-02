@@ -13542,6 +13542,7 @@ const Say = {
         '<div class="sy-log" aria-live="polite"></div>' +
         '<div class="sy-ask">' +
           '<div class="sy-state" aria-live="polite"></div>' +
+          '<div class="sy-live" data-i18n="off" hidden></div>' +
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
@@ -13613,9 +13614,23 @@ const Say = {
     try {
       if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
-        if (state === 'listening') { Say.mode('listening'); Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
+        if (state === 'partial') { if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } return; }
+        if (state === 'listening') { const lv0 = Say.el.querySelector('.sy-live'); if (lv0) { lv0.textContent = ''; lv0.hidden = true; }
+          /* The Mac app listening for 12 s and not one word: say which
+             microphone it is listening to, and offer the others. */
+          clearTimeout(Say.noWords); Say.noWords = 0;
+          if (FlowVoice.backendName === 'native' && window.FlowMac) Say.noWords = setTimeout(async () => {
+            Say.noWords = 0;
+            if (!Say.waiting || !FlowVoice.listening) return;
+            let name = ''; try { const l = await FlowVoice.inputs(); const c = (l || []).find((x) => x.chosen) || (l || []).find((x) => x.default); name = c ? c.name : ''; } catch (x) {}
+            Say.state('I\'m not catching any words' + (name ? ' from “' + name + '”' : '') + '. If that isn\'t the microphone you speak into, choose it under Voice and manners → Microphone.');
+            const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics();
+          }, 12000);
+          Say.mode('listening'); Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
         if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); if (extra && extra.text) Say.state(extra.text); if (extra && extra.code === 'no-input') { const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics(); } return; }
+        if (state === 'idle' || state === 'error') { clearTimeout(Say.noWords); Say.noWords = 0; }
         if (state === 'idle') {
+          { const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = ''; lv.hidden = true; } }
           Say.waiting = false; Say.paintMic(); Say.mode('idle');
           const t = (document.getElementById('sy-text') || {}).value || '';
           if (!Say.el.classList.contains('on')) return;
@@ -13673,7 +13688,7 @@ const Say = {
     Say.state('');
     const hi = Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
     Say.mode('idle'); Say.memPaint(); Say.mics().catch(() => {});
-    Say.el.classList.add('on');
+    Say.el.classList.add('on'); document.documentElement.classList.add('say-on');
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
@@ -13705,7 +13720,7 @@ const Say = {
     Speech.stop();
     Say.waiting = false; Say.confirming = false; Say.openTok++;
     Say.mode('idle');
-    Say.el.classList.remove('on');
+    Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
   },
   listen() {
     const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
@@ -13713,7 +13728,9 @@ const Say = {
     if (Say.own()) { Say.state('Dictate with Wispr Flow or your keyboard, then press Go.'); return; }
     if (!(window.FlowVoice && FlowVoice.available)) { Say.state('Type it here — this browser cannot listen.'); return; }
     Say.waiting = true;
-    try { FlowVoice.start(ta); } catch (e) { Say.waiting = false; }
+    /* 1.6 s of quiet after words ends the turn, as in a browser — on the
+       iPhone and the Mac the recogniser would otherwise listen forever. */
+    try { FlowVoice.start(ta, { pauseEnd: 1600 }); } catch (e) { Say.waiting = false; }
     Say.paintMic();
   },
   again() {
