@@ -194,6 +194,10 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
             answer(id, FlowSpeech.permissions())
         case "voiceRequest":
             FlowSpeech.request { [weak self] state in self?.answer(id, state) }
+        case "voiceInputs":
+            answer(id, ["inputs": FlowSpeech.inputs()])
+        case "voiceSetInput":
+            FlowSpeech.choose((body["uid"] as? String) ?? ""); answer(id, ["ok": true])
         default:
             notes.handle(action: action, body: body, id: id)
         }
