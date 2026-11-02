@@ -454,6 +454,16 @@
    * them; everything else gets a plain "that did not work".
    * ------------------------------------------------------------------ */
   function explain(code) {
+    /* The Mac app. Its builds before 26 Oct had no microphone of their own
+       (no bridge, no permission in the bundle), so WebKit refused and the
+       message blamed "this site" — which no setting can fix. Newer builds
+       ask macOS, and a refusal is changed in System Settings, not iPhone's. */
+    var mac = !!window.FlowMac;
+    var blocked = code === 'denied-ios' || code === 'not-allowed' || code === 'service-not-allowed' || code === 'denied';
+    if (mac && blocked) {
+      if (!Native.capable()) return t('This version of The Flow for Mac cannot use the microphone. Install the new Mac build — until then, the microphone works in The Flow in Chrome.');
+      return t('Dictation needs the microphone and speech recognition. Turn on The Flow in System Settings → Privacy & Security → Microphone, and in Speech Recognition, then try again.');
+    }
     if (code === 'denied-ios') {
       return t('Dictation needs the microphone and speech recognition. Turn both on in iPhone Settings → The Flow, then try again.');
     }
