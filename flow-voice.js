@@ -241,6 +241,8 @@
     window.__flowVoiceEvent = function (type, payload) {
       if (!live) return;
       payload = payload || {};
+      /* The Mac app's meter: which input it is listening to, and how loud. */
+      if (type === 'level') { Native.level = payload; try { Voice.emit('level', payload); } catch (e) {} return; }
       if (type === 'partial') live.partial(String(payload.text || ''));
       else if (type === 'final') { var s = String(payload.text || '').trim(); if (s) live.final(s); }
       else if (type === 'error') { Native.device = String(payload.device || ''); live.error(String(payload.code || 'unknown')); }
@@ -310,6 +312,15 @@
         if (!p || typeof p.voiceSetInput !== 'function') return Promise.resolve(null);
         return p.voiceSetInput({ uid: String(uid || '') });
       },
+      /* Which input of a many-input device (an audio interface): 0 = follow
+         the voice, k = input k. */
+      setChannel: function (k, uid) {
+        var p = plugin();
+        if (!p || typeof p.voiceSetChannel !== 'function') return Promise.resolve(null);
+        var a = { channel: Math.max(0, parseInt(k, 10) || 0) }; if (uid) a.uid = String(uid);
+        return p.voiceSetChannel(a);
+      },
+      level: null,
       device: ''
     };
   })();
@@ -611,6 +622,8 @@
     /* The Mac app's microphone choice (null elsewhere). */
     inputs: function () { return Native.capable() && Native.inputs ? Native.inputs() : Promise.resolve(null); },
     setInput: function (uid) { return Native.capable() && Native.setInput ? Native.setInput(uid) : Promise.resolve(null); },
+    setChannel: function (k, uid) { return Native.capable() && Native.setChannel ? Native.setChannel(k, uid) : Promise.resolve(null); },
+    canChooseChannel: function () { try { var p = window.Capacitor.Plugins.FlowBridge; return !!(p && typeof p.voiceSetChannel === 'function'); } catch (e) { return false; } },
 
     /* What Settings shows. On iOS the shell can answer properly; in a browser
        the honest answer is that the browser asks when you press the button,

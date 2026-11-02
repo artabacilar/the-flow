@@ -317,6 +317,7 @@ const SETTINGS_DEFAULTS = {
   asstName: '',
   asstGreet: true,               // a spoken hello when the app opens, once per part of the day
   asstMemory: [],                // what you told the assistant about yourself: [{ id, text, at }]
+  voiceDiag: null,               // the Mac app's last microphone reading (device, input, level) — for looking into "it doesn't hear me"
   /* Today, merged — a beta in Simple; the Focus pinned on it, and its colour. */
   todayBeta: false,
   todayBetaLime: false,
@@ -13543,6 +13544,7 @@ const Say = {
         '<div class="sy-ask">' +
           '<div class="sy-state" aria-live="polite"></div>' +
           '<div class="sy-live" data-i18n="off" hidden></div>' +
+          '<div class="sy-meter" data-i18n="off" hidden><span class="sy-mdev"></span><i><b></b></i></div>' +
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
@@ -13551,6 +13553,7 @@ const Say = {
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
+            '<label class="sy-opt sy-chpick" hidden><span>Input</span><select data-say-ch></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
@@ -13578,6 +13581,12 @@ const Say = {
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
     wrap.addEventListener('change', (e) => {
+      if (e.target.matches('[data-say-ch]')) {
+        try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {}
+        const uid = e.target.getAttribute('data-uid') || '';
+        Promise.resolve(FlowVoice.setChannel(+e.target.value || 0, uid)).then(() => { Say.waiting = false; Say.paintMic(); Say.listen(); }).catch(() => {});
+        return;
+      }
       if (e.target.matches('[data-say-mic]')) {
         try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {}
         Promise.resolve(FlowVoice.setInput(e.target.value)).then(() => { Say.waiting = false; Say.paintMic(); Say.listen(); }).catch(() => {});
@@ -13614,6 +13623,7 @@ const Say = {
     try {
       if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
+        if (state === 'level') { Say.meter(extra); return; }
         if (state === 'partial') { if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } return; }
         if (state === 'listening') { const lv0 = Say.el.querySelector('.sy-live'); if (lv0) { lv0.textContent = ''; lv0.hidden = true; }
           /* The Mac app listening for 12 s and not one word: say which
@@ -13630,7 +13640,7 @@ const Say = {
         if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); if (extra && extra.text) Say.state(extra.text); if (extra && extra.code === 'no-input') { const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics(); } return; }
         if (state === 'idle' || state === 'error') { clearTimeout(Say.noWords); Say.noWords = 0; }
         if (state === 'idle') {
-          { const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = ''; lv.hidden = true; } }
+          { const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = ''; lv.hidden = true; } const mt = Say.el.querySelector('.sy-meter'); if (mt) mt.hidden = true; }
           Say.waiting = false; Say.paintMic(); Say.mode('idle');
           const t = (document.getElementById('sy-text') || {}).value || '';
           if (!Say.el.classList.contains('on')) return;
@@ -13655,6 +13665,33 @@ const Say = {
       list.map((x) => '<option value="' + esc(x.uid) + '"' + (x.chosen ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('');
     if (!chosen) sel.value = '';
     box.hidden = false;
+    /* An audio interface: which of its inputs the voice is on. */
+    const cur = chosen || def, cbox = Say.el.querySelector('.sy-chpick');
+    if (cbox) {
+      const n = cur ? +cur.channels || 0 : 0;
+      if (n > 1 && FlowVoice.canChooseChannel && FlowVoice.canChooseChannel()) {
+        const cs = cbox.querySelector('select');
+        cs.setAttribute('data-uid', cur.uid || '');
+        let h = '<option value="0">Follow my voice (automatic)</option>';
+        for (let k = 1; k <= Math.min(n, 64); k++) h += '<option value="' + k + '">Input ' + k + '</option>';
+        cs.innerHTML = h; cs.value = String(+cur.channel || 0);
+        cbox.hidden = false;
+      } else cbox.hidden = true;
+    }
+  },
+  /* The Mac app's live meter while listening — and a copy in the account,
+     so a microphone that "doesn't hear" can be looked into from anywhere. */
+  meter(x) {
+    const m = Say.el && Say.el.querySelector('.sy-meter'); if (!m || !x) return;
+    const db = +x.db, pct = Math.max(0, Math.min(100, Math.round((db + 60) / 60 * 100)));
+    m.querySelector('.sy-mdev').textContent = '🎙 ' + (x.device || 'Microphone') + (x.channels > 1 ? ' · input ' + x.input + (x.chosen ? '' : ' (auto)') : '');
+    m.querySelector('b').style.width = pct + '%';
+    m.hidden = false;
+    const now = Date.now();
+    if (!Say._diagAt || now - Say._diagAt > 5000) {
+      Say._diagAt = now;
+      try { Settings.set('voiceDiag', { at: new Date().toISOString(), device: String(x.device || '').slice(0, 80), channels: x.channels, input: x.input, chosen: !!x.chosen, db, inputs: Array.isArray(x.inputs) ? x.inputs.slice(0, 32) : [] }); } catch (e) {}
+    }
   },
   /* Wispr Flow (or any keyboard's own dictation) types into the box itself;
      the built-in microphone would only fight it. Remembered per device. */

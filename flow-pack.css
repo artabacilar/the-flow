@@ -3513,6 +3513,11 @@ html:not([data-flow-look="new"]) .lk-rk-add{display:none}
    bubble sits under sheets, so in here it would show nothing). */
 #flow-say .sy-live{margin:6px 0 8px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.05);color:var(--lk-ink,#F4F4F2);font-size:15px;line-height:1.45;font-style:italic}
 #flow-say .sy-live[hidden]{display:none}
+#flow-say .sy-meter{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:12.5px;color:var(--lk-mute,#9A9AA0)}
+#flow-say .sy-meter[hidden]{display:none}
+#flow-say .sy-meter .sy-mdev{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#flow-say .sy-meter i{flex:0 0 120px;height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+#flow-say .sy-meter b{display:block;height:100%;width:0;background:var(--lk-coral,#FF6B3D);transition:width .2s}
 html.say-on .fv-bubble:not(.bad){display:none}
 /* Errors from the microphone must be readable over any sheet */
 .fv-bubble.bad{z-index:990}
