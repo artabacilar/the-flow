@@ -489,6 +489,40 @@ window.__fail = function (code) {
   ok('a refusal says where to turn it on, on an iPhone', /iPhone Settings/.test(refused) && !/this site/.test(refused), refused);
   await c3.close();
 
+  console.log('\n— the Mac app —');
+  /* a build from before 26 Oct: FlowMac, but no microphone bridge — WebKit refuses */
+  const c4 = await b.newContext();
+  await c4.addInitScript(FAKE); await c4.addInitScript(`window.FlowMac = { platform: 'macos' };`);
+  const p4 = await c4.newPage();
+  await p4.goto(H + '/', { waitUntil: 'load' }); await p4.waitForTimeout(2600);
+  const oldMac = await p4.evaluate(async () => {
+    if (window.FlowVoice.backendName !== 'web') return 'backend: ' + window.FlowVoice.backendName;
+    const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    window.FlowVoice.start(t); await new Promise((r) => setTimeout(r, 120));
+    window.__fail && window.__fail('not-allowed'); await new Promise((r) => setTimeout(r, 150));
+    const bub = document.querySelector('.fv-bubble'); return bub ? bub.textContent : '';
+  });
+  ok('an old Mac build says the build is the problem, not "this site"', /new Mac build/.test(oldMac) && !/this site/.test(oldMac), oldMac);
+  await c4.close();
+  /* the current Mac build: a refusal points at System Settings, not iPhone Settings */
+  const c5 = await b.newContext();
+  await c5.addInitScript(`
+    window.FlowMac = { platform: 'macos' };
+    window.Capacitor = { Plugins: { FlowBridge: {
+      voiceStart: async () => ({ ok: false, error: 'denied' }), voiceStop: async () => ({}), voiceCancel: async () => ({}),
+      voicePermission: async () => ({ mic: 'denied', speech: 'granted' }), voiceRequest: async () => ({ mic: 'denied', speech: 'granted' })
+    } } };
+  `);
+  const p5 = await c5.newPage();
+  await p5.goto(H + '/', { waitUntil: 'load' }); await p5.waitForTimeout(2600);
+  const newMac = await p5.evaluate(async () => {
+    const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    window.FlowVoice.start(t); await new Promise((r) => setTimeout(r, 300));
+    const bub = document.querySelector('.fv-bubble'); return bub ? bub.textContent : '';
+  });
+  ok('the Mac app says where to turn it on: System Settings → Privacy & Security', /System Settings → Privacy & Security → Microphone/.test(newMac) && !/iPhone/.test(newMac), newMac);
+  await c5.close();
+
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
