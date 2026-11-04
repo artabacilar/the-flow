@@ -70,6 +70,19 @@ it; the result is committed so the build never needs Node.
 
 ## Shipping it
 
+The route that reaches every Mac by itself is **Xcode Cloud → TestFlight**:
+the Mac app is a macOS target (`TheFlowMac`) of the iOS project in
+`ios-app/ios/`, added by `ios-app/scripts/add-mac-target.js`. That target
+compiles `native/*.swift` where they live, ships `Resources/AppIcon.icns`, and
+reads `xcode/Info.plist` and `xcode/TheFlow.entitlements` — the same keys
+`build.sh` writes inline, kept in step by `tests/test-mac.js`. A push to
+`main` that touches this folder is archived by Xcode Cloud and lands in
+TestFlight, where every Mac signed in with automatic updates on installs it.
+See `ios-app/README.md`, "Every device, from one push".
+
+What follows is the by-hand route: `build.sh store` and Transporter.
+
+
 Once, to set up:
 
 1. **Two certificates.** Xcode → Settings → Accounts → your Apple ID →

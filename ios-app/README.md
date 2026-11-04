@@ -19,11 +19,15 @@ That is the whole trade, and it is the reason the app is built this way.
     native/Shared/  the one file both of them read, so a token is stored once
     www/            the offline fallback page, and nothing else
 
-`npx cap add ios` generates the Xcode project into `ios/` beside these. That
-generated folder is disposable: everything worth keeping is in `native/`, which
-you copy in once during setup. Deliberately kept out of the repo root so that
-Render, which only ever runs the server, never installs a build toolchain it
-has no use for.
+`npm run setup` generates the Xcode project into `ios/` beside these, from
+`native/`, and `ios/` is committed. Not because it is precious — regenerate
+it any time — but because Xcode Cloud builds what is in the repository, and
+that is how a shell change reaches every device without anyone sitting at a
+Mac (see "Every device, from one push" below). Everything worth editing is
+still in `native/`; a Swift file edited there is copied in by `npm run native`
+(or `widget`, `watch`), and Xcode Cloud copies it in itself before every
+build. The folder is kept out of the repo root so that Render, which only
+ever runs the server, never installs a build toolchain it has no use for.
 
 ## Its name and its identity
 
@@ -77,9 +81,45 @@ and how the week stands. It reads and nothing else — there is deliberately no
 way to tick a rock from the widget, because the only gesture a widget has is a
 tap, and a tap in a coat pocket must not mark a day done.
 
-## Getting it onto the store
+## Every device, from one push
 
-    npm run sync
+The shells are built by **Xcode Cloud**, not by a Mac on a desk. A push to
+`main` that touches `ios-app/` or `mac-app/` starts a build on Apple's side;
+the archive goes to **TestFlight**, and every device signed in as an internal
+tester with automatic updates on — iPhone, Apple Watch, and both Macs —
+installs it by itself. The App Store release stays a deliberate step.
+
+What the repository provides for that:
+
+    ios/App/App.xcodeproj/xcshareddata/xcschemes/   the schemes Xcode Cloud can
+                                                    see: App (iPhone + widget +
+                                                    watch) and TheFlowMac
+    ios/App/ci_scripts/ci_post_clone.sh             refreshes the copied Swift
+                                                    files from native/ first
+    ios/App/ci_scripts/ci_pre_xcodebuild.sh         version from version.json,
+                                                    build number = 100 + Xcode
+                                                    Cloud's own count
+    scripts/add-mac-target.js                       the Mac app as a macOS
+                                                    target of the same project
+    scripts/make-cloud.js                           writes the first three
+
+Both ci scripts live in `scripts/ci_scripts/` and are copied beside the
+project by `make-cloud.js`; edit them there. `tests/test-xcode.js` checks all
+of this on every push — stale copies, a scheme pointing at a regenerated
+target, a script that lost its executable bit — because each of those fails
+only on Xcode Cloud, ten minutes later, with a message about something else.
+
+Releasing a new version is one edit: the `version` in `version.json`. The
+build number is never edited — Xcode Cloud numbers its own builds.
+
+The workflows themselves (which branch, which scheme, which TestFlight group)
+are configured in App Store Connect → the app → Xcode Cloud, once, by the
+account holder. The Mac app ships on the same App Store record as the
+macOS platform (same bundle id, universal purchase) — see
+`mac-app/README.md`, "Universal Purchase".
+
+## Getting it onto the store by hand
+
     Xcode → Product → Archive → Distribute App
 
 First submission needs: an Apple Developer account (99 USD a year), a privacy

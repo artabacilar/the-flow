@@ -129,6 +129,7 @@ const SUITES = [
   ['meetings', 'test-meetings.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['remind',   'test-remind.js',   {}],
   ['mac',      'test-mac.js',      {}],
+  ['xcode',    'test-xcode.js',    {}],
   ['week',     'test-week.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['voice',    'test-voice.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['whoop',    'test-whoop.js',    {}],
