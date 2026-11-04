@@ -58,7 +58,11 @@ const {chromium}=require('playwright');const H='http://localhost:4222';
   await p.evaluate((t)=>{ window.__cleared=0; window.Capacitor={Plugins:{FlowBridge:{pushToken:async()=>({token:t}),clear:async()=>{ window.__cleared++; return {}; }}}}; }, TOK);
   const before=await p.evaluate(async()=>(await (await fetch('/api/push/status',{credentials:'same-origin'})).json()).devices);
   let unregistered=null; p.on('request',(rq)=>{ if(/\/api\/push\/unregister/.test(rq.url())) unregistered=rq.postData(); });
-  const cleared=p.evaluate(async()=>{ const w=window; const n=()=>w.__cleared; await new Promise(r=>setTimeout(r,10)); return n(); });
+  /* Not awaited on purpose — it has to be in flight while signOut runs — but
+     signOut reloads the page, and a reload under an unfinished evaluate
+     rejects it ("Execution context was destroyed"). Unhandled, that rejection
+     took the whole suite down on CI, about one run in three. */
+  p.evaluate(async()=>{ const w=window; const n=()=>w.__cleared; await new Promise(r=>setTimeout(r,10)); return n(); }).catch(()=>{});
   await p.evaluate(()=>{ Flow.Auth.signOut(); });
   await p.waitForTimeout(400);
   ok('signing out on a phone unregisters that phone for reminders', reg===200 && before===1 && unregistered && unregistered.indexOf(TOK)>=0, {reg,before,unregistered});
