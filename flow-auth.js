@@ -732,6 +732,17 @@ async function sharedDropIndex(uid, token) {
   const list = (await getJSON(SHARED_MEMBER(uid), [])).filter(x => x !== token);
   await setJSON(SHARED_MEMBER(uid), list);
 }
+/* What happened on a shared task, in order, so a partner's card can say
+   "Sami moved X to In progress, 2h ago" without replaying every comment.
+   Short values only — a comment's log line is its first words, the comment
+   itself stays in t.comments. Bounded, newest kept. */
+const SHARED_LOG_MAX = 60;
+function sharedLog(t, me, k, v) {
+  t.log = Array.isArray(t.log) ? t.log : [];
+  t.log.push({ at: nowISO(), byId: me.id, byName: String(me.name || me.email || '').slice(0, 60),
+               k: String(k).slice(0, 12), v: String(v == null ? '' : v).slice(0, 140) });
+  if (t.log.length > SHARED_LOG_MAX) t.log = t.log.slice(-SHARED_LOG_MAX);
+}
 
 /* ---------- friend helpers ------------------------------------------------ */
 
@@ -1322,9 +1333,10 @@ async function gate(req, res) {
       ws: (String(b.ws || '') === 'dtc') ? 'dtc' : 'abko',
       date: validDate(b.date), time: validTime(b.time),
       members: [{ id: me.id, email: me.email, name: me.name || me.email, owner: true }],
-      comments: [],
+      comments: [], log: [],
       createdAt: nowISO(), updatedAt: nowISO()
     };
+    sharedLog(task, me, 'create', title);
     await setJSON(SHARED(token), task);
     await sharedAddIndex(me.id, token);
     json(res, 200, { ok: true, task });
@@ -1356,6 +1368,7 @@ async function gate(req, res) {
       if (p === '/api/shared/join') {
         if ((t.members || []).length >= SHARED_MEMBERS_MAX) { json(res, 429, { error: 'That task already has the maximum number of people.' }); return true; }
         t.members.push({ id: me.id, email: me.email, name: me.name || me.email });
+        sharedLog(t, me, 'join', '');
         t.updatedAt = nowISO();
         await setJSON(SHARED(token), t);
         await sharedAddIndex(me.id, token);
@@ -1383,6 +1396,7 @@ async function gate(req, res) {
     if ((t.members || []).length >= SHARED_MEMBERS_MAX) { json(res, 429, { error: 'That task already has the maximum number of people.' }); return true; }
     if (!isSharedMember(t, rec.id)) {
       t.members.push({ id: rec.id, email: rec.email, name: rec.name || rec.email });
+      sharedLog(t, me, 'invite', rec.name || rec.email);
       t.updatedAt = nowISO();
       await setJSON(SHARED(token), t);
       await sharedAddIndex(rec.id, token);
@@ -1413,10 +1427,10 @@ async function gate(req, res) {
     if (!t) { json(res, 404, { error: 'That shared task no longer exists.' }); return true; }
     if (!isSharedMember(t, me.id)) { json(res, 403, { error: 'Only people on the task can edit it.' }); return true; }
     const patch = (b.patch && typeof b.patch === 'object') ? b.patch : {};
-    if ('title' in patch) { const v = String(patch.title || '').trim().slice(0, 500); if (v) t.title = v; }
-    if ('notes' in patch) t.notes = String(patch.notes || '').slice(0, 4000);
-    if ('status' in patch) t.status = sharedStatus(patch.status);
-    if ('date' in patch) t.date = validDate(patch.date);
+    if ('title' in patch) { const v = String(patch.title || '').trim().slice(0, 500); if (v && v !== t.title) { t.title = v; sharedLog(t, me, 'title', v); } }
+    if ('notes' in patch) { const v = String(patch.notes || '').slice(0, 4000); if (v !== (t.notes || '')) { t.notes = v; sharedLog(t, me, 'notes', ''); } }
+    if ('status' in patch) { const v = sharedStatus(patch.status); if (v !== t.status) { t.status = v; sharedLog(t, me, 'status', v); } }
+    if ('date' in patch) { const v = validDate(patch.date); if (v !== (t.date || '')) { t.date = v; sharedLog(t, me, 'date', v); } }
     if ('time' in patch) t.time = validTime(patch.time);
     t.updatedAt = nowISO();
     await setJSON(SHARED(token), t);
@@ -1437,6 +1451,7 @@ async function gate(req, res) {
     t.comments = Array.isArray(t.comments) ? t.comments : [];
     t.comments.push({ id: crypto.randomBytes(6).toString('hex'), byId: me.id, byName: me.name || me.email, at: nowISO(), text });
     if (t.comments.length > SHARED_COMMENTS_MAX) t.comments = t.comments.slice(-SHARED_COMMENTS_MAX);
+    sharedLog(t, me, 'comment', text);
     t.updatedAt = nowISO();
     await setJSON(SHARED(token), t);
     json(res, 200, { ok: true, task: t });
@@ -1453,6 +1468,7 @@ async function gate(req, res) {
     if (t.ownerId !== me.id) {
       /* A non-owner "delete" just leaves the task. */
       t.members = (t.members || []).filter(m => m && m.id !== me.id);
+      sharedLog(t, me, 'leave', '');
       t.updatedAt = nowISO();
       await setJSON(SHARED(token), t);
       await sharedDropIndex(me.id, token);
@@ -1725,7 +1741,7 @@ async function gate(req, res) {
       try { started = await seedStarter(me.id, me.name, langOf(req, null)); } catch (e) { started = 0; }
     }
 
-    json(res, 200, { ok: true, user: { email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started,
+    json(res, 200, { ok: true, user: { id: me.id, email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started,
       /* New accounts start in Simple only when this Flow says so (FLOW_SIMPLE_DEFAULT on the server); off, they start in Advanced as they always did. */
       simpleDefault: !!process.env.FLOW_SIMPLE_DEFAULT });
     return true;
@@ -1851,7 +1867,7 @@ async function gate(req, res) {
     if (rec.owner) await adoptLegacyKeys(rec.id);
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
-    json(res, 200, { ok: true, user: { email: rec.email, name: rec.name, owner: !!rec.owner }, seed: await getJSON(SEED(rec.id), 'template'), expires });
+    json(res, 200, { ok: true, user: { id: rec.id, email: rec.email, name: rec.name, owner: !!rec.owner }, seed: await getJSON(SEED(rec.id), 'template'), expires });
     return true;
   }
 
@@ -1941,7 +1957,7 @@ async function gate(req, res) {
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
     json(res, 200, {
       ok: true,
-      user: { email: rec.email, name: rec.name, owner: !!rec.owner },
+      user: { id: rec.id, email: rec.email, name: rec.name, owner: !!rec.owner },
       left: recoveryLeft(rec),
       expires
     });
@@ -2025,7 +2041,7 @@ async function gate(req, res) {
 
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
-    json(res, 200, { ok: true, user: { email: rec.email, name: rec.name, owner: !!rec.owner }, expires });
+    json(res, 200, { ok: true, user: { id: rec.id, email: rec.email, name: rec.name, owner: !!rec.owner }, expires });
     return true;
   }
 

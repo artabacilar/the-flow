@@ -1726,6 +1726,72 @@ html[data-flow-theme="bloom"]:not(.flow-ready) body{ background:#fdf8f7; }
 .fr-sw em{ display:block; font-size:11.5px; font-style:normal; color:var(--f-ink-2); line-height:1.45; }
 .fr-note{ margin:2px 0 0; }
 
+/* Partners: the parts of the card that do something. */
+.fr-who{ display:flex; flex-direction:column; min-width:0; flex:1 1 auto; gap:1px; }
+.fr-who .fr-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+input.fr-note{
+  margin:0; padding:0; border:none; background:none; font:inherit; font-size:11.5px;
+  color:var(--f-ink-2); width:100%; min-width:0; outline:none; border-radius:4px;
+}
+input.fr-note::placeholder{ color:var(--f-ink-2); opacity:.7; }
+input.fr-note:focus{ color:var(--f-ink); background:var(--f-grid); padding:1px 4px; }
+.fr-notebtn{
+  margin:0; padding:0; border:none; background:none; font:inherit; font-size:11.5px;
+  color:var(--f-ink-2); text-align:left; cursor:text; min-width:0; max-width:100%;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.4;
+  -webkit-tap-highlight-color:transparent;
+}
+.fr-notebtn.empty{ opacity:.6; font-style:italic; }
+.fr-notebtn:hover{ color:var(--f-ink); }
+.fr-head .fr-x{ align-self:flex-start; }
+
+.fr-do{ display:flex; flex-direction:column; gap:7px; margin-top:11px; }
+.fr-doline{ display:flex; gap:7px; }
+.fr-doline .flow-in{ flex:1 1 auto; min-width:0; font-size:13px; }
+.fr-doline .flow-btn{ flex:0 0 auto; white-space:nowrap; }
+
+.fr-task{ padding:8px 0 9px; border-top:1px solid var(--f-grid); }
+.fr-task:first-of-type{ border-top:none; padding-top:2px; }
+.fr-taskrow{ display:flex; align-items:center; gap:8px; min-width:0; }
+.fr-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--f-ink-2); }
+.fr-task.st-in_progress .fr-dot{ background:var(--f-accent); }
+.fr-task.st-blocked .fr-dot{ background:var(--f-warning, #e0a33e); }
+.fr-task.st-done .fr-dot{ background:var(--f-seq-5, #17bb92); }
+.fr-task.st-done .fr-tt{ color:var(--f-ink-2); text-decoration:line-through; }
+.fr-tt{ flex:1 1 auto; min-width:0; font-size:13px; color:var(--f-ink); line-height:1.4; overflow-wrap:anywhere; }
+.fr-st-sel{
+  flex:0 0 auto; font:inherit; font-size:11.5px; color:var(--f-ink-2);
+  background:var(--f-grid); border:none; border-radius:8px; padding:4px 6px;
+  -webkit-appearance:none; appearance:none; max-width:120px;
+}
+.fr-taskmeta{ display:block; font-size:11px; color:var(--f-ink-2); margin:3px 0 0 16px; line-height:1.4; }
+.fr-taskcmt{ display:flex; gap:6px; margin:7px 0 0 16px; }
+.fr-taskcmt .flow-in{ flex:1 1 auto; min-width:0; font-size:12.5px; padding-top:6px; padding-bottom:6px; }
+
+.fr-wait{ display:flex; flex-direction:column; gap:2px; padding:8px 10px; margin-bottom:7px;
+  border-radius:10px; background:rgba(23,187,146,.07); border:1px solid rgba(23,187,146,.2); }
+.fr-wait .fr-taskmeta{ margin-left:0; }
+.fr-waitbtns{ display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+
+.fr-line{ display:flex; align-items:baseline; gap:8px; padding:3px 0; }
+.fr-line .fr-tt{ font-size:12.5px; }
+.fr-line .fr-taskmeta{ margin:0; flex:0 0 auto; white-space:nowrap; }
+
+details.fr-week{ margin-top:12px; border-top:1px solid var(--f-grid); padding-top:9px; }
+details.fr-week > summary{
+  list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--f-ink-2);
+  -webkit-tap-highlight-color:transparent;
+}
+details.fr-week > summary::-webkit-details-marker{ display:none; }
+details.fr-week > summary::before{ content:"\25B8"; font-size:11px; }
+details.fr-week[open] > summary::before{ content:"\25BE"; }
+details.fr-week > summary .fr-when{ font-weight:400; text-transform:none; letter-spacing:0; margin-left:auto; }
+.fr-weekbody{ margin-top:10px; }
+
+.fr-invite{ margin-top:11px; }
+.fr-invite textarea{ width:100%; font-size:12.5px; line-height:1.5; margin-bottom:8px; resize:vertical; }
+
 /* ──────────────────────────────────────────────────────────────────────────
  * The routine audit
  *

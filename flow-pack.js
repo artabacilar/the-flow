@@ -7078,10 +7078,13 @@ const SharedUI = {
         try { history.replaceState(null, '', location.pathname); } catch (e) {}
       }
     } catch (e) {}
-    if (!(window.Auth && Auth.user)) return;   /* sharing needs an account */
+    if (!(Auth.user)) return;   /* sharing needs an account */
     await Shared.list();
     SharedUI.mountInto('tab-abko', 'abko');
     SharedUI.mountInto('tab-dtc', 'dtc');
+    /* The one-tap invite chips name your partners, and the partner list is
+       loaded with North Star — which may not have been opened yet. */
+    try { Friends.load().then(() => SharedUI.renderAll()).catch(() => {}); } catch (e) {}
   },
 
   mountInto(sectionId, ws) {
@@ -7096,16 +7099,26 @@ const SharedUI = {
     SharedUI.renderPanel(panel, ws);
   },
 
-  renderAll() { SharedUI.mounted.forEach(m => { if (document.body.contains(m.el)) SharedUI.renderPanel(m.el, m.ws); }); },
+  renderAll() {
+    SharedUI.mounted.forEach(m => { if (document.body.contains(m.el)) SharedUI.renderPanel(m.el, m.ws); });
+    /* The same tasks show on the Partners card; a change here is a change there. */
+    try { if (Friends.loaded) Friends.paintInto(); } catch (e) {}
+  },
 
   card(t) {
-    const me = (window.Auth && Auth.user) ? Auth.user.id : null;
+    const me = (Auth.user) ? Auth.user.id : null;
     const owner = t.ownerId === me;
     const ownerName = ((t.members || []).find(m => m && m.owner) || {}).name || 'someone';
     const opts = SharedUI.STATUS.map(([v, l]) => `<option value="${v}"${t.status === v ? ' selected' : ''}>${l}</option>`).join('');
     const comments = (t.comments || []).map(c =>
       `<div style="padding:6px 0;border-top:1px solid var(--border)"><b style="font-size:12px">${esc(c.byName)}</b> <span style="font-size:11px;color:var(--muted)">${esc(SharedUI.when(c.at))}</span><div style="font-size:13px;white-space:pre-wrap;margin-top:2px">${esc(c.text)}</div></div>`
     ).join('') || '<div style="font-size:12px;color:var(--muted);padding:4px 0">No comments yet.</div>';
+    /* Your partners, one tap each, instead of typing an address you already
+       know. Only the ones not on the task yet. */
+    const partners = (Array.isArray(Friends.list) ? Friends.list : [])
+      .filter(f => f && f.email && !(t.members || []).some(m => m && (m.id === f.id || String(m.email || '').toLowerCase() === String(f.email).toLowerCase())));
+    const pchips = partners.map(f =>
+      `<button class="flow-btn sm ghost" data-sinvitep="${esc(f.email)}" title="Invite ${esc(f.name)}">+ ${esc(f.name)}</button>`).join('');
     return `<div class="flow-shared-card" data-token="${esc(t.token)}" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--card2)">
       <div class="flow-row" style="gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
         <input class="flow-in" data-stitle style="flex:1;min-width:150px;font-size:15px;font-weight:700" value="${esc(t.title)}">
@@ -7117,6 +7130,7 @@ const SharedUI = {
         <button class="flow-btn" data-scopy>🔗 Copy link</button>
         <input class="flow-in" data-sinvite placeholder="invite by email" style="width:180px">
         <button class="flow-btn" data-sinvitesend>Invite</button>
+        ${pchips}
         <span style="flex:1"></span>
         ${owner ? '<button class="flow-btn ghost" data-sdelete>Delete</button>' : '<button class="flow-btn ghost" data-sleave>Leave</button>'}
       </div>
@@ -7170,6 +7184,11 @@ const SharedUI = {
         const j = await Shared.call('invite', { token, to }); Shared.upsert(j.task); inp.value = '';
         reload(); toast('Invited ' + j.to + ' ✓');
       }));
+      card.querySelectorAll('[data-sinvitep]').forEach(b => b.addEventListener('click', () => guard(async () => {
+        const j = await Shared.call('invite', { token, to: b.getAttribute('data-sinvitep') }); Shared.upsert(j.task);
+        reload(); toast('Invited ' + j.to + ' ✓');
+        try { Friends.paintInto(); } catch (e) {}
+      })));
       const del = card.querySelector('[data-sdelete]');
       if (del) del.addEventListener('click', () => guard(async () => { await Shared.call('delete', { token }); Shared.drop(token); reload(); toast('Deleted'); }));
       const leave = card.querySelector('[data-sleave]');
@@ -16436,17 +16455,26 @@ const AuditMath = {
 };
 
 /* ======================================================================
- * 20d-i · Friends — two accounts, paired by a code that works once
+ * 20d-i · Partners — the people you work with, paired by a code that works once
  *
- * The thing that makes a scoreboard work is somebody else being able to see
- * it. This is that, and deliberately no more than that: a friend never gains
- * access to your app. Each person PUBLISHES a card — the metrics and streaks,
- * this week's plan and Big Rock count, today's one-line check-in — and the
- * only thing a friend can read is the card. There is no code path, on the
- * client or the server, that reads one account's storage for another.
+ * A partner is somebody you work with and trust enough to let them see your
+ * week. Pairing is the gate; what it opens is deliberately narrow and all of
+ * it is visible in one card:
  *
- * You choose what goes on the card, and you can drop any of the three at any
+ *   • Hand over — a task goes to their inbox; nothing lands in their app
+ *     until they press Add. (The /api/share/send channel.)
+ *   • Work on together — one live task both of you can edit, move and
+ *     comment on. (The /api/shared/* routes; the same tasks also sit in the
+ *     Shared panel in Work.)
+ *   • Their week — the card they PUBLISH: metrics and streaks, this week's
+ *     plan and Big Rock count, today's one-line check-in. The only thing a
+ *     partner can ever read is that card; there is no code path, client or
+ *     server, that reads one account's storage for another.
+ *
+ * You choose what goes on your own card, and you can drop any part at any
  * time; what is switched off is not sent at all rather than sent and hidden.
+ * The API paths and storage keys still say "friends" — renaming data that
+ * already exists on every phone buys nothing.
  * ==================================================================== */
 const Friends = {
   loaded: false,
@@ -16454,16 +16482,24 @@ const Friends = {
   codes: [],
   busy: false,
   error: '',
-  entering: false,     /* the "enter a friend's code" box is showing */
+  entering: false,     /* the "enter a partner's code" box is showing */
   lastSent: '',        /* hash of the last card published, to avoid re-sending */
+  invite: null,        /* { code } while the invite message is on screen */
+  noteEditing: '',     /* partner id whose label is an input right now */
 
   K_SHARE:   'flow:friends:share',
   K_CHECKIN: 'flow:friends:checkin',
+  K_NOTES:   'flow:friends:notes',    /* { id: 'what we work on' }            */
+  K_HANDED:  'flow:friends:handed',   /* { id: [{at, txt}] } — what you sent  */
 
   DEFAULT_SHARE: { score: true, plan: true, checkin: true },
+  HANDED_KEEP: 8,
+  ACTIVITY_KEEP: 6,
 
   share: null,
   checkin: null,       /* { day, text } — kept in your own store as well */
+  notes: {},
+  handed: {},
 
   isOpen() { return Fold.isOpen('friends'); },
 
@@ -16481,20 +16517,26 @@ const Friends = {
 
   async load() {
     if (Friends.loaded) return;
-    const [sh, ci] = await Promise.all([
+    const [sh, ci, no, ha] = await Promise.all([
       DB.get(Friends.K_SHARE, null),
-      DB.get(Friends.K_CHECKIN, null)
+      DB.get(Friends.K_CHECKIN, null),
+      DB.get(Friends.K_NOTES, null),
+      DB.get(Friends.K_HANDED, null)
     ]);
     Friends.share = Object.assign({}, Friends.DEFAULT_SHARE, (sh && typeof sh === 'object') ? sh : {});
     Friends.checkin = (ci && typeof ci === 'object') ? ci : null;
+    Friends.notes = (no && typeof no === 'object' && !Array.isArray(no)) ? no : {};
+    Friends.handed = (ha && typeof ha === 'object' && !Array.isArray(ha)) ? ha : {};
     Friends.loaded = true;
     Friends.refresh().catch(() => {});
   },
 
   saveShare()   { DB.set(Friends.K_SHARE, Friends.share); },
   saveCheckin() { DB.set(Friends.K_CHECKIN, Friends.checkin); },
+  saveNotes()   { DB.set(Friends.K_NOTES, Friends.notes); },
+  saveHanded()  { DB.set(Friends.K_HANDED, Friends.handed); },
 
-  /* Today's check-in only. Yesterday's line is not something a friend should
+  /* Today's check-in only. Yesterday's line is not something a partner should
      still be reading as if it were now. */
   todayCheckin() {
     const c = Friends.checkin;
@@ -16510,27 +16552,45 @@ const Friends = {
   maybeRefresh(minMs) {
     if (!Friends.loaded) return;
     /* With nobody paired you are, by definition, waiting for somebody to
-       redeem your code — so look almost every time. With friends already
-       there, this is just a poll for new numbers and can be lazy. */
-    const min = minMs || (Friends.list.length ? 20000 : 4000);
+       redeem your code — so look almost every time. With partners already
+       there, this is a poll for new comments and numbers and can be lazier. */
+    const min = minMs || (Friends.list.length ? 15000 : 4000);
     if (Date.now() - Friends.lastFetch < min) return;
     Friends.refresh().catch(() => {});
   },
 
+  signedIn() { return !!(Auth.user && !Auth.guest); },
+
   async refresh() {
     Friends.lastFetch = Date.now();
     try {
-      const [l, c] = await Promise.all([Friends.api('list'), Friends.api('codes')]);
+      const jobs = [Friends.api('list'), Friends.api('codes')];
+      /* The shared tasks and the inbox are what make a partner's card move;
+         both already exist elsewhere in the app, so this just makes sure they
+         are fresh when the card paints. */
+      if (Friends.signedIn()) {
+        jobs.push(Shared.list().catch(() => []));
+        jobs.push(Inbox.load().catch(() => []));
+      }
+      const [l, c] = await Promise.all(jobs);
+      const before = Friends.list.map(f => f.id).join();
       Friends.list = l.friends || [];
       Friends.codes = c.codes || [];
       Friends.error = '';
+      /* The Shared panel's one-tap chips name the partners; a new one should
+         appear there without a reload. Only when the set changed — the panel
+         may have a half-typed comment in it. */
+      if (before !== Friends.list.map(f => f.id).join()) { try { SharedUI.renderAll(); } catch (e) {} }
     } catch (e) {
       Friends.error = e.message || 'Could not reach the server.';
     }
     Friends.paintInto();
+    try { Inbox.paintToday(); } catch (e) {}
     /* Publishing is pointless with nobody to read it, and doing it anyway
-       would put a card on the server for an account that never paired. */
-    if (Friends.list.length) Friends.publish();
+       would put a card on the server for an account that never paired. And
+       not before the scoreboard is loaded: a card sent from boot would be
+       missing its numbers and overwrite one that had them. */
+    if (Friends.list.length && Score.loaded) Friends.publish();
   },
 
   /* ---------------------- the card you publish ---------------------- */
@@ -16582,14 +16642,101 @@ const Friends = {
     catch (e) { Friends.lastSent = ''; }    /* so the next chance tries again */
   },
 
+  /* ------------------- what you and a partner share ------------------- */
+
+  /* A partner is on a shared task when the member list names their account.
+     Matched by id first and by address second — the address is what an
+     invite was typed as, the id is what the server stamped. */
+  onTask(t, f) {
+    const em = String(f.email || '').toLowerCase();
+    return !!(t && Array.isArray(t.members) && t.members.some(m => m && (m.id === f.id || (em && String(m.email || '').toLowerCase() === em))));
+  },
+
+  /* The live tasks you and this partner are both on, newest movement first. */
+  togetherFor(f) {
+    const items = Array.isArray(Shared.items) ? Shared.items : [];
+    return items.filter(t => Friends.onTask(t, f))
+      .slice().sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  },
+
+  /* Hand-overs from this partner that are still waiting for an Add. */
+  waitingFrom(f) {
+    const items = Array.isArray(Inbox.items) ? Inbox.items : [];
+    const em = String(f.email || '').toLowerCase();
+    return items.filter(it => it && it.from && !it.shared && String(it.from.email || '').toLowerCase() === em);
+  },
+
+  /* The last few things that happened on the tasks you share with them, by
+     either of you, newest first. Notes edits are left out — "changed the
+     notes" says nothing a reader can act on. */
+  activityFor(f) {
+    const out = [];
+    Friends.togetherFor(f).forEach(t => {
+      (Array.isArray(t.log) ? t.log : []).forEach(e => {
+        if (!e || e.k === 'notes') return;
+        out.push({ at: e.at, byId: e.byId, byName: e.byName, k: e.k, v: e.v, title: t.title, token: t.token });
+      });
+    });
+    return out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, Friends.ACTIVITY_KEEP);
+  },
+
+  /* The number that goes on the chip: open shared tasks plus hand-overs that
+     are waiting for you, across every partner. */
+  counts() {
+    let together = 0, waiting = 0;
+    Friends.list.forEach(f => {
+      together += Friends.togetherFor(f).filter(t => t.status !== 'done').length;
+      waiting += Friends.waitingFrom(f).length;
+    });
+    return { together, waiting };
+  },
+
+  ago(iso) {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    if (!Number.isFinite(t)) return '';
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 90) return 'just now';
+    const m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    const h = Math.round(m / 60);
+    if (h < 36) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    const d = Math.round(h / 24);
+    if (d < 14) return d + (d === 1 ? ' day ago' : ' days ago');
+    return new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  },
+
+  STATUS_LABEL: { todo: 'To do', in_progress: 'In progress', blocked: 'Blocked', done: 'Done' },
+
+  /* One line per log entry, in the voice of the card: who did what. */
+  activityLine(e, meId) {
+    const who = e.byId === meId ? 'You' : (e.byName || 'They');
+    const t = '“' + String(e.title || '').slice(0, 60) + '”';
+    switch (e.k) {
+      case 'create':  return who + ' started ' + t;
+      case 'join':    return who + ' joined ' + t;
+      case 'invite':  return who + ' invited ' + (e.v || 'someone') + ' to ' + t;
+      case 'leave':   return who + ' left ' + t;
+      case 'status':  return who + ' moved ' + t + ' to ' + (Friends.STATUS_LABEL[e.v] || e.v);
+      case 'title':   return who + ' renamed a task to ' + t;
+      case 'date':    return who + (e.v ? ' set ' + t + ' for ' + e.v : ' cleared the date on ' + t);
+      case 'comment': return who + ' on ' + t + ': ' + (e.v || '');
+      default:        return who + ' changed ' + t;
+    }
+  },
+
   /* ---------------------------- the card ---------------------------- */
 
   card() {
     const n = Friends.list.length;
-    const chip = Friends.error ? 'offline' : (n ? n + (n === 1 ? ' friend' : ' friends') : 'nobody yet');
+    const k = n ? Friends.counts() : { together: 0, waiting: 0 };
+    const chip = Friends.error ? 'offline'
+      : !n ? 'nobody yet'
+      : n + (n === 1 ? ' partner' : ' partners') +
+        (k.together ? ' · ' + k.together + ' together' : '') +
+        (k.waiting ? ' · ' + k.waiting + ' waiting' : '');
 
     return Fold.card('friends',
-      Fold.head('friends', 'Friends', chip, !n) +
+      Fold.head('friends', 'Partners', chip, !n) +
       Fold.body(
         (Friends.error ? '<p class="fr-err">' + esc(Friends.error) + '</p>' : '') +
         Friends.peopleHtml() +
@@ -16602,20 +16749,98 @@ const Friends = {
 
   peopleHtml() {
     if (!Friends.list.length) {
-      return '<p class="flow-sub fr-none">Nobody is paired with you yet. Make a code below and send it ' +
-             'to one person — it works once, then it is spent.</p>';
+      return '<p class="flow-sub fr-none">The people you work with. Pair once with a code, then hand tasks ' +
+             'over, work on shared ones and see each other’s week — all from here.</p>';
     }
     return '<div class="fr-people">' + Friends.list.map(f => Friends.personHtml(f)).join('') + '</div>';
   },
 
   personHtml(f) {
     const c = f.card;
-    const when = (c && c.at)
-      ? new Date(c.at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+    const id = esc(f.id);
+    const meId = (Auth.user) ? Auth.user.id : null;
+    const note = String(Friends.notes[f.id] || '');
 
-    let body;
+    /* Today's line first: it is the one thing on the card that was written
+       to be read by you, today. */
+    const ci = c && c.checkin && c.checkin.text
+      ? '<div class="fr-checkin"><span class="fr-ci-lbl">Today</span>' + esc(c.checkin.text) + '</div>' : '';
+
+    /* ---- do something with them ---- */
+    const doRow =
+      '<div class="fr-do">' +
+        '<div class="fr-doline">' +
+          '<input class="flow-in" type="text" maxlength="300" data-fr-handin="' + id + '" ' +
+            'placeholder="Hand a task to ' + esc(f.name) + '…" autocomplete="off">' +
+          '<button type="button" class="flow-btn sm" data-fr-hand="' + id + '">Hand over</button>' +
+        '</div>' +
+        '<div class="fr-doline">' +
+          '<input class="flow-in" type="text" maxlength="300" data-fr-togin="' + id + '" ' +
+            'placeholder="Something to work on together…" autocomplete="off">' +
+          '<button type="button" class="flow-btn sm primary" data-fr-together="' + id + '">Share</button>' +
+        '</div>' +
+      '</div>';
+
+    /* ---- the live tasks you are both on ---- */
+    const together = Friends.togetherFor(f);
+    const open = together.filter(t => t.status !== 'done');
+    const done = together.length - open.length;
+    const togetherHtml = together.length
+      ? '<div class="fr-block fr-together"><h5>Together · ' + open.length + ' open' + (done ? ', ' + done + ' done' : '') + '</h5>' +
+          open.concat(together.filter(t => t.status === 'done').slice(0, 2)).map(t => {
+            const last = Array.isArray(t.log) && t.log.length ? t.log[t.log.length - 1] : null;
+            const nC = (t.comments || []).length;
+            const opts = Object.keys(Friends.STATUS_LABEL).map(v =>
+              '<option value="' + v + '"' + (t.status === v ? ' selected' : '') + '>' + esc(Friends.STATUS_LABEL[v]) + '</option>').join('');
+            return '<div class="fr-task st-' + esc(t.status || 'todo') + '" data-fr-task="' + esc(t.token) + '">' +
+              '<div class="fr-taskrow">' +
+                '<span class="fr-dot" aria-hidden="true"></span>' +
+                '<span class="fr-tt">' + esc(t.title) + '</span>' +
+                '<select class="fr-st-sel" data-fr-status="' + esc(t.token) + '" aria-label="Status of ' + esc(t.title) + '">' + opts + '</select>' +
+              '</div>' +
+              '<div class="fr-taskmeta">' +
+                esc((last ? ((last.byId === meId ? 'you' : (last.byName || 'they')) + ', ') : '') + Friends.ago(t.updatedAt)) +
+                (nC ? ' · ' + nC + (nC === 1 ? ' comment' : ' comments') : '') +
+                (t.date ? ' · ' + esc(t.date) + (t.time ? ' ' + esc(t.time) : '') : '') +
+              '</div>' +
+              '<div class="fr-taskcmt">' +
+                '<input class="flow-in" type="text" maxlength="2000" data-fr-cin="' + esc(t.token) + '" placeholder="Comment…" autocomplete="off">' +
+                '<button type="button" class="flow-btn sm ghost" data-fr-comment="' + esc(t.token) + '">Send</button>' +
+              '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>'
+      : '';
+
+    /* ---- what they handed you, still waiting ---- */
+    const waiting = Friends.waitingFrom(f);
+    const waitingHtml = waiting.length
+      ? '<div class="fr-block fr-waiting"><h5>From ' + esc(f.name) + ' · waiting for you</h5>' +
+          waiting.map(it =>
+            '<div class="fr-wait" data-fr-wait="' + esc(it.id) + '">' +
+              '<span class="fr-tt">' + esc(it.task.txt) + '</span>' +
+              (it.task.due ? '<span class="fr-taskmeta">due ' + esc(it.task.due) + (it.task.time ? ' ' + esc(it.task.time) : '') + '</span>' : '') +
+              (it.task.note ? '<span class="fr-taskmeta">' + esc(it.task.note) + '</span>' : '') +
+              '<span class="fr-waitbtns">' +
+                '<button type="button" class="flow-btn sm primary" data-fr-inbox="add" data-id="' + esc(it.id) + '">Add as a Big Rock</button>' +
+                '<button type="button" class="flow-btn sm ghost" data-fr-inbox="no" data-id="' + esc(it.id) + '">Dismiss</button>' +
+              '</span>' +
+            '</div>').join('') +
+        '</div>'
+      : '';
+
+    /* ---- what you handed them ---- */
+    const handed = Array.isArray(Friends.handed[f.id]) ? Friends.handed[f.id] : [];
+    const handedHtml = handed.length
+      ? '<div class="fr-block fr-handed"><h5>You handed over</h5>' +
+          handed.slice(0, 3).map(h => '<div class="fr-line"><span class="fr-tt">' + esc(h.txt) + '</span><span class="fr-taskmeta">' + esc(Friends.ago(h.at)) + '</span></div>').join('') +
+        '</div>'
+      : '';
+
+    /* ---- their published week ---- */
+    let week;
     if (!c) {
-      body = '<p class="fr-quiet">Nothing shared yet.</p>';
+      week = '<p class="fr-quiet">Nothing shared yet — their week appears here once they open their North Star.</p>';
     } else {
       const onTarget = (c.metrics || []).filter(m => m.target > 0 && m.count >= m.target).length;
       const withTarget = (c.metrics || []).filter(m => m.target > 0).length;
@@ -16648,38 +16873,67 @@ const Friends = {
       const plan = c.plan && c.plan.text
         ? '<div class="fr-block"><h5>This week</h5><p class="fr-plan">' + esc(c.plan.text) + '</p></div>' : '';
 
-      const ci = c.checkin && c.checkin.text
-        ? '<div class="fr-checkin"><span class="fr-ci-lbl">Today</span>' + esc(c.checkin.text) + '</div>' : '';
-
-      body =
-        ci +
+      week =
         (strips
           ? '<div class="fr-block"><h5>Scoreboard' +
             (withTarget ? ' · ' + onTarget + ' of ' + withTarget + ' on target' : '') +
             '</h5>' + strips + '</div>'
           : '') +
         rocks + plan;
+      if (!week) week = '<p class="fr-quiet">Nothing on their card this week.</p>';
     }
+    const when = (c && c.at) ? Friends.ago(c.at) : '';
+    const weekHtml =
+      '<details class="fr-week" data-fr-week="' + id + '"' + (Fold.isOpen('fr-week-' + f.id) ? ' open' : '') + '>' +
+        '<summary>Their week' + (when ? '<span class="fr-when">updated ' + esc(when) + '</span>' : '') + '</summary>' +
+        '<div class="fr-weekbody">' + week + '</div>' +
+      '</details>';
 
-    return '<div class="fr-person" data-fr-person="' + esc(f.id) + '">' +
+    /* ---- what happened lately ---- */
+    const act = Friends.activityFor(f);
+    const actHtml = act.length
+      ? '<div class="fr-block fr-activity"><h5>Lately</h5>' +
+          act.map(e => '<div class="fr-line"><span class="fr-tt">' + esc(Friends.activityLine(e, meId)) + '</span><span class="fr-taskmeta">' + esc(Friends.ago(e.at)) + '</span></div>').join('') +
+        '</div>'
+      : '';
+
+    return '<div class="fr-person" data-fr-person="' + id + '">' +
       '<div class="fr-head">' +
         '<span class="fr-av">' + esc((f.name || '?').trim()[0].toUpperCase()) + '</span>' +
-        '<span class="fr-name">' + esc(f.name) + '</span>' +
-        (when ? '<span class="fr-when">' + esc(when) + '</span>' : '') +
-        '<button type="button" class="fr-x" data-fr-unpair="' + esc(f.id) + '" ' +
+        '<span class="fr-who"><span class="fr-name">' + esc(f.name) + '</span>' +
+          /* The label is text until it is tapped: on a phone every input is
+             16px by rule (so iOS does not zoom), and a 16px field under the
+             name reads as a second name. */
+          (Friends.noteEditing === f.id
+            ? '<input class="fr-note" type="text" maxlength="60" data-fr-note="' + id + '" value="' + esc(note) + '" ' +
+              'placeholder="What you work on together" aria-label="What you work on with ' + esc(f.name) + '">'
+            : '<button type="button" class="fr-notebtn' + (note ? '' : ' empty') + '" data-fr-noteedit="' + id + '" ' +
+              'aria-label="What you work on with ' + esc(f.name) + '">' + esc(note || 'What you work on together') + '</button>') +
+        '</span>' +
+        '<button type="button" class="fr-x" data-fr-unpair="' + id + '" ' +
           'aria-label="Unpair from ' + esc(f.name) + '">Unpair</button>' +
-      '</div>' + body +
+      '</div>' +
+      ci + doRow + waitingHtml + togetherHtml + handedHtml + weekHtml + actHtml +
     '</div>';
   },
 
   checkinHtml() {
     if (!Friends.list.length || !Friends.share.checkin) return '';
     return '<div class="fr-cibox">' +
-      '<label for="fr-ci">Today, in one line</label>' +
+      '<label for="fr-ci">Today, in one line — your partners see this</label>' +
       '<input class="flow-in" id="fr-ci" type="text" maxlength="200" ' +
         'placeholder="Two hours in the studio, gym done." value="' + esc(Friends.todayCheckin()) + '">' +
       '<span class="fr-cisaved" id="fr-cisaved"></span>' +
     '</div>';
+  },
+
+  /* The message you send somebody who is not on The Flow yet. The invite
+     code for signing up is yours to add — it is not something the app hands
+     out, so it is not pasted in here. */
+  inviteText(code) {
+    return 'Let’s work together on The Flow. Sign up at ' + location.origin +
+      ' (I’ll send you the invite code separately), then open North Star → Partners → “I have a code” and enter ' +
+      code + '. It works once and expires in two weeks.';
   },
 
   pairHtml() {
@@ -16687,6 +16941,7 @@ const Friends = {
       '<div class="fr-code">' +
         '<code>' + esc(c.code) + '</code>' +
         '<button type="button" class="flow-btn sm ghost" data-fr-copy="' + esc(c.code) + '">Copy</button>' +
+        '<button type="button" class="flow-btn sm ghost" data-fr-msg="' + esc(c.code) + '">Message</button>' +
         '<button type="button" class="flow-btn sm ghost danger" data-fr-revoke="' + esc(c.code) + '">Cancel</button>' +
       '</div>').join('');
 
@@ -16699,15 +16954,27 @@ const Friends = {
         '</div>'
       : '';
 
+    const invite = Friends.invite
+      ? '<div class="fr-invite">' +
+          '<textarea class="flow-in" id="fr-invite-text" rows="4" readonly>' + esc(Friends.inviteText(Friends.invite.code)) + '</textarea>' +
+          '<div class="flow-row">' +
+            '<button type="button" class="flow-btn sm primary" id="fr-invite-copy">Copy message</button>' +
+            '<button type="button" class="flow-btn sm ghost" id="fr-invite-close">Close</button>' +
+          '</div>' +
+        '</div>'
+      : '';
+
     return '<div class="fr-pair">' +
-      '<h5>Pair with someone</h5>' +
+      '<h5>Add a partner</h5>' +
       (codes
         ? '<p class="flow-sub">Send one of these to one person. Each works once and expires in two weeks.</p>' + codes
-        : '<p class="flow-sub">Make a code and send it to one person, or type in the code they sent you.</p>') +
+        : '<p class="flow-sub">Make a code and send it to one person, or type in the code they sent you. ' +
+          'Somebody not on The Flow yet gets a message with the code and where to sign up.</p>') +
       '<div class="flow-row">' +
-        '<button type="button" class="flow-btn sm" id="fr-newcode"' + (Friends.busy ? ' disabled' : '') + '>Make a code</button>' +
+        '<button type="button" class="flow-btn sm" id="fr-newcode">Make a code</button>' +
+        '<button type="button" class="flow-btn sm ghost" id="fr-invite">Invite someone new</button>' +
         (Friends.entering ? '' : '<button type="button" class="flow-btn sm ghost" id="fr-enter-open">I have a code</button>') +
-      '</div>' + enter +
+      '</div>' + enter + invite +
     '</div>';
   },
 
@@ -16718,7 +16985,7 @@ const Friends = {
       (Friends.share[k] ? ' checked' : '') + '>' +
       '<span><b>' + esc(label) + '</b><em>' + esc(note) + '</em></span></label>';
     return '<div class="fr-share">' +
-      '<h5>What they can see</h5>' +
+      '<h5>What your partners can see</h5>' +
       sw('score',   'Scoreboard',   'Your counts and streaks — the numbers, not the ledger.') +
       sw('plan',    'Week',         "This week's plan and how many Big Rocks are done.") +
       sw('checkin', 'Check-in',     'The one line you write above, for today only.') +
@@ -16731,10 +16998,35 @@ const Friends = {
   paintInto() {
     const host = document.querySelector('[data-foldcard="friends"]');
     if (!host) return;
+    /* Keep what is being typed: a refresh that lands mid-sentence must not
+       eat the sentence. Inputs are keyed by their data attribute. */
+    const typed = {};
+    const active = document.activeElement;
+    let focusKey = '';
+    host.querySelectorAll('input[type="text"], textarea').forEach(el => {
+      const k = el.getAttribute('data-fr-handin') ? 'h:' + el.getAttribute('data-fr-handin')
+              : el.getAttribute('data-fr-togin') ? 't:' + el.getAttribute('data-fr-togin')
+              : el.getAttribute('data-fr-cin') ? 'c:' + el.getAttribute('data-fr-cin')
+              : el.getAttribute('data-fr-note') ? 'n:' + el.getAttribute('data-fr-note')
+              : el.id ? '#' + el.id : '';
+      if (k && el.value) typed[k] = el.value;
+      if (k && el === active) focusKey = k;
+    });
     const open = host.classList.contains('is-open');
     host.outerHTML = Friends.card();
     const fresh = document.querySelector('[data-foldcard="friends"]');
     if (fresh && open) fresh.classList.add('is-open');
+    if (fresh) {
+      fresh.querySelectorAll('input[type="text"], textarea').forEach(el => {
+        const k = el.getAttribute('data-fr-handin') ? 'h:' + el.getAttribute('data-fr-handin')
+                : el.getAttribute('data-fr-togin') ? 't:' + el.getAttribute('data-fr-togin')
+                : el.getAttribute('data-fr-cin') ? 'c:' + el.getAttribute('data-fr-cin')
+                : el.getAttribute('data-fr-note') ? 'n:' + el.getAttribute('data-fr-note')
+                : el.id ? '#' + el.id : '';
+        if (k && typed[k] && !el.readOnly) el.value = typed[k];
+        if (k && k === focusKey) { try { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} }
+      });
+    }
     const sec = NorthStar.sec || document;
     Friends.wire(sec);
     Fold.wire(sec);
@@ -16748,6 +17040,34 @@ const Friends = {
     Friends.busy = false;
   },
 
+  partner(id) { return Friends.list.find(f => f.id === id) || null; },
+
+  /* Hand one task to a partner: it lands in their inbox, and a line of it
+     stays on your side so the card can say what you sent. */
+  async handOver(f, txt) {
+    const task = { txt: String(txt || '').trim().slice(0, 300), origin: 'partner' };
+    if (!task.txt) { toast('Type the task first.', 'warn'); return; }
+    await Inbox.send(f.email, task);
+    const list = Array.isArray(Friends.handed[f.id]) ? Friends.handed[f.id] : [];
+    list.unshift({ at: new Date().toISOString(), txt: task.txt });
+    Friends.handed[f.id] = list.slice(0, Friends.HANDED_KEEP);
+    Friends.saveHanded();
+    toast('Handed to ' + f.name + ' — it is in their inbox.');
+  },
+
+  /* One live task with the partner on it from the first second. */
+  async together(f, title) {
+    const t = String(title || '').trim().slice(0, 500);
+    if (!t) { toast('Type the task first.', 'warn'); return; }
+    const j = await Shared.call('create', { ws: 'abko', title: t });
+    let task = j.task;
+    try { const k = await Shared.call('invite', { token: task.token, to: f.email }); task = k.task || task; }
+    catch (e) { toast(e.message || 'Shared, but could not add ' + f.name + '.', 'warn'); }
+    Shared.upsert(task);
+    try { SharedUI.renderAll(); } catch (e) {}
+    toast('Shared with ' + f.name + ' ✓');
+  },
+
   wire(sec) {
     const root = sec || document;
 
@@ -16755,6 +17075,7 @@ const Friends = {
       const el = root.querySelector(sel);
       if (el && !el.__frWired) { el.__frWired = 1; el.addEventListener(ev, fn); }
     };
+    const each = (sel, fn) => root.querySelectorAll(sel).forEach(el => { if (!el.__frWired) { el.__frWired = 1; fn(el); } });
 
     on('#fr-newcode', 'click', () => Friends.act(async () => {
       const r = await Friends.api('code', {});
@@ -16763,6 +17084,21 @@ const Friends = {
       Friends.copy(r.code);
       toast('Code ' + r.code + ' copied — send it to one person.');
     }));
+
+    on('#fr-invite', 'click', () => Friends.act(async () => {
+      const r = await Friends.api('code', {});
+      Friends.codes = (await Friends.api('codes')).codes || [];
+      Friends.invite = { code: r.code };
+      Friends.paintInto();
+      const ta = document.getElementById('fr-invite-text');
+      if (ta) { try { ta.focus(); ta.select(); } catch (e) {} }
+    }));
+    on('#fr-invite-copy', 'click', () => {
+      if (!Friends.invite) return;
+      Friends.copy(Friends.inviteText(Friends.invite.code));
+      toast('Message copied — paste it to them.');
+    });
+    on('#fr-invite-close', 'click', () => { Friends.invite = null; Friends.paintInto(); });
 
     on('#fr-enter-open', 'click', () => { Friends.entering = true; Friends.paintInto();
       const i = document.getElementById('fr-code-in'); if (i) i.focus(); });
@@ -16774,7 +17110,7 @@ const Friends = {
       if (!code) { toast('Type the code first.', 'warn'); return; }
       const r = await Friends.api('redeem', { code });
       Friends.entering = false;
-      toast('Paired with ' + (r.friend && r.friend.name ? r.friend.name : 'your friend') + ' ✓');
+      toast('Paired with ' + (r.friend && r.friend.name ? r.friend.name : 'your partner') + ' ✓');
       /* Publish straight away, or their side sits empty until you next open
          this tab — the first thing they do is look. */
       await Friends.refresh();
@@ -16783,45 +17119,117 @@ const Friends = {
     on('#fr-redeem', 'click', redeem);
     on('#fr-code-in', 'keydown', (e) => { if (e.key === 'Enter') redeem(); });
 
-    root.querySelectorAll('[data-fr-copy]').forEach(b => {
-      if (b.__frWired) return; b.__frWired = 1;
-      b.addEventListener('click', () => { Friends.copy(b.getAttribute('data-fr-copy')); toast('Copied.'); });
-    });
+    each('[data-fr-copy]', b => b.addEventListener('click', () => { Friends.copy(b.getAttribute('data-fr-copy')); toast('Copied.'); }));
+    each('[data-fr-msg]', b => b.addEventListener('click', () => {
+      Friends.invite = { code: b.getAttribute('data-fr-msg') };
+      Friends.paintInto();
+    }));
 
-    root.querySelectorAll('[data-fr-revoke]').forEach(b => {
-      if (b.__frWired) return; b.__frWired = 1;
-      b.addEventListener('click', () => Friends.act(async () => {
-        const r = await Friends.api('code/revoke', { code: b.getAttribute('data-fr-revoke') });
-        Friends.codes = r.codes || [];
-        Friends.paintInto();
-        toast('Code cancelled.');
-      }));
-    });
+    each('[data-fr-revoke]', b => b.addEventListener('click', () => Friends.act(async () => {
+      const r = await Friends.api('code/revoke', { code: b.getAttribute('data-fr-revoke') });
+      Friends.codes = r.codes || [];
+      if (Friends.invite && Friends.invite.code === b.getAttribute('data-fr-revoke')) Friends.invite = null;
+      Friends.paintInto();
+      toast('Code cancelled.');
+    })));
 
-    root.querySelectorAll('[data-fr-unpair]').forEach(b => {
-      if (b.__frWired) return; b.__frWired = 1;
-      b.addEventListener('click', () => {
-        const id = b.getAttribute('data-fr-unpair');
-        const who = (Friends.list.find(f => f.id === id) || {}).name || 'them';
-        /* No dialog: this is reversible with a new code, and a confirm on a
-           phone is one more thing to dismiss. The toast says what happened. */
-        Friends.act(async () => {
-          await Friends.api('unpair', { id });
-          await Friends.refresh();
-          toast('No longer paired with ' + who + '.');
-        });
+    each('[data-fr-unpair]', b => b.addEventListener('click', () => {
+      const id = b.getAttribute('data-fr-unpair');
+      const who = (Friends.partner(id) || {}).name || 'them';
+      /* No dialog: this is reversible with a new code, and a confirm on a
+         phone is one more thing to dismiss. The toast says what happened. */
+      Friends.act(async () => {
+        await Friends.api('unpair', { id });
+        await Friends.refresh();
+        toast('No longer paired with ' + who + '.');
+      });
+    }));
+
+    /* ---- hand over / work together ---- */
+    const handFor = (id) => Friends.act(async () => {
+      const f = Friends.partner(id); if (!f) return;
+      const el = root.querySelector('[data-fr-handin="' + id + '"]');
+      await Friends.handOver(f, el ? el.value : '');
+      if (el) el.value = '';
+      Friends.paintInto();
+    });
+    each('[data-fr-hand]', b => b.addEventListener('click', () => handFor(b.getAttribute('data-fr-hand'))));
+    each('[data-fr-handin]', i => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handFor(i.getAttribute('data-fr-handin')); } }));
+
+    const togFor = (id) => Friends.act(async () => {
+      const f = Friends.partner(id); if (!f) return;
+      const el = root.querySelector('[data-fr-togin="' + id + '"]');
+      await Friends.together(f, el ? el.value : '');
+      if (el) el.value = '';
+      Friends.paintInto();
+    });
+    each('[data-fr-together]', b => b.addEventListener('click', () => togFor(b.getAttribute('data-fr-together'))));
+    each('[data-fr-togin]', i => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); togFor(i.getAttribute('data-fr-togin')); } }));
+
+    /* ---- the shared tasks on the card ---- */
+    each('[data-fr-status]', s => s.addEventListener('change', () => Friends.act(async () => {
+      const token = s.getAttribute('data-fr-status');
+      const j = await Shared.call('update', { token, patch: { status: s.value } });
+      Shared.upsert(j.task);
+      try { SharedUI.renderAll(); } catch (e) {}
+      Friends.paintInto();
+    })));
+    const commentFor = (token) => Friends.act(async () => {
+      const el = root.querySelector('[data-fr-cin="' + token + '"]');
+      const text = el ? el.value.trim() : '';
+      if (!text) return;
+      const j = await Shared.call('comment', { token, text });
+      Shared.upsert(j.task);
+      if (el) el.value = '';
+      try { SharedUI.renderAll(); } catch (e) {}
+      Friends.paintInto();
+    });
+    each('[data-fr-comment]', b => b.addEventListener('click', () => commentFor(b.getAttribute('data-fr-comment'))));
+    each('[data-fr-cin]', i => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commentFor(i.getAttribute('data-fr-cin')); } }));
+
+    /* ---- what they handed you ---- */
+    each('[data-fr-inbox]', b => b.addEventListener('click', () => Friends.act(async () => {
+      const id = b.getAttribute('data-id');
+      const accept = b.getAttribute('data-fr-inbox') === 'add';
+      const item = await Inbox.resolve(id, accept);
+      if (accept && item) await Inbox.file(item);
+      await Inbox.load();
+      try { Inbox.paintToday(); } catch (e) {}
+      Friends.paintInto();
+      toast(accept ? 'Added as a Big Rock.' : 'Dismissed.');
+    })));
+
+    /* ---- the label under their name ---- */
+    each('[data-fr-noteedit]', b => b.addEventListener('click', () => {
+      Friends.noteEditing = b.getAttribute('data-fr-noteedit');
+      Friends.paintInto();
+      const i = root.querySelector('[data-fr-note="' + Friends.noteEditing + '"]');
+      if (i) { try { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } catch (e) {} }
+    }));
+    each('[data-fr-note]', i => {
+      const commit = () => {
+        const id = i.getAttribute('data-fr-note');
+        const v = i.value.trim().slice(0, 60);
+        if (v) Friends.notes[id] = v; else delete Friends.notes[id];
+        Friends.saveNotes();
+        if (Friends.noteEditing === id) { Friends.noteEditing = ''; Friends.paintInto(); }
+      };
+      i.addEventListener('blur', commit);
+      i.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { i.value = String(Friends.notes[i.getAttribute('data-fr-note')] || ''); commit(); }
       });
     });
 
-    root.querySelectorAll('[data-fr-share]').forEach(cb => {
-      if (cb.__frWired) return; cb.__frWired = 1;
-      cb.addEventListener('change', () => {
-        Friends.share[cb.getAttribute('data-fr-share')] = cb.checked;
-        Friends.saveShare();
-        Friends.publish(true);
-        Friends.paintInto();
-      });
-    });
+    /* ---- their week, open or shut, remembered per partner ---- */
+    each('[data-fr-week]', d => d.addEventListener('toggle', () => Fold.setOpen('fr-week-' + d.getAttribute('data-fr-week'), d.open)));
+
+    each('[data-fr-share]', cb => cb.addEventListener('change', () => {
+      Friends.share[cb.getAttribute('data-fr-share')] = cb.checked;
+      Friends.saveShare();
+      Friends.publish(true);
+      Friends.paintInto();
+    }));
 
     const ci = root.querySelector('#fr-ci');
     if (ci && !ci.__frWired) {
