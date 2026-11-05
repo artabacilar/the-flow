@@ -2761,6 +2761,7 @@ html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-row.done .b
   html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="habits"]::before{background:var(--lk-aqua)}
   html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="diet"]::before{background:#FF9F6B}
   html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="sleep"]::before{background:#8FA8FF}
+  html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="doc"]::before{background:#F2A7C3}
   /* The bar stays above the menu, so the turned + closes it. */
   html[data-flow-theme][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar{z-index:970}
 }
