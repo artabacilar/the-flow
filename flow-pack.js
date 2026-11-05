@@ -16710,11 +16710,13 @@ const Friends = {
   /* One line per log entry, in the voice of the card: who did what. */
   activityLine(e, meId) {
     const who = e.byId === meId ? 'You' : (e.byName || 'They');
+    const meName = (Auth.user && Auth.user.name) || '';
+    const whom = (meName && e.v === meName) ? 'you' : (e.v || 'someone');
     const t = '“' + String(e.title || '').slice(0, 60) + '”';
     switch (e.k) {
       case 'create':  return who + ' started ' + t;
       case 'join':    return who + ' joined ' + t;
-      case 'invite':  return who + ' invited ' + (e.v || 'someone') + ' to ' + t;
+      case 'invite':  return who + ' invited ' + whom + ' to ' + t;
       case 'leave':   return who + ' left ' + t;
       case 'status':  return who + ' moved ' + t + ' to ' + (Friends.STATUS_LABEL[e.v] || e.v);
       case 'title':   return who + ' renamed a task to ' + t;
