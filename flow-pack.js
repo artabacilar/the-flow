@@ -8051,6 +8051,7 @@ const Profile = {
 
 const NAV_ICONS = {
   mic:      '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  doc:      '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 17h5"/>',
   link:     '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/>',
   dots:     '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   bell:     '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
@@ -10359,9 +10360,10 @@ const Plus = {
     brief: ['Briefs before events', 'What you need to know before a meeting, from the mail and notes behind it.'],
     replan: ['My day changed — applied', 'The preview is free. Moving the Big Rocks that no longer fit, in one tap with undo, is Plus.'],
     voice: ['Say it, as much as you like', 'Fifteen spoken requests a week are free. Talking to The Flow without counting is Plus.'],
-    meals: ['Meals from a photo', 'Three plates a week are free. Every meal, read into calories and protein the moment you photograph it, is Plus.']
+    meals: ['Meals from a photo', 'Three plates a week are free. Every meal, read into calories and protein the moment you photograph it, is Plus.'],
+    document: ['A to-do list from a document', 'Three documents a week are free. Every PDF, photo of a page or brief turned into Priorities is Plus.']
   },
-  HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you', 'Meals from a photo: calories and protein, logged'],
+  HAS: ['Patterns every morning, with Direction', 'My day changed: a replan you approve', 'Coming up: prep lists and suggested reminders', 'Ask, answered from your own record', 'Statements read into Finances', 'Briefs before meetings and events', 'The week planned with you', 'Meals from a photo: calories and protein, logged', 'A to-do list from any PDF, photo or text'],
   async load() {
     try { if (typeof Auth === 'undefined' || !Auth.user || Auth.user.guest) return null; } catch (e) { return null; }
     try {
@@ -13547,6 +13549,8 @@ const Say = {
           '<div class="sy-meter" data-i18n="off" hidden><span class="sy-mdev"></span><i><b></b></i></div>' +
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
+          '<div class="sy-ex sy-docex">Or add a PDF, a photo of a page or a text file, and it becomes a to-do list you can edit before it goes in.</div>' +
+          '<input type="file" id="sy-file" accept="application/pdf,image/*,text/plain,text/markdown,.pdf,.txt,.md" hidden>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
@@ -13562,17 +13566,24 @@ const Say = {
             '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
             '<div class="sy-ex sy-premium"></div>' +
           '</details>' +
-          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
       '</div>';
     document.body.appendChild(wrap);
+    /* On a desktop a document also arrives by dropping it on the sheet, or
+       pasting a copied file — the same as a meal photo. */
+    ['dragenter', 'dragover'].forEach((ev) => wrap.addEventListener(ev, (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); wrap.classList.add('drop'); } }));
+    ['dragleave', 'drop'].forEach((ev) => wrap.addEventListener(ev, () => wrap.classList.remove('drop')));
+    wrap.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { e.preventDefault(); Say.document(f); } });
+    wrap.addEventListener('paste', (e) => { const it = e.clipboardData && [...e.clipboardData.items].find((x) => x.kind === 'file'); if (it) { const f = it.getAsFile(); if (f) { e.preventDefault(); Say.document(f); } } });
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-say]'); if (!b) return;
       const a = b.getAttribute('data-say');
       if (a === 'close') return Say.close();
       if (a === 'listen') return FlowVoice && FlowVoice.listening ? FlowVoice.stop() : Say.listen();
       if (a === 'send') return Say.send();
+      if (a === 'doc') return Say.pickFile();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
       if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
@@ -13581,6 +13592,7 @@ const Say = {
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
     wrap.addEventListener('change', (e) => {
+      if (e.target.id === 'sy-file') { const f = e.target.files && e.target.files[0]; if (f) Say.document(f); return; }
       if (e.target.matches('[data-say-ch]')) {
         try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (x) {}
         const uid = e.target.getAttribute('data-uid') || '';
@@ -13729,6 +13741,7 @@ const Say = {
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
+    if (opts && opts.file) { Say.pickFile(); return; }
     /* He answers the door: "Good evening, sir. What can I do for you?" out
        loud, then listens — only once he has finished, so the microphone does
        not hear him. Typing, or tapping the microphone meanwhile, wins. With
@@ -13834,6 +13847,70 @@ const Say = {
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
     finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); }
   },
+  /* ---- from a document: a PDF, a photo of a page, or a text ----
+     The file goes to the server as it is; the model reads it and answers in
+     the shape Say it answers in, so the same cards and the same "Do it" take
+     it from there. Nothing lands in the planner unseen. */
+  DOC_TYPES: /^(application\/pdf|image\/(jpeg|png|webp|gif)|text\/(plain|markdown))$/,
+  DOC_MAX: 6 * 1024 * 1024,
+  pickFile() {
+    const i = Say.el && Say.el.querySelector('#sy-file'); if (!i || Say.busy) return;
+    try { i.click(); } catch (e) {}
+  },
+  docType(file) {
+    const t = String(file.type || '').toLowerCase();
+    if (t) return t;
+    if (/\.pdf$/i.test(file.name)) return 'application/pdf';
+    if (/\.(txt|md|markdown)$/i.test(file.name)) return 'text/plain';
+    return '';
+  },
+  async document(file) {
+    if (!file || !Say.el || Say.busy) return;
+    const type = Say.docType(file);
+    if (!Say.DOC_TYPES.test(type)) { Say.state('A PDF, a photo of the page, or a text file.'); return; }
+    if (file.size > Say.DOC_MAX) { Say.state('That file is over 6 MB. Export a smaller PDF, or just the pages that matter.'); return; }
+    Say.waiting = false;
+    try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
+    Speech.stop();
+    const data = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result || '')); fr.onerror = () => ok(''); fr.readAsDataURL(file); });
+    if (!data) { Say.state('That file could not be read.'); return; }
+    const name = String(file.name || 'document').slice(0, 120);
+    Say.busy = true; Say.said = name; Say.confirming = false; Say.spoken = false; Say.typed = false;
+    Say.state(Say.lang() === 'tr' ? name + ' okunuyor…' : 'Reading ' + name + '…'); Say.mode('thinking');
+    const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
+    try {
+      const text = String(Say.el.querySelector('#sy-text').value || '').trim();
+      const r = await fetch('/api/flow/document', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, name, type, text, lang: Say.lang(), ctx: Say.context(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 402 && j.plus) { Say.close(); Plus.open('document'); return; }
+      if (!r.ok || !j.job) { Say.state(j.error || 'That did not work. Try again.'); return; }
+      const out = await Say.pollDocument(j.job, name);
+      Say.history.push({ role: 'user', text: name }, { role: 'assistant', text: out.say });
+      Say.plan = { say: out.say, actions: out.actions };
+      Say.paintPlan();
+      Say.speak(out.say);
+    } catch (e) { Say.state((e && e.message) || 'That did not work. Try again.'); }
+    finally {
+      Say.busy = false; go.disabled = false;
+      const i = Say.el.querySelector('#sy-file'); if (i) i.value = '';
+      if (Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle');
+    }
+  },
+  /* Every two seconds until it is read; a PDF of twenty pages takes a minute. */
+  async pollDocument(job, name) {
+    const until = Date.now() + 4 * 60 * 1000;
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const r = await fetch('/api/flow/document?job=' + encodeURIComponent(job), { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'That reading has expired. Add the document again.');
+      if (j.status === 'working') { Say.state((Say.lang() === 'tr' ? name + ' okunuyor…' : 'Reading ' + name + '…') + (j.seconds > 8 ? ' ' + j.seconds + ' s' : '')); continue; }
+      if (j.status === 'error') throw new Error(j.error || 'The document could not be read.');
+      return { say: String(j.say || ''), actions: Array.isArray(j.actions) ? j.actions : [] };
+    }
+    throw new Error('That took too long. Try just the pages that matter.');
+  },
   /* Back to the conversation: the box, empty; no plan on screen. */
   askView() {
     if (!Say.el) return;
@@ -13907,7 +13984,8 @@ const Say = {
     const drop = '<button type="button" class="sy-x" data-say="drop" data-i="' + i + '" aria-label="Leave this out">×</button>';
     const head = (k, t) => '<div class="sy-ch"><span class="sy-kind">' + esc(k) + '</span>' + (t ? '<span class="sy-t" data-i18n="off">' + esc(t) + '</span>' : '') + drop + '</div>';
     if (a.type === 'rock') return '<div class="sy-card">' + head('Priority' + (a.time ? ' · ' + a.time : ''), '') +
-      '<input class="flow-in" data-sy-edit="title" data-i="' + i + '" value="' + esc(a.title) + '">' + Say.dayChips(i, a.date) + '</div>';
+      '<input class="flow-in" data-sy-edit="title" data-i="' + i + '" value="' + esc(a.title) + '">' +
+      (a.note ? '<div class="sy-note" data-i18n="off">' + esc(a.note) + '</div>' : '') + Say.dayChips(i, a.date) + '</div>';
     if (a.type === 'habit') return '<div class="sy-card">' + head('New habit', '') + '<input class="flow-in" data-sy-edit="name" data-i="' + i + '" value="' + esc(a.name) + '"></div>';
     if (a.type === 'tick') return '<div class="sy-card">' + head('Tick habit' + (a.date !== Say.plusDays(0) ? ' · ' + Say.label(a.date) : ''), Say.habitName(a.habit)) + '</div>';
     if (a.type === 'journal') return '<div class="sy-card">' + head('Note → journal', '') + '<textarea class="flow-in" rows="3" data-sy-edit="text" data-i="' + i + '">' + esc(a.text) + '</textarea></div>';
@@ -15404,6 +15482,8 @@ const Nav = {
         return;
       }
       if (id === 'say') { Nav.closeCapture(false); Say.open(); return; }
+      /* A PDF, a photo of a page or a text, read into a to-do list to confirm. */
+      if (id === 'doc') { Nav.closeCapture(false); Say.open({ file: true }); return; }
       /* In Simple, Meal is the photo: the plate read into numbers, here. */
       if (id === 'diet' && TodayLook.on()) { Nav.closeCapture(false); Meals.open(); return; }
       /* The rest hand you to the section that owns that kind of entry. Writing
@@ -15440,7 +15520,8 @@ const Nav = {
     const grid = document.getElementById('fn-capgrid');
     if (!grid) return;
     let hid = []; try { hid = Sections.hidden(); } catch (e) {}
-    grid.innerHTML = (TodayLook.on() ? '<button type="button" data-fn-cap="say">' + Nav.svg('mic') + '<span>Say it</span></button>' : '') +
+    grid.innerHTML = (TodayLook.on() ? '<button type="button" data-fn-cap="say">' + Nav.svg('mic') + '<span>Say it</span></button>' +
+      '<button type="button" data-fn-cap="doc">' + Nav.svg('doc') + '<span>From a document</span></button>' : '') +
       Nav.CAPTURE.filter(c => c.id === 'note' || (Nav.pill(c.go || c.id) && hid.indexOf(c.go || c.id) < 0)).map(c =>
       '<button type="button" data-fn-cap="' + c.id + '">' + Nav.svg(c.icon) +
       '<span>' + esc(c.label) + '</span></button>').join('');

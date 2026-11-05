@@ -98,6 +98,7 @@ const SUITES = [
   ['meals',    'test-meals.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['habitdo',  'test-habitdo.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['say',      'test-say.js',      { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['document', 'test-document.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['assistant','test-assistant.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['todaybeta','test-todaybeta.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['firstrun', 'test-firstrun.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_PLUS_LAUNCH: '2000-01-01', FLOW_FIRSTRUN: '1', FLOW_SIMPLE_DEFAULT: '1' }],

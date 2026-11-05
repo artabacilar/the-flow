@@ -3452,6 +3452,9 @@ html[data-flow-look="new"] .lk-stale-body .flow-td-row{opacity:.85}
 #flow-say .ra-row.ra-end .flow-btn[disabled]{opacity:.7}
 #flow-say .flow-btn .fn-i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #flow-say .sy-mic.on{background:var(--lk-coral,#FF6B3D);color:var(--lk-coral-ink,#1F0A03);animation:syPulse 1.4s ease-in-out infinite}
+#flow-say .ra-row.ra-end .sy-doc{margin-right:auto}
+#flow-say.drop .fn-sheet{outline:2px dashed var(--lk-coral,#FF6B3D);outline-offset:-6px}
+#flow-say .sy-note{margin-top:6px;font-size:12.5px;line-height:1.35;color:var(--lk-mute,#8E8E94)}
 @keyframes syPulse{0%,100%{box-shadow:0 0 0 0 rgba(var(--lk-coral-a,255,107,61),.45)}50%{box-shadow:0 0 0 10px rgba(var(--lk-coral-a,255,107,61),0)}}
 @media (prefers-reduced-motion:reduce){#flow-say .sy-mic.on{animation:none}}
 #flow-say .sy-heard{font-size:13.5px;color:var(--lk-mute,#8E8E94);font-style:italic;margin-bottom:8px}
