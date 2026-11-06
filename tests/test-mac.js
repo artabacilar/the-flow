@@ -286,6 +286,14 @@ ok('the committed icon is what the script draws, in every slot', drift.length ==
 /* Requiring the iOS drawer must not write over the iOS icons as a side
    effect — the Mac script requires it. */
 const iosIcon = path.join(ROOT, 'ios-app', 'native', 'Assets', 'AppIcon', 'AppIcon-1024.png');
+/* The iOS icons are generated, not committed, so on a fresh checkout — every
+   CI run — they are not there yet, and stat() on a missing file is a crash
+   that took the whole suite with it (and kept main red). Draw them first;
+   the check is about requiring the drawer a second time, not about the first
+   draw. */
+if (!fs.existsSync(iosIcon)) {
+  execFileSync(process.execPath, [path.join(ROOT, 'ios-app', 'scripts', 'make-icons.js')], { stdio: 'ignore' });
+}
 const before = fs.statSync(iosIcon).mtimeMs;
 execFileSync(process.execPath, ['-e', "require(" + JSON.stringify(path.join(ROOT, 'ios-app', 'scripts', 'make-icons.js')) + ")"]);
 ok('requiring the iOS icon drawer writes nothing', fs.statSync(iosIcon).mtimeMs === before);

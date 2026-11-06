@@ -272,6 +272,12 @@ const MANIFEST = JSON.stringify({
     { src: 'store/wide-1.png', sizes: '1280x720', type: 'image/png', form_factor: 'wide', label: 'Today, on a computer' },
   ],
   display_override: ['standalone', 'minimal-ui'],
+  /* Jump-list entries on Windows (right-click the taskbar icon) and long-press
+     shortcuts on Android. Each is a URL the app already answers to. */
+  shortcuts: [
+    { name: 'Today', short_name: 'Today', description: 'What matters today', url: '/', icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }] },
+    { name: 'Say it', short_name: 'Say it', description: 'Tell the assistant what to add', url: '/?say=1', icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }] },
+  ],
   /* The Play Store build of this same app. Chrome on Android can offer it
      instead of a plain install. */
   related_applications: [{ platform: 'play', id: 'com.abko.theflow', url: 'https://play.google.com/store/apps/details?id=com.abko.theflow' }],
