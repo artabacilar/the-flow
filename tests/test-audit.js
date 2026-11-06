@@ -18,7 +18,7 @@ const M = new Function(
   'const isoDate=(d)=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;' +
   'const parseISO=(s)=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1);};' +
   'const addDays=(d,n)=>{const x=new Date(d.getTime());x.setDate(x.getDate()+n);return x;};' +
-  grab('const AuditMath = {', '\n/* ======================================================================\n * 20d-i · Friends') +
+  grab('const AuditMath = {', '\n/* ======================================================================\n * 20d-i · Partners') +
   '; return AuditMath;')();
 
 let pass = 0, fail = 0;
