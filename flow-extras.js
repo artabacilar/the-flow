@@ -2172,7 +2172,7 @@ function doHistory(body) {
     .filter((t) => t && t.text);
 }
 
-function parseDo(text, known) {
+function parseDo(text, known, max) {
   const s = String(text || '');
   const m = s.match(/\{[\s\S]*\}/);
   if (!m) return null;
@@ -2186,9 +2186,11 @@ function parseDo(text, known) {
   const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
   const out = [];
   /* Invalid entries are dropped first, then at most twelve kept — so a run of
-     made-up ids cannot crowd out the real requests behind it. */
-  for (const a of (Array.isArray(j.actions) ? j.actions : []).slice(0, 40)) {
-    if (out.length >= 12) break;
+     made-up ids cannot crowd out the real requests behind it. A document
+     (below) may ask for more: a plan can run to thirty items. */
+  const keep = Number.isFinite(max) && max > 0 ? Math.min(max, 60) : 12;
+  for (const a of (Array.isArray(j.actions) ? j.actions : []).slice(0, keep * 3 + 4)) {
+    if (out.length >= keep) break;
     if (!a || typeof a !== 'object' || DO_TYPES.indexOf(a.type) < 0) continue;
     if (a.type === 'rock') {
       const title = str(a.title, 200); if (!title) continue;
@@ -2304,6 +2306,165 @@ async function handleDo(p, req, res, ctx) {
 }
 
 /* ==========================================================================
+ * From a document — a PDF, a photo of a page, or a text, read into a to-do list
+ * --------------------------------------------------------------------------
+ * POST /api/flow/document {data, name, type, text?, lang, ctx, memory}
+ *   → 202 {job}   then   GET /api/flow/document?job=…  → working | done | error
+ *
+ * The answer has exactly the shape Say it answers with — {say, actions} with
+ * rock (and the odd habit) actions — so the app shows the same editable cards
+ * and the same "Do it", and nothing lands in the planner that the person did
+ * not look at first. The model reads the file itself: a PDF goes up as a
+ * document block, a photo as an image, a text as text. Nothing is extracted
+ * or stored here; the file is gone when the job is.
+ *
+ * It runs as a job (POST starts it, GET polls) because a twenty-page PDF is
+ * read in a minute or so, and a phone does not hold a request open for that.
+ * Three a week are free; the rest is Plus, like meals. A daily cap on top.
+ * ========================================================================== */
+const DOC_DAILY_CAP = (() => {
+  const n = parseInt(process.env.FLOW_DOC_DAILY_CAP || '20', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 20;
+})();
+const DOC_FREE_WEEKLY = 3;
+const DOC_MAX_BASE64 = 8 * 1024 * 1024;     /* ~6 MB of file; Anthropic reads PDFs to 32 MB / 100 pages */
+const DOC_MAX_TEXT = 60000;                 /* characters of a plain-text document */
+const DOC_MAX_ACTIONS = 30;
+const DOC_JOB_TTL = 20 * 60 * 1000;
+const DOC_MEDIA = { 'application/pdf': 'document', 'image/jpeg': 'image', 'image/png': 'image', 'image/webp': 'image', 'image/gif': 'image', 'text/plain': 'text', 'text/markdown': 'text' };
+const docCountKey = () => 'docn:' + new Date().toISOString().slice(0, 10);
+const docJobs = new Map();
+let docPost = (...a) => postJSON(...a);
+
+const DOC_SYSTEM = [
+  'You are the assistant inside The Flow, a personal planner. The person has handed you a document — a PDF, a photo of a page, or a text — and wants it turned into a to-do list in the app.',
+  'You never act yourself: the app shows your list for them to edit and confirm.',
+  '',
+  'Return ONLY a JSON object, no prose around it:',
+  '{',
+  '  "say": "one or two short sentences: how many things you found, and anything you could not place",',
+  '  "actions": [',
+  '    { "type": "rock",  "title": "Send the signed contract back", "date": "YYYY-MM-DD", "time": "", "note": "p. 2 · due before the launch" },',
+  '    { "type": "habit", "name": "Stretch 10 minutes" }',
+  '  ]',
+  '}',
+  '',
+  'Meaning:',
+  '· rock: a one-off thing to do on a day — the app calls these Priorities. This is what a to-do is.',
+  '· habit: only when the document prescribes something to do every day from now on (a daily routine in a training or recovery plan). Not for one-off things.',
+  '· note: where in the document it comes from and the one detail worth keeping (a page, a section, an amount, a deadline) — at most twenty words. Empty if there is nothing to add.',
+  '',
+  'Dates:',
+  '· The document gives a date for an item → use it, as YYYY-MM-DD. A date with no year is the next time it comes round after today.',
+  '· The document gives a weekday ("Monday", "Wednesday", "this Friday") → copy the date from the CALENDAR below, never work it out yourself. A week plan ("Week 1 Monday…") starts this week, or next week if its first day is already past.',
+  '· No date at all → today. Say in "say" that undated items were put on today, so they can be moved.',
+  '· time: only when the document gives one, as HH:MM. Otherwise "".',
+  '',
+  'Rules:',
+  '· Only what the document asks the person to DO. Not its headings, not background, not things already done, not things for other people unless the person is told to chase them.',
+  '· One to-do per action; keep the document\'s order. At most ' + DOC_MAX_ACTIONS + '. A long checklist is grouped into the steps that matter rather than every line.',
+  '· Titles are short and concrete, start with a capital, and are in the document\'s language. Keep names, amounts and references exactly as written.',
+  '· If the person adds an instruction ("only the November deadlines", "just the exercises"), it narrows the list. Follow it.',
+  '· Priorities and habits already in the app are listed below. Do not add one that is already there; mention in "say" that it exists.',
+  '· Never invent ids. Never use tick, move, done, open, remember or forget here — this is a list to add, not a conversation.',
+  '· If the document holds nothing to do, return no actions and say so plainly.',
+  '· "say" may be spoken aloud: plain sentences, no markdown, no lists, no emoji.'
+].join('\n');
+
+function docUnpack(body) {
+  const raw = String(body.data || '');
+  const m = /^data:([^;,]+)(?:;[^,]*)?,([\s\S]*)$/.exec(raw);
+  const type = String((m ? m[1] : body.type) || '').toLowerCase().trim();
+  const b64 = (m ? m[2] : raw).replace(/\s+/g, '');
+  if (!b64) throw Object.assign(new Error('No file came through.'), { code: 400 });
+  const kind = DOC_MEDIA[type];
+  if (!kind) throw Object.assign(new Error('That file is not one the app can read. A PDF, a photo of the page, or a text file.'), { code: 415 });
+  if (b64.length > DOC_MAX_BASE64) throw Object.assign(new Error('That file is over 6 MB. Export a smaller PDF, or the pages that matter.'), { code: 413 });
+  if (!/^[A-Za-z0-9+/=]+$/.test(b64)) throw Object.assign(new Error('That file did not arrive in one piece. Try again.'), { code: 400 });
+  if (kind === 'text') {
+    const text = Buffer.from(b64, 'base64').toString('utf8').replace(/\u0000/g, '').slice(0, DOC_MAX_TEXT);
+    if (!text.trim()) throw Object.assign(new Error('That file is empty.'), { code: 400 });
+    return { kind, block: { type: 'text', text: '# THE DOCUMENT\n\n' + text } };
+  }
+  return { kind, block: { type: kind, source: { type: 'base64', media_type: type, data: b64 } } };
+}
+
+async function readDocument(job, body, key) {
+  const known = doContext(body);
+  const lang = body.lang === 'tr' ? 'Turkish' : 'English';
+  const name = String(body.name || '').replace(/[\r\n]/g, ' ').trim().slice(0, 120);
+  const ask = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const doc = docUnpack(body);
+  const lines = [
+    'TODAY: ' + WD_EN[wdOf(known.today)] + ' ' + known.today,
+    'CALENDAR (copy dates from here):\n' + doCalendar(known.today),
+    'App language: ' + lang + ' (write "say" in it; titles stay in the document\'s language).',
+    'Document: ' + (name || '(unnamed)'),
+    'Priorities already in the app (id | title | date | done):',
+    known.rocks.length ? known.rocks.map((r) => r.id + ' | ' + r.title + ' | ' + (r.date || '?') + ' | ' + (r.done ? 'done' : 'open')).join('\n') : '(none)',
+    'Habits already in the app (id | name):',
+    known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name).join('\n') : '(none)',
+    '',
+    ask ? 'What they want from it: "' + ask + '"' : 'What they want from it: a to-do list of everything the document asks them to do.'
+  ].join('\n');
+  const content = [doc.block, { type: 'text', text: lines }];
+  const r = await docPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    { model: CHAT_MODEL, max_tokens: 4000, system: DOC_SYSTEM, messages: [{ role: 'user', content }] }, 150000);
+  if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('document', r.status); throw new Error(ASSISTANT_UNAVAILABLE); }
+  if (r.status === 429) throw new Error('Anthropic is rate-limiting this key. Try again in a minute.');
+  if (r.status === 400 && /page|pdf|document/i.test(upstreamWhy(r) || '')) throw new Error('That PDF could not be read — it may be scanned, locked, or over 100 pages. Try the pages that matter, or a photo of them.');
+  if (r.status < 200 || r.status >= 300) { logUpstream('document', r.status, upstreamWhy(r)); throw new Error('The document could not be read just now (upstream ' + r.status + ').'); }
+  const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+  const out = parseDo(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), known, DOC_MAX_ACTIONS);
+  if (!out) throw new Error('The list came back in a shape the app could not read. Try again.');
+  /* A list to add, not a conversation: only what adds. */
+  out.actions = out.actions.filter((a) => a.type === 'rock' || a.type === 'habit');
+  return { say: out.say, actions: out.actions, name };
+}
+
+async function handleDocument(p, req, res, ctx) {
+  if (p !== '/api/flow/document') return false;
+  const uid = (ctx.user && ctx.user.id) || 'anon';
+  const now = Date.now();
+  for (const [id, j] of docJobs) if (now - j.at > DOC_JOB_TTL) docJobs.delete(id);
+
+  if (req.method === 'GET') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const j = docJobs.get(String(q.get('job') || ''));
+    if (!j || j.uid !== uid) { ctx.json(res, 404, { error: 'That reading has expired. Add the document again.' }); return true; }
+    if (j.status === 'working') { ctx.json(res, 200, { ok: true, status: 'working', seconds: Math.round((now - j.at) / 1000) }); return true; }
+    if (j.status === 'error') { ctx.json(res, 200, { ok: false, status: 'error', error: j.error }); return true; }
+    ctx.json(res, 200, Object.assign({ ok: true, status: 'done' }, j.result));
+    return true;
+  }
+  if (req.method !== 'POST') return false;
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  let body = {};
+  try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  /* The file is checked before anything is counted or started. */
+  try { docUnpack(body); } catch (e) { ctx.json(res, e.code || 400, { error: e.message }); return true; }
+  let wk = null;
+  if (freeTier(ctx)) {
+    wk = 'docw:' + isoWeekKey();
+    const used = (await ctx.counter.get(wk)) || 0;
+    if (used >= DOC_FREE_WEEKLY) { ctx.json(res, 402, PLUS_REFUSAL('document', { used, cap: DOC_FREE_WEEKLY })); return true; }
+  }
+  const spent = (await ctx.counter.get(docCountKey())) || 0;
+  if (DOC_DAILY_CAP > 0 && spent >= DOC_DAILY_CAP) { ctx.json(res, 429, { error: 'That is ' + spent + ' documents today. They reset at midnight UTC.', used: spent, cap: DOC_DAILY_CAP }); return true; }
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = { uid, status: 'working', at: now };
+  docJobs.set(id, job);
+  await ctx.counter.set(docCountKey(), spent + 1);
+  if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
+  readDocument(job, body, key)
+    .then((out) => { job.result = out; job.status = 'done'; })
+    .catch((e) => { job.status = 'error'; job.error = (e && e.message && e.message.length < 240) ? e.message : 'The document could not be read just now.'; });
+  ctx.json(res, 202, { ok: true, job: id, used: spent + 1, cap: DOC_DAILY_CAP });
+  return true;
+}
+
+/* ==========================================================================
  * The assistant's voice — ElevenLabs
  * --------------------------------------------------------------------------
  * POST /api/flow/speak {text} → audio/mpeg. Off until ELEVENLABS_API_KEY is
@@ -2384,6 +2545,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleAhead(p, req, res, ctx)) return true;
   if (await handleMeal(p, req, res, ctx)) return true;
   if (await handleDo(p, req, res, ctx)) return true;
+  if (await handleDocument(p, req, res, ctx)) return true;
   if (await handleSpeak(p, req, res, ctx)) return true;
   return false;
 };
@@ -2427,6 +2589,11 @@ module.exports._internals.wellFormed = wellFormed;
 module.exports._internals.say = {
   parseDo, doContext, doMemory, doPersona, doHistory, doCalendar, fixWeekdays, weekdaysSaid, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
   setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
+};
+module.exports._internals.document = {
+  parse: (text, known) => parseDo(text, known, DOC_MAX_ACTIONS), unpack: docUnpack, handle: handleDocument, DOC_SYSTEM, jobs: docJobs,
+  config: () => ({ cap: DOC_DAILY_CAP, free: DOC_FREE_WEEKLY, maxActions: DOC_MAX_ACTIONS, maxBase64: DOC_MAX_BASE64 }),
+  setPoster(fn) { docPost = fn || ((...a) => postJSON(...a)); }
 };
 module.exports._internals.speak = {
   handle: handleSpeak, cache: ttsCache, config: () => ({ voice: TTS_VOICE(), model: TTS_MODEL(), cap: TTS_DAILY_CHARS }),
