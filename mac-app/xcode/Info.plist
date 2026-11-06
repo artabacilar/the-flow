@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Mac app's Info.plist for the Xcode target (TheFlowMac in
+	     ios-app/ios/App/App.xcodeproj), which is what Xcode Cloud archives for
+	     TestFlight and the Mac App Store. build.sh writes its own copy of
+	     these keys for the local build; tests/test-mac.js checks the two
+	     agree on everything the store looks at. Version, build, bundle id and
+	     executable come from the target's build settings. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>The Flow</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>The Flow</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© ABKO</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>The Flow uses notifications to remind you about your Big Rocks and habits.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The Flow listens only while you hold the mic in a field, to type what you say.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>The Flow turns what you say into text in the field you are writing in. On-device where your Mac supports it.</string>
+</dict>
+</plist>

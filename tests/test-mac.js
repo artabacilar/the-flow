@@ -235,6 +235,34 @@ ok('the store build names the app and team the profile is for',
 ok('the build for this Mac does not claim an identity it has no profile for',
    ent && !('com.apple.application-identifier' in ent));
 
+console.log('\n— the same app as an Xcode target, which is what Xcode Cloud archives —');
+/* build.sh writes its plist and entitlements inline; the Xcode target (added
+   to the iOS project by ios-app/scripts/add-mac-target.js) reads the two files
+   under mac-app/xcode/. Two copies of the same facts, so the test is that they
+   say the same thing about everything the store looks at. */
+const XC = path.join(MAC, 'xcode');
+const uncommented = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
+let xInfo = null, xEnt = null;
+try {
+  xInfo = plist(uncommented(read(XC, 'Info.plist')));
+  xEnt = plist(uncommented(read(XC, 'TheFlow.entitlements')));
+} catch (e) { xInfo = { __error: e.message }; }
+ok('mac-app/xcode/Info.plist and TheFlow.entitlements are well-formed', xInfo && !xInfo.__error && xEnt, xInfo && xInfo.__error);
+xInfo = xInfo && !xInfo.__error ? xInfo : {};
+xEnt = xEnt || {};
+const SAME = ['CFBundleDisplayName', 'CFBundleIconFile', 'CFBundlePackageType', 'NSPrincipalClass',
+  'LSApplicationCategoryType', 'ITSAppUsesNonExemptEncryption', 'NSHumanReadableCopyright',
+  'NSUserNotificationsUsageDescription', 'NSMicrophoneUsageDescription', 'NSSpeechRecognitionUsageDescription'];
+const differ = SAME.filter((k) => JSON.stringify(xInfo[k]) !== JSON.stringify(info[k]));
+ok('it says the same as build.sh on everything the store reads', !differ.length, differ);
+ok('version, build, bundle id, executable and minimum macOS come from the build settings',
+   xInfo.CFBundleShortVersionString === '$(MARKETING_VERSION)' && xInfo.CFBundleVersion === '$(CURRENT_PROJECT_VERSION)'
+   && xInfo.CFBundleIdentifier === '$(PRODUCT_BUNDLE_IDENTIFIER)' && xInfo.CFBundleExecutable === '$(EXECUTABLE_NAME)'
+   && xInfo.LSMinimumSystemVersion === '$(MACOSX_DEPLOYMENT_TARGET)');
+ok('the entitlements are the four build.sh grants, and no more',
+   ent && JSON.stringify(Object.keys(xEnt).sort()) === JSON.stringify(Object.keys(ent).sort())
+   && Object.keys(xEnt).every((k) => xEnt[k] === ent[k]), { xcode: Object.keys(xEnt), build: ent && Object.keys(ent) });
+
 console.log('\n— the icon —');
 const icnsPath = path.join(MAC, 'Resources', 'AppIcon.icns');
 ok('AppIcon.icns is committed', fs.existsSync(icnsPath));

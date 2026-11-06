@@ -1,0 +1,988 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 48;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
+		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
+		893F037ED0C34777A9914A8E /* FlowHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E20ED83E6054066B559BE9A /* FlowHealth.swift */; };
+		259DA9C2DC06435F9715C281 /* FlowPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A90D15C9BC4479E9BE9C1E0 /* FlowPush.swift */; };
+		6A22A250D0064597B7E07DAF /* FlowSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5927EC5853466CAB20757F /* FlowSpeech.swift */; };
+		90B860403BF844348A988694 /* FlowViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FF628FB9044420EB582018D /* FlowViewController.swift */; };
+		A75AF7583B36440B8A581CF1 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0E8193F70C4326A7E3971F /* SceneDelegate.swift */; };
+		4D59C51C344D494798406B64 /* FlowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FC088C3CEE4B39A507C229 /* FlowStore.swift */; };
+		A209853B65C44FDEAAB66B11 /* FlowWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17858A0E0F65451C8D9FF793 /* FlowWidget.swift */; };
+		33B999CA4C64401695682133 /* FlowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7103B60FEDF546949C54D430 /* FlowStore.swift */; };
+		DD8C804CEDEB45308E212133 /* FlowWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B069B9028EC429CA2499C08 /* FlowWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C419C32DDC76CF67FAB705EC /* FlowWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB8F9DEF542C8D079639208E /* FlowWatchApp.swift */; };
+		567452395AB8B5A4C308538E /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7056788542B4ABC0DBA5CF5 /* WatchStore.swift */; };
+		610F6149BC871A9F46F9F4C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4BE2C2FE47CC89CA6399AAF9 /* Assets.xcassets */; };
+		7EDE6C2E8F34A077076FB63D /* FlowComplications.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0779844383EBD207CA26BA /* FlowComplications.swift */; };
+		63A9C6F2EB39D767FCF827FE /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7056788542B4ABC0DBA5CF5 /* WatchStore.swift */; };
+		C17EFD4DDEC63EAF6F4E7F1C /* FlowWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = DBA942020F03F8FCDA0105D7 /* FlowWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1175DDC6FBA54D469A03F29D /* FlowComplications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 386B0205DAD0B8B7F0247A5C /* FlowComplications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D27E1CE39FA245218DF6CE82 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4B1DD1D4F34F3DA6267103 /* AppDelegate.swift */; };
+		877B964396BC4F17B8414872 /* FlowMacBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0E5CD311924E178237C7BA /* FlowMacBridge.swift */; };
+		D7C5761331FB45F58EA45264 /* FlowNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD19EE077E84BF8AECAD6F6 /* FlowNotifications.swift */; };
+		219822014443410CBF851A31 /* FlowSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD388ABE11D4D8981D64C82 /* FlowSpeech.swift */; };
+		A5CF1FAF73B54B6880515DF0 /* FlowWebController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18004825166B409DA91D0B9E /* FlowWebController.swift */; };
+		6BA26A37F12A4E839907AD31 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15C2BC36BEE54E9D82015E67 /* main.swift */; };
+		8175545F22BE4D2DB0638783 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 3B9DD16CE7A7412EA9FF2786 /* AppIcon.icns */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E20ED83E6054066B559BE9A /* FlowHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowHealth.swift; sourceTree = "<group>"; };
+		0A90D15C9BC4479E9BE9C1E0 /* FlowPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowPush.swift; sourceTree = "<group>"; };
+		4E5927EC5853466CAB20757F /* FlowSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowSpeech.swift; sourceTree = "<group>"; };
+		7FF628FB9044420EB582018D /* FlowViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowViewController.swift; sourceTree = "<group>"; };
+		AF0E8193F70C4326A7E3971F /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		80FC088C3CEE4B39A507C229 /* FlowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowStore.swift; sourceTree = "<group>"; };
+		0B069B9028EC429CA2499C08 /* FlowWidget.appex */ = {isa = PBXFileReference; name = "FlowWidget.appex"; path = "FlowWidget.appex"; sourceTree = BUILT_PRODUCTS_DIR; fileEncoding = undefined; lastKnownFileType = undefined; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; };
+		17858A0E0F65451C8D9FF793 /* FlowWidget.swift */ = {isa = PBXFileReference; name = "FlowWidget.swift"; path = "FlowWidget/FlowWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		7103B60FEDF546949C54D430 /* FlowStore.swift */ = {isa = PBXFileReference; name = "FlowStore.swift"; path = "FlowWidget/FlowStore.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		DBA942020F03F8FCDA0105D7 /* FlowWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlowWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		386B0205DAD0B8B7F0247A5C /* FlowComplications.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FlowComplications.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB8F9DEF542C8D079639208E /* FlowWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowWatchApp.swift; sourceTree = "<group>"; };
+		F7056788542B4ABC0DBA5CF5 /* WatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStore.swift; sourceTree = "<group>"; };
+		4BE2C2FE47CC89CA6399AAF9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		00852C82965511D310AFF836 /* FlowWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FlowWatch.entitlements; sourceTree = "<group>"; };
+		13EFAFA923F50B29C03C9E88 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DA0779844383EBD207CA26BA /* FlowComplications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowComplications.swift; sourceTree = "<group>"; };
+		FC8E98DA72F7ADBBD8C713A7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6D883A932C4AE78E7BEEAB9B /* FlowComplications.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FlowComplications.entitlements; sourceTree = "<group>"; };
+		A78F810156F546C587FD6ED7 /* The Flow.app */ = {isa = PBXFileReference; name = "The Flow.app"; path = "The Flow.app"; sourceTree = BUILT_PRODUCTS_DIR; explicitFileType = "wrapper.application"; includeInIndex = 0; };
+		4E4B1DD1D4F34F3DA6267103 /* AppDelegate.swift */ = {isa = PBXFileReference; name = "AppDelegate.swift"; path = "../../../mac-app/native/AppDelegate.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		4C0E5CD311924E178237C7BA /* FlowMacBridge.swift */ = {isa = PBXFileReference; name = "FlowMacBridge.swift"; path = "../../../mac-app/native/FlowMacBridge.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		9FD19EE077E84BF8AECAD6F6 /* FlowNotifications.swift */ = {isa = PBXFileReference; name = "FlowNotifications.swift"; path = "../../../mac-app/native/FlowNotifications.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		ADD388ABE11D4D8981D64C82 /* FlowSpeech.swift */ = {isa = PBXFileReference; name = "FlowSpeech.swift"; path = "../../../mac-app/native/FlowSpeech.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		18004825166B409DA91D0B9E /* FlowWebController.swift */ = {isa = PBXFileReference; name = "FlowWebController.swift"; path = "../../../mac-app/native/FlowWebController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		15C2BC36BEE54E9D82015E67 /* main.swift */ = {isa = PBXFileReference; name = "main.swift"; path = "../../../mac-app/native/main.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		3B9DD16CE7A7412EA9FF2786 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AppIcon.icns; path = "../../../mac-app/Resources/AppIcon.icns"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		504EC3011FED79650016851F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C3E78F7C7CD4A5E81BFF9A7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E35B198E34CC9D9B3114817 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		620BF0C9591A96BF3D2CDFDF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B67CF182DAFB4CD0954822A4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		27E2DDA53C4D2A4D1A88CE4A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		504EC2FB1FED79650016851F = {
+			isa = PBXGroup;
+			children = (
+				504EC3061FED79650016851F /* App */,
+				504EC3051FED79650016851F /* Products */,
+				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
+				CACD31063A634A1EA691239A /* FlowWidget */,
+				5F67EB4CAADD59E2554E5FEF /* FlowWatch */,
+				5DE01D0CB26C2870AC5BFE8A /* FlowComplications */,
+				3663C94DFFDD4D9280B6D141 /* TheFlowMac */,
+			);
+			sourceTree = "<group>";
+		};
+		504EC3051FED79650016851F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				504EC3041FED79650016851F /* App.app */,
+				0B069B9028EC429CA2499C08 /* FlowWidget.appex */,
+				DBA942020F03F8FCDA0105D7 /* FlowWatch.app */,
+				386B0205DAD0B8B7F0247A5C /* FlowComplications.appex */,
+				A78F810156F546C587FD6ED7 /* The Flow.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		504EC3061FED79650016851F /* App */ = {
+			isa = PBXGroup;
+			children = (
+				504EC3071FED79650016851F /* AppDelegate.swift */,
+				504EC30E1FED79650016851F /* Assets.xcassets */,
+				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
+				504EC3131FED79650016851F /* Info.plist */,
+				7E20ED83E6054066B559BE9A /* FlowHealth.swift */,
+				0A90D15C9BC4479E9BE9C1E0 /* FlowPush.swift */,
+				4E5927EC5853466CAB20757F /* FlowSpeech.swift */,
+				7FF628FB9044420EB582018D /* FlowViewController.swift */,
+				AF0E8193F70C4326A7E3971F /* SceneDelegate.swift */,
+				80FC088C3CEE4B39A507C229 /* FlowStore.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		CACD31063A634A1EA691239A /* FlowWidget */ = {
+			isa = "PBXGroup";
+			children = (
+				17858A0E0F65451C8D9FF793 /* FlowWidget.swift */,
+				7103B60FEDF546949C54D430 /* FlowStore.swift */,
+			);
+			name = FlowWidget;
+			sourceTree = "<group>";
+		};
+		5F67EB4CAADD59E2554E5FEF /* FlowWatch */ = {
+			isa = PBXGroup;
+			children = (
+				AB8F9DEF542C8D079639208E /* FlowWatchApp.swift */,
+				F7056788542B4ABC0DBA5CF5 /* WatchStore.swift */,
+				4BE2C2FE47CC89CA6399AAF9 /* Assets.xcassets */,
+				00852C82965511D310AFF836 /* FlowWatch.entitlements */,
+				13EFAFA923F50B29C03C9E88 /* Info.plist */,
+			);
+			path = FlowWatch;
+			sourceTree = "<group>";
+		};
+		5DE01D0CB26C2870AC5BFE8A /* FlowComplications */ = {
+			isa = PBXGroup;
+			children = (
+				DA0779844383EBD207CA26BA /* FlowComplications.swift */,
+				FC8E98DA72F7ADBBD8C713A7 /* Info.plist */,
+				6D883A932C4AE78E7BEEAB9B /* FlowComplications.entitlements */,
+			);
+			path = FlowComplications;
+			sourceTree = "<group>";
+		};
+		3663C94DFFDD4D9280B6D141 /* TheFlowMac */ = {
+			isa = "PBXGroup";
+			children = (
+				4E4B1DD1D4F34F3DA6267103 /* AppDelegate.swift */,
+				4C0E5CD311924E178237C7BA /* FlowMacBridge.swift */,
+				9FD19EE077E84BF8AECAD6F6 /* FlowNotifications.swift */,
+				ADD388ABE11D4D8981D64C82 /* FlowSpeech.swift */,
+				18004825166B409DA91D0B9E /* FlowWebController.swift */,
+				15C2BC36BEE54E9D82015E67 /* main.swift */,
+				3B9DD16CE7A7412EA9FF2786 /* AppIcon.icns */,
+			);
+			name = TheFlowMac;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		504EC3031FED79650016851F /* App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
+			buildPhases = (
+				504EC3001FED79650016851F /* Sources */,
+				504EC3011FED79650016851F /* Frameworks */,
+				504EC3021FED79650016851F /* Resources */,
+				F2D2ACA49B0C401E8A2CF5F1 /* Embed Foundation Extensions */,
+				33E7F72BD2E0CEE89540E63E /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AE1EBB48A55A41718475893D /* PBXTargetDependency */,
+				1F5E8068C6E51815DAEA030F /* PBXTargetDependency */,
+				D7247A3A39F54712A7E9B27C /* PBXTargetDependency */,
+			);
+			name = App;
+			productName = App;
+			productReference = 504EC3041FED79650016851F /* App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FF89B2B898D34E95A1DFEB9C /* "FlowWidget" */ = {
+			isa = PBXNativeTarget;
+			name = "FlowWidget";
+			productName = "FlowWidget";
+			productReference = 0B069B9028EC429CA2499C08;
+			productType = "com.apple.product-type.app-extension";
+			buildConfigurationList = 23F5122075BB416284D895A2;
+			buildPhases = (
+				5CC493923D684611828B6CA5 /* Sources */,
+				2AF04CE0101342A4A5C95876 /* Resources */,
+				5C3E78F7C7CD4A5E81BFF9A7 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+		};
+		B3636EC128CD9AA296BF0F59 /* FlowWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8A239BBC5106BD4DD1A16EE4 /* Build configuration list for PBXNativeTarget "FlowWatch" */;
+			buildPhases = (
+				3F864C5934F5205D6135FFBE /* Sources */,
+				5E35B198E34CC9D9B3114817 /* Frameworks */,
+				0E82607BB09AE0BCA5F0E40C /* Resources */,
+				91DC8A27EC89668B0E17B1F1 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FAC441C2FAE62EA147DFC090 /* PBXTargetDependency */,
+			);
+			name = FlowWatch;
+			productName = FlowWatch;
+			productReference = DBA942020F03F8FCDA0105D7 /* FlowWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AFD7F65DAE85443B9A6D70DF /* FlowComplications */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E2EC781860C3C2C510EA3FD7 /* Build configuration list for PBXNativeTarget "FlowComplications" */;
+			buildPhases = (
+				74C55AA3D43BD1CA4933A453 /* Sources */,
+				620BF0C9591A96BF3D2CDFDF /* Frameworks */,
+				3DA6E97860FFFE1E33231A0B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FlowComplications;
+			productName = FlowComplications;
+			productReference = 386B0205DAD0B8B7F0247A5C /* FlowComplications.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		5C672FEF9C4F49129C436677 /* "TheFlowMac" */ = {
+			isa = PBXNativeTarget;
+			name = "TheFlowMac";
+			productName = "The Flow";
+			productReference = A78F810156F546C587FD6ED7;
+			productType = "com.apple.product-type.application";
+			buildConfigurationList = 7DA7355887984B848F423123;
+			buildPhases = (
+				74011AB8EAED4ADB85B574BA /* Sources */,
+				223D02E820514F9AAAA83B93 /* Resources */,
+				B67CF182DAFB4CD0954822A4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		504EC2FC1FED79650016851F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 920;
+				LastUpgradeCheck = 920;
+				TargetAttributes = {
+					B3636EC128CD9AA296BF0F59 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					AFD7F65DAE85443B9A6D70DF = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					504EC3031FED79650016851F = {
+						CreatedOnToolsVersion = 9.2;
+						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					FF89B2B898D34E95A1DFEB9C = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					5C672FEF9C4F49129C436677 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */;
+			compatibilityVersion = "Xcode 8.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 504EC2FB1FED79650016851F;
+			packageReferences = (
+			);
+			productRefGroup = 504EC3051FED79650016851F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				504EC3031FED79650016851F /* App */,
+				FF89B2B898D34E95A1DFEB9C /* "FlowWidget" */,
+				B3636EC128CD9AA296BF0F59 /* FlowWatch */,
+				AFD7F65DAE85443B9A6D70DF /* FlowComplications */,
+				5C672FEF9C4F49129C436677 /* "TheFlowMac" */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		504EC3021FED79650016851F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
+				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2AF04CE0101342A4A5C95876 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E82607BB09AE0BCA5F0E40C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				610F6149BC871A9F46F9F4C7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3DA6E97860FFFE1E33231A0B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		223D02E820514F9AAAA83B93 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8175545F22BE4D2DB0638783 /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		504EC3001FED79650016851F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				893F037ED0C34777A9914A8E /* FlowHealth.swift in Sources */,
+				259DA9C2DC06435F9715C281 /* FlowPush.swift in Sources */,
+				6A22A250D0064597B7E07DAF /* FlowSpeech.swift in Sources */,
+				90B860403BF844348A988694 /* FlowViewController.swift in Sources */,
+				A75AF7583B36440B8A581CF1 /* SceneDelegate.swift in Sources */,
+				4D59C51C344D494798406B64 /* FlowStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CC493923D684611828B6CA5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A209853B65C44FDEAAB66B11 /* FlowWidget.swift in Sources */,
+				33B999CA4C64401695682133 /* FlowStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3F864C5934F5205D6135FFBE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C419C32DDC76CF67FAB705EC /* FlowWatchApp.swift in Sources */,
+				567452395AB8B5A4C308538E /* WatchStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		74C55AA3D43BD1CA4933A453 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7EDE6C2E8F34A077076FB63D /* FlowComplications.swift in Sources */,
+				63A9C6F2EB39D767FCF827FE /* WatchStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		74011AB8EAED4ADB85B574BA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D27E1CE39FA245218DF6CE82 /* AppDelegate.swift in Sources */,
+				877B964396BC4F17B8414872 /* FlowMacBridge.swift in Sources */,
+				D7C5761331FB45F58EA45264 /* FlowNotifications.swift in Sources */,
+				219822014443410CBF851A31 /* FlowSpeech.swift in Sources */,
+				A5CF1FAF73B54B6880515DF0 /* FlowWebController.swift in Sources */,
+				6BA26A37F12A4E839907AD31 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		504EC3101FED79650016851F /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				504EC3111FED79650016851F /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		504EC3141FED79650016851F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				CODE_SIGN_STYLE = Automatic;
+			};
+			name = Debug;
+		};
+		504EC3151FED79650016851F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				VALIDATE_PRODUCT = YES;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				CODE_SIGN_STYLE = Automatic;
+			};
+			name = Release;
+		};
+		504EC3171FED79650016851F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+			};
+			name = Debug;
+		};
+		504EC3181FED79650016851F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+			};
+			name = Release;
+		};
+		A0BC49F5A7E146AA9E34DC01 /* Debug */ = {
+			name = Debug;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = FlowWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.FlowWidget;
+				CODE_SIGN_ENTITLEMENTS = FlowWidget/FlowWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.0.4;
+				CURRENT_PROJECT_VERSION = 8;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			};
+		};
+		429F611105B443269E1D3EA3 /* Release */ = {
+			name = Release;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = FlowWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.FlowWidget;
+				CODE_SIGN_ENTITLEMENTS = FlowWidget/FlowWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.0.4;
+				CURRENT_PROJECT_VERSION = 8;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			};
+		};
+		1646485584765CCBBA783362 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CURRENT_PROJECT_VERSION = 8;
+				MARKETING_VERSION = 1.0.4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "The Flow";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = FlowWatch/FlowWatch.entitlements;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = FlowWatch/Info.plist;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.abko.theflow;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.watchkitapp;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+			};
+			name = Debug;
+		};
+		C5169646C72D8F73B0F45E74 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CURRENT_PROJECT_VERSION = 8;
+				MARKETING_VERSION = 1.0.4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "The Flow";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = FlowWatch/FlowWatch.entitlements;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = FlowWatch/Info.plist;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.abko.theflow;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.watchkitapp;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+			name = Release;
+		};
+		8524F8837B44E3016707FA8A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CURRENT_PROJECT_VERSION = 8;
+				MARKETING_VERSION = 1.0.4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "The Flow";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FlowComplications/FlowComplications.entitlements;
+				INFOPLIST_FILE = FlowComplications/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.watchkitapp.complications;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+			};
+			name = Debug;
+		};
+		1120D9EFAC783E21970AFFBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CURRENT_PROJECT_VERSION = 8;
+				MARKETING_VERSION = 1.0.4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "The Flow";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FlowComplications/FlowComplications.entitlements;
+				INFOPLIST_FILE = FlowComplications/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow.watchkitapp.complications;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+			name = Release;
+		};
+		F4EF145DA886473395C858D7 /* Debug */ = {
+			name = Debug;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = "../../../mac-app/xcode/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_NAME = "The Flow";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				GENERATE_INFOPLIST_FILE = NO;
+				CODE_SIGN_ENTITLEMENTS = "../../../mac-app/xcode/TheFlow.entitlements";
+				SWIFT_VERSION = 5.0;
+				MARKETING_VERSION = 1.0.4;
+				CURRENT_PROJECT_VERSION = 8;
+				ENABLE_HARDENED_RUNTIME = YES;
+				COMBINE_HIDPI_IMAGES = YES;
+			};
+		};
+		9932E712F51B46FCBD8204A9 /* Release */ = {
+			name = Release;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = "../../../mac-app/xcode/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_NAME = "The Flow";
+				PRODUCT_BUNDLE_IDENTIFIER = com.abko.theflow;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = CFDZ32QZUR;
+				GENERATE_INFOPLIST_FILE = NO;
+				CODE_SIGN_ENTITLEMENTS = "../../../mac-app/xcode/TheFlow.entitlements";
+				SWIFT_VERSION = 5.0;
+				MARKETING_VERSION = 1.0.4;
+				CURRENT_PROJECT_VERSION = 8;
+				ENABLE_HARDENED_RUNTIME = YES;
+				COMBINE_HIDPI_IMAGES = YES;
+			};
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				504EC3141FED79650016851F /* Debug */,
+				504EC3151FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				504EC3171FED79650016851F /* Debug */,
+				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		23F5122075BB416284D895A2 /* Build configuration list for PBXNativeTarget "FlowWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0BC49F5A7E146AA9E34DC01 /* Debug */,
+				429F611105B443269E1D3EA3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8A239BBC5106BD4DD1A16EE4 /* Build configuration list for PBXNativeTarget "FlowWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1646485584765CCBBA783362 /* Debug */,
+				C5169646C72D8F73B0F45E74 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E2EC781860C3C2C510EA3FD7 /* Build configuration list for PBXNativeTarget "FlowComplications" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8524F8837B44E3016707FA8A /* Debug */,
+				1120D9EFAC783E21970AFFBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7DA7355887984B848F423123 /* Build configuration list for PBXNativeTarget "TheFlowMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F4EF145DA886473395C858D7 /* Debug */,
+				9932E712F51B46FCBD8204A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F2D2ACA49B0C401E8A2CF5F1 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD8C804CEDEB45308E212133 /* FlowWidget.appex in Embed Foundation Extensions */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			name = "Embed Foundation Extensions";
+			dstPath = "";
+			dstSubfolderSpec = 13;
+		};
+		33E7F72BD2E0CEE89540E63E /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			name = "Embed Watch Content";
+			files = (
+				C17EFD4DDEC63EAF6F4E7F1C /* FlowWatch.app in Embed Watch Content */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		91DC8A27EC89668B0E17B1F1 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			name = "Embed Foundation Extensions";
+			files = (
+				1175DDC6FBA54D469A03F29D /* FlowComplications.appex in Embed Foundation Extensions */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		31A92AFD037347E48B11B46C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FF89B2B898D34E95A1DFEB9C;
+			remoteInfo = FlowWidget;
+		};
+		45F977B7623E407C1DCD5A3E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B3636EC128CD9AA296BF0F59;
+			remoteInfo = FlowWatch;
+		};
+		81C712F1BEA79834E3CE76E8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AFD7F65DAE85443B9A6D70DF;
+			remoteInfo = FlowComplications;
+		};
+		234ADFF6FF164BDFB8F25049 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5C672FEF9C4F49129C436677;
+			remoteInfo = "TheFlowMac";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		AE1EBB48A55A41718475893D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FF89B2B898D34E95A1DFEB9C /* FlowWidget */;
+			targetProxy = 31A92AFD037347E48B11B46C /* PBXContainerItemProxy */;
+		};
+		1F5E8068C6E51815DAEA030F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B3636EC128CD9AA296BF0F59 /* FlowWatch */;
+			targetProxy = 45F977B7623E407C1DCD5A3E /* PBXContainerItemProxy */;
+		};
+		FAC441C2FAE62EA147DFC090 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AFD7F65DAE85443B9A6D70DF /* FlowComplications */;
+			targetProxy = 81C712F1BEA79834E3CE76E8 /* PBXContainerItemProxy */;
+		};
+		D7247A3A39F54712A7E9B27C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5C672FEF9C4F49129C436677 /* "TheFlowMac" */;
+			targetProxy = 234ADFF6FF164BDFB8F25049 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+	};
+	rootObject = 504EC2FC1FED79650016851F /* Project object */;
+}

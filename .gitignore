@@ -25,3 +25,10 @@ mac-app/*.provisionprofile
 # unlike the iOS icons above, and on purpose: the Mac build has to work with
 # nothing but the Command Line Tools, and Node is not one of them.
 mac-app/Resources/AppIcon-1024.png
+
+# ios-app/ios/ is the generated Xcode project, committed so Xcode Cloud can
+# build it. The generators keep the untouched project beside the one they
+# changed; those backups, and the generator's own lockfile, stay out.
+ios-app/ios/App/App.xcodeproj/project.pbxproj.original
+ios-app/ios/App/App.xcodeproj/project.pbxproj.before-watch
+ios-app/package-lock.json
