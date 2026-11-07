@@ -138,12 +138,25 @@ function wav() {
     await FlowSay.send(); await new Promise((r) => setTimeout(r, 900));
   }, { text, spoken });
 
+  /* The default: Talk is the start. He listens at once — no hello for the
+     microphone to hear — with the turn ended by the person, not a pause. */
+  speak.length = 0;
+  const startOpts = await p.evaluate(() => { window.__opts = []; const f = FlowVoice.start; FlowVoice.start = function (t, o) { window.__opts.push(o || {}); return f.apply(this, arguments); }; return true; });
+  await p.click('#today-feed .lk-say'); await p.waitForTimeout(250);
+  const d0 = await p.evaluate(() => ({ listened: window.__listen, opts: window.__opts.slice(), hands: document.querySelector('#flow-say [data-say-pref="asstHandsFree"]').checked }));
+  await p.waitForTimeout(900);
+  ok('by default Talk starts listening straight away, with no greeting', startOpts && d0.listened === 1 && speak.length === 0, { d0, speak });
+  ok('and only Stop ends the turn (manual, no pause timer); hands-free is off', d0.opts[0] && d0.opts[0].manual === true && !d0.opts[0].pauseEnd && d0.hands === false, d0);
+  await p.evaluate(() => { FlowSay.close(); });
+  /* Hands-free, chosen: the greeting first, then listening, a pause ends a
+     turn and he listens again after answering. */
+  await p.evaluate(async () => { await Flow.Settings.set('asstHandsFree', true); window.__listen = 0; });
   speak.length = 0;
   await p.click('#today-feed .lk-say'); await p.waitForTimeout(200);
   const early = await p.evaluate(() => window.__listen);
   await p.waitForTimeout(1500);
   ok('Talk answers out loud first — "Good evening, Artur. What can I do for you?" — and the microphone waits until he has finished', early === 0 && speak.some((t) => /^Good (morning|afternoon|evening), Artur\. What can I do for you\?$/.test(t)), { early, speak });
-  const pre = await p.evaluate(() => ({ k: document.querySelector('#flow-say .sy-k').textContent, call: document.querySelector('#flow-say [data-say-pref="asstCall"]').value, voice: document.querySelector('#flow-say [data-say-pref="asstVoice"]').value, hands: document.querySelector('#flow-say [data-say-pref="asstHands"]').checked, st: document.querySelector('#flow-say .sy-state').textContent, listened: window.__listen }));
+  const pre = await p.evaluate(() => ({ k: document.querySelector('#flow-say .sy-k').textContent, call: document.querySelector('#flow-say [data-say-pref="asstCall"]').value, voice: document.querySelector('#flow-say [data-say-pref="asstVoice"]').value, hands: document.querySelector('#flow-say [data-say-pref="asstHandsFree"]').checked, st: document.querySelector('#flow-say .sy-state').textContent, listened: window.__listen }));
   ok('then it listens, with the voice settings at hand', pre.k === 'Assistant' && pre.voice === 'premium' && pre.call === 'name' && pre.hands && pre.listened >= 1, pre);
   speak.length = 0;
   await ask('how did I sleep this week?', true);

@@ -580,6 +580,44 @@ window.__fail = function (code) {
   ok('ordinary dictation is not ended by a pause', pz.plain.listening && pz.plain.stops === 1, pz.plain);
   await c7.close();
 
+  console.log('\n— press to talk, press to stop —');
+  const man = await p.evaluate(async () => {
+    const V = window.FlowVoice; const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    const starts0 = window.__voiceLog.filter((x) => /^start/.test(x)).length;
+    V.start(t, { manual: true, pauseEnd: 300 });
+    window.__say('book the', false); window.__say('book the studio', true);
+    await new Promise((r) => setTimeout(r, 500));
+    /* Chrome closing by itself after silence, with its "no-speech" */
+    window.__fail('no-speech'); window.__rec.onend();
+    await new Promise((r) => setTimeout(r, 100));
+    const bub = document.querySelector('.fv-bubble');
+    const mid = { listening: V.listening, starts: window.__voiceLog.filter((x) => /^start/.test(x)).length - starts0, said: bub && !bub.hidden ? bub.textContent : '' };
+    window.__say('for Friday', true);
+    V.stop(); await new Promise((r) => setTimeout(r, 100));
+    return { mid, after: { listening: V.listening, value: t.value } };
+  });
+  ok('a pause or the browser closing by itself does not end the turn — it keeps listening, quietly', man.mid.listening && man.mid.starts === 2 && !/hear/i.test(man.mid.said), man);
+  ok('Stop ends it, and everything said across the gap is in the field', !man.after.listening && /book the studio/.test(man.after.value) && /for Friday/.test(man.after.value), man);
+  const sayMan = await p.evaluate(async () => {
+    await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); renderToday();
+    await new Promise((r) => setTimeout(r, 900));
+    const talk = document.querySelector('#today-feed .lk-say'); if (talk) talk.click();
+    await new Promise((r) => setTimeout(r, 400));
+    const on = window.FlowVoice.listening;
+    window.__rec.onend(); await new Promise((r) => setTimeout(r, 150));
+    const still = window.FlowVoice.listening;
+    const box = document.querySelector('#flow-say [data-say-pref="asstHandsFree"]');
+    const mic = document.querySelector('#flow-say .sy-mic'); const label = mic ? mic.textContent.trim() : '';
+    if (mic) mic.click(); await new Promise((r) => setTimeout(r, 200));
+    const r = { talk: !!talk, on, still, label, stopped: !window.FlowVoice.listening, handsOff: !!box && !box.checked, line: (document.querySelector('#flow-say .sy-state') || {}).textContent || '' };
+    try { window.FlowVoice.cancel(); } catch (e) {}
+    const w = document.getElementById('flow-say'); if (w) w.classList.remove('on');
+    return r;
+  });
+  ok('Talk on Today starts J.A.R.V.I.S. listening, and silence does not stop him', sayMan.talk && sayMan.on && sayMan.still, sayMan);
+  ok('his button says Stop while he listens, and Stop stops him', sayMan.label === 'Stop' && sayMan.stopped, sayMan);
+  ok('hands-free is off unless chosen', sayMan.handsOff, sayMan);
+
   ok('no page errors at any point', errs.length === 0, errs.slice(0, 4));
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
