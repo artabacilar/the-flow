@@ -77,6 +77,21 @@ ok('it is installed into the archive (an app with SKIP_INSTALL is a "Generic Xco
    macConfigs.length === 2 && macConfigs.every((b) => !/SKIP_INSTALL/.test(b)), macConfigs.length);
 ok('Swift 5 language mode, as build.sh pins it', (pbx.match(/SWIFT_VERSION = 5\.0;/g) || []).length >= 2);
 
+/* node-xcode's addTarget made App depend on TheFlowMac, which put the Mac
+   app inside every iOS archive. Two apps in one archive is a Generic Xcode
+   Archive, and Xcode Cloud's export then fails with "expected one {} but
+   found app-store". */
+{
+  const appBlock = (pbx.match(/\/\* App \*\/ = \{\n\t\t\tisa = PBXNativeTarget;[\s\S]*?\n\t\t\};/) || [''])[0];
+  const deps = (appBlock.match(/dependencies = \(([\s\S]*?)\);/) || ['', ''])[1];
+  const depTargets = deps.split('\n').map((l) => (l.match(/([0-9A-F]{24})/) || [])[1]).filter(Boolean)
+    .map((id) => (pbx.match(new RegExp(id + ' /\\* PBXTargetDependency \\*/ = \\{[\\s\\S]*?target = [0-9A-F]{24} /\\* "?([\\w]+)"? \\*/')) || [])[1]);
+  ok('the iPhone app does not build the Mac app into its archive',
+     appBlock && depTargets.length >= 2 && depTargets.indexOf('TheFlowMac') < 0, depTargets);
+  ok('and the Mac target generator removes the dependency addTarget adds',
+     /deps\[k\]\.target === target\.uuid/.test(read(IOS, 'scripts', 'add-mac-target.js')));
+}
+
 console.log('\n— the schemes Xcode Cloud can see —');
 const SCHEMES = path.join(PROJ, 'App.xcodeproj', 'xcshareddata', 'xcschemes');
 [['App', 'App.app'], ['TheFlowMac', 'The Flow.app']].forEach(([name, product]) => {
