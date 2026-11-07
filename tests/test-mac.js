@@ -100,6 +100,26 @@ ok('the Mac asks for the microphone and speech, with reasons', /NSMicrophoneUsag
 ok('clicking a reminder opens what it is about', /didReceive response: UNNotificationResponse/.test(notesSrc) && /__flowOpen/.test(notesSrc) && /rem:/.test(notesSrc));
 ok('iPhone-only parts answer "not here" instead of throwing', /setToken:\s*function \(\)\s*\{ return Promise\.resolve\(\{ supported: false \}\)/.test(bridgeSrc));
 
+/* Backups, calendar files, recovery codes and the account export are all
+   <a download> on a blob. A web view on the Mac saves none of them unless
+   the app takes the download and asks where; the sandbox then lets it write
+   only where the person chose. */
+console.log('\n— files the page saves are saved —');
+{
+  const w = code(webSrc);
+  ok('the controller is the download delegate', /WKDownloadDelegate/.test(w) && /download\.delegate\s*=\s*self/.test(w));
+  ok('<a download> becomes a download', /if action\.shouldPerformDownload \{ decisionHandler\(\.download\)/.test(w));
+  ok('blob: and data: stay in the app instead of going to the browser',
+     /url\.scheme == "blob" \|\| url\.scheme == "data"/.test(w)
+     && w.indexOf('url.scheme == "blob"') < w.indexOf('NSWorkspace.shared.open(url)'));
+  ok('an attachment from the server, or a type the window cannot show, is saved too',
+     /decidePolicyFor response: WKNavigationResponse/.test(w) && /canShowMIMEType/.test(w) && /hasPrefix\("attachment"\)/.test(w));
+  ok('the person picks where, in a save panel', /decideDestinationUsing/.test(w) && /NSSavePanel\(\)/.test(w) && /suggestedFilename/.test(w));
+  ok('replacing a file works (WebKit will not write over one)', /removeItem\(at: url\)/.test(w));
+  ok('the sandbox lets it write where they chose',
+     /com\.apple\.security\.files\.user-selected\.read-write/.test(build) && !/user-selected\.read-only/.test(build));
+}
+
 console.log('\n— it joins the iOS app instead of becoming a second one —');
 const cap = JSON.parse(read(ROOT, 'ios-app', 'capacitor.config.json'));
 const v = (name) => { const m = build.match(new RegExp('^' + name + '="([^"]*)"', 'm')); return m && m[1]; };
@@ -259,7 +279,7 @@ ok('version, build, bundle id, executable and minimum macOS come from the build 
    xInfo.CFBundleShortVersionString === '$(MARKETING_VERSION)' && xInfo.CFBundleVersion === '$(CURRENT_PROJECT_VERSION)'
    && xInfo.CFBundleIdentifier === '$(PRODUCT_BUNDLE_IDENTIFIER)' && xInfo.CFBundleExecutable === '$(EXECUTABLE_NAME)'
    && xInfo.LSMinimumSystemVersion === '$(MACOSX_DEPLOYMENT_TARGET)');
-ok('the entitlements are the four build.sh grants, and no more',
+ok('the entitlements are the build.sh grants, and no more',
    ent && JSON.stringify(Object.keys(xEnt).sort()) === JSON.stringify(Object.keys(ent).sort())
    && Object.keys(xEnt).every((k) => xEnt[k] === ent[k]), { xcode: Object.keys(xEnt), build: ent && Object.keys(ent) });
 
