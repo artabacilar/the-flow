@@ -581,6 +581,10 @@ const PRIVACY_HTML = legalPage('Privacy Policy',
             Big Rocks.</li>
         <li><b>Notion</b> keeps the integration secret you paste, to create a page under the
             Notion page you chose when you press Send.</li>
+        <li><b>Trello</b> keeps the token you grant on Trello's page, to read your cards, the
+            dated cards on boards you choose, and their checklist items, so dated ones show on
+            Today and in Coming up; and, when you tick one done in The Flow, to mark that card
+            complete or that checklist item checked in Trello. It changes nothing else.</li>
         <li><b>WHOOP</b>, if you connect it, keeps a token to read your recovery, strain, sleep and
             heart-rate figures; the daily numbers are stored with your Body log.</li>
       </ul>

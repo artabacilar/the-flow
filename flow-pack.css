@@ -3841,3 +3841,16 @@ html[data-flow-look="new"][data-today-beta="on"] #today-feed .ah-day .ah-plan:ho
 
 /* several in Focus at once */
 html[data-flow-look="new"] #today-feed .lk-bt .bt-focuses{display:flex;flex-direction:column;gap:8px}
+
+/* ── Trello items: a round tick that marks them done in Trello ── */
+.ah-trtick,.bt-trtick{appearance:none;flex:none;width:18px;height:18px;margin:0 6px -4px 0;padding:0;border:2px solid var(--muted,#8a8f98);border-radius:50%;background:transparent;cursor:pointer;vertical-align:middle;position:relative}
+.ah-trtick::before,.bt-trtick::before{content:"";position:absolute;inset:-10px}
+.ah-trtick:hover,.bt-trtick:hover{border-color:var(--accent,#ff6b3d)}
+.ah-row.trello .ah-tm{display:flex;align-items:flex-start;gap:2px}
+.ah-trlink{color:inherit;text-decoration:underline;text-underline-offset:2px}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-ev.tr time{display:flex;align-items:flex-start;gap:4px}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-trtick{border-color:var(--lk-dim,#666);margin:1px 0 0}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-trtick:hover{border-color:var(--lk-coral,#ff6b3d)}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-trk{margin-top:14px}
+.conn-trb{grid-column:1/-1;margin-top:8px;padding:10px 12px;border:1px solid var(--border,rgba(255,255,255,.12));border-radius:12px;max-height:280px;overflow:auto}
+.conn-trbl{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;cursor:pointer}

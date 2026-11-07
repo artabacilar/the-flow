@@ -220,6 +220,27 @@ const PROVIDERS = {
     verify: verifyNotion,
     actions: { pages: notionPages, target: notionTarget, send: notionSend },
     oneAccount: ['pages', 'target', 'send']
+  },
+
+  /* Trello: cards and checklist items with a due date on Today and Coming
+     up, and ticking one done in The Flow marks it done in Trello. Trello's
+     own way for one person's use: the app's API key (public, in every
+     authorise link — TRELLO_API_KEY on the server) plus a token the person
+     grants on Trello's page. The token comes back here by itself in a
+     browser (the return page), or is pasted, like Fathom's key. */
+  trello: {
+    id: 'trello',
+    kind: 'key',
+    name: 'Trello',
+    blurb: 'Your Trello cards and checklist items with due dates on Today and in Coming up. Tick one in The Flow and it is done in Trello.',
+    keyLabel: 'Trello token',
+    keyHelp: 'Press \u201cGet my Trello token\u201d, allow The Flow on Trello\u2019s page, and you are connected. In the iPhone or Mac app, Trello shows the token instead: copy it and paste it here.',
+    keyLink: 'Get my Trello token',
+    keyUrl: (req) => trelloAuthUrl(req),
+    needs: () => !!trelloKey(),
+    verify: verifyTrello,
+    actions: { items: trelloItems, boards: trelloBoards, prefs: trelloPrefs, done: trelloDone },
+    oneAccount: ['boards', 'prefs', 'done']
   }
 };
 
@@ -227,6 +248,7 @@ const kindOf = (pv) => pv.kind || 'oauth';
 const configured = (pv) => {
   if (!pv) return false;
   if (pv.paused && pv.paused()) return false;
+  if (pv.needs && !pv.needs()) return false;
   if (kindOf(pv) === 'key') return true;
   return !!(pv.clientId() && (!pv.secret || pv.secret()));
 };
@@ -788,6 +810,173 @@ async function readJSON(raw, key, dflt) {
 }
 const writeJSON = (raw, key, val) => raw.set(key, JSON.stringify(val));
 
+/* ---------------------------------------------------------------------
+ * Trello
+ * ------------------------------------------------------------------ */
+
+const TRELLO = 'https://api.trello.com/1';
+const trelloKey = () => process.env.TRELLO_API_KEY || '';
+const TRELLO_ID = /^[a-f0-9]{24}$/;
+const TRELLO_MAX_BOARDS = 20;
+const TRELLO_MAX_ITEMS = 400;
+
+function trelloReturnUrl(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
+    || (req.socket && req.socket.encrypted ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return proto + '://' + host + '/api/connect/trello/return';
+}
+function trelloAuthUrl(req) {
+  return 'https://trello.com/1/authorize?' + new URLSearchParams({
+    expiration: 'never', name: 'The Flow', scope: 'read,write', response_type: 'token',
+    key: trelloKey(), return_url: trelloReturnUrl(req), callback_method: 'fragment'
+  }).toString();
+}
+
+/* The token goes in Trello's OAuth header rather than the query string, so
+   it is never part of a URL that something along the way might log. */
+async function trelloCall(token, path, ctx, method, params) {
+  const q = params ? '?' + new URLSearchParams(params).toString() : '';
+  const res = await (ctx.fetch || fetch)(TRELLO + path + q, {
+    method: method || 'GET',
+    headers: { Accept: 'application/json',
+      Authorization: 'OAuth oauth_consumer_key="' + trelloKey() + '", oauth_token="' + token + '"' }
+  });
+  if (res.status === 401) throw new Refused('Trello did not accept that token. Get a new one and paste it again.');
+  if (res.status === 404) throw new Refused('Trello could not find that card or board.');
+  if (res.status === 429) throw new Refused('Trello is busy — try again in a minute.');
+  if (!res.ok) throw new Error('Trello answered ' + res.status);
+  return res.json();
+}
+
+async function verifyTrello(key, ctx) {
+  if (!trelloKey()) throw new Refused('Trello is not set up on this server yet.');
+  const j = await trelloCall(key, '/members/me', ctx, 'GET', { fields: 'fullName,username,email' });
+  return { email: String(j.email || ''), name: String(j.fullName || j.username || 'Trello') };
+}
+
+const CARD_FIELDS = 'name,due,start,dueComplete,closed,idBoard,shortUrl,idMembers';
+
+/* What Today and Coming up read: the person's own cards (dated or not),
+   every dated card on the boards they chose, and checklist items that are
+   theirs or have a date, on those cards' boards. Done ones are kept, with
+   done:true, so a tick made in Trello takes a card off Today too. */
+async function trelloItems(pv, rec, ctx) {
+  const t = rec.key;
+  const me = await trelloCall(t, '/members/me', ctx, 'GET', { fields: 'id' });
+  const boards = await trelloCall(t, '/members/me/boards', ctx, 'GET', { filter: 'open', fields: 'name' });
+  const boardName = {};
+  (boards || []).forEach((b) => { if (b && b.id) boardName[b.id] = String(b.name || ''); });
+  const chosen = (Array.isArray(rec.boards) ? rec.boards : []).filter((id) => boardName[id]).slice(0, TRELLO_MAX_BOARDS);
+
+  const cards = {};
+  const mine = await trelloCall(t, '/members/me/cards', ctx, 'GET', { filter: 'visible', fields: CARD_FIELDS });
+  (mine || []).forEach((c) => { if (c && !c.closed) cards[c.id] = Object.assign({ mine: true }, c); });
+  for (const bid of chosen) {
+    const got = await trelloCall(t, '/boards/' + bid + '/cards', ctx, 'GET', { filter: 'visible', fields: CARD_FIELDS });
+    (got || []).forEach((c) => {
+      if (!c || c.closed || !c.due) return;
+      if (!cards[c.id]) cards[c.id] = Object.assign({ mine: (c.idMembers || []).indexOf(me.id) >= 0 }, c);
+    });
+  }
+
+  const out = [];
+  const cardItem = (c) => ({
+    id: 'c:' + c.id, kind: 'card', title: String(c.name || '').slice(0, 300), card: '',
+    board: boardName[c.idBoard] || '', due: c.due || '', done: !!c.dueComplete,
+    url: String(c.shortUrl || ''), mine: !!c.mine
+  });
+  Object.values(cards).forEach((c) => out.push(cardItem(c)));
+
+  /* Checklists, board by board, for the boards that hold the cards above. */
+  const boardIds = [...new Set(Object.values(cards).map((c) => c.idBoard).concat(chosen))].filter((id) => boardName[id]).slice(0, TRELLO_MAX_BOARDS);
+  for (const bid of boardIds) {
+    let lists = [];
+    try {
+      lists = await trelloCall(t, '/boards/' + bid + '/checklists', ctx, 'GET',
+        { fields: 'name,idCard', checkItem_fields: 'name,state,due,idMember' });
+    } catch (e) { if (e instanceof Refused) throw e; continue; }
+    (lists || []).forEach((cl) => {
+      const card = cards[cl.idCard];
+      (cl.checkItems || []).forEach((it) => {
+        const ours = it.idMember === me.id;
+        if (!ours && !it.due) return;
+        if (!card && !ours && chosen.indexOf(bid) < 0) return;
+        out.push({
+          id: 'i:' + cl.idCard + ':' + it.id, kind: 'check', title: String(it.name || '').slice(0, 300),
+          card: card ? String(card.name || '').slice(0, 200) : '', board: boardName[bid] || '',
+          due: it.due || '', done: it.state === 'complete', url: card ? String(card.shortUrl || '') : '', mine: ours
+        });
+      });
+    });
+  }
+  return { status: 200, body: { items: out.slice(0, TRELLO_MAX_ITEMS), boards: chosen.length } };
+}
+
+async function trelloBoards(pv, rec, ctx) {
+  const boards = await trelloCall(rec.key, '/members/me/boards', ctx, 'GET', { filter: 'open', fields: 'name' });
+  const chosen = Array.isArray(rec.boards) ? rec.boards : [];
+  return { status: 200, body: { boards: (boards || []).map((b) => ({ id: b.id, name: String(b.name || ''), chosen: chosen.indexOf(b.id) >= 0 })) } };
+}
+
+async function trelloPrefs(pv, rec, ctx) {
+  if (!ctx.req || ctx.req.method !== 'POST') return { status: 405, body: { error: 'POST' } };
+  let body = {};
+  try { body = JSON.parse((await ctx.readBody(ctx.req)) || '{}'); } catch (e) {}
+  const boards = (Array.isArray(body.boards) ? body.boards : []).map(String).filter((id) => TRELLO_ID.test(id));
+  const uniq = [...new Set(boards)].slice(0, TRELLO_MAX_BOARDS);
+  await ctx.saveRec(Object.assign({}, rec, { boards: uniq }));
+  return { status: 200, body: { ok: true, boards: uniq.length } };
+}
+
+/* Done in The Flow is done in Trello: a card is marked complete, a
+   checklist item is checked. Undone puts it back. */
+async function trelloDone(pv, rec, ctx) {
+  if (!ctx.req || ctx.req.method !== 'POST') return { status: 405, body: { error: 'POST' } };
+  let body = {};
+  try { body = JSON.parse((await ctx.readBody(ctx.req)) || '{}'); } catch (e) {}
+  const id = String(body.id || ''), done = body.done !== false;
+  let m = id.match(/^c:([a-f0-9]{24})$/);
+  if (m) {
+    await trelloCall(rec.key, '/cards/' + m[1], ctx, 'PUT', { dueComplete: done ? 'true' : 'false' });
+    return { status: 200, body: { ok: true, id, done } };
+  }
+  m = id.match(/^i:([a-f0-9]{24}):([a-f0-9]{24})$/);
+  if (m) {
+    await trelloCall(rec.key, '/cards/' + m[1] + '/checkItem/' + m[2], ctx, 'PUT', { state: done ? 'complete' : 'incomplete' });
+    return { status: 200, body: { ok: true, id, done } };
+  }
+  return { status: 400, body: { error: 'That is not a Trello card or checklist item.' } };
+}
+
+function trelloReturnPage() {
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a0b0d">' +
+    '<title>Trello — The Flow</title>' +
+    '<style>html,body{margin:0;min-height:100%;background:#0a0b0d;color:#e8eaee;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}' +
+    'main{max-width:440px;margin:0 auto;padding:16vh 24px 0;text-align:center}h1{font-size:22px;margin:0 0 8px}p{color:#9aa1ad;margin:0 0 12px}' +
+    'textarea{width:100%;box-sizing:border-box;background:#15171c;color:#e8eaee;border:1px solid #2a2e36;border-radius:10px;padding:10px;font:13px ui-monospace,monospace;resize:none}' +
+    'button,a.b{display:inline-block;margin-top:10px;background:#ff6b3d;color:#111;border:0;border-radius:10px;padding:10px 16px;font:600 15px inherit;cursor:pointer;text-decoration:none}</style></head><body><main>' +
+    '<h1 id="h">Connecting Trello…</h1><p id="p"></p><div id="x"></div></main>' +
+    '<script>(function(){' +
+    'var m=/[#&]token=([A-Za-z0-9]+)/.exec(location.hash||"");history.replaceState(null,"",location.pathname);' +
+    'var h=document.getElementById("h"),p=document.getElementById("p"),x=document.getElementById("x");' +
+    'if(!m){h.textContent="Trello was not connected";p.textContent="Trello did not send a token back. Go back to The Flow and try again from Settings.";return;}' +
+    'var t=m[1];' +
+    'fetch("/api/connect/trello/key",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:t})})' +
+    '.then(function(r){return r.json().catch(function(){return{}}).then(function(j){return{ok:r.ok,status:r.status,j:j}})})' +
+    '.then(function(r){' +
+    'if(r.ok){h.textContent="Trello connected";p.textContent="Your Trello cards will show on Today and in Coming up. You can close this tab.";' +
+    'try{localStorage.setItem("flow:trelloConnected",String(Date.now()))}catch(e){}' +
+    'x.innerHTML="<a class=b href=/>Back to The Flow</a>";return;}' +
+    'if(r.status===401){h.textContent="One more step";p.textContent="This browser is not signed in to The Flow. Copy this token and paste it in The Flow → Settings → Trello.";' +
+    'x.innerHTML="<textarea rows=3 readonly id=tk></textarea><br><button id=cp>Copy token</button>";var a=document.getElementById("tk");a.value=t;' +
+    'document.getElementById("cp").onclick=function(){a.select();try{navigator.clipboard.writeText(t)}catch(e){document.execCommand("copy")}this.textContent="Copied";};return;}' +
+    'h.textContent="Trello was not connected";p.textContent=(r.j&&r.j.error)||"Something went wrong. Try again from Settings.";' +
+    '}).catch(function(){h.textContent="Trello was not connected";p.textContent="The Flow could not be reached. Try again from Settings.";});' +
+    '})();</script></body></html>';
+}
+
 /* One connection can hold several accounts — a personal and a work Gmail,
    two Outlooks, two Fathoms. Stored as { v: 2, accounts: [...] }; a record
    written before that (one account, no list) is read as a list of one. Each
@@ -809,8 +998,9 @@ async function upsertAccount(raw, uid, id, rec) {
   const aid = aidOf(rec);
   const i = list.findIndex((r) => r.aid === aid);
   /* Reconnecting keeps what the account was set up to do (Notion's page). */
-  const merged = Object.assign({}, i >= 0 ? { target: list[i].target } : {}, rec, { aid });
+  const merged = Object.assign({}, i >= 0 ? { target: list[i].target, boards: list[i].boards } : {}, rec, { aid });
   if (!merged.target) delete merged.target;
+  if (!merged.boards) delete merged.boards;
   if (i >= 0) list[i] = merged; else list.push(merged);
   await writeAccounts(raw, uid, id, list);
   return merged;
@@ -869,10 +1059,12 @@ async function handle(req, res, ctx) {
       out.push({
         accounts: accounts.map((a) => ({
           aid: a.aid, email: a.email || null, name: a.name || null, photo: a.photo || null,
-          since: a.since || null, broken: !!a.broken, target: (a.target && a.target.title) || null
+          since: a.since || null, broken: !!a.broken, target: (a.target && a.target.title) || null,
+          boards: Array.isArray(a.boards) ? a.boards.length : 0
         })),
         id: pv.id, name: pv.name, blurb: pv.blurb, kind: kindOf(pv),
-        keyLabel: pv.keyLabel || null, keyHelp: pv.keyHelp || null, keyUrl: pv.keyUrl || null,
+        keyLabel: pv.keyLabel || null, keyHelp: pv.keyHelp || null, keyLink: pv.keyLink || null,
+        keyUrl: (typeof pv.keyUrl === 'function' ? (configured(pv) ? pv.keyUrl(req) : null) : pv.keyUrl) || null,
         configured: configured(pv),
         connected: !!rec,
         broken: !!(rec && rec.broken),
@@ -892,6 +1084,17 @@ async function handle(req, res, ctx) {
   const pv = PROVIDERS[m[1]];
   if (!pv) return json(res, 404, { error: 'No such connection.' }), true;
   const step = m[2];
+
+  /* ---- Trello hands the token back in the address's fragment ----
+     The page reads it and saves it with the session of the browser it is
+     in. In the iPhone or Mac app the link opened in the real browser, which
+     has no session: then it shows the token to copy instead. The fragment
+     never reaches this server, so the token is not in any log. */
+  if (step === 'return' && pv.id === 'trello') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+    res.end(trelloReturnPage());
+    return true;
+  }
 
   /* ---- a key, pasted by the person ---- */
   if (step === 'key') {

@@ -10037,9 +10037,21 @@ const TodayBeta = {
     let items = [];
     try { items = Ahead.items().filter((x) => x.date === iso && x.kind !== 'rock'); } catch (e) {}
     const past = o < B.todayO();
-    const rows = items.map((x) => '<div class="bt-ev"><time>' + esc(x.allDay ? 'All day' : x.time || '') + '</time><div><b data-i18n="off">' + esc(x.title) + '</b><span>' + (x.kind === 'event' ? (x.hours && !x.allDay ? B.dur(x.hours) : 'Calendar') : 'Open loop') + (x.where ? ' · ' + esc(x.where) : '') + '</span></div></div>').join('');
+    const tick = (id, t) => '<button type="button" class="bt-trtick" data-bt="trdone" data-id="' + esc(id) + '" aria-label="Done in Trello: ' + esc(t) + '"></button>';
+    const rows = items.map((x) => '<div class="bt-ev' + (x.kind === 'trello' ? ' tr' : '') + '"><time>' + (x.kind === 'trello' ? tick(x.trelloId, x.title) : '') + esc(x.allDay ? 'All day' : x.time || '') + '</time><div><b data-i18n="off">' + esc(x.title) + '</b><span>' + (x.kind === 'event' ? (x.hours && !x.allDay ? B.dur(x.hours) : 'Calendar') : x.kind === 'trello' ? 'Trello' + (x.late ? ' · overdue' : '') : 'Open loop') + (x.where ? ' · <span data-i18n="off">' + esc(x.where) + '</span>' : '') + '</span></div></div>').join('');
+    /* Trello cards that are yours but have no date: under today, a few, so
+       they are not forgotten — with the rest a tap away in Trello. */
+    let undated = '';
+    try {
+      if (o === B.todayO()) {
+        const u = Trello.undated();
+        if (u.length) undated = '<div class="bt-eyebrow bt-trk">Trello · no date</div>' + u.slice(0, 5).map((x) =>
+          '<div class="bt-ev tr"><time>' + tick(x.id, x.title) + '</time><div><b data-i18n="off">' + esc(x.title) + '</b><span data-i18n="off">' + esc([x.card, x.board].filter(Boolean).join(' · ')) + '</span></div></div>').join('') +
+          (u.length > 5 ? '<p class="bt-none">+ ' + (u.length - 5) + ' more in Trello</p>' : '');
+      }
+    } catch (e) {}
     return '<div class="lk-bt-in"><div class="bt-eyebrow">Calendar · ' + esc(B.rel(o) || B.short(o)) + '</div>' +
-      (rows || '<p class="bt-none">' + (past ? 'Past days are not shown.' : 'Nothing in your calendar.') + '</p>') +
+      (rows || '<p class="bt-none">' + (past ? 'Past days are not shown.' : 'Nothing in your calendar.') + '</p>') + undated +
       '<div class="bt-raillinks"><button type="button" class="bt-linkish" data-bt="compass">Open Week Compass ›</button><button type="button" class="bt-linkish" data-bt="weekreview">Review the week ›</button></div>' +
 '</div>';
   },
@@ -10106,6 +10118,7 @@ const TodayBeta = {
     const t = B.todayO();
     if (a === 'tick') return B.tick(id);
     if (a === 'open') return RockActions.open(id);
+    if (a === 'trdone') { Trello.done(id, true); return; }
     if (a === 'meet') { const k = String(id); if (B.meetOpen.has(k)) B.meetOpen.delete(k); else B.meetOpen.add(k); B.paint(); return; }
     if (a === 'pin') { const n = B.focusIds().filter((x) => x !== String(id)); n.push(String(id)); await B.setFocus(n); B.paint(); try { toast(n.length > 1 ? 'Added to your Focus · ' + n.length : 'Pinned as your Focus', null, 1400); } catch (e) {} return; }
     if (a === 'unpin') { await B.setFocus(B.focusIds().filter((x) => x !== String(id))); B.paint(); return; }
@@ -11280,6 +11293,99 @@ window.FlowPatterns = Patterns;
  * schedules them itself. Above the list, once a day, the assistant reads
  * the stretch ahead: one line, what to get ready and by when, and the
  * reminders worth setting — one tap each. */
+/* ── Trello ────────────────────────────────────────────────────────────────
+ * Connected in Settings → Connections (flow-connect.js, provider 'trello').
+ * Cards and checklist items with a due date show on their day in Today and
+ * Coming up; the person's own undated cards under today. Ticking one here
+ * marks it done in Trello (a card complete, a checklist item checked), with
+ * Undo. The last list is kept on the device so Today paints before Trello
+ * answers. */
+const Trello = {
+  CACHE: 'flow:trelloItems',
+  items: [], at: 0, busy: false, booted: false,
+  connected() { try { const c = Connect.list.find((x) => x.id === 'trello'); return !!(c && c.connected && !c.broken); } catch (e) { return false; } },
+  cacheLoad() { try { const v = JSON.parse(localStorage.getItem(Trello.CACHE) || 'null'); if (v && Array.isArray(v.items)) { Trello.items = v.items; } } catch (e) {} },
+  cacheSave() { try { localStorage.setItem(Trello.CACHE, JSON.stringify({ at: Trello.at, items: Trello.items.slice(0, 400) })); } catch (e) {} },
+  find(id) { return Trello.items.find((x) => x.id === id) || null; },
+  dated() { return Trello.items.filter((x) => x && x.due && !x.done); },
+  undated() { return Trello.items.filter((x) => x && !x.due && !x.done && x.mine); },
+  repaint() {
+    try { Ahead.paint(); } catch (e) {}
+    try { if (TodayBeta.on()) TodayBeta.paint(); } catch (e) {}
+  },
+  async load(force) {
+    if (!Trello.connected()) { if (Trello.items.length) { Trello.items = []; Trello.cacheSave(); Trello.repaint(); } return; }
+    if (Trello.busy || (!force && Trello.at && Date.now() - Trello.at < 5 * 60 * 1000)) return;
+    Trello.busy = true;
+    try {
+      const j = await ConnectApps.get('/api/connect/trello/items');
+      Trello.items = Array.isArray(j.items) ? j.items : [];
+      Trello.at = Date.now();
+      Trello.cacheSave();
+    } catch (e) { if (force) throw e; }
+    finally { Trello.busy = false; }
+    Trello.repaint();
+  },
+  async done(id, done) {
+    done = done !== false;
+    const it = Trello.find(id);
+    if (!it) return;
+    const was = it.done;
+    it.done = done; Trello.cacheSave(); Trello.repaint();
+    try {
+      await ConnectApps.post('/api/connect/trello/done', { id, done });
+      if (done) { try { RockActions.undo('Done in Trello', () => Trello.done(id, false)); } catch (e) { toast('Done in Trello ✓', null, 1800); } }
+    } catch (e) {
+      it.done = was; Trello.cacheSave(); Trello.repaint();
+      toast(e.message || 'Trello did not take that — try again.', 'err', 4000);
+    }
+  },
+  /* Settings: which boards' dated cards to include, besides your own cards. */
+  async pickBoards(row) {
+    const j = await ConnectApps.get('/api/connect/trello/boards');
+    const boards = Array.isArray(j.boards) ? j.boards : [];
+    let box = row.querySelector('.conn-trb');
+    if (!box) { box = document.createElement('div'); box.className = 'conn-trb'; row.appendChild(box); }
+    if (!boards.length) { box.innerHTML = '<p class="flow-sub">No open boards on this Trello account.</p>'; return ''; }
+    box.innerHTML = '<p class="flow-sub">Your own cards always show. Tick boards to also show every card with a due date on them.</p>' +
+      boards.map((b) => '<label class="conn-trbl"><input type="checkbox" value="' + esc(b.id) + '"' + (b.chosen ? ' checked' : '') + '> <span data-i18n="off">' + esc(b.name) + '</span></label>').join('') +
+      '<div class="conn-acts"><button type="button" class="flow-btn sm primary" data-trb="save">Save boards</button></div>';
+    box.querySelector('[data-trb="save"]').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget; btn.disabled = true;
+      const ids = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+      try {
+        await ConnectApps.post('/api/connect/trello/prefs', { boards: ids });
+        box.remove();
+        const out = row.querySelector('.conn-out');
+        await Trello.load(true);
+        if (out) out.textContent = ids.length ? ids.length + ' board' + (ids.length === 1 ? '' : 's') + ' included.' : 'Only your own cards.';
+        const b = row.querySelector('[data-conn-act="trello-boards"]'); if (b) b.textContent = 'Boards to include' + (ids.length ? ' (' + ids.length + ')' : '');
+      } catch (e) { btn.disabled = false; toast(e.message || 'Could not save.', 'err'); }
+    });
+    return '';
+  },
+  boot() {
+    if (Trello.booted) return;
+    Trello.booted = true;
+    Trello.cacheLoad();
+    if (Trello.items.length) Trello.repaint();
+    Trello.load(false).catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Trello.load(false).catch(() => {}); });
+    setInterval(() => { if (document.visibilityState === 'visible') Trello.load(true).catch(() => {}); }, 10 * 60 * 1000);
+    /* Connected in another tab (Trello's return page): pick it up here. */
+    window.addEventListener('storage', (e) => {
+      if (e.key !== 'flow:trelloConnected') return;
+      Connect.load().then(() => {
+        const live = document.getElementById('connList');
+        if (live && live.isConnected) { try { live.innerHTML = Connect.list.map(Connect.row).join(''); } catch (x) {} }
+        toast('Trello connected ✓', null, 2400);
+        return Trello.load(true);
+      }).catch(() => {});
+    });
+  }
+};
+window.FlowTrello = Trello;
+
 const Ahead = {
   REM_KEY: 'flow:reminders',
   READ_KEY: 'flow:ahead',
@@ -11351,6 +11457,20 @@ const Ahead = {
       Schedule.between(today, end).forEach((r) => {
         if (!r || r.done || r.source === 'today' && r.date === today) return;
         out.push({ key: 'sc:' + r.key, kind: 'task', date: r.date, time: r.time || '', title: r.text || r.title || String(r.key).split('::').pop(), where: '', big: !!r.alert });
+      });
+    } catch (e) {}
+    /* Trello: cards and checklist items with a due date, on their day; one
+       that slipped (up to two weeks back) shows on today, marked overdue. */
+    try {
+      const lateFrom = Ahead.iso(Ahead.plus(-14));
+      Trello.dated().forEach((t) => {
+        const d = new Date(t.due);
+        if (isNaN(d)) return;
+        let date = Ahead.iso(d), late = false;
+        if (date < today) { if (date < lateFrom) return; late = true; date = today; }
+        if (date > end) return;
+        out.push({ key: 'tr:' + t.id, kind: 'trello', date, time: late ? '' : Ahead.hm(d), title: t.title,
+          where: [t.card, t.board].filter(Boolean).join(' · '), link: t.url || '', big: false, trelloId: t.id, late });
       });
     } catch (e) {}
     /* dropped or handed off from here — see RockActions.openItem */
@@ -11496,9 +11616,10 @@ const Ahead = {
       }
       const rem = Ahead.remFor(it.key);
       const open = Ahead.menu === it.key;
-      rows += '<li class="ah-row' + (it.big ? ' big' : '') + '" data-ahk="' + esc(it.key) + '">' +
-        '<span class="ah-tm">' + (it.time ? esc(it.time) : it.allDay ? 'All day' : '') + '</span>' +
-        '<span class="ah-t"><span data-i18n="off">' + esc(it.title) + '</span><small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : 'Calendar') + (it.where ? ' · ' + esc(it.where) : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
+      const tr = it.kind === 'trello';
+      rows += '<li class="ah-row' + (it.big ? ' big' : '') + (tr ? ' trello' : '') + '" data-ahk="' + esc(it.key) + '">' +
+        '<span class="ah-tm">' + (tr ? '<button type="button" class="ah-trtick" data-ah="trdone" aria-label="Done in Trello: ' + esc(it.title) + '"></button>' : '') + (it.time ? esc(it.time) : it.allDay ? 'All day' : '') + '</span>' +
+        '<span class="ah-t"><span data-i18n="off">' + esc(it.title) + '</span><small>' + (it.kind === 'rock' ? 'Big Rock' : it.kind === 'task' ? 'Task' : tr ? 'Trello' + (it.late ? ' · overdue' : '') : 'Calendar') + (it.where ? ' · <span data-i18n="off">' + esc(it.where) + '</span>' : '') + (tr && it.link ? ' · <a class="ah-trlink" href="' + esc(it.link) + '" target="_blank" rel="noopener">Open ↗</a>' : '') + (it.brief ? ' · brief ready' : '') + '</small></span>' +
         '<button type="button" class="ah-bell' + (rem.length ? ' on' : '') + '" data-ah="menu" aria-expanded="' + open + '" aria-label="' + (rem.length ? 'Reminders set: ' + rem.length : 'Remind me') + '">' + Nav.svg('bell') + (rem.length ? '<b>' + rem.length + '</b>' : '') + '</button>' +
         '<button type="button" class="ra-more ah-ra" data-ra-item="' + esc(it.key) + '" aria-label="More for ' + esc(it.title) + '">' + Nav.svg('dots') + '</button>' +
         (open ? '<div class="ah-menu" role="menu">' + Ahead.options(it).map((o) => { const on = rem.some((r) => r.id.endsWith('@' + o.id)); return '<button type="button" role="menuitemcheckbox" aria-checked="' + on + '" data-ah="opt" data-o="' + o.id + '"' + (on ? ' class="on"' : '') + '>' + (on ? '✓ ' : '') + esc(o.label) + '</button>'; }).join('') + (Ahead.options(it).length ? '' : '<span class="ah-none">Too soon to remind.</span>') + '</div>' : '') +
@@ -11535,6 +11656,7 @@ const Ahead = {
       if (what === 'span') { Ahead.setSpan(+b.getAttribute('data-n')); Ahead.paint(); return; }
       if (what === 'more') { Ahead.more[b.getAttribute('data-d')] = true; Ahead.paint(); return; }
       if (what === 'rewrite') { Ahead.ensure(true); return; }
+      if (what === 'trdone' && it && it.trelloId) { Trello.done(it.trelloId, true); return; }
       if (what === 'menu' && it) { Ahead.menu = Ahead.menu === it.key ? null : it.key; Ahead.paint(); return; }
       if (what === 'opt' && it) { const o = Ahead.options(it).find((x) => x.id === b.getAttribute('data-o')); if (o) Ahead.toggle(it, o); Ahead.menu = null; return; }
       if (what === 'sugg') {
@@ -12321,7 +12443,7 @@ const RockActions = {
     RockActions.cur = 'ext:' + it.key; RockActions.item = it;
     el.querySelector('h4').textContent = it.title;
     const d = RockActions.fromIso(it.date);
-    el.querySelector('.fn-sub').textContent = RockActions.label(d) + (it.time ? ' · ' + it.time : '') + (it.kind === 'event' ? ' · Calendar' : ' · Task');
+    el.querySelector('.fn-sub').textContent = RockActions.label(d) + (it.time ? ' · ' + it.time : '') + (it.kind === 'event' ? ' · Calendar' : it.kind === 'trello' ? ' · Trello' : ' · Task');
     el.querySelector('.ra-mv').hidden = true;
     el.querySelector('.ra-repwrap').hidden = true;
     RockActions.notesFill(null);
@@ -14507,7 +14629,7 @@ const Connect = {
     const isKey = c.kind === 'key';
     const keyForm = () => '<form class="conn-keyform" data-conn-keyform="' + esc(c.id) + '" hidden>' +
       '<p class="flow-sub">' + esc(c.keyHelp || '') +
-      (c.keyUrl ? ' <a href="' + esc(c.keyUrl) + '" target="_blank" rel="noopener">Open ' + esc(c.name) + ' ↗</a>' : '') + '</p>' +
+      (c.keyUrl ? ' <a href="' + esc(c.keyUrl) + '" target="_blank" rel="noopener">' + esc(c.keyLink || ('Open ' + c.name)) + ' ↗</a>' : '') + '</p>' +
       '<div class="conn-keyrow"><input type="password" autocomplete="off" spellcheck="false" placeholder="' + esc(c.keyLabel || 'Key') + '">' +
       '<button type="submit" class="flow-btn sm primary">Save</button></div></form>';
     const addBtn = (label) => '<button type="button" class="flow-btn sm ' + (accts.length ? '' : 'primary') + '" data-conn-' +
@@ -14542,7 +14664,9 @@ const Connect = {
       fathom: '<button type="button" class="flow-btn sm" data-conn-act="fathom">Check for meetings now</button>',
       gmail: '<button type="button" class="flow-btn sm" data-conn-act="gmail">Add starred emails as Big Rocks</button>',
       outlook: '<button type="button" class="flow-btn sm" data-conn-act="outlook">Add flagged emails as Big Rocks</button>',
-      gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>'
+      gcal: '<span class="flow-sub">Today’s meetings show on Today.</span>',
+      trello: '<button type="button" class="flow-btn sm" data-conn-act="trello-boards">Boards to include' + ((accts[0] && accts[0].boards) ? ' (' + accts[0].boards + ')' : '') + '</button>' +
+        '<button type="button" class="flow-btn sm" data-conn-act="trello">Check now</button>'
     }[c.id] || '';
     const many = c.id !== 'google';
     return '<div class="conn-row" data-conn="' + esc(c.id) + '">' + face +
@@ -14687,6 +14811,7 @@ const Connect = {
     await Connect.load();
     Connect.announce();
     try { ConnectApps.calendarBoot(); } catch (e) {}
+    try { Trello.boot(); } catch (e) {}
   }
 };
 
@@ -14939,6 +15064,8 @@ const ConnectApps = {
     if (what === 'outlook') return ConnectApps.mail('outlook', 'flagged', 'flagged');
     if (what === 'notion-pick') return ConnectApps.notionPick(row, aid);
     if (what === 'notion-send') return ConnectApps.notionSend(aid);
+    if (what === 'trello') { await Trello.load(true); const n = Trello.items.filter((x) => !x.done && (x.due || x.mine)).length; return n ? n + ' open from Trello — on Today and in Coming up.' : 'Nothing open from Trello right now.'; }
+    if (what === 'trello-boards') return Trello.pickBoards(row);
     return '';
   },
   /* Something went wrong with one account but not the others: say which. */
