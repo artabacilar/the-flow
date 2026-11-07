@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 /// The window's one and only content: the site, in a web view.
-final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate {
 
     static let home = URL(string: "https://theflow.today")!
     /// The near-black the page starts on, before it has said anything.
@@ -87,13 +87,71 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView,
                  decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        /* <a download> — a backup, a calendar file, the recovery codes, the
+           account export. WebKit asks first; without this answer the page
+           built the file and nothing was ever saved. */
+        if action.shouldPerformDownload { decisionHandler(.download); return }
         guard let url = action.request.url else { decisionHandler(.allow); return }
+        /* blob: and data: are the page's own files in memory. Handed to the
+           browser they mean nothing there. */
+        if url.scheme == "blob" || url.scheme == "data" { decisionHandler(.allow); return }
         if url.host == FlowWebController.home.host || url.scheme == "about" {
             decisionHandler(.allow)
         } else {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
         }
+    }
+
+    /* A response the window cannot show, or one the server marked as an
+       attachment (an export from the server), is a file to save. */
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let disposition = (response.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
+        if !response.canShowMIMEType || disposition.hasPrefix("attachment") {
+            decisionHandler(.download)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    // MARK: - Saving files
+
+    /* Ask where, the way every Mac app does. The sandbox lets the app write
+       only where the person chose in this panel (files.user-selected
+       .read-write), so the panel is not a nicety — it is the permission. */
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename
+        panel.canCreateDirectories = true
+        let finish: (NSApplication.ModalResponse) -> Void = { r in
+            guard r == .OK, let url = panel.url else { completionHandler(nil); return }
+            /* The panel has already asked "Replace?"; WebKit refuses to write
+               over a file that is there, so clear it first. */
+            try? FileManager.default.removeItem(at: url)
+            completionHandler(url)
+        }
+        if let window = view.window { panel.beginSheetModal(for: window, completionHandler: finish) }
+        else { finish(panel.runModal()) }
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        let a = NSAlert()
+        a.messageText = "The file could not be saved."
+        a.informativeText = error.localizedDescription
+        a.addButton(withTitle: "OK")
+        if let window = view.window { a.beginSheetModal(for: window) } else { _ = a.runModal() }
     }
 
     /* window.open, target=_blank, and anything else that asks for a second
