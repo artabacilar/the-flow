@@ -311,7 +311,9 @@ const SETTINGS_DEFAULTS = {
      addresses you, whether it keeps listening, and its AI finish. */
   asstVoice: 'premium',
   asstCall: 'name',
-  asstHands: true,
+  /* Hands-free: J.A.R.V.I.S. starts listening when opened and after each
+     answer, and a pause ends what you say. Off: Talk starts, Talk stops. */
+  asstHandsFree: false,
   asstSheen: true,
   asstFx: false,                 // the robotic 'AI finish' on the premium voice: off = the clean voice
   asstName: '',
@@ -13756,7 +13758,7 @@ const Say = {
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
             '<label class="sy-opt sy-chpick" hidden><span>Input</span><select data-say-ch></select></label>' +
-            '<label class="sy-own"><input type="checkbox" data-say-pref="asstHands"> Keep listening after it answers</label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstHandsFree"> Hands-free — listen when opened and after each answer; a pause sends (off: tap Talk to start, tap again to send)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
             '<div class="sy-memk">What he knows about you</div>' +
@@ -13919,8 +13921,9 @@ const Say = {
   },
   listeningLine() {
     const c = Say.call(), tr = Say.lang() === 'tr';
-    if (Say.history.length) return tr ? 'Dinliyorum…' : 'Listening…';
-    return tr ? 'Dinliyorum' + (c ? ', ' + c : '') + '…' : 'Yes' + (c ? ', ' + c : '') + '? Go ahead — I\'m listening.';
+    const end = Say.handsFree() ? '' : (tr ? ' Bitince Durdur\'a dokun.' : ' Tap Stop when you\'re done.');
+    if (Say.history.length) return (tr ? 'Dinliyorum…' : 'Listening…') + end;
+    return (tr ? 'Dinliyorum' + (c ? ', ' + c : '') + '…' : 'Yes' + (c ? ', ' + c : '') + '? Go ahead — I\'m listening.') + end;
   },
   open(opts) {
     if (!TodayLook.on()) return;
@@ -13952,6 +13955,10 @@ const Say = {
       if (String(ta2.value || '').trim()) return;
       Say.listen();
     };
+    /* Not hands-free: pressing Talk is the start — he listens at once, with
+       no spoken hello for the microphone to pick up, until Talk is pressed
+       again. A pause ends nothing. */
+    if (!Say.handsFree()) { setTimeout(go, 60); return; }
     if (Speech.mode() === 'off' || (opts && opts.quiet)) { setTimeout(go, 120); return; }
     const hello = Say.helloLine();
     /* Opened by Siri, with no tap, a page may not be allowed to make a sound:
@@ -13970,15 +13977,16 @@ const Say = {
     Say.mode('idle');
     Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
   },
+  handsFree() { try { return Speech.pref('asstHandsFree') === true; } catch (e) { return false; } },
   listen() {
     const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
     try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
     if (Say.own()) { Say.state('Dictate with Wispr Flow or your keyboard, then press Go.'); return; }
     if (!(window.FlowVoice && FlowVoice.available)) { Say.state('Type it here — this browser cannot listen.'); return; }
     Say.waiting = true;
-    /* 1.6 s of quiet after words ends the turn, as in a browser — on the
-       iPhone and the Mac the recogniser would otherwise listen forever. */
-    try { FlowVoice.start(ta, { pauseEnd: 1600 }); } catch (e) { Say.waiting = false; }
+    /* Hands-free: 1.6 s of quiet after words ends the turn. Otherwise the
+       person ends it — Talk again sends — and a pause ends nothing. */
+    try { FlowVoice.start(ta, Say.handsFree() ? { pauseEnd: 1600 } : { manual: true }); } catch (e) { Say.waiting = false; }
     Say.paintMic();
   },
   again() {
@@ -14119,7 +14127,7 @@ const Say = {
   /* Hands-free: once it has finished speaking, it listens again — for a yes
      or no when something is waiting to be done, for the next thing if not. */
   follow(confirm) {
-    if (!Say.spoken || Speech.pref('asstHands') === false || !Say.el || !Say.el.classList.contains('on')) return;
+    if (!Say.spoken || !Say.handsFree() || !Say.el || !Say.el.classList.contains('on')) return;
     try { if (Say.own()) return; } catch (e) {}
     Say.confirming = !!confirm;
     const ta = Say.el.querySelector('#sy-text'); if (ta) ta.value = '';
@@ -14167,7 +14175,7 @@ const Say = {
     const k = el.querySelector('.sy-k'); if (k) { k.textContent = Say.title(); if (Say.name()) k.setAttribute('data-i18n', 'off'); else k.removeAttribute('data-i18n'); }
     el.querySelectorAll('[data-say-pref]').forEach((f) => {
       const v = Speech.pref(f.getAttribute('data-say-pref'));
-      if (f.type === 'checkbox') f.checked = v !== false; else if (v != null) f.value = v;
+      if (f.type === 'checkbox') f.checked = f.getAttribute('data-say-pref') === 'asstHandsFree' ? v === true : v !== false; else if (v != null) f.value = v;
     });
     const note = el.querySelector('.sy-premium');
     if (note) Speech.premiumOn().then((on) => { note.textContent = on ? 'The premium voice is on for this account.' : 'The premium voice is not available here yet — it uses this device\'s best British voice.'; });
@@ -14204,7 +14212,7 @@ const Say = {
       '<div class="sy-heard" data-i18n="off">“' + esc(Say.said) + '”</div>' +
       (Say.plan.say ? '<div class="sy-say" data-i18n="off">' + esc(Say.plan.say) + '</div>' : '') +
       '<div class="sy-cards">' + Say.plan.actions.map((a, i) => Say.card(a, i)).join('') + '</div>' +
-      (n && Say.spoken && Speech.pref('asstHands') !== false ? '<div class="sy-ex">Say “yes” to do it, “no” to leave it — or say what to change.</div>' : '') +
+      (n && Say.spoken && Say.handsFree() ? '<div class="sy-ex">Say “yes” to do it, “no” to leave it — or say what to change.</div>' : '') +
       '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-say="again">' + Nav.svg('mic') + '<span>Say again</span></button>' +
       (n ? '<button type="button" class="flow-btn primary" data-say="do">Do it' + (n > 1 ? ' (' + n + ')' : '') + '</button>' : '<button type="button" class="flow-btn primary" data-say="close">Close</button>') + '</div>';
   },
@@ -14257,7 +14265,7 @@ const Say = {
     /* Spoken to, it answers in kind and the conversation carries on; typed,
        the sheet goes and a toast says it. */
     if (Say.spoken && !open && Say.el.classList.contains('on')) {
-      const hands = Speech.pref('asstHands') !== false;
+      const hands = Say.handsFree();
       const line = did ? Say.doneLine(did, hands) : (Say.lang() === 'tr' ? 'Yapılacak bir şey kalmadı.' : 'Nothing there needed doing.');
       Say.plan = null; Say.confirming = false;
       Say.history.push({ role: 'assistant', text: line });

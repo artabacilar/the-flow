@@ -2091,6 +2091,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Everything fits. Nothing needs to move.": "Her şey sığıyor. Taşınacak bir şey yok.",
   "Nothing open today. The day is yours.": "Bugün açık bir şey yok. Gün senin.",
   "Review the week": "Haftayı gözden geçir",
+  "Hands-free — listen when opened and after each answer; a pause sends (off: tap Talk to start, tap again to send)": "Eller serbest — açılınca ve her yanıttan sonra dinler; bir duraklama gönderir (kapalıyken: başlatmak için Konuş'a, göndermek için tekrar dokun)",
   "Mission": "Misyon",
   "Roles": "Roller",
   "Delegated": "Devredildi",

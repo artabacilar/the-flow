@@ -533,7 +533,13 @@
        by itself; the iPhone's and the Mac's do not — they listen until told
        to stop — so a "say it and it goes" panel (the assistant) asks for it.
        Ordinary dictation into a field never does: a pause to think is not
-       the end of a journal entry. */
+       the end of a journal entry.
+
+       opts.manual: the person ends the turn, nobody else. Press to talk,
+       press again to stop. A recogniser that closes by itself (Chrome does
+       after a stretch of silence, and says "no-speech") is opened again
+       behind the same lit microphone, and a pause never ends anything. Ten
+       minutes is the most one turn listens. */
     start: function (field, opts) {
       if (Voice.listening) return;
       opts = opts || {};
@@ -554,7 +560,9 @@
       say('');
       Voice.emit('listening');
 
-      var pauseMs = +opts.pauseEnd || 0, pauseTimer = 0;
+      var manual = !!opts.manual, userStop = false, failed = false, since = Date.now();
+      Voice.userStop = function () { userStop = true; };
+      var pauseMs = manual ? 0 : (+opts.pauseEnd || 0), pauseTimer = 0;
       var armPause = function () {
         if (!pauseMs || b.name === 'web') return;
         if (pauseTimer) clearTimeout(pauseTimer);
@@ -562,7 +570,7 @@
       };
       Voice.clearPause = function () { if (pauseTimer) { clearTimeout(pauseTimer); pauseTimer = 0; } };
 
-      b.start(locale(), {
+      var handlers = {
         partial: function (text) {
           say(text);
           Voice.emit('partial', { text: text });
@@ -576,11 +584,17 @@
           say('');
         },
         error: function (code) {
+          /* Silence is not a failure when the person decides when to stop. */
+          if (manual && !userStop && (code === 'no-speech' || code === 'aborted')) return;
+          failed = true;
           var why = explain(code);
           say(why, 'bad');
           Voice.emit('error', { code: code, text: why });
         },
         end: function () {
+          if (manual && !userStop && !failed && Voice.listening && Voice.backend === b && Date.now() - since < 600000) {
+            try { b.start(locale(), handlers); return; } catch (e) {}
+          }
           if (Voice.clearPause) Voice.clearPause();
           Voice.listening = false;
           Voice.backend = null;
@@ -601,13 +615,15 @@
           Voice.emit('idle');
           if (!ui.field) detach();
         }
-      });
+      };
+      b.start(locale(), handlers);
     },
 
-    stop: function () { if (Voice.listening && Voice.backend) Voice.backend.stop(); },
+    stop: function () { if (Voice.userStop) Voice.userStop(); if (Voice.listening && Voice.backend) Voice.backend.stop(); },
 
     /* Throw the turn away — nothing is committed. */
     cancel: function () {
+      if (Voice.userStop) Voice.userStop();
       if (!Voice.listening) return;
       var b = Voice.backend;
       Voice.listening = false;
