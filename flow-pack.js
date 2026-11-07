@@ -4207,6 +4207,7 @@ const SettingsUI = {
         <h3>🔗 Connections</h3>
         <p class="flow-sub">Other apps you use, connected to this account. Each one asks for the least it needs, and you can disconnect it here at any time.</p>
         <div id="connList" class="conn-list"><div class="flow-sub">Loading…</div></div>
+        ${Nav.compassHidden() ? `<div class="conn-ics"><div><b>Calendar file</b><small>Your Priorities, training and meals as a file Apple Calendar or Google Calendar opens.</small></div><button type="button" class="flow-btn sm" id="setIcsOpen">Download…</button></div>` : ''}
       </div>
 
       <div class="flow-card" id="mcp-card">
@@ -4423,6 +4424,7 @@ const SettingsUI = {
 
     /* ---- Connections (Google, and whatever follows it) ---- */
     try { Connect.wire(section); } catch (e) { console.warn('[Flow] connections', e); }
+    { const b = $('#setIcsOpen', section); if (b) b.addEventListener('click', () => IcsSheet.open()); }
 
     /* ---- recovery codes ---- */
     SettingsUI.recoveryStatus(section);
@@ -6481,6 +6483,8 @@ const TodayPlus = {
       wrap.querySelector('#rv-score').innerHTML = WeekLoop.scoreHtml(sc);
     } catch (e) { wrap.querySelector('#rv-score').innerHTML = ''; }
     try { ReviewPlus.decorate(wrap); } catch (e) { console.warn('[Flow] review evidence', e); }
+    /* Simple has no Week Compass to open; the week is on Today. */
+    { const wk = wrap.querySelector('[data-rv="week"]'); if (wk) wk.hidden = !!(Nav.compassHidden && Nav.compassHidden()); }
     /* What slipped, week by week: this week first, then last week, then
        the weeks before — each one named, so what fell off three weeks ago
        is not mixed in with what fell off yesterday. */
@@ -8647,7 +8651,7 @@ const WeekPlan = {
     } else {
       h += '<h2>Your week is set</h2><p>' + st.carried + ' carried over, ' + st.added + ' new Big Rock' + (st.added === 1 ? '' : 's') + ' added for ' + esc(WeekPlan.range(st.target)) + '.</p>' +
         '<p class="flow-sub">They show on Today on their day, and remind you at their time if they have one.</p>' +
-        '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="close">Close</button><button type="button" class="flow-btn primary" data-wp="compass">Open the Week Compass</button></div>';
+        '<div class="wp-nav"><button type="button" class="flow-btn ghost" data-wp="close">Close</button><button type="button" class="flow-btn primary" data-wp="compass">' + (Nav.compassHidden() ? 'See the week' : 'Open the Week Compass') + '</button></div>';
     }
     body.innerHTML = h;
     body.onclick = WeekPlan.onClick;
@@ -9497,8 +9501,12 @@ const TodayLook = {
      and every function — Simple is how it looks and reads, never what it
      can do. The setting keeps its old name, newLook, so anyone who had the
      preview on lands in Simple. SIMPLE_HIDE stays as the one place to leave
-     a page out of Simple's menu, should that ever be wanted again. */
-  SIMPLE_HIDE: [],
+     a page out of Simple's menu, should that ever be wanted again.
+     The Week Compass is left out of Simple: its week is Today's Week view,
+     its review the Review week sheet, its mission and roles North Star, its
+     calendar file Settings → Connections. Advanced keeps the tab as it was,
+     and nothing it holds is deleted. */
+  SIMPLE_HIDE: ['compass'],
   on() { try { return !!Settings.get('newLook'); } catch (e) { return false; } },
   hides() { return TodayLook.on() ? TodayLook.SIMPLE_HIDE.slice() : []; },
   applyLook() {
@@ -9890,6 +9898,20 @@ const TodayBeta = {
   short(o) { const d = TodayBeta.date(o); return DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; },
   rel(o) { const t = TodayBeta.todayO(); return o === t ? 'Today' : o === t + 1 ? 'Tomorrow' : o === t - 1 ? 'Yesterday' : ''; },
   byTime(a, b) { return String(a.time || '99:99').localeCompare(String(b.time || '99:99')); },
+  /* The Training plan's session for that day, with its time — what the
+     Week Compass put at the top of each column. Rest days have none. */
+  training(o) {
+    try {
+      const w = TodayBeta.where(o), key = DAY_KEYS[w.day];
+      const tp = getDayPlan(w.wid, key);
+      if (!tp || tp.type === 'rest' || !tp.title) return null;
+      return { title: String(tp.title), time: tTimeFor(w.wid, key) || '' };
+    } catch (e) { return null; }
+  },
+  trainHtml(o) {
+    const t = TodayBeta.training(o);
+    return t ? '<div class="bt-train">' + Nav.svg('dumbbell', 'bt-i') + (t.time ? '<b>' + esc(t.time) + '</b> ' : '') + '<span>' + esc(t.title) + '</span></div>' : '';
+  },
 
   /* Back to today when the day turns, and each time the app opens. */
   fresh() {
@@ -9975,6 +9997,7 @@ const TodayBeta = {
       '<div class="bt-cr"><button type="button" class="bt-btn icon" data-bt="prev" aria-label="Previous week">‹</button>' +
         '<span class="bt-range">' + esc(B.short(B.week * 7).replace(/^\w+ /, '') + ' – ' + B.short(B.week * 7 + 6).replace(/^\w+ /, '')) + '</span>' +
         '<button type="button" class="bt-btn icon" data-bt="next" aria-label="Next week">›</button>' +
+        (B.view === 'week' ? '<button type="button" class="bt-btn" data-bt="weekreview">Review the week</button>' : '') +
         '<button type="button" class="bt-btn" data-bt="replan">' + Nav.svg('refresh', 'bt-i') + 'Replan</button></div></div>';
   },
   stripHtml() {
@@ -10022,10 +10045,11 @@ const TodayBeta = {
     } else {
       for (let i = 0; i < 7; i++) {
         const o = B.week * 7 + i, all = B.rocksOn(o).slice().sort((a, b) => (a.done - b.done) || (B.rank(a) - B.rank(b)) || B.byTime(a, b));
-        if (!all.length) continue;
+        const train = B.trainHtml(o);
+        if (!all.length && !train) continue;
         const open = all.filter((r) => !r.done).length;
         h += '<button type="button" class="bt-daygrp' + (o === t ? ' today' : '') + (o < t && open ? ' late' : '') + '" data-bto="' + o + '"><span>' + esc(B.longDate(o)) + (o === t ? ' · today' : '') + '</span><span>' + open + ' planned · ' + (all.length - open) + ' done</span></button>' +
-          '<div class="bt-rows">' + all.map(B.row).join('') + '</div>';
+          train + (all.length ? '<div class="bt-rows">' + all.map(B.row).join('') + '</div>' : '');
       }
       if (!h) h = '<div class="bt-empty"><b>Nothing planned this week.</b>Add one below.</div>';
     }
@@ -10052,7 +10076,7 @@ const TodayBeta = {
     } catch (e) {}
     return '<div class="lk-bt-in"><div class="bt-eyebrow">Calendar · ' + esc(B.rel(o) || B.short(o)) + '</div>' +
       (rows || '<p class="bt-none">' + (past ? 'Past days are not shown.' : 'Nothing in your calendar.') + '</p>') + undated +
-      '<div class="bt-raillinks"><button type="button" class="bt-linkish" data-bt="compass">Open Week Compass ›</button><button type="button" class="bt-linkish" data-bt="weekreview">Review the week ›</button></div>' +
+      '<div class="bt-raillinks"><button type="button" class="bt-linkish" data-bt="weekreview">Review the week ›</button></div>' +
 '</div>';
   },
   dur(h) { const m = Math.round(h * 60); return m >= 60 ? (m / 60).toFixed(m % 60 ? 1 : 0) + ' h' : m + ' min'; },
@@ -10092,7 +10116,7 @@ const TodayBeta = {
     const title = String(inp.value || '').trim();
     if (!title) { inp.focus(); return; }
     const o = B.target(), w = B.where(o);
-    if (typeof addRock !== 'function' || !w.wid) { toast('Open the Week Compass once, then try again.', 'warn'); return; }
+    if (typeof addRock !== 'function' || !w.wid) { toast('That did not save — reload and try again.', 'warn'); return; }
     const roles = (typeof cData !== 'undefined' && Array.isArray(cData.roles)) ? cData.roles : [];
     addRock(title.slice(0, 200), roles[0] || '', w.day, '', w.wid, { prio: 'med' });
     const list = cData.rocks[w.wid] || [], r = list[list.length - 1];
@@ -10130,7 +10154,7 @@ const TodayBeta = {
     else if (a === 'today') { B.sel = t; B.week = 0; B.view = 'day'; }
     else if (a === 'review') B.reviewOpen = !B.reviewOpen;
     else if (a === 'replan') { try { Replan.open(); } catch (e) {} return; }
-    else if (a === 'compass') { try { Nav.go('compass'); } catch (e) {} return; }
+    else if (a === 'compass') { B.view = 'week'; }
     else if (a === 'weekreview') { try { TodayPlus.reviewSheet(); } catch (e) {} return; }
     else if (a === 'classic') return B.set(false);
     else if (a === 'quiet' || a === 'lime') { await Settings.set('todayBetaLime', a === 'lime'); }
@@ -10966,11 +10990,28 @@ const ReviewPlus = {
       '<div class="rv-cells">' + cell(c.planned, 'planned') + cell(c.done, 'done') + cell(c.moved, 'moved') + cell(c.dropped, 'dropped') + cell(c.delegated, 'handed off') + '</div>' +
       (c.most ? '<p class="rv-note"><b>' + esc(c.most.title) + '</b> moved ' + c.most.moved + ' times and is still open. Smaller, or not this week?</p>' : (c.open ? '<p class="rv-note">' + c.open + ' still open. The Overdue list on Today sorts them one by one.</p>' : '')) +
       ReviewPlus.sawHtml(wid) +
+      ReviewPlus.asideHtml(wid) +
       '<div class="ra-k">Next week, one to three</div>' +
       '<form class="rv-next">' + [0, 1, 2].map((i) => '<input class="flow-in" maxlength="200" placeholder="' + (i === 0 ? 'The one thing that would make next week count' : 'Optional') + '" aria-label="Big Rock for next week ' + (i + 1) + '">').join('') +
+        '<label class="flow-label" for="rv-plan">Next week in words</label><textarea class="flow-in" id="rv-plan" rows="3" maxlength="2000" placeholder="Optional. What a good next week looks like, what you are not doing, who you need to see.">' + esc(ReviewPlus.planText()) + '</textarea>' +
         '<label class="flow-label" for="rv-line">One line about this week</label><textarea class="flow-in" id="rv-line" rows="2" maxlength="500" placeholder="Optional. Kept with the record, never shared."></textarea>' +
         '<div class="ra-row ra-end"><button type="submit" class="flow-btn primary">Set next week</button></div></form>' +
     '</div>';
+  },
+  nextWid() { const m = new Date(); m.setHours(12, 0, 0, 0); m.setDate(m.getDate() + (7 - (m.getDay() + 6) % 7)); return weekId(m); },
+  /* The week in words — the Week Compass's plan box, which the Direction
+     card reads. Here it is written for the week about to start. */
+  planText() { try { return (cData.plans && cData.plans[ReviewPlus.nextWid()]) || ''; } catch (e) { return ''; } },
+  /* What was dropped or handed off this week, each one a tap from coming
+     back — the list that sat under the Week Compass grid. */
+  asideHtml(wid) {
+    let list = [];
+    try { list = RockActions.aside().filter((a) => a.wid === wid && !a.ext); } catch (e) {}
+    if (!list.length) return '';
+    const row = (a) => '<li class="' + esc(a.status) + '"><span class="ra-wt">' + esc(String(a.title || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')) +
+      '<small>' + (a.status === 'delegated' ? 'Delegated' + (a.to ? ' to ' + esc(a.to) : '') : 'Dropped') + '</small></span>' +
+      '<button type="button" class="ra-back" data-rv-back="' + esc(String(a.id)) + '">' + (a.status === 'dropped' ? 'Put back' : 'Take back') + '</button></li>';
+    return '<div class="ra-k">Dropped and delegated<small>' + list.length + '</small></div><ul class="rv-aside">' + list.map(row).join('') + '</ul>';
   },
   /* Sharpen the Blade is a weekly list, so in Simple it is asked here, once
      a week, instead of sitting on Today every day: eight ticks for the week. */
@@ -11000,8 +11041,14 @@ const ReviewPlus = {
   async submit(form) {
     const titles = [...form.querySelectorAll('input')].map((i) => i.value.replace(/\s+/g, ' ').trim()).filter(Boolean);
     const line = form.querySelector('#rv-line').value.trim();
-    const mon = new Date(); mon.setHours(12, 0, 0, 0); mon.setDate(mon.getDate() + (7 - (mon.getDay() + 6) % 7));
-    const wid = weekId(mon);
+    const wid = ReviewPlus.nextWid();
+    const planEl = form.querySelector('#rv-plan');
+    if (planEl) {
+      const v = planEl.value.trim();
+      if (!cData.plans) cData.plans = {};
+      if (v) cData.plans[wid] = v; else delete cData.plans[wid];
+      try { cSave(); } catch (e) {}
+    }
     titles.forEach((t, i) => addRock(t, (cData.roles && cData.roles[0]) || '', Math.min(4, i), '', wid, { prio: i === 0 ? 'high' : 'med' }));
     try {
       const list = (await DB.get(ReviewPlus.KEY, [])) || [];
@@ -11024,7 +11071,17 @@ const ReviewPlus = {
       box = document.createElement('div'); box.id = 'rv-evidence';
       const after = wrap.querySelector('#rv-score'); if (after) after.after(box); else wrap.querySelector('.fn-sheet').appendChild(box);
       box.addEventListener('submit', (e) => { e.preventDefault(); ReviewPlus.submit(e.target); });
-      box.addEventListener('click', (e) => { e.stopPropagation(); const b = e.target.closest('[data-rv-saw]'); if (b) ReviewPlus.sawTick(b); });
+      box.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const b = e.target.closest('[data-rv-saw]'); if (b) ReviewPlus.sawTick(b);
+        const back = e.target.closest('[data-rv-back]');
+        if (back) {
+          RockActions.putBack(back.getAttribute('data-rv-back'));
+          const keep = box.querySelector('form') ? [...box.querySelectorAll('form input, form textarea')].map((x) => x.value) : [];
+          box.innerHTML = ReviewPlus.html(weekId(new Date()));
+          [...box.querySelectorAll('form input, form textarea')].forEach((x, i) => { if (keep[i] != null) x.value = keep[i]; });
+        }
+      });
     }
     box.innerHTML = ReviewPlus.html(weekId(new Date()));
   }
@@ -15275,6 +15332,41 @@ const ConnectApps = {
   }
 };
 
+/* The Week Compass's "Put this in your calendar" panel, for Simple, which
+   has no Compass: opened from Settings → Connections. The panel itself is
+   borrowed — the same element, with its own controls and handlers — and put
+   back where it lives when the sheet closes, so Advanced finds it there. */
+const IcsSheet = {
+  home: null, next: null,
+  open() {
+    const panel = document.getElementById('icsPanel'); if (!panel) { toast('The calendar file is not available here.', 'warn'); return; }
+    let wrap = document.getElementById('flow-ics');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'flow-ics'; wrap.className = 'fn-sheetwrap';
+      wrap.innerHTML = '<div class="fn-scrim" data-ics-close="1"></div>' +
+        '<div class="fn-sheet" role="dialog" aria-label="Calendar file" aria-modal="true">' +
+          '<div class="fn-grab" data-ics-close="1"></div>' +
+          '<button type="button" class="fn-capture-close" data-ics-close="1" aria-label="Close">×</button>' +
+          '<div class="ics-slot"></div></div>';
+      document.body.appendChild(wrap);
+      wrap.addEventListener('click', (e) => { if (e.target.closest('[data-ics-close]')) IcsSheet.close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) IcsSheet.close(); });
+    }
+    if (!wrap.contains(panel)) { IcsSheet.home = panel.parentNode; IcsSheet.next = panel.nextSibling; wrap.querySelector('.ics-slot').appendChild(panel); }
+    wrap.classList.add('on');
+  },
+  close() {
+    const wrap = document.getElementById('flow-ics'), panel = document.getElementById('icsPanel');
+    if (wrap) wrap.classList.remove('on');
+    if (panel && IcsSheet.home && wrap && wrap.contains(panel)) {
+      if (IcsSheet.next && IcsSheet.next.parentNode === IcsSheet.home) IcsSheet.home.insertBefore(panel, IcsSheet.next);
+      else IcsSheet.home.appendChild(panel);
+    }
+  }
+};
+window.FlowIcsSheet = IcsSheet;
+
 const Nav = {
   installed: false,
 
@@ -15368,6 +15460,10 @@ const Nav = {
   },
 
   go(tab) {
+    /* In Simple the Week Compass is Today's Week view. Anything that asks
+       for the Compass lands there; false tells a caller that came to fill in
+       the Compass's own form that it is not on screen. */
+    if (tab === 'compass' && Nav.compassHidden()) { Nav.weekView(); return false; }
     const p = Nav.pill(tab);
     if (!p) return false;
     p.click();
@@ -15376,6 +15472,15 @@ const Nav = {
     window.scrollTo(0, 0);
     Nav.sync();
     return true;
+  },
+
+  compassHidden() { try { return TodayLook.on() && TodayLook.SIMPLE_HIDE.indexOf('compass') >= 0; } catch (e) { return false; } },
+  weekView() {
+    Nav.go('today');
+    try {
+      const B = TodayBeta; B.fresh(); B.view = 'week'; B.week = 0; B.paint();
+      if (B.el && B.el.isConnected) B.el.scrollIntoView({ block: 'start' });
+    } catch (e) {}
   },
 
   groupOf(tab) {
@@ -15632,6 +15737,13 @@ const Nav = {
       if (id === 'doc') { Nav.closeCapture(false); Say.open({ file: true }); return; }
       /* In Simple, Meal is the photo: the plate read into numbers, here. */
       if (id === 'diet' && TodayLook.on()) { Nav.closeCapture(false); Meals.open(); return; }
+      /* In Simple, a Task is a Priority typed into Today's Add field — the
+         Week Compass's form is not on screen there. */
+      if (id === 'quad' && Nav.compassHidden()) {
+        Nav.closeCapture(false); Nav.go('today');
+        try { const B = TodayBeta; B.fresh(); B.view = 'day'; B.week = 0; B.sel = B.todayO(); B.paint(); const i = B.el && B.el.querySelector('.bt-comp input'); if (i) { i.scrollIntoView({ block: 'center' }); i.focus({ preventScroll: true }); } } catch (e) {}
+        return;
+      }
       /* The rest hand you to the section that owns that kind of entry. Writing
          them in place needs each section's own write path; the journal is the
          one the pack already owns end to end. */
@@ -16111,6 +16223,7 @@ const NorthStar = {
 
     sec.innerHTML =
       NorthStar.principleCard() +
+      NorthStar.missionCard() +
       Direction.card() +
       NorthStar.matrixCard() +
       Score.card() +
@@ -16120,6 +16233,7 @@ const NorthStar = {
       NorthStar.tenetsCard();
 
     NorthStar.wire();
+    NorthStar.wireMission(sec);
     Score.wire(sec);
     Direction.wire(sec);
     Friends.wire(sec);
@@ -16137,6 +16251,60 @@ const NorthStar = {
         '<blockquote class="ns-principle" id="ns-prin">' + esc(NorthStar.principle) + '</blockquote>' +
         '<div class="flow-row"><button class="flow-btn sm ghost" id="ns-prin-edit">Edit principle</button></div>' +
       '</div>';
+  },
+
+  /* Simple has no Week Compass, so the mission statement and the roles —
+     the two things at the top of it — live here, beside the principle.
+     Same records (cData.mission, cData.roles): Advanced's Compass shows
+     whatever is written here. */
+  missionEditing: false,
+  missionCard() {
+    if (!(Nav.compassHidden && Nav.compassHidden())) return '';
+    const c = (typeof cData !== 'undefined' && cData) ? cData : {};
+    const mission = String(c.mission || '').trim();
+    const roles = Array.isArray(c.roles) ? c.roles.filter(Boolean) : [];
+    if (NorthStar.missionEditing) {
+      return '<div class="flow-card ns-mission" id="ns-mission">' +
+        '<div class="ns-eyebrow">Mission</div>' +
+        '<label class="flow-label" for="ns-mis-ta">Who you are committed to being</label>' +
+        '<textarea class="flow-in ns-prin-edit" id="ns-mis-ta" rows="5" maxlength="3000">' + esc(mission) + '</textarea>' +
+        '<label class="flow-label" for="ns-roles-ta">Roles · one per line</label>' +
+        '<textarea class="flow-in ns-prin-edit" id="ns-roles-ta" rows="6" maxlength="1200">' + esc(roles.join('\n')) + '</textarea>' +
+        '<div class="flow-row"><button class="flow-btn sm primary" data-nsm="save">Save</button><button class="flow-btn sm ghost" data-nsm="cancel">Cancel</button></div>' +
+      '</div>';
+    }
+    return '<div class="flow-card ns-mission" id="ns-mission"><div class="ns-mis-grid">' +
+      '<div><div class="ns-eyebrow">Mission</div>' +
+        (mission ? '<p class="ns-mis-text">' + esc(mission) + '</p>' : '<p class="flow-sub">Not written yet. A few sentences on who you are committed to being — the week is planned against it.</p>') + '</div>' +
+      '<div><div class="ns-eyebrow">Roles</div>' +
+        (roles.length ? '<ul class="ns-roles">' + roles.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>' : '<p class="flow-sub">None yet.</p>') + '</div>' +
+      '</div><div class="flow-row"><button class="flow-btn sm ghost" data-nsm="edit">' + (mission ? 'Edit mission and roles' : 'Write your mission') + '</button></div></div>';
+  },
+  wireMission(sec) {
+    const card = sec.querySelector('#ns-mission'); if (!card) return;
+    card.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-nsm]'); if (!b) return;
+      const a = b.getAttribute('data-nsm');
+      if (a === 'edit') { NorthStar.missionEditing = true; NorthStar.paint(); const t = NorthStar.sec && NorthStar.sec.querySelector('#ns-mis-ta'); if (t) t.focus(); return; }
+      if (a === 'cancel') { NorthStar.missionEditing = false; NorthStar.paint(); return; }
+      if (a === 'save') {
+        const m = String(card.querySelector('#ns-mis-ta').value || '').trim();
+        const seen = {};
+        const roles = String(card.querySelector('#ns-roles-ta').value || '').split('\n').map((x) => x.replace(/\s+/g, ' ').trim().slice(0, 60))
+          .filter((x) => x && !seen[x.toLowerCase()] && (seen[x.toLowerCase()] = 1)).slice(0, 12);
+        try {
+          const changed = m !== String(cData.mission || '').trim();
+          cData.mission = m;
+          if (roles.length) cData.roles = roles;
+          cSave();
+          if (changed && m) { try { J('planning', '🪧 Mission statement updated'); } catch (e2) {} }
+          try { updateMissionDisplay(); } catch (e2) {}
+          try { renderCompass(); } catch (e2) {}
+        } catch (e2) { console.warn('[Flow] mission', e2); }
+        NorthStar.missionEditing = false; NorthStar.paint();
+        try { toast('Saved.', null, 1200); } catch (e2) {}
+      }
+    });
   },
 
   matrixCard() {

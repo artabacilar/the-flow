@@ -924,7 +924,7 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
 
 /* A visible dismissal target on both the phone sheet and desktop dialog. */
 #flow-pw .fn-sheet > h4, #flow-pw .fn-sheet > .fn-sub, #flow-capture .fn-sheet > h4, #flow-capture .fn-sheet > .fn-sub, #flow-focus .fn-sheet > h4, #flow-focus .fn-sheet > .fn-sub, #flow-plan .fn-sheet > h4, #flow-plan .fn-sheet > .fn-sub, #flow-review .fn-sheet > h4, #flow-review .fn-sheet > .fn-sub { padding-right: 56px; }
-#flow-pw .fn-capture-close, #flow-capture .fn-capture-close, #flow-focus .fn-capture-close, #flow-plan .fn-capture-close, #flow-review .fn-capture-close {
+#flow-pw .fn-capture-close, #flow-capture .fn-capture-close, #flow-focus .fn-capture-close, #flow-plan .fn-capture-close, #flow-review .fn-capture-close, #flow-ics .fn-capture-close {
   position: absolute; top: 18px; right: 14px; width: 44px; height: 44px;
   display: grid; place-items: center; padding: 0;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -3854,3 +3854,27 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-trtick:hover{border-color:var(
 html[data-flow-look="new"] #today-feed .lk-bt .bt-trk{margin-top:14px}
 .conn-trb{grid-column:1/-1;margin-top:8px;padding:10px 12px;border:1px solid var(--border,rgba(255,255,255,.12));border-radius:12px;max-height:280px;overflow:auto}
 .conn-trbl{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;cursor:pointer}
+
+/* ---------- Simple without the Week Compass ------------------------------
+   Today's Week view carries each day's training; the Review week sheet
+   carries what was dropped or handed off; North Star carries the mission and
+   roles; Settings → Connections carries the calendar file. */
+html[data-flow-look="new"] #today-feed .lk-bt .bt-train{display:flex;align-items:center;gap:8px;margin:6px 0 2px;padding:7px 10px;border-radius:10px;background:rgba(255,107,61,.08);color:var(--lk-coral,#ff6b3d);font-size:13px;font-weight:600}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-train b{font-variant-numeric:tabular-nums;font-weight:700}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-train span{min-width:0;overflow-wrap:anywhere}
+html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:15px;flex:none}
+#rv-evidence .rv-aside{list-style:none;margin:0;padding:0}
+#rv-evidence .rv-aside li{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(127,127,127,.12)}
+#rv-evidence .rv-aside li:first-child{border-top:0}
+#rv-evidence .rv-aside .ra-wt{flex:1;min-width:0;overflow-wrap:anywhere}
+#rv-evidence .rv-aside .ra-wt small{display:block;font-size:12px;color:var(--muted,#8a8f98);margin-top:1px}
+#rv-evidence .rv-aside li.dropped .ra-wt{color:var(--muted,#8a8f98)}
+.ns-mis-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;margin-bottom:10px}
+.ns-mis-text{margin:0;font-size:15.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.ns-roles{margin:0;padding-left:18px;color:var(--f-muted);line-height:1.7}
+@media (max-width:700px){.ns-mis-grid{grid-template-columns:1fr}}
+.conn-ics{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px}
+.conn-ics b{display:block;font-size:14px}
+.conn-ics small{display:block;color:var(--f-muted,#8a8f98);font-size:12.5px;margin-top:2px}
+#flow-ics .ics-slot .ics-panel{margin:0!important;border:0;background:transparent;padding:4px 0 0}
+#flow-ics .ics-slot h3{padding-right:56px}
