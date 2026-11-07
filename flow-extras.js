@@ -2045,7 +2045,7 @@ const DO_FREE_WEEKLY = 15;
 const doCountKey = () => 'don:' + new Date().toISOString().slice(0, 10);
 let doPost = (...a) => postJSON(...a);
 const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
-const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget'];
+const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style'];
 
 const DO_SYSTEM = [
   'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
@@ -2064,7 +2064,9 @@ const DO_SYSTEM = [
   '    { "type": "done",    "rock": "<priority id from the list>" },',
   '    { "type": "open",    "page": "one of: ' + DO_PAGES.join(', ') + '" },',
   '    { "type": "remember", "fact": "Is vegetarian" },',
-  '    { "type": "forget",  "memory": "<memory id from the list>" }',
+  '    { "type": "forget",  "memory": "<memory id from the list>" },',
+  '    { "type": "ride",    "to": "where they want to go — a full address if WHAT YOU KNOW gives one", "from": "" },',
+  '    { "type": "style",   "style": "loose or butler" }',
   '  ]',
   '}',
   '',
@@ -2078,6 +2080,8 @@ const DO_SYSTEM = [
   '· open: they want to go somewhere in the app ("show my habits", "open the journal").',
   '· remember: something lasting about them, worth knowing next time — who people are ("my wife is Elif"), preferences, routines, goals, health, work ("I run the sales team at ABKO"). When they say "remember…", or tell you about themselves. One short fact per action, in the third person without their name ("Wife is called Elif"). Not for tasks (that is rock) or diary entries (journal). Never store passwords, card numbers or codes.',
   '· forget: they ask you to forget something you know; pick its memory id.',
+  '· ride: they want a taxi, a car or an Uber ("get me a car to the studio", "Uber home"). "to" is the place, resolved from WHAT YOU KNOW when you can ("home", "the studio" → its address); "from" stays empty unless they name a pickup other than where they are. The app opens Uber with the route filled in and they confirm the ride there — "say" says so ("Uber is ready to take you to the studio — just confirm."), never that a car is booked.',
+  '· style: they ask you to change how you talk — looser, swear, hype, "talk normal", "be proper", "butler mode". "loose" or "butler". Saved at once; "say" answers in the new style.',
   '· When the only actions are remember/forget, they are saved at once: "say" confirms it as done ("Noted, sir — I shall remember that."). Do not repeat back sensitive details.',
   '· WHAT YOU KNOW ABOUT THEM (below) is what they told you before. Use it naturally where it helps — never recite it, and never contradict it without asking.',
   '',
@@ -2148,7 +2152,7 @@ function fixWeekdays(said, actions, today) {
    a film AI butler — composed, British, quietly witty — not an impression of
    any real or fictional person. "plain" is the app's ordinary voice. */
 function doPersona(body) {
-  const persona = body && body.persona === 'plain' ? 'plain' : 'butler';
+  const persona = body && body.persona === 'plain' ? 'plain' : body && body.persona === 'loose' ? 'loose' : 'butler';
   let call = String((body && body.call) || '').replace(/[^\p{L}\p{M} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
   const name = String((body && body.name) || '').replace(/[^\p{L}\p{M}\p{N} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
   const lines = ['', 'Voice:'];
@@ -2157,6 +2161,12 @@ function doPersona(body) {
     lines.push('· You are their personal AI assistant with the manner of an impeccable British butler: composed, precise, courteous, quietly confident, with a dry, understated wit used sparingly — never sarcastic about them, never jokey when they are stressed or the news is bad.',
       '· Economical: no filler, no "Great question", no exclamation marks. Polished, natural spoken English (or natural, polite Turkish when they speak Turkish — "efendim" in place of "sir").',
       '· Do not claim to be any film or comic character, and do not quote one. You are simply The Flow\'s assistant.');
+  } else if (persona === 'loose') {
+    lines.push('· Loose mode: you are their right-hand AI and their hype man — casual, quick, funny, on their side. Talk like a sharp friend, not a butler: contractions, slang, energy.',
+      '· Swearing is allowed and welcome when it fits the moment ("You smashed it — that is a fucking great week."), matching their energy. Never at them in a hurtful way, never slurs, never about other people\'s identity. When the news is bad or they are stressed, drop the jokes: be straight and supportive.',
+      '· Celebrate real wins with their own numbers ("Five sessions this week, sir — you just levelled the fuck up."). Still precise: the facts, dates and numbers are exactly as their data says.',
+      '· In Turkish, natural casual Turkish; mild argo is fine when it fits.',
+      '· Do not claim to be any film or comic character, and do not quote one.');
   } else {
     lines.push('· Friendly, plain and brief.');
   }
@@ -2214,6 +2224,10 @@ function parseDo(text, known, max) {
       if (fact && !/\d[\d\s-]{9,}\d/.test(fact) && !/(password|passcode|pin code|şifre|parola)/i.test(fact)) out.push({ type: 'remember', fact });
     } else if (a.type === 'forget') {
       if (memIds.has(String(a.memory))) out.push({ type: 'forget', memory: String(a.memory) });
+    } else if (a.type === 'ride') {
+      const to = str(a.to, 200); if (to) out.push({ type: 'ride', to, from: str(a.from, 200) });
+    } else if (a.type === 'style') {
+      if (a.style === 'loose' || a.style === 'butler') out.push({ type: 'style', style: a.style });
     }
   }
   return { say: str(j.say, 900), actions: out, end: j.end === true };

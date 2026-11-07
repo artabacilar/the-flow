@@ -314,6 +314,9 @@ const SETTINGS_DEFAULTS = {
   /* Hands-free: J.A.R.V.I.S. starts listening when opened and after each
      answer, and a pause ends what you say. Off: Talk starts, Talk stops. */
   asstHandsFree: false,
+  /* How he talks: 'butler' (composed, British) or 'loose' (casual, hype,
+     swears). Changed under Voice and manners, or by asking him. */
+  asstStyle: 'butler',
   asstSheen: true,
   asstFx: false,                 // the robotic 'AI finish' on the premium voice: off = the clean voice
   asstName: '',
@@ -13756,6 +13759,7 @@ const Say = {
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
+            '<label class="sy-opt"><span>Manner</span><select data-say-pref="asstStyle"><option value="butler">Butler — composed, British</option><option value="loose">Loose — casual, hype, swears</option></select></label>' +
             '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
             '<label class="sy-opt sy-chpick" hidden><span>Input</span><select data-say-ch></select></label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHandsFree"> Hands-free — listen when opened and after each answer; a pause sends (off: tap Talk to start, tap again to send)</label>' +
@@ -13943,6 +13947,8 @@ const Say = {
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
     if (opts && opts.file) { Say.pickFile(); return; }
+    /* Opened as the command centre's console: ready, not yet listening. */
+    if (opts && opts.idle) { Say.state(''); return; }
     /* He answers the door: "Good evening, sir. What can I do for you?" out
        loud, then listens — only once he has finished, so the microphone does
        not hear him. Typing, or tapping the microphone meanwhile, wins. With
@@ -13976,8 +13982,29 @@ const Say = {
     Say.waiting = false; Say.confirming = false; Say.openTok++;
     Say.mode('idle');
     Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
+    try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
   handsFree() { try { return Speech.pref('asstHandsFree') === true; } catch (e) { return false; } },
+  /* How he talks: the composed butler, or loose — casual, hype, swears. */
+  style() { try { return Speech.pref('asstStyle') === 'loose' ? 'loose' : 'butler'; } catch (e) { return 'butler'; } },
+  /* Uber with the route filled in; the ride is confirmed in Uber. A
+     universal link: the Uber app on a phone, m.uber.com on a computer. */
+  rideUrl(a) {
+    const q = ['action=setPickup'];
+    if (a.from) q.push('pickup[formatted_address]=' + encodeURIComponent(a.from)); else q.push('pickup=my_location');
+    q.push('dropoff[formatted_address]=' + encodeURIComponent(a.to || ''));
+    return 'https://m.uber.com/ul/?' + q.join('&');
+  },
+  openRide(a) {
+    const url = Say.rideUrl(a);
+    let w = null; try { w = window.open(url, '_blank', 'noopener'); } catch (e) {}
+    /* Opened without a tap (a spoken "yes"), a browser may refuse; the link
+       is then a tap away. */
+    if (!w && !window.FlowMac && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+      try { toast('Uber is ready — tap to open it.', null, 6000); const t = document.querySelector('.flow-toast:last-child, #flow-toast'); if (t) { t.style.cursor = 'pointer'; t.onclick = () => window.open(url, '_blank', 'noopener'); } } catch (e) {}
+    }
+    return url;
+  },
   listen() {
     const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
     try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
@@ -14015,7 +14042,7 @@ const Say = {
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: 'butler', call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
+        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
@@ -14028,11 +14055,11 @@ const Say = {
         Say.speak(reply); Say.close(); Nav.go(acts[0].page); return;
       }
       /* Something about them to keep: saved at once, no "Do it" needed. */
-      if (acts.length && acts.every((a) => a.type === 'remember' || a.type === 'forget')) {
+      if (acts.length && acts.every((a) => a.type === 'remember' || a.type === 'forget' || a.type === 'style')) {
         let n = 0;
-        for (const a of acts) { try { if (a.type === 'remember') { if (await Say.remember(a.fact)) n++; } else { await Say.forget(a.memory); n++; } } catch (x) {} }
+        for (const a of acts) { try { if (a.type === 'style') { await Settings.set('asstStyle', a.style); Say.prefsPaint(); n++; } else if (a.type === 'remember') { if (await Say.remember(a.fact)) n++; } else { await Say.forget(a.memory); n++; } } catch (x) {} }
         Say.plan = null; Say.askView(); Say.logPaint(); Say.state('');
-        if (n) toast(acts[0].type === 'forget' ? 'Forgotten' : 'Remembered ✓', null, 1600);
+        if (n) toast(acts[0].type === 'style' ? (acts[0].style === 'loose' ? 'Loose mode' : 'Butler mode') : acts[0].type === 'forget' ? 'Forgotten' : 'Remembered ✓', null, 1600);
         await Say.speak(reply);
         Say.follow(false);
         return;
@@ -14199,6 +14226,8 @@ const Say = {
     if (a.type === 'done') { const r = Say.findRock(a.rock); return '<div class="sy-card">' + head('Mark done', r ? r.title : '') + '</div>'; }
     if (a.type === 'open') return '<div class="sy-card">' + head('Open', Say.PAGE_NAMES[a.page] || a.page) + '</div>';
     if (a.type === 'remember') return '<div class="sy-card">' + head('Remember', '') + '<input class="flow-in" data-sy-edit="fact" data-i="' + i + '" value="' + esc(a.fact) + '"></div>';
+    if (a.type === 'ride') return '<div class="sy-card">' + head('Uber · you confirm in Uber', '') + '<input class="flow-in" data-sy-edit="to" data-i="' + i + '" value="' + esc(a.to) + '" aria-label="Where to">' + (a.from ? '<div class="sy-note" data-i18n="off">From ' + esc(a.from) + '</div>' : '') + '</div>';
+    if (a.type === 'style') return '<div class="sy-card">' + head('Manner', a.style === 'loose' ? 'Loose' : 'Butler') + '</div>';
     if (a.type === 'forget') { const m = Say.memory().find((x) => x.id === a.memory); return '<div class="sy-card">' + head('Forget', m ? m.text : '') + '</div>'; }
     return '';
   },
@@ -14220,6 +14249,10 @@ const Say = {
   /* ---- doing it, through the app's own paths ---- */
   async apply() {
     if (!Say.plan || Say.busy) return;
+    /* Before anything waits: a window opened in the tap that asked for it is
+       not blocked. */
+    let rode = 0;
+    Say.plan.actions.filter((a) => a.type === 'ride' && a.to).forEach((a) => { Say.openRide(a); rode++; });
     const { c, hb, S } = Say.host();
     const roles = (c && Array.isArray(c.roles)) ? c.roles : [];
     let open = null, did = 0, journal = false;
@@ -14256,6 +14289,8 @@ const Say = {
           } else if (a.type === 'open') { open = a.page; }
           else if (a.type === 'remember') { if (await Say.remember(a.fact)) did++; }
           else if (a.type === 'forget') { await Say.forget(a.memory); did++; }
+          else if (a.type === 'style') { await Settings.set('asstStyle', a.style); did++; }
+          else if (a.type === 'ride') { did++; }
         } catch (e) { console.warn('[Flow] say', a.type, e); }
       }
       if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
@@ -14297,6 +14332,14 @@ const Say = {
     b.innerHTML = Nav.svg('mic') + '<span' + (Say.name() ? ' data-i18n="off"' : '') + '>' + esc(label) + '</span>';
     b.addEventListener('click', () => Say.open());
     hello.appendChild(b);
+    if (!hello.querySelector('.lk-hud')) {
+      const h = document.createElement('button');
+      h.type = 'button'; h.className = 'lk-say lk-hud';
+      h.setAttribute('aria-label', 'Open the command centre');
+      h.innerHTML = Nav.svg('target') + '<span>Command centre</span>';
+      h.addEventListener('click', () => Hud.open());
+      hello.appendChild(h);
+    }
   },
   boot() {
     let queued = false;
@@ -14314,6 +14357,184 @@ const Say = {
   }
 };
 window.FlowSay = Say;
+
+/* ── The command centre ──────────────────────────────────────────────────
+ * J.A.R.V.I.S. full screen: a live orb in the middle that breathes while he
+ * waits, brightens while he listens, spins while he thinks and moves with
+ * his voice while he speaks — and round it the day at a glance: the clock,
+ * what is left today, training, habits, the next thing in the calendar,
+ * recovery and spending. The conversation is his own console (the Say
+ * sheet, every function of it), docked at the bottom.
+ *
+ * Opened from Today ("Command centre", beside Talk), with ⌘⇧J, or at
+ * /?jarvis=1 — which is what a wall screen or a TV browser points at.
+ * Esc or × closes it. Simple only, like Talk. */
+const Hud = {
+  on: false, el: null, raf: 0, energy: 0, mic: 0, t0: 0, pts: null, tick: 0, analyser: null, buf: null,
+  open() {
+    if (!TodayLook.on()) return;
+    Hud.build();
+    Hud.on = true;
+    document.documentElement.classList.add('hud-on');
+    Hud.el.classList.add('on');
+    Hud.paint();
+    try { Say.open({ idle: true }); } catch (e) {}
+    try { Speech.unlock(); } catch (e) {}
+    Hud.t0 = performance.now();
+    cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
+    clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
+    Hud.clock();
+    try { Track.hit('hud_open'); } catch (e) {}
+  },
+  close(fromSay) {
+    if (!Hud.on) return;
+    Hud.on = false;
+    document.documentElement.classList.remove('hud-on');
+    if (Hud.el) Hud.el.classList.remove('on');
+    cancelAnimationFrame(Hud.raf); clearInterval(Hud.timer);
+    if (!fromSay) { try { Say.close(); } catch (e) {} }
+  },
+  build() {
+    if (Hud.el) return Hud.el;
+    const el = document.createElement('div');
+    el.id = 'flow-hud';
+    el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Command centre');
+    el.innerHTML =
+      '<div class="hud-grid" aria-hidden="true"></div>' +
+      '<header class="hud-top"><div class="hud-brand"><b data-i18n="off"></b><span>Command centre</span></div>' +
+        '<div class="hud-clock"><b class="hud-time">--:--:--</b><span class="hud-date"></span></div>' +
+        '<button type="button" class="hud-x" data-hud="close" aria-label="Close the command centre">×</button></header>' +
+      '<aside class="hud-col hud-left"></aside>' +
+      '<div class="hud-core"><canvas class="hud-orb" aria-hidden="true"></canvas><div class="hud-status" aria-live="polite"></div></div>' +
+      '<aside class="hud-col hud-right"></aside>';
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-hud]'); if (!b) return;
+      const a = b.getAttribute('data-hud');
+      if (a === 'close') Hud.close();
+      else if (a === 'go') { const t = b.getAttribute('data-to'); Hud.close(); try { Nav.go(t); } catch (x) {} }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && !(Say.el && Say.el.classList.contains('on'))) Hud.close(); });
+    document.body.appendChild(el);
+    Hud.el = el;
+    /* His microphone's level (the Mac app reports it) moves the orb. */
+    try { if (window.FlowVoice) FlowVoice.on((st, x) => { if (!Hud.on) return; if (st === 'level' && x) Hud.mic = Math.max(Hud.mic, Math.max(0, Math.min(1, (+x.db + 60) / 50))); if (st === 'partial') Hud.mic = Math.max(Hud.mic, 0.55); }); } catch (e) {}
+    return el;
+  },
+  /* ---- the day, round the orb ---- */
+  panel(k, title, body, to) {
+    return '<section class="hud-p" data-k="' + k + '"' + '><div class="hud-ph"><span>' + esc(title) + '</span>' +
+      (to ? '<button type="button" class="hud-go" data-hud="go" data-to="' + to + '" aria-label="Open ' + esc(title) + '">›</button>' : '') + '</div>' + body + '</section>';
+  },
+  row(l, r, cls) { return '<div class="hud-r' + (cls ? ' ' + cls : '') + '"><span data-i18n="off">' + esc(l) + '</span><b>' + esc(r) + '</b></div>'; },
+  paint() {
+    if (!Hud.el) return;
+    const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
+    Hud.el.querySelector('.hud-brand b').textContent = nm;
+    const B = TodayBeta, t = B.todayO();
+    let rocks = []; try { rocks = B.rocksOn(t).slice().sort((a, b) => (a.done - b.done) || B.byTime(a, b)); } catch (e) {}
+    const open = rocks.filter((r) => !r.done);
+    const late = (() => { try { return B.late().length; } catch (e) { return 0; } })();
+    const today = Hud.panel('today', 'Today · ' + open.length + ' open', open.length
+      ? open.slice(0, 5).map((r) => Hud.row(B.title(r), r.time || '')).join('') + (open.length > 5 ? '<div class="hud-more">+ ' + (open.length - 5) + ' more</div>' : '')
+      : '<p class="hud-none">' + (rocks.length ? 'All done. Clean sheet.' : 'Nothing planned.') + '</p>', 'today') +
+      (late ? '<div class="hud-alert">' + late + ' still open from earlier</div>' : '');
+    let tr = null; try { tr = B.training(t); } catch (e) {}
+    const train = Hud.panel('train', 'Training', tr ? Hud.row(tr.title, tr.time || 'today') : '<p class="hud-none">Rest day.</p>', 'training');
+    let hab = null; try { hab = TodayPlus.habits(); } catch (e) {}
+    const hn = hab && (hab.total != null ? hab.total : (hab.list || []).length), hd = hab && (hab.done != null ? hab.done : 0);
+    const habits = Hud.panel('habits', 'Habits', hab && hn ? '<div class="hud-big">' + hd + '<small> / ' + hn + '</small></div><i class="hud-bar"><b style="width:' + Math.round(100 * hd / Math.max(1, hn)) + '%"></b></i>' : '<p class="hud-none">No habits yet.</p>', 'habits');
+    Hud.el.querySelector('.hud-left').innerHTML = today + train + habits;
+    let ev = [];
+    try { const iso = RockActions.iso(new Date()); const now = new Date().toTimeString().slice(0, 5); ev = Ahead.items().filter((x) => x.date === iso && x.kind !== 'rock' && (x.allDay || !x.time || x.time >= now)); } catch (e) {}
+    const cal = Hud.panel('cal', 'Next up', ev.length ? ev.slice(0, 4).map((x) => Hud.row(x.title, x.allDay ? 'all day' : (x.time || ''))).join('') : '<p class="hud-none">Nothing else in the calendar today.</p>');
+    let rec = {}; try { rec = TodayPlus.recovery() || {}; } catch (e) {}
+    const rv = rec.recovery != null ? rec.recovery + '%' : (rec.hrs != null ? rec.hrs.toFixed(1) + 'h' : '—');
+    const body = Hud.panel('body', 'Recovery', '<div class="hud-big' + (rec.recovery == null ? '' : rec.recovery >= 67 ? ' good' : rec.recovery >= 34 ? ' warn' : ' bad') + '">' + esc(rv) + '</div><p class="hud-sub">' + esc(rec.recovery != null && rec.hrs != null ? rec.hrs.toFixed(1) + 'h sleep' : rec.hrs != null ? 'sleep, last logged' : 'nothing logged') + '</p>', 'sleep');
+    let sp = null; try { sp = TodayPlus.spend(); } catch (e) {}
+    const money = Hud.panel('money', 'Spend', sp ? '<div class="hud-big">' + esc(TodayPlus.money(sp.today)) + '</div><p class="hud-sub">' + esc(TodayPlus.money(sp.mtd)) + ' this month' + (sp.budget ? ' · ' + esc(TodayPlus.money(Math.max(0, sp.budget - sp.mtd))) + ' left' : '') + '</p>' : '<p class="hud-none">Nothing logged.</p>', 'finance');
+    Hud.el.querySelector('.hud-right').innerHTML = cal + body + money;
+  },
+  clock() {
+    if (!Hud.el) return;
+    const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    Hud.el.querySelector('.hud-time').textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    Hud.el.querySelector('.hud-date').textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  },
+  /* What the orb is doing, from what he is doing. */
+  state() {
+    const sy = Say.el ? Say.el.getAttribute('data-sy') : 'idle';
+    if (Speech.speaking()) return 'speaking';
+    if (window.FlowVoice && FlowVoice.listening) return 'listening';
+    if (sy === 'thinking' || Say.busy) return 'thinking';
+    return 'idle';
+  },
+  /* The loudness of his voice, when it plays through the page's own audio. */
+  voiceLevel() {
+    try {
+      const ac = Speech.ac; if (!ac || !Speech.src) return 0;
+      if (!Hud.analyser || Hud.analyser.context !== ac) { Hud.analyser = ac.createAnalyser(); Hud.analyser.fftSize = 512; Hud.buf = new Uint8Array(Hud.analyser.fftSize); Hud.tapped = null; }
+      if (Hud.tapped !== Speech.src) { try { Speech.src.connect(Hud.analyser); Hud.tapped = Speech.src; } catch (e) {} }
+      Hud.analyser.getByteTimeDomainData(Hud.buf);
+      let sum = 0; for (let i = 0; i < Hud.buf.length; i++) { const v = (Hud.buf[i] - 128) / 128; sum += v * v; }
+      return Math.min(1, Math.sqrt(sum / Hud.buf.length) * 4);
+    } catch (e) { return 0; }
+  },
+  frame(now) {
+    if (!Hud.on) return;
+    Hud.raf = requestAnimationFrame(Hud.frame);
+    const cv = Hud.el.querySelector('.hud-orb'); if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const st = Hud.state(), t = (now - Hud.t0) / 1000;
+    const st2 = Hud.el.getAttribute('data-st'); if (st2 !== st) { Hud.el.setAttribute('data-st', st); Hud.status(st); }
+    let target = st === 'speaking' ? Math.max(Hud.voiceLevel(), 0.25 + 0.25 * Math.abs(Math.sin(t * 7.3)) * Math.abs(Math.sin(t * 2.1))) : st === 'listening' ? 0.15 + Hud.mic : st === 'thinking' ? 0.2 : 0.05 + 0.03 * Math.sin(t * 1.4);
+    Hud.mic *= 0.9;
+    Hud.energy += (target - Hud.energy) * 0.18;
+    const e = Hud.energy, cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.3 * (1 + e * 0.18);
+    const hue = st === 'listening' ? '120,240,255' : st === 'thinking' ? '150,170,255' : st === 'speaking' ? '110,220,255' : '90,170,255';
+    /* the sphere: points on a Fibonacci lattice, turning */
+    if (!Hud.pts) { const n = 900, out = []; for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * 2.399963; out.push([Math.cos(th) * r, y, Math.sin(th) * r]); } Hud.pts = out; }
+    const rot = t * (st === 'thinking' ? 0.9 : 0.25), cr = Math.cos(rot), sr = Math.sin(rot), tilt = 0.35, ct = Math.cos(tilt), stl = Math.sin(tilt);
+    for (const [x0, y0, z0] of Hud.pts) {
+      const x1 = x0 * cr + z0 * sr, z1 = -x0 * sr + z0 * cr;
+      const y2 = y0 * ct - z1 * stl, z2 = y0 * stl + z1 * ct;
+      const wob = 1 + e * 0.12 * Math.sin(t * 6 + y0 * 9 + x0 * 5);
+      const px = cx + x1 * R * wob, py = cy + y2 * R * wob, d = (z2 + 1) / 2;
+      g.fillStyle = 'rgba(' + hue + ',' + (0.12 + 0.75 * d).toFixed(3) + ')';
+      const s = 0.6 + 1.6 * d; g.fillRect(px - s / 2, py - s / 2, s, s);
+    }
+    /* rings and ticks */
+    g.lineWidth = 1;
+    g.strokeStyle = 'rgba(' + hue + ',.35)'; g.beginPath(); g.arc(cx, cy, R * 1.28, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(' + hue + ',.18)'; g.beginPath(); g.arc(cx, cy, R * 1.45, 0, Math.PI * 2); g.stroke();
+    for (let i = 0; i < 72; i++) {
+      const a = i / 72 * Math.PI * 2 + t * 0.05, long = i % 6 === 0;
+      g.strokeStyle = 'rgba(' + hue + ',' + (long ? 0.6 : 0.25) + ')';
+      g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 1.45, cy + Math.sin(a) * R * 1.45); g.lineTo(cx + Math.cos(a) * R * (long ? 1.53 : 1.49), cy + Math.sin(a) * R * (long ? 1.53 : 1.49)); g.stroke();
+    }
+    const sweep = st === 'thinking' ? t * 3.2 : st === 'listening' ? t * 1.2 : t * 0.4;
+    g.lineWidth = 2.5; g.strokeStyle = 'rgba(' + hue + ',' + (0.5 + e * 0.5).toFixed(2) + ')';
+    g.beginPath(); g.arc(cx, cy, R * 1.28, sweep, sweep + 0.7 + e * 1.5); g.stroke();
+    g.beginPath(); g.arc(cx, cy, R * 1.28, sweep + Math.PI, sweep + Math.PI + 0.35 + e); g.stroke();
+    if (st === 'speaking' || st === 'listening') {
+      for (let k = 0; k < 3; k++) { const ph = ((t * 0.8 + k / 3) % 1); g.strokeStyle = 'rgba(' + hue + ',' + (0.3 * (1 - ph) * (0.4 + e)).toFixed(3) + ')'; g.beginPath(); g.arc(cx, cy, R * (1.05 + ph * 0.6), 0, Math.PI * 2); g.stroke(); }
+    }
+  },
+  status(st) {
+    const el = Hud.el && Hud.el.querySelector('.hud-status'); if (!el) return;
+    const tr = (() => { try { return Say.lang() === 'tr'; } catch (e) { return false; } })();
+    el.textContent = ({ idle: tr ? 'Hazır — konuşmak için Konuş\'a dokun' : 'Standing by — tap Talk to speak', listening: tr ? 'Dinliyorum' : 'Listening', thinking: tr ? 'Düşünüyorum' : 'Thinking', speaking: '' })[st] || '';
+  },
+  boot() {
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'j' || e.key === 'J')) { if (!TodayLook.on()) return; e.preventDefault(); if (Hud.on) Hud.close(); else Hud.open(); }
+    });
+    try { if (/[?&]jarvis=1\b/.test(location.search)) setTimeout(() => Hud.open(), 1400); } catch (e) {}
+  }
+};
+window.FlowHud = Hud;
 
 /* ── He greets you ───────────────────────────────────────────────────────
  * Opening the app in a new part of the day — morning, afternoon, evening —
@@ -18511,6 +18732,7 @@ async function boot() {
   try { Meals.boot(); } catch (e) { console.warn('[Flow] meals', e); }
   try { HabitDo.boot(); } catch (e) { console.warn('[Flow] habit do', e); }
   try { Say.boot(); } catch (e) { console.warn('[Flow] say', e); }
+  try { Hud.boot(); } catch (e) { console.warn('[Flow] hud', e); }
   try { Greet.boot(); } catch (e) { console.warn('[Flow] greet', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }

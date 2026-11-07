@@ -3878,3 +3878,70 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 .conn-ics small{display:block;color:var(--f-muted,#8a8f98);font-size:12.5px;margin-top:2px}
 #flow-ics .ics-slot .ics-panel{margin:0!important;border:0;background:transparent;padding:4px 0 0}
 #flow-ics .ics-slot h3{padding-right:56px}
+
+/* ---------- The command centre (J.A.R.V.I.S. full screen) ----------------
+   Its own palette — deep navy and cyan — whatever the theme, because it is
+   a room of its own. The Say sheet docks at the bottom as its console. */
+.lk-hud{margin-left:8px}
+#flow-hud{position:fixed;inset:0;z-index:955;display:none;color:#dbeaff;
+  background:radial-gradient(1200px 700px at 50% 45%,rgba(40,90,200,.28),transparent 70%),linear-gradient(180deg,#040814 0%,#050b1c 60%,#03060f 100%);
+  font-variant-numeric:tabular-nums;overflow:hidden;
+  grid-template-columns:minmax(220px,300px) 1fr minmax(220px,300px);grid-template-rows:auto 1fr;gap:16px;
+  padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(min(40vh,330px) + 24px) max(20px,env(safe-area-inset-left))}
+#flow-hud.on{display:grid}
+#flow-hud .hud-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(rgba(90,170,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(90,170,255,.06) 1px,transparent 1px);background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(circle at 50% 45%,#000 30%,transparent 80%);mask-image:radial-gradient(circle at 50% 45%,#000 30%,transparent 80%)}
+#flow-hud .hud-top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;z-index:1}
+#flow-hud .hud-brand{display:flex;flex-direction:column;gap:2px}
+#flow-hud .hud-brand b{font-size:15px;font-weight:800;letter-spacing:.32em;color:#7fd8ff;text-shadow:0 0 12px rgba(80,190,255,.6)}
+#flow-hud .hud-brand span{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:rgba(170,200,255,.55)}
+#flow-hud .hud-clock{margin-left:auto;text-align:right;display:flex;flex-direction:column}
+#flow-hud .hud-time{font-size:26px;font-weight:700;letter-spacing:.08em;color:#e8f4ff;text-shadow:0 0 14px rgba(80,190,255,.45)}
+#flow-hud .hud-date{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:rgba(170,200,255,.6)}
+#flow-hud .hud-x{appearance:none;width:40px;height:40px;border-radius:50%;border:1px solid rgba(120,190,255,.35);background:rgba(10,24,52,.7);color:#cfe6ff;font-size:22px;line-height:1;cursor:pointer}
+#flow-hud .hud-x:hover{border-color:#7fd8ff}
+#flow-hud .hud-col{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;overflow:auto;position:relative;z-index:1;scrollbar-width:none}
+#flow-hud .hud-core{position:relative;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#flow-hud .hud-orb{width:100%;height:100%;min-height:240px;display:block}
+#flow-hud .hud-status{position:absolute;bottom:4%;left:0;right:0;text-align:center;font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:rgba(150,215,255,.8)}
+#flow-hud .hud-p{border:1px solid rgba(110,170,255,.22);background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66));border-radius:14px;padding:12px 14px;box-shadow:inset 0 0 24px rgba(40,110,255,.06)}
+#flow-hud .hud-ph{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#7fd8ff;margin-bottom:8px}
+#flow-hud .hud-go{appearance:none;border:0;background:transparent;color:#7fd8ff;font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+#flow-hud .hud-r{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid rgba(110,170,255,.1);font-size:13px}
+#flow-hud .hud-r:first-of-type{border-top:0}
+#flow-hud .hud-r span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dbeaff}
+#flow-hud .hud-r b{flex:none;font-weight:600;color:rgba(170,210,255,.75)}
+#flow-hud .hud-big{font-size:30px;font-weight:800;color:#e8f4ff;line-height:1.1}
+#flow-hud .hud-big small{font-size:15px;font-weight:600;color:rgba(170,210,255,.6)}
+#flow-hud .hud-big.good{color:#6cf0b2}#flow-hud .hud-big.warn{color:#ffd36b}#flow-hud .hud-big.bad{color:#ff7a6b}
+#flow-hud .hud-sub,#flow-hud .hud-none,#flow-hud .hud-more{margin:4px 0 0;font-size:12.5px;color:rgba(170,200,255,.6)}
+#flow-hud .hud-alert{margin-top:-4px;font-size:12px;color:#ffd36b;padding:0 4px}
+#flow-hud .hud-bar{display:block;height:4px;border-radius:4px;background:rgba(110,170,255,.15);margin-top:8px;overflow:hidden}
+#flow-hud .hud-bar b{display:block;height:100%;background:linear-gradient(90deg,#3ab0ff,#7fe8ff);box-shadow:0 0 10px rgba(80,200,255,.6)}
+/* the console: the Say sheet, docked and in the room's colours */
+html.hud-on #flow-say{pointer-events:none;z-index:958}
+html.hud-on #flow-say .fn-scrim,html.hud-on #flow-say .fn-grab,html.hud-on #flow-say .fn-capture-close,html.hud-on #flow-say .sy-orb,html.hud-on #flow-say .sy-hello,html.hud-on #flow-say .sy-ex{display:none!important}
+html.hud-on #flow-say .fn-sheet{pointer-events:auto;position:fixed;left:50%;right:auto;top:auto;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
+  width:min(720px,calc(100% - 32px));min-height:0!important;max-height:min(40vh,330px);overflow:auto;border-radius:18px;
+  background:linear-gradient(180deg,rgba(10,26,58,.92),rgba(5,12,30,.94))!important;border:1px solid rgba(110,180,255,.35);box-shadow:0 0 40px rgba(40,120,255,.18);color:#dbeaff;margin:0;animation:none}
+html.hud-on #flow-say .sy-k{color:#7fd8ff;letter-spacing:.2em}
+html.hud-on #flow-say textarea#sy-text{min-height:46px;background:rgba(3,8,20,.7);border-color:rgba(110,170,255,.3);color:#e8f4ff}
+@media (max-width:900px){
+  #flow-hud.on{display:flex;flex-direction:column;gap:12px;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(min(46vh,360px) + 24px)}
+  #flow-hud .hud-core{flex:none;height:min(44vh,380px)}
+  #flow-hud .hud-col{flex:none;overflow:visible;min-width:0;width:100%}
+  #flow-hud .hud-top{flex:none;order:0}
+  #flow-hud .hud-core{order:1}#flow-hud .hud-left{order:2}#flow-hud .hud-right{order:3}
+  html.hud-on #flow-say .fn-sheet{max-height:min(46vh,360px)}
+  html.hud-on #flow-say textarea#sy-text{height:52px}
+}
+@media (max-width:560px){
+  #flow-hud .hud-time{font-size:20px}
+  #flow-hud .hud-brand b{letter-spacing:.2em}
+  #flow-hud .hud-date{letter-spacing:.08em}
+  #flow-hud .hud-status{letter-spacing:.14em;font-size:11px}
+}
+@media (prefers-reduced-motion:reduce){#flow-hud .hud-orb{opacity:.85}}
+html.hud-on #flow-say .sy-mic{background:rgba(40,120,255,.18);color:#bfe9ff;box-shadow:inset 0 0 0 1px rgba(127,216,255,.45)}
+html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
