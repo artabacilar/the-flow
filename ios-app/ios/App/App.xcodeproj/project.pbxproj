@@ -221,7 +221,6 @@
 			dependencies = (
 				AE1EBB48A55A41718475893D /* PBXTargetDependency */,
 				1F5E8068C6E51815DAEA030F /* PBXTargetDependency */,
-				D7247A3A39F54712A7E9B27C /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
@@ -952,13 +951,6 @@
 			remoteGlobalIDString = AFD7F65DAE85443B9A6D70DF;
 			remoteInfo = FlowComplications;
 		};
-		234ADFF6FF164BDFB8F25049 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 5C672FEF9C4F49129C436677;
-			remoteInfo = "TheFlowMac";
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXTargetDependency section */
@@ -976,11 +968,6 @@
 			isa = PBXTargetDependency;
 			target = AFD7F65DAE85443B9A6D70DF /* FlowComplications */;
 			targetProxy = 81C712F1BEA79834E3CE76E8 /* PBXContainerItemProxy */;
-		};
-		D7247A3A39F54712A7E9B27C /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 5C672FEF9C4F49129C436677 /* "TheFlowMac" */;
-			targetProxy = 234ADFF6FF164BDFB8F25049 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 	};
