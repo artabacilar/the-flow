@@ -101,6 +101,26 @@ const productRef = proj.pbxNativeTargetSection()[target.uuid].productReference;
     .forEach((k) => { delete objects.PBXBuildFile[k]; delete objects.PBXBuildFile[k + '_comment']; });
 }
 
+/* addTarget also makes the first target in the project (App, the iPhone
+   app) depend on the new one. For an extension that is the point; for the
+   Mac app it put "The Flow.app" into every iOS archive beside App.app, and an
+   archive with two apps in it is a Generic Xcode Archive — Xcode Cloud then
+   finds no way to send it anywhere ("expected one {} but found app-store").
+   The Mac app has its own scheme; nothing should build it for the iPhone. */
+{
+  const deps = objects.PBXTargetDependency || {};
+  const mine = Object.keys(deps).filter((k) => !k.endsWith('_comment') && deps[k].target === target.uuid);
+  const nt = proj.pbxNativeTargetSection();
+  Object.keys(nt).filter((k) => !k.endsWith('_comment')).forEach((k) => {
+    if (nt[k].dependencies) nt[k].dependencies = nt[k].dependencies.filter((d) => mine.indexOf(d.value) < 0);
+  });
+  mine.forEach((k) => {
+    const proxy = deps[k].targetProxy;
+    delete deps[k]; delete deps[k + '_comment'];
+    if (objects.PBXContainerItemProxy) { delete objects.PBXContainerItemProxy[proxy]; delete objects.PBXContainerItemProxy[proxy + '_comment']; }
+  });
+}
+
 proj.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', target.uuid);
 const resources = proj.addBuildPhase([], 'PBXResourcesBuildPhase', 'Resources', target.uuid);
 proj.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid);
