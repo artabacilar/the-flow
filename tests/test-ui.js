@@ -54,7 +54,11 @@ const controls = (p) => p.evaluate(() => {
   await p.click('[data-fn-ui="simple"]'); await p.waitForTimeout(800);
   const s1 = await state(); const simp = await side();
   ok('the switch flips it and saves it to the account', s1.look === 'new' && s1.simple === 'true' && s1.adv === 'false' && s1.saved === true, s1);
-  ok('Simple has the same sidebar, every page', simp.join(',') === adv.join(','), simp);
+  /* Every page but the Week Compass: Simple has its week on Today, its
+     review in the Review week sheet, its mission on North Star and its
+     calendar file in Settings (test-weekretire). */
+  const advNoCompass = adv.filter((t) => t !== 'compass');
+  ok('Simple has the same sidebar, every page but the Week Compass', simp.join(',') === advNoCompass.join(','), simp);
   ok('and stays on the page you were on', await p.evaluate(() => document.querySelector('.tab.active').getAttribute('data-tab')) === 'training');
   const gaps = {};
   /* Simple says a few of the app's own words differently (Big Rocks are
@@ -63,6 +67,7 @@ const controls = (p) => p.evaluate(() => {
   const vocab = await p.evaluate(() => window.FlowVocab.list().filter((r) => typeof r.to === 'string').map((r) => [r.rx.source, r.rx.flags, r.to]));
   const simpleWord = (x) => vocab.reduce((acc, [src, flags, to]) => acc.replace(new RegExp(src, flags), to), x);
   for (const t of ALL) {
+    if (t === 'compass') continue;
     await p.evaluate((t) => Flow.Nav.go(t), t); await p.waitForTimeout(350);
     const now = new Set(await controls(p));
     /* Two things Simple leaves off Today on purpose: the Diet checklist and
@@ -93,7 +98,7 @@ const controls = (p) => p.evaluate(() => {
   console.log('\n— it stays chosen —');
   await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(5000);
   const s2 = await state(); const simp2 = await side();
-  ok('after a reload it is still Simple', s2.look === 'new' && s2.simple === 'true' && simp2.join(',') === adv.join(','), { s2, simp2 });
+  ok('after a reload it is still Simple', s2.look === 'new' && s2.simple === 'true' && simp2.join(',') === advNoCompass.join(','), { s2, simp2 });
   ok('the summary\'s Next is the rock\'s title, not the lines under it', await p.evaluate(() => {
     const t = (document.querySelector('.lk-next span') || {}).textContent || '';
     const el = document.querySelector('.td-rocks:not(#td-cal) .td-rock:not(.done) .rk-title');

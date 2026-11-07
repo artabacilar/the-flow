@@ -46,7 +46,8 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     ok('and so does ×', await p.evaluate(() => !document.querySelector('.lk-dayview')));
     await p.click('.lk-day[data-lk-day="5"]'); await p.waitForTimeout(400);
     await p.click('[data-dv="week"]'); await p.waitForTimeout(600);
-    ok('“Open the whole week” opens the week', await tab(p) === 'compass');
+    /* Simple has no Week Compass: the whole week is Today's Week view. */
+    ok('“Open the whole week” opens the week on Today', await tab(p) === 'today');
     await p.evaluate(() => { window.FlowTodayLook.sel = null; });
     await T();
     await p.evaluate(() => window.scrollTo(0, 0));
@@ -119,7 +120,8 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
     await p.fill('#fn-noteinput', 'A quick note from Simple');
     await p.click('#fn-notesave'); await p.waitForTimeout(800);
     ok('a note is saved to the journal', await p.evaluate((n) => Flow.Journal.entries.length === n + 1 && Flow.Journal.entries.some((e) => e.body === 'A quick note from Simple'), nJ));
-    const go = { quad: 'compass', finance: 'finance', training: 'training', habits: 'habits', sleep: 'sleep' };
+    /* Task, in Simple, is Today's Add field (there is no Week Compass). */
+    const go = { quad: 'today', finance: 'finance', training: 'training', habits: 'habits', sleep: 'sleep' };
     for (const id of Object.keys(go)) {
       await T(); await openAdd();
       await p.click('#flow-capture [data-fn-cap="' + id + '"]'); await p.waitForTimeout(600);
@@ -158,7 +160,7 @@ const tab = (p) => p.evaluate(() => (document.querySelector('.tab.active') || {}
       ok('⌘K opens search', await p.evaluate(() => document.getElementById('flow-pal').classList.contains('on')));
       await p.keyboard.type('north'); await p.keyboard.press('Enter'); await p.waitForTimeout(600);
       ok('and Enter goes there', await tab(p) === 'northstar', await tab(p));
-      for (const t of ['northstar', 'quad', 'compass', 'abko', 'dtc', 'training', 'sleep', 'habits', 'journal', 'finance', 'ask', 'today']) {
+      for (const t of ['northstar', 'quad', 'abko', 'dtc', 'training', 'sleep', 'habits', 'journal', 'finance', 'ask', 'today']) {
         await p.click('#flow-side [data-fn-side="' + t + '"]'); await p.waitForTimeout(250);
         if (await tab(p) !== t) ok('sidebar → ' + t, false, await tab(p));
       }
