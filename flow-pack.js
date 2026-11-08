@@ -13791,7 +13791,7 @@ const Say = {
             '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
             '<div class="sy-ex sy-premium"></div>' +
           '</details>' +
-          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-golive" data-say="live" aria-pressed="false" title="Live voice: he listens after every answer until you stop it">' + Nav.svg('mic') + '<span>Live</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
       '</div>';
@@ -13809,6 +13809,7 @@ const Say = {
       if (a === 'listen') return FlowVoice && FlowVoice.listening && !FlowVoice.sink ? FlowVoice.stop() : Say.listen();
       if (a === 'send') return Say.send();
       if (a === 'doc') return Say.pickFile();
+      if (a === 'live') return Say.toggleLive();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
       if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
@@ -14010,13 +14011,27 @@ const Say = {
     Say.waiting = false; Say.confirming = false; Say.openTok++;
     try { Wake.mine = false; Wake.reset(); } catch (e) {}
     Say.mode('idle');
+    if (Say.live) Say.toggleLive(false);
     /* In Advanced the console is part of the command centre: it settles, it
        does not go away. */
     if (Hud.on && Hud.merged()) { Say.state(''); return; }
     Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
     try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
-  handsFree() { try { return Speech.pref('asstHandsFree') === true && !Wake.on(); } catch (e) { return false; } },
+  handsFree() { try { return Say.live || (Speech.pref('asstHandsFree') === true && !Wake.on()); } catch (e) { return false; } },
+  /* Live voice: a conversation, not a turn. He listens as soon as it is on
+     and again after every answer, until it is switched off (or the console
+     closes). Nothing is sent while he is speaking. */
+  live: false,
+  toggleLive(on) {
+    Say.live = on == null ? !Say.live : !!on;
+    const b = Say.el && Say.el.querySelector('.sy-golive'); if (b) { b.classList.toggle('on', Say.live); b.setAttribute('aria-pressed', String(Say.live)); }
+    if (Say.el) Say.el.classList.toggle('sy-islive', Say.live);
+    const tr = Say.lang() === 'tr';
+    if (Say.live) { Say.spoken = true; Say.state(tr ? 'Canlı — konuşun; her cevaptan sonra dinlerim.' : 'Live — just speak; I listen again after every answer.'); try { Speech.unlock(); } catch (e) {} if (!(window.FlowVoice && FlowVoice.listening)) Say.listen(); }
+    else { try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {} Say.waiting = false; Say.paintMic(); Say.state(''); }
+    try { Track.hit(Say.live ? 'say_live_on' : 'say_live_off'); } catch (e) {}
+  },
   /* While Talk is listening, "over" at the end of what was said ends the
      turn, as Stop would — no button needed. */
   overT: 0,
@@ -14272,7 +14287,7 @@ const Say = {
   /* Hands-free: once it has finished speaking, it listens again — for a yes
      or no when something is waiting to be done, for the next thing if not. */
   follow(confirm) {
-    if (!Say.spoken || !Say.handsFree() || !Say.el || !Say.el.classList.contains('on')) return;
+    if (!(Say.spoken || Say.live) || !Say.handsFree() || !Say.el || !Say.el.classList.contains('on')) return;
     try { if (Say.own()) return; } catch (e) {}
     Say.confirming = !!confirm;
     const ta = Say.el.querySelector('#sy-text'); if (ta) ta.value = '';
@@ -14520,7 +14535,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; Team.ctx = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; Team.ctx = null; Team.grp = null; Team.ml = null; Team.pl = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay, force) {
@@ -14989,11 +15004,14 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.suPanel() + Team.approvalsPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
+    return Team.suPanel() + Team.approvalsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
+      Team.voicePanel() +
+      Team.groupsPanel() +
       Team.connectorsPanel() +
+      Team.pluginsPanel() +
       Team.usagePanel() +
       Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
   },
@@ -15044,8 +15062,29 @@ const Team = {
     const c = Team.conn.counts || {}; const all = Team.conn.connectors || [];
     const show = Team.connOpen ? all : all.filter((x) => x.kind !== 'channel' && x.status !== 'not_built');
     const rows = show.map((x) => '<div class="hud-r hud-cn"><span data-i18n="off">' + esc(x.name) + '<small>' + esc(x.note || '') + (x.env && x.env.length ? ' Missing: ' + esc(x.env.join(', ')) : '') + '</small></span><em class="hud-badge" data-st="' + esc(x.status) + '">' + esc(Team.CH_STATUS[x.status] || x.status) + '</em></div>').join('');
-    const line = (c.working || 0) + ' working · ' + ((c.ready || 0) + (c.awaiting || 0)) + ' awaiting configuration · ' + (c.not_built || 0) + ' not built yet';
+    const line = (c.working || 0) + ' working · ' + ((c.ready || 0) + (c.awaiting || 0)) + ' awaiting configuration · ' + (c.available || 0) + ' available as plugins · ' + (c.not_built || 0) + ' not built yet';
     return Hud.panel('conn', 'Connections · ' + (c.working || 0) + ' working', '<p class="hud-sub" data-i18n="off">' + esc(line) + '. The count is what actually works here; nothing claims more.</p>' + rows + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="connall">' + (Team.connOpen ? 'Fewer' : 'Everything, including what is not built') + '</button></div>');
+  },
+  /* ---- plugins: MCP servers the team can use ---- */
+  async loadPlugins(force) {
+    if (Team.pl && !force) return Team.pl;
+    if (Team.plP && !force) return Team.plP;
+    Team.plP = (async () => { try { const r = await fetch('/api/team/plugins', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.pl = j; } catch (e) {} Team.plP = null; return Team.pl; })();
+    return Team.plP;
+  },
+  pluginsPanel() {
+    if (!Team.pl) { Team.loadPlugins().then(() => { if (Hud.on && (Team.sel || 'jarvis') === 'jarvis') Hud.paint(); }); return Hud.panel('plugins', 'Plugins', '<p class="hud-sub">Looking…</p>'); }
+    const P = Team.pl; const c = P.counts || {};
+    const conn = (P.connected || []).map((x) => { const open = Team.plOpen === x.id; return '<div class="hud-ch' + (open ? ' open' : '') + '"><button type="button" class="hud-chh" data-hud="plopen" data-id="' + esc(x.id) + '"><span data-i18n="off">' + esc(x.name) + '<small style="display:block;font-weight:500">' + (x.status === 'working' ? x.tools.length + ' tools · ' + (x.mode === 'read' ? 'reads run at once, actions need your yes' : 'every call needs your yes') : esc(x.error || x.status)) + '</small></span><em class="hud-badge" data-st="' + esc(x.status === 'working' ? 'working' : 'awaiting') + '">' + esc(Team.CH_STATUS[x.status] || x.status) + '</em></button>' +
+      (open ? '<div class="hud-chb"><p class="hud-sub" data-i18n="off">' + esc(x.url) + (x.envVar ? ' · token from ' + esc(x.envVar) : '') + (x.server ? ' · ' + esc(x.server.name) + ' ' + esc(x.server.version || '') : '') + (x.calls ? ' · ' + x.calls + ' calls' : '') + '</p>' +
+        (x.tools.length ? '<div class="hud-kl">' + x.tools.slice(0, 20).map((t) => '<div class="hud-k"><span data-i18n="off">' + esc(t.name) + ' <i class="hud-skc' + (t.reads ? '' : ' miss') + '">' + (t.reads ? 'reads' : 'acts') + '</i><small>' + esc(t.description || '') + '</small></span></div>').join('') + (x.tools.length > 20 ? '<div class="hud-more">+ ' + (x.tools.length - 20) + ' more</div>' : '') + '</div>' : '') +
+        '<div class="hud-row hud-wrap"><button type="button" class="hud-tab' + (x.mode === 'read' ? ' on' : '') + '" data-hud="plmode" data-id="' + esc(x.id) + '" data-mode="' + (x.mode === 'read' ? 'approve' : 'read') + '">' + (x.mode === 'read' ? 'Reads run at once' : 'Everything needs a yes') + '</button><button type="button" class="hud-btn ghost" data-hud="plcheck" data-id="' + esc(x.id) + '" style="margin-top:0">Check</button><button type="button" class="hud-btn ghost" data-hud="plremove" data-id="' + esc(x.id) + '" style="margin-top:0">Remove</button></div></div>' : '') + '</div>'; }).join('');
+    const dir = (P.directory || []).map((d) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(d.name) + '<small>' + esc(d.note) + ' · ' + (d.auth === 'oauth' ? 'signs you in itself' : d.auth === 'bearer' ? 'needs ' + esc(d.envHint || 'a token variable') + ' in Render' : 'no sign-in') + '</small></span><button type="button" class="hud-btn ghost" data-hud="pluse" data-url="' + esc(d.url) + '" data-name="' + esc(d.name) + '" data-env="' + esc(d.envHint || '') + '" style="margin-top:0">Connect</button></div>').join('');
+    const plat = (P.platforms || []).map((x) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(x.name) + '<small>' + esc(x.note) + (x.env && x.env.length ? ' Missing in Render: ' + esc(x.env.join(', ')) : '') + '</small></span><em class="hud-badge" data-st="' + esc(x.status) + '">' + esc(Team.CH_STATUS[x.status] || x.status) + '</em></div>').join('');
+    const pre = Team.plNew || {};
+    const form = '<form class="hud-skform" data-team="pladd"><div class="hud-ph">Connect an MCP server</div><label class="hud-opt"><span>Name</span><input name="name" value="' + esc(pre.name || '') + '" maxlength="60" placeholder="e.g. Notion"></label><label class="hud-opt"><span>Server address (https://…)</span><input name="url" value="' + esc(pre.url || '') + '" placeholder="https://mcp.example.com/mcp" required></label><label class="hud-opt"><span>Token: the NAME of a Render variable (never the token itself)</span><input name="envVar" value="' + esc(pre.env || '') + '" placeholder="e.g. NOTION_MCP_TOKEN" pattern="[A-Za-z0-9_]*"></label><label class="hud-opt"><span>Mode</span><select class="hud-sel" name="mode"><option value="approve">Every call needs my yes</option><option value="read">Reading tools run at once; actions need my yes</option></select></label><div class="hud-row"><button type="submit" class="hud-btn">Connect</button></div></form>';
+    const head = (c.working || 0) + ' connected · ' + (c.tools || 0) + ' tools · ' + (c.awaiting || 0) + ' awaiting a variable · ' + (c.available || 0) + ' in the directory';
+    return Hud.panel('plugins', 'Plugins' + (c.working ? ' · ' + c.working : ''), '<p class="hud-sub" data-i18n="off">' + esc(head) + '. Any MCP server is a plugin; agents call its tools from their work, behind the same yes as an email. Keys stay in Render.</p>' + conn + (P.directory && P.directory.length ? '<div class="hud-ph" style="margin-top:10px">Directory</div>' + dir : '') + '<div class="hud-ph" style="margin-top:10px">Platforms</div>' + plat + form);
   },
   /* ---- this month's cost ---- */
   use: null, useBusy: null,
@@ -15074,7 +15113,7 @@ const Team = {
     try { const r = await fetch('/api/channels/me', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.chan = j; } catch (e) {}
     return Team.chan;
   },
-  CH_STATUS: { working: 'Working', ready: 'Ready to link', awaiting: 'Awaiting configuration', not_built: 'Not built yet' },
+  CH_STATUS: { working: 'Working', ready: 'Ready to link', awaiting: 'Awaiting configuration', not_built: 'Not built yet', available: 'Available — connect', error: 'Error', connecting: 'Connecting' },
   channelsPanel() {
     if (!Team.chan) { if (!Team.chanBusy) { Team.chanBusy = true; Team.loadChannels().then(() => { Team.chanBusy = false; if (Hud.on && (Team.sel || 'jarvis') === 'jarvis') Hud.paint(); }); } return Hud.panel('channels', 'Channels', '<p class="hud-sub">Looking…</p>'); }
     const rows = Team.chan.channels.map((c) => {
@@ -15089,6 +15128,71 @@ const Team = {
     }).join('');
     const n = Team.chan.channels.filter((c) => c.status === 'working').length;
     return Hud.panel('channels', 'Channels' + (n ? ' · ' + n + ' working' : ''), rows + '<p class="hud-sub">Results, questions and approvals reach every linked channel. Only the sender you linked is ever answered.</p>');
+  },
+  /* ---- the email review: one at a time ---- */
+  async loadMail(force) {
+    if (Team.ml && !force) return Team.ml;
+    if (Team.mlP && !force) return Team.mlP;
+    Team.mlP = (async () => { try { const r = await fetch('/api/team/mail', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.ml = j; } catch (e) {} Team.mlP = null; return Team.ml; })();
+    return Team.mlP;
+  },
+  MAIL_STATE: { draft: 'drafting', awaiting: 'waiting for you', revised: 'revised — waiting for you', skipped: 'not sent', submitting: 'sending…', accepted: 'accepted by the provider — delivery not confirmed yet', delivered: 'delivered', bounced: 'bounced', failed: 'not sent' },
+  mailPanel() {
+    if (!Team.ml) { Team.loadMail().then(() => { if (Hud.on && (Team.sel || 'jarvis') === 'jarvis') Hud.paint(); }); return ''; }
+    const M = Team.ml; const cur = M.current; const P = M.policy || {};
+    const recent = (M.items || []).filter((m) => !cur || m.id !== cur.id).slice(0, 5);
+    let body = '';
+    if (cur) {
+      const d = cur.draft;
+      const thread = (cur.thread || []).map((t) => '<div class="hud-mth"><b data-i18n="off">' + esc(t.from) + (t.at ? ' · ' + esc(new Date(t.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) : '') + '</b><pre data-i18n="off">' + esc(t.text) + '</pre></div>').join('');
+      body += '<div class="hud-mhead" data-i18n="off"><b>' + esc(cur.subject) + '</b><small>From ' + esc(cur.from) + (M.queue > 1 ? ' · ' + (M.queue - 1) + ' more waiting' : '') + '</small></div>' +
+        '<details class="hud-mthread"><summary>The thread (' + (cur.thread || []).length + ')</summary>' + thread + '</details>' +
+        (d ? '<div class="hud-mdraft"><div class="hud-ph"><span>The exact reply · v' + d.version + '</span>' + (cur.state === 'revised' ? '<em class="hud-badge" data-st="ready">revised</em>' : '') + '</div>' + (d.summary ? '<p class="hud-sub" data-i18n="off">' + esc(d.summary) + '</p>' : '') + '<pre class="hud-res" data-i18n="off">' + esc(d.subject) + '\n\n' + esc(d.reply) + '</pre>' +
+          (d.needs && d.needs.length ? '<p class="hud-alert" data-i18n="off">Could not confirm: ' + esc(d.needs.join('; ')) + '</p>' : '') + (cur.flags || []).map((f) => '<p class="hud-alert" data-i18n="off">⚠ ' + esc(f) + '</p>').join('') +
+          (cur.state === 'failed' && cur.send ? '<p class="hud-alert" data-i18n="off">' + esc(cur.send.error || 'not sent') + '</p>' : '') +
+          '<div class="hud-row hud-wrap"><button type="button" class="hud-btn" data-hud="mailsend" data-id="' + esc(cur.id) + '" data-hash="' + esc(d.hash) + '" title="Approving sends exactly this text, version ' + d.version + ', once">Send this exact reply</button><button type="button" class="hud-btn ghost" data-hud="mailrevise" data-id="' + esc(cur.id) + '" style="margin-top:0">Revise</button><button type="button" class="hud-btn ghost" data-hud="mailskip" data-id="' + esc(cur.id) + '" style="margin-top:0">Don\'t send</button></div>' +
+          (Team.mlRevise === cur.id ? '<form class="hud-skform" data-team="mailrevise" data-id="' + esc(cur.id) + '"><textarea name="text" rows="2" placeholder="What to change — e.g. shorter, more formal, offer Tuesday instead" required></textarea><div class="hud-row"><button type="submit" class="hud-btn">New version</button></div><p class="hud-sub">A tone correction (“more formal”, “shorter”) is kept as a rule for every email from now on.</p></form>' : '') + '</div>' : '<p class="hud-sub">Drafting…</p>');
+    } else body += '<p class="hud-none">Nothing to review. Actionable emails arrive here one at a time — sender, the thread, the exact reply, and your yes.' + (M.counts && (M.counts.accepted || M.counts.delivered) ? '' : ' <button type="button" class="hud-btn ghost" data-hud="mailfixtures" style="margin-top:6px">Try it with three demo emails</button>') + '</p>';
+    if (recent.length) body += '<div class="hud-ph" style="margin-top:10px">Recent</div>' + recent.map((m) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(m.subject) + '<small>' + esc(m.fromName || m.from) + ' · ' + esc(Team.MAIL_STATE[m.state] || m.state) + (m.autoSent ? ' · auto-sent under the policy' : '') + (m.send && m.send.bounce ? ' · ' + esc(m.send.bounce) : '') + '</small></span><em class="hud-badge" data-st="' + (m.state === 'delivered' ? 'ready' : /bounced|failed/.test(m.state) ? 'awaiting' : 'working') + '">' + esc(m.state) + '</em></div>').join('');
+    body += '<details class="hud-why"><summary>Auto-send policy — ' + (P.enabled ? 'ON' : 'OFF') + '</summary><form class="hud-skform" data-team="mailpolicy"><label class="hud-opt"><span>Senders (addresses or domains, comma-separated)</span><input name="senders" value="' + esc((P.senders || []).join(', ')) + '" placeholder="e.g. abko-partner.example"></label><label class="hud-opt"><span>At most, per day</span><input name="maxPerDay" type="number" min="0" max="20" value="' + esc(String(P.maxPerDay == null ? 3 : P.maxPerDay)) + '"></label><label class="hud-opt"><span>For how many days</span><input name="days" type="number" min="1" max="30" value="7"></label><div class="hud-row hud-wrap"><button type="submit" class="hud-btn" name="on" value="1">Turn on</button><button type="button" class="hud-btn ghost" data-hud="mailpolicyoff" style="margin-top:0">Turn off</button></div><p class="hud-sub">Only clean drafts to these senders go without your yes — nothing flagged, nothing unconfirmed, never more than the daily limit, and it expires. Everything sent is logged with its exact text' + (P.log && P.log.length ? ' (' + P.log.length + ' so far)' : '') + '. Off at any moment.</p></form></details>';
+    return Hud.panel('mail', 'Email review' + (M.queue ? ' · ' + M.queue + ' waiting' : ''), body);
+  },
+  /* ---- voice notes: what answers on Telegram, and how long it talks ---- */
+  voicePanel() {
+    const V = Team.chan && Team.chan.voice; if (!V) return '';
+    const cur = V.current || {}; const st = V.settings && V.settings.default || {};
+    const presets = (V.presets || []).map((pz) => '<option value="' + esc(pz.id) + '"' + (!st.voiceId && (st.preset || 'british-male') === pz.id ? ' selected' : '') + (pz.available ? '' : ' disabled') + '>' + esc(pz.label) + (pz.available ? '' : ' — needs a key') + '</option>').join('');
+    const body = '<p class="hud-sub" data-i18n="off">In: ' + (V.in === 'working' ? 'voice notes are understood (' + esc(V.stt) + ')' : 'awaiting ' + esc((V.missing || []).join(' / '))) + ' · Out: ' + (V.out === 'working' ? 'spoken replies by ' + esc(V.tts) : 'awaiting a key') + '. Keys live only in Render; nothing here shows one.</p>' +
+      '<form class="hud-skform" data-team="voiceset">' +
+      '<label class="hud-opt"><span>Voice</span><select class="hud-sel" name="preset">' + presets + '</select></label>' +
+      '<label class="hud-opt"><span>Or your own ElevenLabs voice id</span><input name="voiceId" value="' + esc(st.voiceId || '') + '" placeholder="e.g. onwK4e9ZLuTAKqWW03F9" maxlength="40" autocomplete="off"></label>' +
+      '<label class="hud-opt"><span>Replies</span><select class="hud-sel" name="replies">' + [['text', 'Text (a voice note still gets a voice note back)'], ['voice', 'Voice notes'], ['both', 'Both']].map((o) => '<option value="' + o[0] + '"' + ((st.replies || 'text') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+      '<label class="hud-opt"><span>Spoken length</span><select class="hud-sel" name="length">' + [['short', 'About 30 seconds'], ['medium', 'About 60 seconds'], ['long', 'About 2 minutes']].map((o) => '<option value="' + o[0] + '"' + ((st.length || 'short') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+      '<div class="hud-row hud-wrap"><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="voicetest" style="margin-top:0">Send a test voice note</button></div></form>' +
+      '<p class="hud-sub" data-i18n="off">Now: ' + esc(cur.label || '') + ' · ' + esc(cur.limit ? cur.limit.words + ' words at most' : '') + '. A group or topic can have its own: /voice there.</p>';
+    return Hud.panel('voice', 'Voice notes', body);
+  },
+  /* ---- groups, topics, members: the parallel workspaces ---- */
+  async loadGroups(force) {
+    if (Team.grp && !force) return Team.grp;
+    if (Team.grpP && !force) return Team.grpP;
+    Team.grpP = (async () => { try { const r = await fetch('/api/channels/me/groups', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.grp = j; } catch (e) {} Team.grpP = null; return Team.grp; })();
+    return Team.grpP;
+  },
+  groupsPanel() {
+    if (!Team.grp) { Team.loadGroups().then(() => { if (Hud.on && (Team.sel || 'jarvis') === 'jarvis') Hud.paint(); }); return Hud.panel('groups', 'Groups & members', '<p class="hud-sub">Looking…</p>'); }
+    const G = Team.grp; const W = G.workspaces || [], M = G.members || [];
+    const agentName = (id) => id === 'jarvis' ? 'J.A.R.V.I.S.' : ((Team.agent(id) || {}).name || id);
+    const rows = W.length ? W.map((w) => '<div class="hud-grp' + (w.threadId ? ' topic' : '') + '" data-id="' + esc(w.id) + '"><div class="hud-grpr"><span data-i18n="off">' + (w.threadId ? '↳ topic ' + esc(w.threadId) + (w.topic ? ' “' + esc(w.topic) + '”' : '') : esc(w.title)) + '</span>' +
+      '<button type="button" class="hud-tab' + (w.mode === 'all' ? ' on' : '') + '" data-hud="grpmode" data-id="' + esc(w.id) + '" data-mode="' + (w.mode === 'all' ? 'mention' : 'all') + '" title="' + (w.mode === 'all' ? 'He answers everything from authorised members. Click for mention-only.' : 'He answers when mentioned, replied to or called by name. Click to answer everything.') + '">' + (w.mode === 'all' ? 'Conversational' : 'Mention-only') + '</button></div>' +
+      '<small data-i18n="off">' + esc(agentName(w.agent || 'jarvis')) + ' · ' + w.handled + ' answered · ' + w.ignored + ' not addressed' + (w.refused ? ' · ' + w.refused + ' unauthorised' : '') + (w.lastAt ? ' · ' + esc(Team.when(w.lastAt)) : '') + '</small>' +
+      (w.threadId ? '' : '<button type="button" class="hud-ic" data-hud="grpremove" data-id="' + esc(w.id) + '" aria-label="Detach this group" title="Detach">×</button>') + '</div>').join('')
+      : '<p class="hud-none">No groups yet. Add the Telegram bot to a group' + (G.bot ? ' (@' + esc(G.bot) + ')' : '') + ' and send your link code there — or /attach, once your own Telegram is linked. Every group, and every topic in a forum group, is a workspace of its own: its own conversation, its own specialist, work that reports back there.</p>';
+    const mem = M.length ? M.map((m) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(m.name || '(no name)') + '<small>' + esc(m.channel) + ' ' + esc(m.id) + (m.allowed ? '' : ' · removed') + (m.lastAt ? ' · ' + esc(Team.when(m.lastAt)) : '') + '</small></span>' + (m.allowed ? '<button type="button" class="hud-ic" data-hud="grpdeny" data-ch="' + esc(m.channel) + '" data-id="' + esc(m.id) + '" aria-label="Remove ' + esc(m.name || m.id) + '" title="Remove">×</button>' : '<button type="button" class="hud-ic" data-hud="grpallow" data-ch="' + esc(m.channel) + '" data-id="' + esc(m.id) + '" aria-label="Authorise again" title="Authorise again">↩</button>') + '</div>').join('') : '<p class="hud-none">Only you can give the team instructions in a group until you authorise a member by their numeric id (they get it with /whoami).</p>';
+    const form = '<form class="hud-skform" data-team="grpallow"><div class="hud-row hud-wrap"><input name="id" inputmode="numeric" pattern="\\d{3,20}" placeholder="Telegram id, e.g. 123456789" aria-label="Numeric id" required><input name="name" placeholder="Name" aria-label="Name" maxlength="60"><button type="submit" class="hud-btn">Authorise</button></div></form>';
+    const q = G.queues || {};
+    const foot = '<p class="hud-sub" data-i18n="off">' + (G.webhook ? (G.webhook.ok ? 'Telegram webhook set' : 'Telegram webhook not set: ' + esc(G.webhook.description || '')) : 'Telegram webhook not confirmed yet') + (G.bot ? ' · @' + esc(G.bot) : '') + ' · up ' + esc(G.up || '') + ' · inbox ' + (q.inbox || 0) + ' · outbox ' + (q.outbox || 0) + '. Restarts keep workspaces, members and work; unanswered messages are replayed and waiting replies resent. /diag in any chat says the same.</p>';
+    return Hud.panel('groups', 'Groups & members' + (W.length ? ' · ' + W.filter((w) => !w.threadId).length : ''), rows + '<div class="hud-ph" style="margin-top:10px">Authorised members</div>' + mem + form + foot);
   },
   /* ---- work ---- */
   STATUS: { queued: 'Queued', running: 'Working', awaiting_info: 'Needs an answer', awaiting_approval: 'Needs your yes', done: 'Done', failed: 'Did not finish', cancelled: 'Cancelled' },
@@ -15132,7 +15236,8 @@ const Team = {
     const shots = t.shots ? (Team.shots && Team.shots.id === id ? (Team.shots.list.length ? '<div class="hud-shots">' + Team.shots.list.slice(-4).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(s.title || s.url) + '"><img src="' + esc(s.img) + '" alt="' + esc(s.title || 'What the agent saw') + '"></a>').join('') + '</div><p class="hud-sub">What ' + esc((Team.agent(Team.shots.list[0].agent) || {}).name || 'the agent') + ' saw, step by step.</p>' : '') : (Team.loadShots(id), '<p class="hud-sub">Loading what the agent saw…</p>')) : '';
     const res = t.result ? '<pre class="hud-res" data-i18n="off">' + esc(t.result) + '</pre>' : (t.status === 'running' || t.status === 'queued' ? '<p class="hud-sub">' + (browsing ? 'Browsing ' + esc(String(browsing.browsing).replace(/^https?:\/\//, '').split('/')[0]) + ' — ' : 'Working on it — ') + 'this carries on even if you close The Flow.</p>' : '');
     const err = t.error ? '<p class="hud-alert" data-i18n="off">' + esc(t.error) + '</p>' : '';
-    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + (/^(done|awaiting_approval)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '" title="Keep this workflow as a reusable skill the team can follow again">Turn into a skill</button><button type="button" class="hud-btn ghost" data-hud="scfromtask" data-id="' + esc(t.id) + '" title="Move the routine part into a script that runs without a model">Turn into an automation</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
+    const why = Array.isArray(t.ranking) && t.ranking.length ? '<details class="hud-why"><summary>Why this route</summary>' + t.ranking.slice(0, 4).map((r) => '<div class="hud-r hud-lg"><span data-i18n="off">' + r.rank + '. ' + esc(r.name) + '<small>' + esc(r.why) + '</small></span><b>' + r.score + '</b></div>').join('') + '</details>' : '';
+    const btns = why + '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + (/^(done|awaiting_approval)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '" title="Keep this workflow as a reusable skill the team can follow again">Turn into a skill</button><button type="button" class="hud-btn ghost" data-hud="scfromtask" data-id="' + esc(t.id) + '" title="Move the routine part into a script that runs without a model">Turn into an automation</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
     return Hud.panel('taskv', esc(t.title), '<div class="hud-tmeta"><em class="hud-tst" data-st="' + esc(t.status) + '">' + esc(Team.STATUS[t.status] || t.status) + '</em><small data-i18n="off">' + esc(t.brief || '').slice(0, 300) + '</small></div>' + steps + q + err + res + shots + btns);
   },
   shots: null,
@@ -16012,6 +16117,20 @@ const Team = {
     if (a === 'kdrop') { const j = await Team.post('/api/team/knowledge', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.data.knowledge = j.knowledge; Hud.paint(); toast('Removed', null, 1200); } return; }
     if (a === 'task') { Team.openTask(b.getAttribute('data-id')); return; }
     if (a === 'chopen') { const ch = b.getAttribute('data-ch'); Team.chanOpen = Team.chanOpen === ch ? null : ch; Hud.paint(); return; }
+    if (a === 'plopen') { const id = b.getAttribute('data-id'); Team.plOpen = Team.plOpen === id ? null : id; Hud.paint(); return; }
+    if (a === 'pluse') { Team.plNew = { name: b.getAttribute('data-name'), url: b.getAttribute('data-url'), env: b.getAttribute('data-env') }; Hud.paint(); const f = Hud.el.querySelector('form[data-team="pladd"]'); if (f) f.scrollIntoView({ block: 'center' }); return; }
+    if (a === 'plmode') { const j = await Team.post('/api/team/plugins', { op: 'mode', id: b.getAttribute('data-id'), mode: b.getAttribute('data-mode') }); if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Hud.paint(); return; }
+    if (a === 'plcheck') { b.disabled = true; const j = await Team.post('/api/team/plugins', { op: 'check', id: b.getAttribute('data-id') }); if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
+    if (a === 'plremove') { if (!confirm('Remove this plugin? Its tools disappear from the team.')) return; await Team.post('/api/team/plugins', { op: 'remove', id: b.getAttribute('data-id') }); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
+    if (a === 'mailsend') { b.disabled = true; const j = await Team.post('/api/team/mail', { op: 'send', id: b.getAttribute('data-id'), hash: b.getAttribute('data-hash') }); b.disabled = false; if (j && j.ok) toast('Sent — accepted by the provider; delivery is confirmed separately', null, 2600); else if (j && j.error) Say.state(j.error); await Team.loadMail(true); Hud.paint(); return; }
+    if (a === 'mailrevise') { Team.mlRevise = Team.mlRevise === b.getAttribute('data-id') ? null : b.getAttribute('data-id'); Hud.paint(); return; }
+    if (a === 'mailskip') { const j = await Team.post('/api/team/mail', { op: 'skip', id: b.getAttribute('data-id') }); if (j && j.error) Say.state(j.error); await Team.loadMail(true); Hud.paint(); return; }
+    if (a === 'mailfixtures') { await Team.post('/api/team/mail', { op: 'fixtures' }); await Team.loadMail(true); Hud.paint(); return; }
+    if (a === 'mailpolicyoff') { await Team.post('/api/team/mail', { op: 'policy', enabled: false }); await Team.loadMail(true); Hud.paint(); return; }
+    if (a === 'voicetest') { b.disabled = true; const j = await Team.post('/api/channels/me/voice', { op: 'test' }); b.disabled = false; if (j && j.ok) toast('Sent: ' + j.voice + ' (' + j.provider + ')', null, 2200); else Say.state((j && j.error) || 'The test could not be sent.'); return; }
+    if (a === 'grpmode') { const j = await Team.post('/api/channels/me/groups', { op: 'mode', id: b.getAttribute('data-id'), mode: b.getAttribute('data-mode') }); if (j && j.ok) { await Team.loadGroups(true); Hud.paint(); } else if (j && j.error) Say.state(j.error); return; }
+    if (a === 'grpremove') { if (!confirm('Detach this group? Nothing said there will reach your Flow.')) return; const j = await Team.post('/api/channels/me/groups', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.loadGroups(true); Hud.paint(); } return; }
+    if (a === 'grpdeny' || a === 'grpallow') { const j = await Team.post('/api/channels/me/groups', { op: a === 'grpdeny' ? 'deny' : 'allow', channel: b.getAttribute('data-ch'), id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.loadGroups(true); Hud.paint(); } else if (j && j.error) Say.state(j.error); return; }
     if (a === 'chcode') { const j = await Team.post('/api/channels/me/code', {}); if (j && j.ok) { Team.chanCode = { ch: b.getAttribute('data-ch'), code: j.code, at: Date.now() }; Hud.paint(); Team.chanWatch(); } return; }
     if (a === 'chunlink') { const ch = b.getAttribute('data-ch'); if (!confirm('Unlink ' + ch + '? Messages from it will no longer be answered.')) return; const j = await Team.post('/api/channels/me/unlink', { channel: ch }); if (j && j.ok) { await Team.loadChannels(true); Hud.paint(); toast('Unlinked', null, 1200); } return; }
     if (a === 'chtest') { const j = await Team.post('/api/channels/me/test', { channel: b.getAttribute('data-ch') }); if (j && j.ok) toast('Sent', null, 1200); return; }
@@ -16075,6 +16194,11 @@ const Team = {
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
+    if (kind === 'pladd') { const url = f.url.value.trim(); if (!url) return; const j = await Team.post('/api/team/plugins', { op: 'add', name: f.name.value.trim(), url, envVar: f.envVar.value.trim(), mode: f.mode.value }); if (j && j.ok) { Team.plNew = null; Team.plOpen = j.plugin.id; toast(j.plugin.status === 'working' ? j.plugin.name + ' connected — ' + j.plugin.tools.length + ' tools' : j.plugin.name + ': ' + (j.plugin.error || j.plugin.status), null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
+    if (kind === 'mailrevise') { const text = f.text.value.trim(); if (!text) return; const j = await Team.post('/api/team/mail', { op: 'revise', id: f.getAttribute('data-id'), text }); if (j && j.ok) { Team.mlRevise = null; if (j.tone) toast('Kept as a rule for every email: ' + j.tone, null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadMail(true); Hud.paint(); return; }
+    if (kind === 'mailpolicy') { const j = await Team.post('/api/team/mail', { op: 'policy', enabled: true, senders: f.senders.value, maxPerDay: f.maxPerDay.value, days: f.days.value }); if (j && j.error) Say.state(j.error); else toast('Auto-send on, bounded', null, 1800); await Team.loadMail(true); Hud.paint(); return; }
+    if (kind === 'voiceset') { const patch = { preset: f.preset.value, replies: f.replies.value, length: f.length.value }; if (f.voiceId.value.trim()) { patch.voiceId = f.voiceId.value.trim(); patch.provider = 'elevenlabs'; delete patch.preset; } else patch.voiceId = ''; const j = await Team.post('/api/channels/me/voice', { level: 'default', patch }); if (j && j.ok) { await Team.loadChannels(true); Hud.paint(); toast('Voice saved', null, 1400); } else if (j && j.error) Say.state(j.error); return; }
+    if (kind === 'grpallow') { const id = f.id.value.trim(), name = f.name.value.trim(); if (!id) return; const j = await Team.post('/api/channels/me/groups', { op: 'allow', channel: 'telegram', id, name }); if (j && j.ok) { await Team.loadGroups(true); Hud.paint(); toast((name || id) + ' authorised', null, 1600); } else if (j && j.error) Say.state(j.error); return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });

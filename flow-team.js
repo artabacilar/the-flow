@@ -55,6 +55,8 @@ const scripts = require('./flow-scripts');
 const efficiency = require('./flow-efficiency');
 const setup = require('./flow-setup');
 const context = require('./flow-context');
+const mail = require('./flow-mail');
+const plugins = require('./flow-plugins');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -419,6 +421,9 @@ async function handle(p, req, res, ctx) {
   if (await efficiency.handle(p, req, res, ctx, effDeps())) return true;
   if (await setup.handle(p, req, res, ctx, setupDeps())) return true;
   if (await context.handle(p, req, res, ctx, ctxDeps())) return true;
+  if (await handleMail(p, req, res, ctx)) return true;
+  if (await plugins.handle(p, req, res, ctx, { log })) return true;
+  if (await handleRank(p, req, res, ctx)) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -561,7 +566,7 @@ async function sayTo(ctx, agentId, said, lang, opts) {
     const last = messages[messages.length - 1];
     if (last && last.role === 'user') last.content += '\n\n' + said; else messages.push({ role: 'user', content: said });
     const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429, budget: bud };
-    const system = agentSystem(a, ctx.user && (ctx.user.name || ctx.user.email), shared, own, b.lang === 'tr' ? 'tr' : 'en', names);
+    const system = agentSystem(a, ctx.user && (ctx.user.name || ctx.user.email), shared, own, b.lang === 'tr' ? 'tr' : 'en', names) + (opts && opts.spoken ? '\n\nSPOKEN REPLY: your "say" will be read aloud as a voice note of about ' + opts.spoken.seconds + ' seconds. At most ' + opts.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs; say numbers in words where natural.' : '');
     let r = await complete({ model: which.model, system, messages, maxTokens: 1600 });
     if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
     let out = parseReply(r.text); let pagesRead = [];
@@ -627,7 +632,7 @@ async function sayTo(ctx, agentId, said, lang, opts) {
  *   status: queued | running | awaiting_info | awaiting_approval | done | failed | cancelled
  * ====================================================================== */
 const TASK_STATES = ['queued', 'running', 'awaiting_info', 'awaiting_approval', 'done', 'failed', 'cancelled'];
-const APPROVAL_KINDS = ['email', 'message', 'post', 'spend', 'change', 'other'];
+const APPROVAL_KINDS = ['email', 'message', 'post', 'spend', 'change', 'tool', 'other'];
 const MAX_STEPS = 6, MAX_ATTEMPTS = 3, MAX_TASKS = 200;
 
 async function tasks(ctx) { const v = await ctx.get('team:tasks'); return Array.isArray(v) ? v : []; }
@@ -682,7 +687,7 @@ function parseStep(text) {
   const s = String(text || '').trim();
   const m = s.match(/\{[\s\S]*\}/);
   let j = null; if (m) { try { j = JSON.parse(m[0]); } catch (e) {} }
-  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [], read: [], browse: null, run: null };
+  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [], read: [], browse: null, run: null, tool: null };
   const browse = j.browse && typeof j.browse === 'object' && /^https?:\/\//i.test(String(j.browse.url || '')) ? { url: str(j.browse.url, 500), goal: str(j.browse.goal, 400) || 'Find what the task needs.' } : null;
   const props = (Array.isArray(j.proposals) ? j.proposals : []).slice(0, 6).map((p) => p && {
     kind: APPROVAL_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'other', summary: str(p.summary, 200),
@@ -692,7 +697,8 @@ function parseStep(text) {
     .map((r) => r && { scope: r.scope === 'shared' ? 'shared' : 'mine', fact: str(r.fact, 200) })
     .filter((r) => r && r.fact && !/\d[\d\s-]{9,}\d/.test(r.fact) && !/(password|passcode|pin code|şifre|parola)/i.test(r.fact));
   const run = j.run && typeof j.run === 'object' && /^sc[0-9a-f]{6,}$/.test(String(j.run.script || '')) ? { script: String(j.run.script), inputs: j.run.inputs && typeof j.run.inputs === 'object' ? j.run.inputs : {} } : null;
-  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem, read: cleanReads(j.read), browse, run };
+  const tool = j.tool && typeof j.tool === 'object' && /^pl[0-9a-z]{6,}$/.test(String(j.tool.plugin || '')) && j.tool.name ? { plugin: String(j.tool.plugin), name: str(j.tool.name, 80), args: j.tool.args && typeof j.tool.args === 'object' ? j.tool.args : {} } : null;
+  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem, read: cleanReads(j.read), browse, run, tool };
 }
 
 /* J.A.R.V.I.S. decides who does what. */
@@ -795,16 +801,24 @@ async function runTask(uid, ctx, id) {
     }
     else if (st.skill && !st.skill.missing) { try { const sk = (await skills.all(ctx)).find((s) => s.id === st.skill.id); if (sk && !st.skill.blocked) skillBlock = skills.text(sk, know, sk.scripts.length ? await scripts.all(ctx) : []); else if (sk && st.skill.blocked) skillBlock = 'SKILL REQUESTED BUT NOT USABLE: "' + sk.name + '" is ' + st.skill.blocked + '. Say so in your result and do the work without it.'; } catch (e) {} }
     else if (st.skill && st.skill.missing) skillBlock = 'SKILL REQUESTED BUT NOT FOUND: the person asked for a skill called "' + st.skill.missing + '", and no skill with that name exists. Say so plainly in your result, then do the work as best you can without it.';
-    const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier, skillBlock);
+    let plugBlock = ''; try { plugBlock = (await plugins.forAgent(ctx, a.id)).text; } catch (e) {}
+    const toolProps = [];
+    const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier, [skillBlock, plugBlock].filter(Boolean).join('\n\n'));
     const user = (t.answer ? 'The person answered your question: "' + t.answer + '"\n\n' : '') + (t.handoff && t.handoff.found ? 'What you found before stopping at ' + t.handoff.url + ':\n' + t.handoff.found + '\n\n' : '') + 'Do your part now.';
     if (fakeDelay) await new Promise((r) => setTimeout(r, fakeDelay));
     let messages = [{ role: 'user', content: user }];
     let r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
     /* the web: pages asked for, or a browsing run, then the model again */
     let out = r.error ? null : parseStep(r.text);
-    for (let round = 0; round < 2 && out && !out.result && !out.question && (out.read.length || out.browse || out.run); round++) {
-      await bumpUsage(ctx, a.id, r.usage, which.model); await meter(ctx, id, { reads: out.read.length, browses: out.browse ? 1 : 0, scripts: out.run ? 1 : 0 }, r.usage, which.model);
+    for (let round = 0; round < 3 && out && !out.result && !out.question && (out.read.length || out.browse || out.run || out.tool); round++) {
+      await bumpUsage(ctx, a.id, r.usage, which.model); await meter(ctx, id, { reads: out.read.length, browses: out.browse ? 1 : 0, scripts: out.run ? 1 : 0, tools: out.tool ? 1 : 0 }, r.usage, which.model);
       let pages = '';
+      if (out.tool) {
+        const tr = await plugins.stepCall(ctx, { log }, a, out.tool);
+        if (tr.proposal) toolProps.push(tr.proposal);
+        await patchTask(ctx, id, (x) => { x.steps[i].tools = (x.steps[i].tools || []).concat([{ plugin: out.tool.plugin, name: out.tool.name, called: !!tr.called, proposed: !!tr.proposal, at: Date.now() }]).slice(-8); });
+        pages += tr.text;
+      }
       if (out.run) {
         const sc = (await scripts.all(ctx)).find((z) => z.id === out.run.script && z.status === 'active');
         if (!sc) pages += 'AUTOMATION ' + out.run.script + ' does not exist or is not active. Do the work yourself and say so.';
@@ -840,6 +854,7 @@ async function runTask(uid, ctx, id) {
       r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
       out = r.error ? null : parseStep(r.text);
     }
+    if (out && toolProps.length) out.proposals = (out.proposals || []).concat(toolProps);
     if (r.error) {
       const attempts = (st.attempts || 0) + 1;
       if (attempts < MAX_ATTEMPTS && r.status !== 401 && r.status !== 403) {
@@ -1002,6 +1017,7 @@ function start(deps) {
         const list = await tasks(ctx);
         if (list.some((t) => t.status === 'queued' || t.status === 'running')) { if (deps.log) deps.log('[team] resuming work for an account'); kick(uid, ctx); }
         try { ctx.user = await userOf(uid); await scripts.resumeAll(ctx, scriptDeps()); } catch (e) {}
+        try { await mail.recover(ctx, mailDeps()); } catch (e) {}
       }
     } catch (e) { if (deps.log) deps.log('[team] resume failed: ' + (e && e.message)); }
   })();
@@ -1037,7 +1053,8 @@ async function delegateText(ctx, uid, text, lang, opts) {
   if (!plan) return { error: 'The plan came back in a shape the app could not read. Try again.', status: 502 };
   if (!plan.steps.length) return { task: null, say: plan.say || 'That needs none of the team; I can do it myself.' };
   try {
-    const t = await newTask(ctx, uid, { title: plan.title || str(text, 80), brief: text, agent: 'jarvis', by: 'jarvis', lang, steps: plan.steps, callMe: !!(opts && opts.callMe), via: (opts && opts.via) || '' });
+    let ranking = []; try { ranking = await rank(ctx, text); } catch (e) {}
+    const t = await newTask(ctx, uid, { title: plan.title || str(text, 80), brief: text, agent: 'jarvis', by: 'jarvis', lang, steps: plan.steps, callMe: !!(opts && opts.callMe), via: (opts && opts.via) || '', origin: (opts && opts.origin) || null, ranking });
     await meter(ctx, t.id, { planCalls: 1 }, r.usage, which.model);
     return { task: t, say: plan.say };
   } catch (e) { return { error: e.message, status: 400 }; }
@@ -1068,6 +1085,13 @@ async function decide(ctx, id, decision, detail) {
     return { approval: item, agent: 'Automation', run };
   }
   if (decision === 'reject') { item.status = 'rejected'; }
+  else if (item.kind === 'tool') {
+    /* a plugin tool the person approved: it runs now, once */
+    item.status = 'sending'; item.note = ''; await saveApprovals(ctx, ap);
+    const r = await plugins.executeApproved(ctx, { log }, item);
+    if (r.ok) { item.status = 'executed'; item.executedAt = Date.now(); item.note = 'Done: ' + str(r.text, 400); }
+    else { item.status = 'send_failed'; item.error = r.error || 'The tool could not be run.'; item.note = item.error + ' Approve again to retry.'; }
+  }
   else if (item.kind === 'email' && mailReady() && a.permissions !== 'read' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.detail && item.detail.to || ''))) {
     /* The one tool that exists: it goes now, once. 'sending' is saved first
        so a second click, or a restart mid-send, cannot send it twice. */
@@ -1320,8 +1344,14 @@ async function connectors(uid, ctx) {
   for (const P of await providers()) out.push({ id: 'model:' + P.id, kind: 'model', name: P.name, status: P.configured ? 'working' : 'awaiting', env: P.configured ? [] : [P.env], note: P.configured ? P.models.length + ' models' : 'Add ' + P.env + ' in Render.' });
   const C = channelsLib();
   if (C && C.statusList) { try { for (const ch of await C.statusList(uid)) out.push({ id: 'channel:' + ch.id, kind: 'channel', name: ch.name, status: ch.status, env: ch.env, note: ch.status === 'working' ? 'Linked.' : ch.status === 'ready' ? 'Configured; link it from Channels.' : ch.status === 'not_built' ? 'Not built yet.' : 'Missing in Render: ' + ch.env.join(', ') }); } catch (e) {} }
-  for (const w of WISHLIST) out.push({ id: 'wish:' + w[0].toLowerCase().replace(/\W+/g, '-'), kind: 'app', name: w[0], status: 'not_built', note: w[1] + ' Not built yet — ask for it and it goes on the list.' });
-  const counts = { working: out.filter((x) => x.status === 'working').length, ready: out.filter((x) => x.status === 'ready').length, awaiting: out.filter((x) => x.status === 'awaiting').length, not_built: out.filter((x) => x.status === 'not_built').length };
+  let plugged = []; try { plugged = await plugins.all(ctx); } catch (e) {}
+  for (const pl of plugged) out.push({ id: 'plugin:' + pl.id, kind: 'plugin', name: pl.name, status: pl.status === 'working' ? 'working' : 'awaiting', env: pl.status !== 'working' && pl.envVar ? [pl.envVar] : [], note: pl.status === 'working' ? (pl.tools || []).length + ' tools over MCP · mode ' + pl.mode : (pl.error || 'connecting') });
+  for (const w of WISHLIST) {
+    const mcp = plugins.DIRECTORY.find((d) => d.name.toLowerCase() === w[0].toLowerCase());
+    if (mcp && plugged.some((pl) => pl.url === mcp.url)) continue;
+    out.push({ id: 'wish:' + w[0].toLowerCase().replace(/\W+/g, '-'), kind: 'app', name: w[0], status: mcp ? 'available' : 'not_built', note: w[1] + (mcp ? ' Available as a plugin: connect its MCP server in Plugins' + (mcp.auth === 'oauth' ? ' (it signs you in itself)' : mcp.envHint ? ' (needs ' + mcp.envHint + ' in Render)' : '') + '.' : ' Not built yet — ask for it and it goes on the list.') });
+  }
+  const counts = { available: out.filter((x) => x.status === 'available').length, working: out.filter((x) => x.status === 'working').length, ready: out.filter((x) => x.status === 'ready').length, awaiting: out.filter((x) => x.status === 'awaiting').length, not_built: out.filter((x) => x.status === 'not_built').length };
   return { connectors: out, counts };
 }
 
@@ -1472,9 +1502,9 @@ function setupDeps() {
   };
 }
 /* ---------- business context: what the module needs from here ------------------ */
-async function modelJson(ctx, system, user, maxTokens) {
+async function modelJson(ctx, system, user, maxTokens, model) {
   if (FAKE) return null;
-  const list = await agents(ctx); const j = list.find((x) => x.id === 'jarvis'); const which = j && await resolveModel(j.model); if (!which) return null;
+  const list = await agents(ctx); const j = list.find((x) => x.id === 'jarvis'); const which = (model && await resolveModel(model)) || (j && await resolveModel(j.model)); if (!which) return null;
   const bud = await budget(ctx); if (bud.over) return null;
   const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: maxTokens || 2500, timeoutMs: 60000 });
   if (r.error) return null;
@@ -1652,6 +1682,150 @@ async function handleWork(p, req, res, ctx) {
 
   return false;
 }
+
+/* =========================================================================
+ * The email review workflow (flow-mail.js) — its dependencies and routes
+ * ====================================================================== */
+function mailDeps() {
+  return {
+    agents, knowledge, log, sendEmail,
+    modelJson: (ctx, system, user, maxTokens, model) => modelJson(ctx, system, user, maxTokens, model),
+    ownerName: (ctx) => (ctx.user && (ctx.user.name || ctx.user.email)) || 'the owner',
+    ownerEmail: (ctx) => (ctx.user && ctx.user.email) || '',
+    skills: { all: (ctx) => skills.all(ctx), create: (ctx, b) => skills.create(ctx, skillDeps(), b), edit: (ctx, id, b) => skills.update(ctx, skillDeps(), { id, steps: b.steps, why: b.note }) },
+    /* what the Flow knows of the coming week: rocks with times are busy, the rest is offered */
+    freeTimes: async (ctx) => {
+      try {
+        const c = (await ctx.get('ld_compass')) || {}; const now = new Date(); const out = [];
+        for (let d = 1; d <= 5 && out.length < 4; d++) {
+          const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d); const dow = (day.getDay() + 6) % 7; if (dow > 4) continue;
+          const wid = weekId(day); const busy = ((c.rocks || {})[wid] || []).filter((r) => r.day === dow && r.time).map((r) => r.time);
+          const slots = ['10:00', '14:00', '16:00'].filter((t) => !busy.some((b) => Math.abs(parseInt(b, 10) - parseInt(t, 10)) < 2));
+          if (slots.length) out.push(day.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) + ' at ' + slots.join(' or '));
+        }
+        return out.join('; ');
+      } catch (e) { return ''; }
+    },
+    onNew: async (ctx, item) => { const ch = channelsLib(); if (ch && ch.mailNew) { try { await ch.mailNew(ctx, item); } catch (e) {} } }
+  };
+}
+async function handleMail(p, req, res, ctx) {
+  if (p.indexOf('/api/team/mail') !== 0) return false;
+  const json = ctx.json; const uid = ctx.user && ctx.user.id;
+  const body = async () => { try { return JSON.parse(await ctx.readBody(req)) || {}; } catch (e) { return {}; } };
+  if (p === '/api/team/mail' && req.method === 'GET') { json(res, 200, Object.assign({ ok: true }, await mail.view(ctx))); return true; }
+  if (p === '/api/team/mail' && req.method === 'POST') {
+    const b = await body(); const op = String(b.op || ''); const D = mailDeps();
+    let r;
+    if (op === 'intake') r = b.mail && (b.mail.from || b.mail.text) ? await mail.intake(ctx, D, b.mail, { source: 'app', agent: b.agent }) : { error: 'An email needs at least a sender and a body.' };
+    else if (op === 'fixtures') { const out = []; for (const f of mail.FIXTURES) out.push(await mail.intake(ctx, D, f, { source: 'fixture' })); r = { ok: true, items: out.map((x) => x.item), note: 'Demo emails — fixtures, not your inbox.' }; }
+    else if (op === 'send') r = await mail.approve(ctx, D, String(b.id || ''), String(b.hash || ''), { who: D.ownerName(ctx), via: 'app', override: !!b.override });
+    else if (op === 'revise') r = await mail.revise(ctx, D, String(b.id || ''), str(b.text, 600), {});
+    else if (op === 'skip') r = await mail.skip(ctx, D, String(b.id || ''), str(b.why, 160));
+    else if (op === 'redraft') r = await mail.draft(ctx, D, String(b.id || ''), { why: 'redrafted on request' });
+    else if (op === 'policy') r = await mail.setPolicy(ctx, D, b);
+    else if (op === 'recover') r = { ok: true, finished: await mail.recover(ctx, D) };
+    else r = { error: 'Unknown op.' };
+    json(res, r && r.error ? (r.stale ? 409 : 400) : 200, r);
+    return true;
+  }
+  return false;
+}
+/* Resend's delivery events: the only thing that may call a reply delivered. */
+async function handleMailEvents(p, req, res, ctx) {
+  if (p !== '/api/mail/events' || req.method !== 'POST') return false;
+  const raw = await ctx.readBody(req);
+  const secret = String(process.env.RESEND_WEBHOOK_SECRET || '').trim();
+  const headers = {}; for (const k in req.headers) headers[k.toLowerCase()] = String(req.headers[k]);
+  const ok = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); return true; };
+  if (!FAKE) {
+    if (!secret) return ok(403, { error: 'RESEND_WEBHOOK_SECRET is not set; delivery events are ignored until it is.' });
+    try {
+      const id = headers['svix-id'], ts = headers['svix-timestamp'], sigs = String(headers['svix-signature'] || '').split(' ');
+      if (!id || !ts || Math.abs(Date.now() / 1000 - (+ts)) > 300) return ok(403, { error: 'bad timestamp' });
+      const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+      const want = require('crypto').createHmac('sha256', key).update(id + '.' + ts + '.' + raw).digest('base64');
+      if (!sigs.some((s) => { const v = s.split(',')[1] || ''; return v.length === want.length && require('crypto').timingSafeEqual(Buffer.from(v), Buffer.from(want)); })) return ok(403, { error: 'bad signature' });
+    } catch (e) { return ok(403, { error: 'bad signature' }); }
+  }
+  let ev = {}; try { ev = JSON.parse(raw) || {}; } catch (e) {}
+  const r = await mail.providerEvent((uid) => { const c = bootCtx(uid); return c; }, usersFn, ev);
+  return ok(200, Object.assign({ ok: true }, r));
+}
+module.exports.handleMailEvents = handleMailEvents;
+module.exports.mail = mail;
+module.exports.plugins = plugins;
+module.exports.mailDeps = mailDeps;
+
+/* =========================================================================
+ * Which way should a request go? Ranked, with reasons: a skill the team
+ * was taught, an automation (no model), a specialist by role, or
+ * J.A.R.V.I.S. planning it. The console shows the ranking and the task
+ * keeps it, so "why this route" is never a guess.
+ * ====================================================================== */
+async function rank(ctx, text) {
+  const t = String(text || '').toLowerCase(); const words = t.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2);
+  const list = (await agents(ctx)).filter((a) => !a.archived);
+  const out = [];
+  const overlap = (s) => { const w = String(s || '').toLowerCase().split(/[^\p{L}\p{N}]+/u); return words.filter((x) => w.indexOf(x) >= 0).length; };
+  try { for (const s of (await skills.all(ctx)).filter((x) => x.status === 'active')) { const sc = skills.score ? skills.score(s, text) : overlap(s.name + ' ' + s.purpose + ' ' + s.when); if (sc >= 3) out.push({ kind: 'skill', id: s.id, name: s.name, score: Math.min(68, 50 + sc * 4), why: 'taught skill: ' + str(s.purpose || s.when, 80) }); } } catch (e) {}
+  try { for (const x of (await scripts.all(ctx)).filter((x) => x.status === 'active')) { const sc = overlap(x.name + ' ' + x.purpose); if (sc >= 2) out.push({ kind: 'script', id: x.id, name: x.name, score: 55 + sc * 6, why: 'automation, no model: ' + str(x.purpose, 80) }); } } catch (e) {}
+  for (const a of list) { if (a.id === 'jarvis') continue; const sc = overlap(a.role + ' ' + (a.instructions || '').slice(0, 400)); if (sc >= 1) out.push({ kind: 'agent', id: a.id, name: a.name, score: 30 + sc * 8, why: a.role }); }
+  if (/\b(ad|ads|campaign|cpa|roas|revenue|subscri|install|meta|revenuecat)\b/.test(t)) out.push({ kind: 'script', id: 'ads-analysis', name: 'Ads analysis (demo fixtures)', score: 72, why: 'Meta Ads spend joined with RevenueCat revenue — demo data until the connectors exist' });
+  if (/\b(email|reply|inbox|mail)\b/.test(t)) out.push({ kind: 'workflow', id: 'email-review', name: 'Email review', score: 72, why: 'one email at a time: sender, thread, the exact reply, send / revise / don\'t send' });
+  out.push({ kind: 'plan', id: 'jarvis', name: 'J.A.R.V.I.S. plans it', score: 25, why: 'no taught skill or automation fits closely; he breaks it into steps for the team' });
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, 6).map((x, i) => Object.assign(x, { rank: i + 1 }));
+}
+async function handleRank(p, req, res, ctx) {
+  if (p !== '/api/team/rank' || req.method !== 'POST') return false;
+  let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  ctx.json(res, 200, { ok: true, text: str(b.text, 300), ranking: await rank(ctx, b.text) });
+  return true;
+}
+module.exports.rank = rank;
+
+/* =========================================================================
+ * The watch: J.A.R.V.I.S. on the wrist. The same bearer as /api/watch; one
+ * small payload — what needs a yes (bound to the exact item), the email
+ * waiting (bound to its draft's hash), work in flight, the briefing in a
+ * few lines — and four actions. Nothing here is a guess about what was
+ * approved: an approval is an id the server made, a send is a hash.
+ * ====================================================================== */
+async function watchView(ctx, lang) {
+  const [list, tl, ap] = await Promise.all([agents(ctx), tasks(ctx), approvals(ctx)]);
+  const name = (id) => (list.find((a) => a.id === id) || {}).name || id;
+  const pending = ap.filter((x) => x.status === 'pending').slice(0, 6).map((x, i) => ({ id: x.id, n: i + 1, summary: str(x.summary, 120), to: str(x.detail && x.detail.to, 80), agent: name(x.agent), kind: x.kind, excerpt: str(x.detail && (x.detail.body || x.detail.text), 220) }));
+  const open = tl.filter((t) => !/^(done|failed|cancelled)$/.test(t.status)).slice(-6).reverse().map((t) => ({ id: t.id, title: str(t.title, 80), status: t.status, agent: name(t.agent), question: t.status === 'awaiting_info' ? str(t.question, 160) : '' }));
+  const recent = tl.filter((t) => t.status === 'done' && !t.seen).slice(-3).reverse().map((t) => ({ id: t.id, title: str(t.title, 80), agent: name(t.agent), result: str(t.result, 220) }));
+  let mailCur = null, mailQueue = 0;
+  try { const mv = await mail.view(ctx); mailQueue = mv.queue; if (mv.current && mv.current.draft) mailCur = { id: mv.current.id, from: str(mv.current.fromName || mv.current.from, 60), subject: str(mv.current.subject, 90), summary: str(mv.current.draft.summary, 160), reply: block(mv.current.draft.reply, 600), version: mv.current.draft.version, hash: mv.current.draft.hash, flags: mv.current.flags || [] }; } catch (e) {}
+  let brief = [];
+  try { const L = localParts(await userTz(ctx), new Date()); brief = String(await briefingText(ctx, L, lang === 'tr' ? 'tr' : 'en')).split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 6); } catch (e) {}
+  const j = list.find((a) => a.id === 'jarvis');
+  return { ok: true, assistant: (j && j.name) || 'J.A.R.V.I.S.', approvals: pending, mail: mailCur, mailQueue, tasks: open, recent, brief, counts: { approvals: ap.filter((x) => x.status === 'pending').length, inFlight: tl.filter((t) => /^(queued|running)$/.test(t.status)).length, asking: tl.filter((t) => t.status === 'awaiting_info').length }, at: Date.now() };
+}
+async function watchAct(ctx, uid, b) {
+  const op = String(b.op || '');
+  if (op === 'approve' || op === 'decline') {
+    const r = await decide(ctx, String(b.id || ''), op === 'approve' ? 'approve' : 'reject');
+    if (r.error) return { error: r.error };
+    const a = r.approval || {};
+    return { ok: true, said: op === 'approve' ? (a.status === 'executed' ? 'Sent.' : a.status === 'send_failed' ? 'Approved, but it could not be sent: ' + (a.error || '') : 'Approved. ' + (a.note || 'It goes once the connection exists.')) : 'Declined.' };
+  }
+  if (op === 'mailsend') { const r = await mail.approve(ctx, mailDeps(), String(b.id || ''), String(b.hash || ''), { who: 'watch', via: 'watch' }); return r.error ? { error: r.error, stale: !!r.stale } : { ok: true, said: 'Sent — accepted by the email provider. Delivery is confirmed separately.' }; }
+  if (op === 'mailskip') { const r = await mail.skip(ctx, mailDeps(), String(b.id || ''), 'from the watch'); return r.error ? { error: r.error } : { ok: true, said: 'Not sent.' }; }
+  if (op === 'answer') { const w = (await tasks(ctx)).find((t) => t.id === String(b.id || '') && t.status === 'awaiting_info'); if (!w) return { error: 'Nobody is waiting on that answer.' }; await patchTask(ctx, w.id, (x) => { x.answer = str(b.text, 600); x.status = 'queued'; x.seen = true; }); kick(uid, ctx); return { ok: true, said: 'Passed on.' }; }
+  if (op === 'say') {
+    const ch = channelsLib();
+    if (!ch || !ch.converse) return { error: 'The team is not available here.' };
+    const reply = await ch.converse(ctx, uid, 'watch', str(b.text, 2000), { name: ctx.user && ctx.user.name, from: null, chat: null });
+    return { ok: true, said: String(reply || 'Noted.') };
+  }
+  return { error: 'Unknown op.' };
+}
+module.exports.watchView = watchView;
+module.exports.watchAct = watchAct;
 
 module.exports.start = start;
 module.exports.sayTo = sayTo;

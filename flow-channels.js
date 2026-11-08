@@ -47,6 +47,10 @@ let team = null;
 try { team = require('./flow-team'); } catch (e) { team = null; }
 let extras = null;
 try { extras = require('./flow-extras'); } catch (e) { extras = null; }
+let groups = null;
+try { groups = require('./flow-groups'); } catch (e) { groups = null; }
+let speech = null;
+try { speech = require('./flow-speech'); } catch (e) { speech = null; }
 
 const FAKE = process.env.FLOW_TEAM_FAKE === '1';
 const env = (k) => String(process.env[k] || '').trim();
@@ -140,6 +144,9 @@ const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you wou
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
   '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n/discover <topic> — five questions, then a workflow spec · /interview <topic> — he keeps asking until you say done · /request <text> · /feedback <text>\n' +
+  '/whoami — your numeric id · /diag — how everything is doing · in a group: /mode mention|all · /allow <id> [name] · /deny <id> · /members · /groups\n' +
+  'Voice notes are understood; /voice chooses the voice that answers (presets, your own ElevenLabs voice id, text/voice replies, 30 or 60 seconds)\n' +
+  'Email review: /review — the next email, one at a time · /send · /revise <what to change> · /skip · /inbox here (a group: one topic per email) · /autosend — the bounded policy\n' +
   '"call me when it is ready" — he rings you (needs the phone channel)';
 
 const UNKNOWN = (channel) => 'This ' + (channel === 'sms' || channel === 'voice' ? 'number' : 'account') + ' is not linked to a Flow. In The Flow, open the command centre → Channels → ' + CHANNELS[channel].name + ' → "Link", and send the six-digit code here.';
@@ -162,16 +169,26 @@ async function inbound(channel, externalId, text, meta) {
   const uid = await whose(channel, externalId);
   if (!uid) return UNKNOWN(channel);
   const ctx = await ctxFor(uid);
-  const l = await links(ctx);
-  const mine = l[channel] || { agent: 'jarvis' };
-  const list = await team.agents(ctx);
-  const active = list.filter((a) => !a.archived);
-  const names = active.filter((a) => a.id !== 'jarvis').map(firstName);
   if (!text) return 'Say something and I will take it from there.';
   /* the setup's two-way test: this reply is the proof */
   let ponged = false; try { if (team.setupPong) ponged = await team.setupPong(ctx, channel); } catch (e) {}
   if (ponged) return 'Confirmed: ' + CHANNELS[channel].name + ' works both ways. The setup in the command centre has moved on.';
-  if ((await ctx.get('team:paused')) === true && !/^\/(team|tasks|help)\b/i.test(text)) return 'The team is paused. Resume it from the command centre.';
+  return await converse(ctx, uid, channel, text, meta);
+}
+
+/* The conversation itself, once we know whose Flow it is. meta.ws is the
+   group or topic this came from (its own sticky agent, history and mode);
+   without it, the person's own private chat on that channel. */
+async function converse(ctx, uid, channel, text, meta) {
+  meta = meta || {};
+  const l = await links(ctx);
+  const ws = meta.ws || null;
+  const mine = ws ? { agent: ws.agent || 'jarvis' } : (l[channel] || { agent: 'jarvis' });
+  const setSticky = async (agentId) => { mine.agent = agentId; if (ws) { ws.agent = agentId; await groups.save(ctx, ws); } else { l[channel] = Object.assign({}, l[channel], mine); await ctx.set('team:channels', l); } };
+  const list = await team.agents(ctx);
+  const active = list.filter((a) => !a.archived);
+  const names = active.filter((a) => a.id !== 'jarvis').map(firstName);
+  if ((await ctx.get('team:paused')) === true && !/^\/(team|tasks|help|diag|whoami)\b/i.test(text)) return 'The team is paused. Resume it from the command centre.';
 
   /* 3. commands */
   const cmd = text.match(/^\/(\w+)(?:\s+([\s\S]*))?$/);
@@ -248,9 +265,48 @@ async function inbound(channel, externalId, text, meta) {
       team.kick(uid, ctx);
       return 'Passed on. They are back on it.';
     }
-    if (c === 'jarvis') { mine.agent = 'jarvis'; l[channel] = Object.assign({}, l[channel], mine); await ctx.set('team:channels', l); return 'J.A.R.V.I.S. here, sir. Go ahead.'; }
+    if (c === 'jarvis') { await setSticky('jarvis'); return 'J.A.R.V.I.S. here, sir. Go ahead.'; }
     const ag = active.find((a) => firstName(a) === c);
-    if (ag) { mine.agent = ag.id; l[channel] = Object.assign({}, l[channel], mine); await ctx.set('team:channels', l); return rest ? await talk(ctx, uid, channel, ag, rest, meta) : 'You are talking to ' + ag.name + ' (' + ag.role + '). /jarvis to come back.'; }
+    if (ag) { await setSticky(ag.id); return rest ? await talk(ctx, uid, channel, ag, rest, meta) : 'You are talking to ' + ag.name + ' (' + ag.role + ')' + (ws ? ' here' : '') + '. /jarvis to come back.'; }
+    if (groups) {
+      const from = meta.from || null, owner = from ? await groups.isOwner(uid, channel, from.id) : !ws;
+      if (c === 'whoami') return from ? 'Your ' + (CHANNELS[channel] || { name: channel }).name + ' id is ' + from.id + (owner ? ' — the owner of this Flow.' : (await groups.allowed(ctx, uid, channel, from)) ? ' — an authorised member.' : ' — not authorised yet; the owner can say /allow ' + from.id + '.') : 'This channel does not say who is writing.';
+      if (c === 'diag' || c === 'diagnostics' || c === 'status') return await groups.diag(ctx, uid, { channel, chat: meta.chat || null, from, ws });
+      if (c === 'members' || c === 'allow' || c === 'deny' || c === 'mode' || c === 'groups' || c === 'detach' || c === 'voice' || c === 'review' || c === 'send' || c === 'revise' || c === 'skip' || c === 'inbox' || c === 'autosend') {
+        if (!owner) return 'Only the owner of this Flow can do that.';
+        if (c === 'members') { const m = Object.values(await groups.members(ctx)); return m.length ? 'Members:\n' + m.map((x) => '· ' + (x.name || '(no name)') + ' — ' + x.channel + ' ' + x.id + (x.allowed ? '' : ' — removed')).join('\n') + '\n\n/allow <id> [name] · /deny <id>. Everyone finds their id with /whoami.' : 'No members yet. Ask them to send /whoami here, then /allow <id> <name>.'; }
+        if (c === 'allow') { const mm = rest.match(/^(\d{3,20})\s*(.*)$/); if (!mm) return 'Say /allow <numeric id> [name] — they get their id with /whoami.'; const r = await groups.allow(ctx, channel, mm[1], mm[2], 'owner'); return r.error ? r.error : 'Authorised: ' + (r.member.name || r.member.id) + '. They can give the team instructions in any group attached to this Flow.'; }
+        if (c === 'deny') { const r = await groups.deny(ctx, channel, rest.trim()); return r.error ? r.error : 'Removed: ' + (r.member.name || r.member.id) + '. Nothing they say here is acted on now.'; }
+        if (c === 'mode') { if (!ws) return 'Modes are for groups and topics. In your own chat I answer everything.'; if (!/^(mention|all|conversational|everything|quiet)$/i.test(rest)) return 'This ' + (ws.threadId ? 'topic' : 'group') + ' is ' + (ws.mode === 'all' ? 'conversational' : 'mention-only') + '. Say /mode mention (I answer when addressed) or /mode all (I answer everything from authorised members).'; ws.mode = /^(all|conversational|everything)$/i.test(rest) ? 'all' : 'mention'; await groups.save(ctx, ws); return 'Done: this ' + (ws.threadId ? 'topic' : 'group') + ' is ' + (ws.mode === 'all' ? 'conversational — I answer everything from authorised members.' : 'mention-only — I answer when mentioned, replied to, or called by name.'); }
+        if (c === 'detach') { if (!ws) return 'Only in a group.'; await groups.detach(ctx, groups.wsId(channel, ws.chatId, null)); return 'Detached. Nothing said here reaches your Flow now.'; }
+        if ((c === 'review' || c === 'send' || c === 'revise' || c === 'skip' || c === 'inbox' || c === 'autosend') && team.mail) {
+          const M = team.mail, D = team.mailDeps();
+          if (c === 'inbox') {
+            if (!ws) return 'Say /inbox here in the group that should receive emails — one topic per email.';
+            if (!/^here\b/i.test(rest)) { const cur = await ctx.get('team:mail:inbox'); return cur ? 'Emails open as topics in "' + (cur.title || cur.chatId) + '". Say /inbox here in another group to move it.' : 'No inbox group yet. Say /inbox here in the group that should get one topic per email.'; }
+            await ctx.set('team:mail:inbox', { channel, chatId: ws.chatId, title: ws.title, at: Date.now() });
+            return 'Done: every actionable email opens as a topic here — sender, the thread, the exact reply, and /send · /revise · /skip inside it.';
+          }
+          if (c === 'autosend') {
+            const pol = await M.policy(ctx);
+            if (!rest) return 'Auto-send is ' + (pol.enabled ? 'ON: replies to ' + pol.senders.join(', ') + ', at most ' + pol.maxPerDay + ' a day' + (pol.expiresAt ? ', until ' + new Date(pol.expiresAt).toISOString().slice(0, 10) : '') : 'OFF') + '.\n/autosend off · /autosend on <sender or domain>[,…] <n per day> [<days>] — e.g. /autosend on abko-partner.example 2 7\nEverything else still waits for your yes; every auto-sent reply is logged with its exact text.';
+            if (/^off\b/i.test(rest)) { const r = await M.setPolicy(ctx, D, { enabled: false }); return r.error || 'Auto-send is OFF. Every reply waits for your yes again.'; }
+            const mm = rest.match(/^on\s+(\S+)\s+(\d+)(?:\s+(\d+))?/i); if (!mm) return 'Say /autosend on <sender or domain> <n per day> [<days>], or /autosend off.';
+            const r = await M.setPolicy(ctx, D, { enabled: true, senders: mm[1], maxPerDay: mm[2], days: mm[3] || 7 }); return r.error || ('Auto-send is ON for ' + r.policy.senders.join(', ') + ': at most ' + r.policy.maxPerDay + ' a day until ' + new Date(r.policy.expiresAt).toISOString().slice(0, 10) + '. Only clean drafts (no flags, nothing unconfirmed) go; /autosend off revokes it at once.');
+          }
+          const v = await M.view(ctx);
+          const bound = ws ? (v.items || []).find((it) => it.topic && it.topic.wsId === ws.id) : null;
+          const item = bound || v.current;
+          if (c === 'review') return bound ? M.reviewText(bound, 0) : M.reviewText(v.current, v.queue);
+          if (!item) return 'Nothing is waiting to be sent.';
+          if (c === 'send') { const r = await M.approve(ctx, D, item.id, item.draft ? item.draft.hash : '', { who: meta.name || 'owner', via: channel, override: /anyway|override/i.test(rest) }); if (r.error) return r.error + (r.flags ? '' : ''); const it = r.item; return 'Sent — accepted by the email provider (v' + it.approval.version + ' to ' + it.from + '). I will say when it is delivered; that is a separate confirmation.' + (v.queue > 1 && !bound ? '\n\nNext:\n' + M.reviewText((await M.view(ctx)).current, v.queue - 1) : ''); }
+          if (c === 'revise') { if (!rest) return 'Say what to change: /revise <your words>.'; const r = await M.revise(ctx, D, item.id, rest, {}); if (r.error) return r.error; return (r.tone ? 'Noted as a rule for every email from now on: "' + r.tone + '".\n\n' : '') + M.reviewText(r.item, 0); }
+          if (c === 'skip') { const r = await M.skip(ctx, D, item.id, rest); if (r.error) return r.error; const nv = await M.view(ctx); return 'Not sent: "' + item.subject + '".' + (nv.current && !bound ? '\n\nNext:\n' + M.reviewText(nv.current, nv.queue) : ''); }
+        }
+        if (c === 'voice' && speech) { const r = await speech.command(ctx, rest, channel, ws ? ws.id : ''); if (r && r.test) { meta.voiceTest = true; return 'This is the voice that answers here' + (ws ? ' in this ' + (ws.threadId ? 'topic' : 'group') : '') + '. Good evening, sir.'; } return r; }
+        if (c === 'groups') { const w = Object.values(await groups.all(ctx)); return w.length ? 'Workspaces:\n' + w.map((x) => '· ' + (x.threadId ? '  topic ' + x.threadId + (x.topic ? ' "' + x.topic + '"' : '') + ' in ' : '') + '"' + x.title + '" — ' + (x.mode === 'all' ? 'conversational' : 'mention-only') + (x.agent !== 'jarvis' ? ' · ' + ((active.find((a) => a.id === x.agent) || {}).name || x.agent) : '') + ' · ' + x.handled + ' answered').join('\n') : 'No groups attached yet. Add the bot to a group and send your link code there, or /attach.'; }
+      }
+    }
     return 'I do not know /' + c + '. ' + HELP(names);
   }
   /* a discovery is running: this is the answer to its question */
@@ -289,8 +345,8 @@ async function tasksText(ctx) {
    approve and decline — in words, from a text message. */
 async function talk(ctx, uid, channel, agent, text, meta) {
   if (agent.id !== 'jarvis') {
-    const r = await team.sayTo(ctx, agent.id, text, 'en', { via: channel });
-    return r.error ? r.error : r.say + (team.context ? team.context.footer(r.sources, team.context.langOf(text)) : '');
+    const r = await team.sayTo(ctx, agent.id, text, 'en', { via: channel, spoken: meta && meta.spoken ? meta.spoken : null });
+    return r.error ? r.error : r.say + (team.context && !(meta && meta.spoken) ? team.context.footer(r.sources, team.context.langOf(text)) : '');
   }
   return await jarvis(ctx, uid, channel, text, meta);
 }
@@ -327,9 +383,11 @@ async function jarvis(ctx, uid, channel, text, meta) {
   const pending = (await team.approvals(ctx)).filter((x) => x.status === 'pending');
   let snapshot = '';
   try { if (extras && extras._internals && extras._internals.buildContext) snapshot = await extras._internals.buildContext(ctx.mine); } catch (e) {}
-  const hist = await histGet(ctx, channel);
+  const hkey = meta && meta.ws ? 'ws:' + meta.ws.id : channel;
+  const hist = await histGet(ctx, hkey);
   const messages = hist.concat([{ role: 'user', content: text }]);
-  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA');
+  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
+    (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
   const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: 1200, timeoutMs: 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
@@ -341,7 +399,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
   for (const a of actions) {
     if (!a || typeof a !== 'object') continue;
     if (a.type === 'delegate' && a.brief) {
-      const d = await team.delegateText(ctx, uid, block(a.brief, 4000), 'en', { callMe: a.callMe === true && configured('voice'), via: channel });
+      const d = await team.delegateText(ctx, uid, block(a.brief, 4000), 'en', { callMe: a.callMe === true && configured('voice'), via: channel, origin: meta && meta.ws ? { channel, to: meta.ws.to, ws: meta.ws.id } : null });
       if (d.error) extra.push(d.error); else if (d.task) extra.push('Started: ' + d.task.title + ' (' + d.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + '). I will message you here when it is ready' + (d.task.callMe ? ', and ring you' : '') + '.');
     } else if ((a.type === 'approve' || a.type === 'decline') && pending[(+a.n || 1) - 1]) {
       const item = pending[(+a.n || 1) - 1];
@@ -351,7 +409,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
   }
   const reply = [say].concat(extra).filter(Boolean).join('\n\n') || 'Noted, sir.';
   let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used), team.context.langOf(text)); } catch (e) {}
-  await histSet(ctx, channel, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
+  await histSet(ctx, hkey, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply + foot;
 }
 async function histGet(ctx, channel) { const v = await ctx.get('team:chan:hist:' + channel); return Array.isArray(v) ? v : []; }
@@ -365,6 +423,9 @@ async function notify(uid, text, opts) {
   const l = await links(ctx);
   /* a default delivery channel narrows the fan-out to that channel; a reply
      to a message in another channel still goes where it was asked (opts.channel) */
+  /* work started in a group or topic reports back there, nowhere else */
+  const origin = opts && opts.task && opts.task.origin && opts.task.origin.to ? opts.task.origin : null;
+  if (origin && groups) { const ok = await groups.deliver(origin.channel, origin.to, text); return ok ? 1 : 0; }
   const def = await ctx.get('team:delivery');
   const only = opts && opts.channel ? opts.channel : (typeof def === 'string' && l[def] && l[def].id ? def : null);
   if (def === 'app' && !(opts && opts.channel)) return 0;
@@ -372,7 +433,7 @@ async function notify(uid, text, opts) {
   for (const ch of Object.keys(l)) {
     if (!l[ch] || !l[ch].id || ch === 'voice') continue;
     if (only && ch !== only) continue;
-    try { await send(ch, l[ch].id, text, ctx); n++; } catch (e) { logLine(ch + ' send failed: ' + (e && e.message)); }
+    try { await send(ch, l[ch].id, text, ctx); n++; } catch (e) { logLine(ch + ' send failed: ' + (e && e.message)); if (groups && ch === 'telegram') await groups.outboxPut(ch, l[ch].id, text, e.message); }
   }
   if (opts && opts.call && l.voice && l.voice.id && configured('voice') && opts.task) {
     try { await placeCall(l.voice.id, opts.task.id, uid); } catch (e) { logLine('call failed: ' + (e && e.message)); }
@@ -382,7 +443,7 @@ async function notify(uid, text, opts) {
 
 /* ---------- sending ------------------------------------------------------- */
 async function post(url, headers, body, form) {
-  if (FAKE) { sent.push({ url, body }); return { status: 200, body: { ok: true, result: { message_id: 1 }, messages: [{ id: 'wamid.1' }], ts: '1', channel: 'C1', sid: 'SM1' } }; }
+  if (FAKE) { if (global.__failNextSend) { global.__failNextSend = false; throw new Error('simulated network failure'); } sent.push({ url, body }); return { status: 200, body: { ok: true, result: { message_id: 1, message_thread_id: 1000 + sent.length }, messages: [{ id: 'wamid.1' }], ts: '1', channel: 'C1', sid: 'SM1' } }; }
   const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
   try {
     const r = await fetch(url, { method: 'POST', headers: Object.assign({ 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json' }, headers || {}), body: form ? new URLSearchParams(body).toString() : JSON.stringify(body), signal: ac.signal });
@@ -395,7 +456,8 @@ const chunks = (text, n) => { const out = []; let s = String(text || ''); while 
 async function send(channel, to, text, ctx) {
   if (!configured(channel)) throw new Error(CHANNELS[channel].name + ' is not configured');
   if (channel === 'telegram') {
-    for (const part of chunks(text, 3900)) { const r = await post('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/sendMessage', {}, { chat_id: to, text: part }); if (r.status >= 300) throw new Error('telegram ' + r.status); }
+    const m = String(to).match(/^(-?\d+):(\d+)$/); const body0 = m ? { chat_id: m[1], message_thread_id: +m[2] } : { chat_id: to };
+    for (const part of chunks(text, 3900)) { const r = await post('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/sendMessage', {}, Object.assign({}, body0, { text: part })); if (r.status >= 300) throw new Error('telegram ' + r.status + (r.body && r.body.description ? ' ' + str(r.body.description, 100) : '')); }
   } else if (channel === 'whatsapp') {
     for (const part of chunks(text, 3900)) { const r = await post('https://graph.facebook.com/v21.0/' + env('WHATSAPP_PHONE_ID') + '/messages', { Authorization: 'Bearer ' + env('WHATSAPP_TOKEN') }, { messaging_product: 'whatsapp', to, type: 'text', text: { body: part } }); if (r.status >= 300) throw new Error('whatsapp ' + r.status + (r.body && r.body.error ? ' ' + str(r.body.error.message, 120) : '')); }
   } else if (channel === 'slack') {
@@ -410,6 +472,42 @@ async function send(channel, to, text, ctx) {
     for (const part of chunks(text, 1500)) { const r = await post('https://api.twilio.com/2010-04-01/Accounts/' + env('TWILIO_ACCOUNT_SID') + '/Messages.json', { Authorization: 'Basic ' + Buffer.from(env('TWILIO_ACCOUNT_SID') + ':' + env('TWILIO_AUTH_TOKEN')).toString('base64') }, { From: from, To: to, Body: part }, true); if (r.status >= 300) throw new Error('twilio ' + r.status); }
   } else if (channel === 'imessage') {
     const k = '__team:imsg:outbox'; const box = (await rawGet(k)) || []; box.push({ to, text, at: Date.now() }); await rawSet(k, box.slice(-50));
+  }
+}
+/* A voice note out (Telegram). FAKE records it like everything else. */
+async function sendVoice(channel, to, audio, caption) {
+  if (channel !== 'telegram') throw new Error('voice notes go out on Telegram only for now');
+  if (!configured(channel)) throw new Error('Telegram is not configured');
+  const m = String(to).match(/^(-?\d+):(\d+)$/);
+  const fields = m ? { chat_id: m[1], message_thread_id: String(m[2]) } : { chat_id: String(to) };
+  if (caption) fields.caption = String(caption).slice(0, 1000);
+  if (FAKE) { if (global.__failNextSend) { global.__failNextSend = false; throw new Error('simulated network failure'); } sent.push({ url: 'https://api.telegram.org/bot…/sendVoice', body: Object.assign({}, fields, { voice: '<' + audio.buffer.length + ' bytes ' + audio.mime + '>', bytes: audio.buffer.length, provider: audio.provider, voiceId: audio.voiceId, seconds: audio.seconds }) }); return; }
+  const form = new FormData();
+  for (const k of Object.keys(fields)) form.append(k, fields[k]);
+  form.append('voice', new Blob([audio.buffer], { type: audio.mime || 'audio/ogg' }), 'reply.ogg');
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 30000);
+  try {
+    const r = await fetch('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/sendVoice', { method: 'POST', body: form, signal: ac.signal });
+    if (!r.ok) { let d = ''; try { d = String(((await r.json()) || {}).description || '').slice(0, 100); } catch (e) {} throw new Error('telegram sendVoice ' + r.status + (d ? ' ' + d : '')); }
+  } finally { clearTimeout(t); }
+}
+/* The reply to a message, as text and/or a voice note, by the voice settings. */
+async function replyOut(ctx, channel, to, text, meta) {
+  if (!text) return;
+  const wsId = meta && meta.ws ? meta.ws.id : '';
+  const v = speech ? await speech.voiceFor(ctx, channel, wsId) : null;
+  const asVoice = !!(speech && v && channel === 'telegram' && !(meta && meta.command && !meta.voiceTest) && (v.replies === 'voice' || v.replies === 'both' || (meta && meta.voice) || (meta && meta.voiceTest)));
+  const asText = !asVoice || v.replies !== 'voice' || !!(meta && meta.command);
+  let spokenOk = false;
+  if (asVoice) {
+    const spokenText = speech.trimForSpeech(text, v.limit);
+    const a = await speech.synthesize(spokenText, v);
+    if (a.error) { if (groups) await groups.noteError('voice: ' + a.error); }
+    else { try { await sendVoice(channel, to, a, ''); spokenOk = true; } catch (e) { if (groups) await groups.outboxPut(channel, to, text, e.message); return; } }
+  }
+  if (asText || !spokenOk) {
+    const heard = meta && meta.voice && meta.voice.text ? '“' + str(meta.voice.text, 140) + '”\n\n' : '';
+    if (groups) await groups.deliver(channel, to, heard + text); else await send(channel, to, heard + text);
   }
 }
 function numberFor(agentId) { try { const m = JSON.parse(env('TWILIO_NUMBERS') || '{}'); for (const n in m) if (m[n] === agentId) return n; } catch (e) {} return ''; }
@@ -446,6 +544,129 @@ function twilioOk(headers, url, params) {
 const twilioUrl = (p) => ORIGIN() + p;
 const xml = (s) => String(s || '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 
+/* One Telegram update, private chat or group, start to finish. */
+async function telegramUpdate(u) {
+  const msg = u.message || u.edited_message; const chat = msg.chat;
+  const name = groups ? groups.nameOf(msg.from) : ([msg.from && msg.from.first_name, msg.from && msg.from.last_name].filter(Boolean).join(' ') || (msg.from && msg.from.username) || '');
+  const isGroup = chat.type === 'group' || chat.type === 'supergroup';
+  const threadId = isGroup && msg.is_topic_message && msg.message_thread_id ? String(msg.message_thread_id) : '';
+  const to = groups ? groups.toOf(chat.id, threadId) : String(chat.id);
+  const meta = { name, from: msg.from, chat, to };
+  /* a voice note: understood first, then handled like the same words typed */
+  if (msg.voice && speech) {
+    const uidV = isGroup ? await groups.groupOwner('telegram', chat.id) : await whose('telegram', String(chat.id));
+    if (!uidV) { if (!isGroup) await send('telegram', to, UNKNOWN('telegram')); return; }
+    let audio; try { audio = await speech.telegramVoice(msg.voice.file_id); } catch (e) { await send('telegram', to, 'I could not fetch that voice note (' + str(e.message, 80) + '). Say it again, or type it.'); return; }
+    const cV = await ctxFor(uidV); let lang = 'en'; try { const st = await cV.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}
+    const tr = await speech.transcribe(audio, lang === 'tr' ? 'tr' : '');
+    if (tr.error) { if (groups) await groups.noteError(tr.error); await send('telegram', to, tr.missing ? tr.error : 'I could not make out that voice note. ' + tr.error); return; }
+    if (!tr.text) { await send('telegram', to, 'I heard nothing in that voice note. Say it again?'); return; }
+    msg.text = tr.text; meta.voice = { text: tr.text, seconds: msg.voice.duration || 0, provider: tr.provider, lang: tr.lang };
+    const v = await speech.voiceFor(cV, 'telegram', isGroup ? groups.wsId('telegram', chat.id, threadId) : ''); meta.spoken = v.limit;
+  } else if (speech) {
+    /* typed, but the reply will be spoken: tell the model the length */
+    const uidT = isGroup ? await groups.groupOwner('telegram', chat.id) : await whose('telegram', String(chat.id));
+    if (uidT) { const v = await speech.voiceFor(await ctxFor(uidT), 'telegram', isGroup ? groups.wsId('telegram', chat.id, threadId) : ''); if (v.replies === 'voice' || v.replies === 'both') meta.spoken = v.limit; }
+  }
+  meta.command = /^\s*\//.test(String(msg.text || ''));
+  const uid = isGroup ? await groups.groupOwner('telegram', chat.id) : await whose('telegram', String(chat.id));
+  const ctxR = uid ? await ctxFor(uid) : null;
+  /* a screenshot in an email's topic is feedback on that draft */
+  if (msg.photo && !msg.text) {
+    if (!ctxR || !team || !team.mail || !isGroup) return;
+    const wsId = groups.wsId('telegram', chat.id, threadId);
+    const item = (await team.mail.all(ctxR)).find((m) => m.topic && m.topic.wsId === wsId);
+    if (!item) return;
+    const ph = msg.photo[msg.photo.length - 1] || {};
+    await team.mail.attachFeedback(ctxR, item.id, 'telegram:' + (ph.file_id || ''), msg.caption || '');
+    await groups.deliver('telegram', to, 'Got the screenshot' + (msg.caption ? ' and your note' : '') + '. Tell me in a line what to change — /revise <your words> — and I will redraft.');
+    return;
+  }
+  if (!isGroup || !groups) {
+    const reply = await inbound('telegram', String(chat.id), msg.text, meta);
+    if (reply) { if (ctxR && speech) await replyOut(ctxR, 'telegram', to, reply, meta); else if (groups) await groups.deliver('telegram', to, reply); else await send('telegram', to, reply); }
+    return;
+  }
+  const reply = await groupMessage('telegram', chat, threadId, msg, name, meta);
+  if (reply) { if (ctxR && speech) await replyOut(ctxR, 'telegram', to, reply, meta); else await groups.deliver('telegram', to, reply); }
+}
+
+/* A message in a group or topic: whose Flow, is the sender allowed, is he
+   being addressed — then the ordinary conversation, in that workspace. */
+async function groupMessage(channel, chat, threadId, msg, name, meta0) {
+  const text = block(msg.text, 6000); const from = msg.from || {};
+  const bot = await groups.botName(channel);
+  let uid = await groups.groupOwner(channel, chat.id);
+  /* not attached yet: a link code, or /attach by a linked owner */
+  if (!uid) {
+    const code = text.match(/^\s*(?:\/?link\s*)?(\d{6})\s*$/i);
+    if (code) {
+      const u2 = await takeCode(code[1]);
+      if (!u2) return 'That code is not right or has expired. Get a fresh one in the command centre → Channels.';
+      const c2 = await ctxFor(u2);
+      await groups.attach(c2, u2, channel, chat, { id: from.id, name });
+      if (from.id && !(await groups.isOwner(u2, channel, from.id))) await groups.allow(c2, channel, from.id, name, 'link');
+      return 'This group is attached to ' + ((c2.user && c2.user.name) ? c2.user.name + '\'s' : 'your') + ' Flow — mention-only: I answer when mentioned (@' + (bot || 'the bot') + '), replied to, or called by name. /mode all makes me answer everything from authorised members; /allow <id> <name> authorises a member (/whoami tells them their id); /diag shows how things stand.';
+    }
+    const ownerOf = from.id ? await whose(channel, String(from.id)) : null;
+    if (ownerOf && /^\/(attach|start|link)\b/i.test(text)) {
+      const c2 = await ctxFor(ownerOf);
+      await groups.attach(c2, ownerOf, channel, chat, { id: from.id, name });
+      return 'This group is attached to your Flow — mention-only. /mode all for everything, /allow <id> <name> for members, /diag for the state of things.';
+    }
+    if (groups.mentioned(msg, bot, '')) return 'This group is not attached to a Flow. The owner sends their six-digit link code here (command centre → Channels → Telegram → Link), or /attach if their own Telegram is already linked.';
+    return null;
+  }
+  const ctx = await ctxFor(uid);
+  const ws = await groups.workspace(ctx, channel, chat, threadId, true);
+  if (threadId && msg.reply_to_message && msg.reply_to_message.forum_topic_created && !ws.topic) { ws.topic = str(msg.reply_to_message.forum_topic_created.name, 60); }
+  let asst = ''; try { const st = await ctx.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; asst = (o && o.asstName) || ''; } catch (e) {}
+  const addressed = groups.mentioned(msg, bot, asst);
+  const ok = await groups.allowed(ctx, uid, channel, from);
+  if (!ok) {
+    ws.refused++; ws.lastAt = Date.now(); await groups.save(ctx, ws);
+    if (/^\s*\/whoami\b/i.test(text)) return 'Your ' + CHANNELS[channel].name + ' id is ' + from.id + ' — not authorised yet; the owner can say /allow ' + from.id + (name ? ' ' + name.split(' ')[0] : '') + '.';
+    if (!addressed) return null;
+    /* told once an hour at most, per person */
+    const key = '__team:warned:' + channel + ':' + from.id; const w = await rawGet(key);
+    if (w && Date.now() - w.at < 60 * 60 * 1000) return null;
+    await rawSet(key, { at: Date.now() });
+    return 'I only take instructions from authorised members here. Your id is ' + from.id + ' — the owner can say /allow ' + from.id + ' ' + (name ? name.split(' ')[0] : '') + '.';
+  }
+  await groups.touchMember(ctx, channel, from);
+  if (ws.mode !== 'all' && !addressed) { ws.ignored++; ws.lastAt = Date.now(); await groups.save(ctx, ws); return null; }
+  const clean = groups.stripMention(text, bot, asst) || text;
+  ws.handled++; ws.lastAt = Date.now(); await groups.save(ctx, ws);
+  if (!clean.trim()) return 'Yes' + (name ? ', ' + name.split(' ')[0] : '') + '?';
+  const metaG = Object.assign({}, meta0 || {}, { name, from, chat, ws, command: /^\s*\//.test(clean) });
+  if (meta0) { meta0.ws = ws; meta0.command = metaG.command; }
+  const reply = await converse(ctx, uid, channel, clean, metaG);
+  if (meta0 && metaG.voiceTest) meta0.voiceTest = true;
+  return reply;
+}
+
+/* A new email to review: one topic per email in the inbox group, or the
+   review text where results normally go. */
+async function mailNew(ctx, item) {
+  if (!team || !team.mail) return;
+  const inbox = await ctx.get('team:mail:inbox');
+  const text = team.mail.reviewText(item, 0);
+  if (inbox && inbox.channel === 'telegram' && configured('telegram') && groups) {
+    let threadId = '';
+    try {
+      const r = await post('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/createForumTopic', {}, { chat_id: inbox.chatId, name: str(item.subject, 80) + ' — ' + str(item.fromName || item.from, 30) });
+      threadId = r.body && r.body.ok && r.body.result ? String(r.body.result.message_thread_id || '') : '';
+    } catch (e) { logLine('createForumTopic failed: ' + e.message); }
+    const to = threadId ? inbox.chatId + ':' + threadId : String(inbox.chatId);
+    const wsId = groups.wsId('telegram', inbox.chatId, threadId);
+    try { const ws = await groups.workspace(ctx, 'telegram', { id: inbox.chatId, title: inbox.title, type: 'supergroup' }, threadId, true); ws.topic = str(item.subject, 60); ws.mode = 'all'; await groups.save(ctx, ws); } catch (e) {}
+    await ctx.set('team:mail', (await team.mail.all(ctx)).map((m) => (m.id === item.id ? Object.assign(m, { topic: { channel: 'telegram', chatId: String(inbox.chatId), threadId, wsId, to } }) : m)));
+    await groups.deliver('telegram', to, text);
+    return;
+  }
+  try { await notify(ctx.uid || (ctx.user && ctx.user.id), text, {}); } catch (e) {}
+}
+
 /* ---------- the webhooks (no session) ------------------------------------- */
 async function handle(p, req, res, ctx) {
   if (p.indexOf('/api/channels/') !== 0) return false;
@@ -455,6 +676,8 @@ async function handle(p, req, res, ctx) {
 
   /* tests only: what the stand-in would have sent */
   if (FAKE && p === '/api/channels/_sent') return json(200, { n: sent.length, last: sent[sent.length - 1] || null, recent: sent.slice(-6) });
+  if (FAKE && p === '/api/channels/_failnext') { global.__failNextSend = true; return json(200, { ok: true }); }
+  if (FAKE && p === '/api/channels/_replay' && groups) { const n = await groups.replayInbox((ch, u) => telegramUpdate(u)); const d = await groups.retryOutbox(); return json(200, { ok: true, replayed: n, delivered: d }); }
 
   /* Telegram */
   if (p === '/api/channels/telegram' && req.method === 'POST') {
@@ -462,10 +685,13 @@ async function handle(p, req, res, ctx) {
     if (!safeEq(headers['x-telegram-bot-api-secret-token'], telegramSecret())) return text(403, 'no');
     const raw = await ctx.readBody(req); let u = {}; try { u = JSON.parse(raw); } catch (e) {}
     const msg = u.message || u.edited_message; const chat = msg && msg.chat;
+    if (!msg || !chat || (typeof msg.text !== 'string' && !msg.voice && !msg.photo)) { json(200, { ok: true }); return true; }
+    /* written down before it is acknowledged: a restart mid-reply replays it */
+    let inId = null; try { if (groups) inId = await groups.inboxPut('telegram', u); } catch (e) {}
     json(200, { ok: true });
-    if (!msg || !chat || typeof msg.text !== 'string') return true;
-    const name = [msg.from && msg.from.first_name, msg.from && msg.from.last_name].filter(Boolean).join(' ') || (msg.from && msg.from.username) || '';
-    try { const reply = await inbound('telegram', String(chat.id), msg.text, { name }); await send('telegram', String(chat.id), reply); } catch (e) { logLine('telegram: ' + (e && e.message)); }
+    if (FAKE && headers['x-flow-test-crash']) return true;   /* tests: the process "died" here */
+    try { await telegramUpdate(u); } catch (e) { logLine('telegram: ' + (e && e.message)); if (groups) await groups.noteError('telegram: ' + (e && e.message)); }
+    try { if (inId) await groups.inboxDone(inId); } catch (e) {}
     return true;
   }
 
@@ -604,8 +830,25 @@ async function handleUser(p, req, res, ctx) {
   const uid = ctx.user && ctx.user.id;
   const c = await ctxFor(uid);
   if (p === '/api/channels/me' && req.method === 'GET') {
-    json(res, 200, { ok: true, channels: await statusList(uid, c), origin: ORIGIN() });
+    json(res, 200, { ok: true, channels: await statusList(uid, c), origin: ORIGIN(), voice: speech ? Object.assign(speech.status(), { settings: await speech.settings(c), current: await speech.voiceFor(c, '', ''), telegram: await speech.voiceFor(c, 'telegram', '') }) : null });
     return true;
+  }
+  if (p === '/api/channels/me/voice' && speech) {
+    if (req.method === 'GET') { json(res, 200, Object.assign({ ok: true }, speech.status(), { settings: await speech.settings(c), current: await speech.voiceFor(c, '', ''), telegram: await speech.voiceFor(c, 'telegram', '') })); return true; }
+    if (req.method === 'POST') {
+      let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+      if (b.op === 'test') {
+        const l = await links(c); if (!l.telegram || !l.telegram.id) { json(res, 400, { error: 'Link Telegram first; the test is a voice note sent there.' }); return true; }
+        const v = await speech.voiceFor(c, 'telegram', b.ws || '');
+        const a = await speech.synthesize('This is the voice that answers on Telegram. Good evening, sir.', v);
+        if (a.error) { json(res, 502, { error: a.error }); return true; }
+        try { await sendVoice('telegram', b.ws ? String(b.ws).split(':').slice(1).join(':') : l.telegram.id, a, ''); json(res, 200, { ok: true, voice: v.label, provider: a.provider, seconds: a.seconds }); } catch (e) { json(res, 502, { error: e.message }); }
+        return true;
+      }
+      const r = await speech.setVoice(c, b.level || 'default', b.key || '', b.patch || b);
+      json(res, r.error ? 400 : 200, r.error ? r : Object.assign(r, { current: await speech.voiceFor(c, '', '') }));
+      return true;
+    }
   }
   if (p === '/api/channels/me/code' && req.method === 'POST') {
     const code = await newCode(uid);
@@ -618,6 +861,15 @@ async function handleUser(p, req, res, ctx) {
     await unlink(uid, String(b.channel));
     json(res, 200, { ok: true });
     return true;
+  }
+  if (p === '/api/channels/me/groups' && groups) {
+    if (req.method === 'GET') { json(res, 200, Object.assign({ ok: true }, await groups.view(c, uid))); return true; }
+    if (req.method === 'POST') {
+      let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+      const r = await groups.act(c, uid, b);
+      json(res, r.error ? 400 : 200, r);
+      return true;
+    }
   }
   if (p === '/api/channels/me/test' && req.method === 'POST') {
     let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
@@ -736,10 +988,19 @@ class MiniWS {
 function start(deps) {
   D = { raw: deps.raw, users: deps.users, nsPrefix: deps.nsPrefix, usersKey: deps.usersKey, log: deps.log };
   if (team && team.start && deps.wireTeam !== false) { /* the team runner's results come here */ }
+  if (groups) groups.init({ rawGet, rawSet, ctxFor, whose, send, logLine, configured, env, takeCode, team });
   /* Telegram: tell it where to deliver, with a secret only we know. */
   if (configured('telegram') && !FAKE) {
     post('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/setWebhook', {}, { url: ORIGIN() + '/api/channels/telegram', secret_token: telegramSecret(), allowed_updates: ['message', 'edited_message'] })
-      .then((r) => logLine('telegram webhook ' + (r.body && r.body.ok ? 'set' : 'NOT set: ' + str(r.body && r.body.description, 120)))).catch((e) => logLine('telegram webhook failed: ' + e.message));
+      .then((r) => { logLine('telegram webhook ' + (r.body && r.body.ok ? 'set' : 'NOT set: ' + str(r.body && r.body.description, 120))); if (groups) groups.noteWebhook(r.body && r.body.ok, r.body && r.body.description).catch(() => {}); })
+      .catch((e) => { logLine('telegram webhook failed: ' + e.message); if (groups) groups.noteWebhook(false, e.message).catch(() => {}); });
+    if (groups) groups.learnBot().catch(() => {});
+  }
+  /* What was in flight when the process stopped: unanswered messages are
+     replayed, undelivered replies resent — and resent every minute after. */
+  if (groups && !FAKE) {
+    setTimeout(() => { groups.replayInbox((ch, u) => telegramUpdate(u)).catch(() => {}); groups.retryOutbox().catch(() => {}); }, 3000);
+    const t = setInterval(() => { groups.retryOutbox().catch(() => {}); }, 60 * 1000); if (t.unref) t.unref();
   }
   /* Discord: the one slash command. */
   if (configured('discord') && !FAKE) {
@@ -758,5 +1019,6 @@ module.exports = {
   start, handle, handleUser, notify, send, inbound,
   upgrade: (req, socket, head) => { socket._wsKey = wsKeyFromReq(req); return upgrade(req, socket, head); },
   configured, CHANNELS, ORDER,
-  _internals: { telegramSecret, slackOk, whatsappOk, discordOk, twilioOk, chunks, MiniWS, sent, newCode, takeCode, whose, inbound, xml }
+  groups, speech, sendVoice, mailNew, converse,
+  _internals: { telegramSecret, slackOk, whatsappOk, discordOk, twilioOk, chunks, MiniWS, sent, newCode, takeCode, whose, inbound, xml, telegramUpdate, groupMessage }
 };

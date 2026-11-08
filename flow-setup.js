@@ -105,7 +105,7 @@ async function view(ctx, deps, uid) {
       else if (st.status === 'done') note = delivery === 'app' ? 'The app only' : delivery === 'push' ? 'Push notifications' : (chans.find((c) => c.id === delivery) || {}).name || delivery;
       else note = linked.length ? 'Briefings, results and approvals: ' + linked.map((c) => c.name).join(' / ') + ' or the app.' : 'The app for now; a channel once one is linked.';
     }
-    if (id === 'tools') note = (conn.counts.working || 0) + ' working · ' + (conn.counts.ready || 0) + ' ready · ' + (conn.counts.awaiting || 0) + ' awaiting configuration · ' + (conn.counts.not_built || 0) + ' not built';
+    if (id === 'tools') note = (conn.counts.working || 0) + ' working · ' + (conn.counts.ready || 0) + ' ready · ' + (conn.counts.awaiting || 0) + ' awaiting configuration · ' + (conn.counts.available || 0) + ' available as plugins · ' + (conn.counts.not_built || 0) + ' not built';
     if (id === 'tour') note = st.status === 'done' ? TOUR.length + ' rooms seen' : TOUR.length + ' rooms, two minutes.';
     if (id === 'first') {
       if (first) { status = first.status === 'done' ? 'done' : /^(failed|cancelled)$/.test(first.status) ? 'attention' : 'running'; note = first.title + ' · ' + first.status.replace(/_/g, ' '); data = Object.assign({}, data, { status: first.status, result: first.result ? str(first.result, 600) : '', error: first.error || '', via: first.via }); }

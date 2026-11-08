@@ -529,4 +529,4 @@ async function handle(p, req, res, ctx, deps) {
   return false;
 }
 
-module.exports = { handle, all, usable, text, catalog, select, invoked, readiness, forStep, recordRun, draftFromTask, draftFromText, generalise, diff, contradictions, duplicates, classify, reviseDoc, secretish, cleanDoc, docOf, create, update, rollback, setStatus, assign, feedback, applyProposal, test, list, TYPES, STATUSES, TOOL_IDS, TOOL_NAMES, DOC_FIELDS };
+module.exports = { handle, all, usable, text, catalog, select, invoked, score, readiness, forStep, recordRun, draftFromTask, draftFromText, generalise, diff, contradictions, duplicates, classify, reviseDoc, secretish, cleanDoc, docOf, create, update, rollback, setStatus, assign, feedback, applyProposal, test, list, TYPES, STATUSES, TOOL_IDS, TOOL_NAMES, DOC_FIELDS };

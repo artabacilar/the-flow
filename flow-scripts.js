@@ -122,6 +122,19 @@ function periodRange(p, now) {
   return { week: weekId(d) };  /* this week */
 }
 const PERIODS = ['this week', 'last week', 'today', 'yesterday', 'last 7 days', 'last 30 days', 'this month'];
+const ADS_FIXTURE = {
+  campaigns: [
+    { campaign: 'TR — Premium launch', product: 'premium_monthly', spend30: 1860, impressions30: 412000, clicks30: 9800, installs30: 1210 },
+    { campaign: 'TR — Retargeting', product: 'premium_monthly', spend30: 640, impressions30: 98000, clicks30: 4100, installs30: 530 },
+    { campaign: 'EU — Pro video', product: 'pro_monthly', spend30: 2400, impressions30: 530000, clicks30: 8700, installs30: 990 },
+    { campaign: 'Global — Starter broad', product: 'starter_monthly', spend30: 1500, impressions30: 760000, clicks30: 15200, installs30: 2100 }
+  ],
+  products: [
+    { product: 'premium_monthly', price: 12, trials30: 1740, paid30: 348 },
+    { product: 'pro_monthly', price: 14, trials30: 990, paid30: 119 },
+    { product: 'starter_monthly', price: 10, trials30: 2100, paid30: 231 }
+  ]
+};
 const OPS = {
   'flow.rocks': { kind: 'source', label: 'Read the week\'s rocks', params: [{ name: 'period', type: 'choice', choices: ['this week', 'last week'], default: 'this week' }, { name: 'only', type: 'choice', choices: ['all', 'open', 'done'], default: 'all' }],
     async run(ctx, deps, st, pipe) {
@@ -178,6 +191,34 @@ const OPS = {
     async run(ctx, deps, st, pipe) { const n = Math.max(0, Math.min(MAX_ITEMS, Math.round(num(render(st.n, pipe.scope)) || 10))); return { items: pipe.items.slice(0, n), note: 'first ' + n }; } },
   'select': { kind: 'transform', label: 'Keep only these fields', params: [{ name: 'fields', type: 'list' }],
     async run(ctx, deps, st, pipe) { const fs = (Array.isArray(st.fields) ? st.fields : String(st.fields || '').split(/,|\n/)).map((x) => str(x, 40)).filter(Boolean); return { items: pipe.items.map((it) => { const o = {}; fs.forEach((f) => { o[f] = get(it, f); }); return o; }), note: fs.join(', ') }; } },
+  /* ---- the ads-analysis example: demo fixtures, labelled as such ----
+     Meta Ads spend per campaign and RevenueCat subscriptions per product
+     ($12 / $14 / $10 plans). These are FIXTURES — the connectors are not
+     built — so every line they produce says "demo data". The shape is the
+     real one, so the day a connector exists the analysis does not change. */
+  'demo.metaads': { kind: 'source', label: 'Meta Ads — campaign spend (demo fixtures)', params: [{ name: 'period', type: 'choice', choices: ['last 7 days', 'last 30 days'], default: 'last 7 days' }],
+    async run(ctx, deps, st, pipe) {
+      const k = render(st.period, pipe.scope) === 'last 30 days' ? 30 : 7; const f = 30 / k;
+      const items = ADS_FIXTURE.campaigns.map((c) => ({ campaign: c.campaign, product: c.product, spend: Math.round(c.spend30 / f), impressions: Math.round(c.impressions30 / f), clicks: Math.round(c.clicks30 / f), installs: Math.round(c.installs30 / f), demo: true }));
+      return { items, note: items.length + ' campaigns · demo data, not a live account', demo: true };
+    } },
+  'demo.revenuecat': { kind: 'source', label: 'RevenueCat — subscriptions per product (demo fixtures)', params: [{ name: 'period', type: 'choice', choices: ['last 7 days', 'last 30 days'], default: 'last 7 days' }],
+    async run(ctx, deps, st, pipe) {
+      const k = render(st.period, pipe.scope) === 'last 30 days' ? 30 : 7; const f = 30 / k;
+      const items = ADS_FIXTURE.products.map((p) => { const paid = Math.round(p.paid30 / f); return { product: p.product, price: p.price, trials: Math.round(p.trials30 / f), paid, revenue: Math.round(paid * p.price * 100) / 100, demo: true }; });
+      return { items, note: items.length + ' products · demo data, not a live account', demo: true };
+    } },
+  'ads.join': { kind: 'transform', label: 'Join spend with revenue per product: CAC, ROAS, a verdict', params: [{ name: 'spend', type: 'text', help: 'the name the Meta Ads step was saved as', default: 'spend' }],
+    async run(ctx, deps, st, pipe) {
+      const spendName = render(st.spend, pipe.scope) || 'spend'; const spend = (pipe.data && pipe.data[spendName] && pipe.data[spendName].items) || [];
+      const items = pipe.items.map((p) => {
+        const sp = spend.filter((c) => c.product === p.product); const cost = sp.reduce((a, c) => a + num(c.spend), 0), installs = sp.reduce((a, c) => a + num(c.installs), 0);
+        const cac = p.paid ? Math.round(cost / p.paid * 100) / 100 : null, roas = cost ? Math.round(p.revenue / cost * 100) / 100 : null;
+        const verdict = roas == null ? 'no spend' : roas >= 1.5 ? 'scale' : roas >= 1 ? 'hold' : 'cut';
+        return Object.assign({}, p, { spend: Math.round(cost * 100) / 100, installs, campaigns: sp.map((c) => c.campaign).join(', '), cac, roas, verdict, demo: true });
+      }).sort((a, b) => (b.roas || 0) - (a.roas || 0));
+      return { items, note: items.map((x) => x.product + ' $' + x.price + ': ROAS ' + (x.roas == null ? '—' : x.roas) + ' → ' + x.verdict).join(' · ') + ' · demo data', demo: true };
+    } },
   'compute': { kind: 'transform', label: 'Count / sum / average', params: [{ name: 'field', type: 'text', help: 'numeric field for sum/avg/min/max' }, { name: 'by', type: 'text', help: 'optional field to group by' }],
     async run(ctx, deps, st, pipe) {
       const f = render(st.field, pipe.scope), by = render(st.by, pipe.scope);
@@ -446,6 +487,25 @@ async function create(ctx, deps, b) {
   if (deps.log) await deps.log(ctx, 'team', 'Automation created: "' + s.name + '" v1' + (from.task ? ' (from the task "' + str(from.title, 60) + '")' : '') + '.');
   return { ok: true, script: s, explanation: explain(s, deps.tools ? deps.tools() : null) };
 }
+/* Ready-made examples. The ads analysis runs on demo fixtures and says so in every line. */
+const EXAMPLES = {
+  ads: { name: 'Weekly ads analysis (demo)', purpose: 'Join Meta Ads spend with RevenueCat subscription revenue per product, work out CAC and ROAS, and say what to scale, hold or cut — on demo fixtures until the connectors exist.',
+    inputs: [{ name: 'period', type: 'choice', choices: ['last 7 days', 'last 30 days'], default: 'last 7 days' }],
+    steps: [
+      { op: 'demo.metaads', period: '{{inputs.period}}', as: 'spend' },
+      { op: 'demo.revenuecat', period: '{{inputs.period}}' },
+      { op: 'ads.join', spend: 'spend' },
+      { op: 'format', template: '· {{item.product}} (${{item.price}}/mo): spend {{item.spend}} → {{item.paid}} paid, revenue {{item.revenue}} · CAC {{item.cac}} · ROAS {{item.roas}} → {{item.verdict}} ({{item.campaigns}})' },
+      { op: 'report', template: 'Ads analysis — {{inputs.period}} — DEMO DATA (Meta Ads and RevenueCat fixtures; the connectors are not built yet)\n\n{{text}}\n\nVerdicts: ROAS ≥ 1.5 scale · 1–1.5 hold · < 1 cut. Numbers are illustrative.' }
+    ],
+    schedule: null /* schedules are examples only: nothing here runs on a timer unless the owner sets one */ }
+};
+async function example(ctx, deps, b) {
+  const ex = EXAMPLES[String(b.which || '')]; if (!ex) return { error: 'Examples: ' + Object.keys(EXAMPLES).join(', ') + '.', status: 400 };
+  const list = await all(ctx); const have = list.find((s) => s.status !== 'archived' && s.name === ex.name);
+  if (have) return { ok: true, script: have, existed: true };
+  return await create(ctx, deps, { doc: ex, name: ex.name });
+}
 async function update(ctx, deps, b) {
   const list = await all(ctx); const s = list.find((x) => x.id === String(b.id || '')); if (!s) return { error: 'No such automation.', status: 404 };
   const before = JSON.stringify(docOf(s)); const after = cleanDoc(Object.assign({}, docOf(s), b.doc || {}));
@@ -495,6 +555,7 @@ async function handle(p, req, res, ctx, deps) {
   if (p === '/api/team/scripts' && req.method === 'POST') {
     const b = await body(); const op = String(b.op || 'create');
     if (op === 'create') return out(await create(ctx, deps, b));
+    if (op === 'example') return out(await example(ctx, deps, b));
     if (op === 'update') return out(await update(ctx, deps, b));
     if (op === 'rollback') return out(await rollback(ctx, deps, b));
     if (op === 'status') return out(await setStatus(ctx, deps, b));
@@ -512,4 +573,4 @@ async function handle(p, req, res, ctx, deps) {
   return false;
 }
 
-module.exports = { handle, all, runs, list, create, update, rollback, setStatus, startRun, resumeRun, resumeAll, onApproval, tick, onEvent, explain, draftFromTask, validateInputs, render, cmp, cleanDoc, docOf, OPS, OP_IDS, EVENTS, STATUSES, PERIODS, periodRange, weekId, shiftWeek, due, nextRunText, _internals: { execute, costOf } };
+module.exports = { EXAMPLES, ADS_FIXTURE, handle, all, runs, list, create, update, rollback, setStatus, startRun, resumeRun, resumeAll, onApproval, tick, onEvent, explain, draftFromTask, validateInputs, render, cmp, cleanDoc, docOf, OPS, OP_IDS, EVENTS, STATUSES, PERIODS, periodRange, weekId, shiftWeek, due, nextRunText, _internals: { execute, costOf } };

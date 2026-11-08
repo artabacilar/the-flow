@@ -1151,6 +1151,29 @@ async function gate(req, res) {
     return true;
   }
 
+  /* ---- the watch and the team ----
+     The same bearer. What needs a yes, the email waiting, work in flight,
+     the briefing; approve / decline / send / skip / answer / say. */
+  if (p === '/api/watch/team' && team && team.watchView) {
+    if (req.method === 'OPTIONS') return false;
+    const wt = bearerOf(req);
+    const me = wt ? await userForToken(wt) : null;
+    if (!me) { res.setHeader('WWW-Authenticate', 'Bearer realm="The Flow"'); json(res, 401, { error: 'This watch is not linked any more. Link it again from the watch.' }); return true; }
+    const c = team.ctxFor(me.id); if (!c) { json(res, 503, { error: 'The team is not available.' }); return true; }
+    c.user = me; c.uid = me.id;
+    const lang = u.searchParams.get('lang') === 'tr' ? 'tr' : 'en';
+    try {
+      if (req.method === 'GET') { json(res, 200, await team.watchView(c, lang)); return true; }
+      if (req.method === 'POST') {
+        let b = {}; try { b = JSON.parse(await readBody(req) || '{}') || {}; } catch (e) {}
+        const r = await team.watchAct(c, me.id, b);
+        if (r.error) { json(res, r.stale ? 409 : 400, r); return true; }
+        json(res, 200, Object.assign(await team.watchView(c, b.lang === 'tr' ? 'tr' : lang), { said: r.said || '' })); return true;
+      }
+      json(res, 405, { error: 'GET reads; POST acts.' }); return true;
+    } catch (e) { json(res, 500, { error: 'Something went wrong on the server.' }); return true; }
+  }
+
   /* ---- the home-screen widget ----
      A widget is its own process. It has no cookie, no web view and no way to
      sign anybody in; it wakes up every few minutes, reads one short list and
@@ -2325,6 +2348,11 @@ async function gate(req, res) {
       json(res, 502, { error: 'That channel is unavailable right now.' });
       return true;
     }
+  }
+  /* The email provider's delivery events (no session; a signature proves the sender). */
+  if (team && team.handleMailEvents && p === '/api/mail/events') {
+    try { if (await team.handleMailEvents(p, req, res, { readBody, query: u.searchParams, json })) return true; }
+    catch (e) { console.error('[mail]', e && e.message ? e.message : e); json(res, 502, { error: 'unavailable' }); return true; }
   }
 
   /* ---- everything else under /api needs a session ---- */
