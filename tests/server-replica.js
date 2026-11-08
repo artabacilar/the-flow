@@ -56,6 +56,10 @@ const MEETING_DEPS=()=>({
   connect:connectMod&&connectMod._internals, nsPrefix:flowAuth.nsPrefix, fetch:(...a)=>fetch(...a),
   sendToUser:push?push.sendToUser:null, log:()=>{}
 });
+/* EDIT 2d: the team's background runner, mirroring life-os-server.js — tasks
+   resume after a restart and a push says when one is ready. */
+let teamMod=null; try{ teamMod=require('../flow-team'); }catch(e){ teamMod=null; }
+if(teamMod&&teamMod.start){ try{ teamMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, sendToUser:push?push.sendToUser:null, log:()=>{} }); }catch(e){} }
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}
 function json(res,code,obj){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
 const server=http.createServer(async(req,res)=>{

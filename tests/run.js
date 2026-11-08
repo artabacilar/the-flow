@@ -117,6 +117,7 @@ const SUITES = [
   ['hud',      'test-hud.js',      { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['wake',     'test-wake.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['team',     'test-team.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
+  ['team2',    'test-team2.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['audit',    'test-audit.js',    {}],
   ['links',    'test-links.js',    {}],
   ['training', 'test-training.js', {}],
