@@ -107,6 +107,11 @@ plus = loadModule('flow-plus', ['handle']);
 let connect = null;
 connect = loadModule('flow-connect', ['handle', 'purgeUser']);
 
+/* The team — J.A.R.V.I.S. and the agents he manages. Absent is valid: the
+   command centre then has no team strip, and he works alone as before. */
+let team = null;
+team = loadModule('flow-team', ['handle']);
+
 const USERS_KEY = '__auth:users';
 const FEEDBACK_KEY = '__feedback';
 const SESS = (t) => '__auth:sess:' + t;
@@ -1680,6 +1685,26 @@ async function gate(req, res) {
     }
   }
 
+  /* ---- the team ----
+     Signed in only. The module gets a reader/writer locked to this account's
+     namespace and nothing else: it cannot reach another account's agents. */
+  if (team && p.indexOf('/api/team') === 0) {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    const pre = nsPrefix(me.id);
+    try {
+      const done = await team.handle(p, req, res, {
+        json, readBody, query: u.searchParams, user: me,
+        get: (k) => getJSON(pre + k, null), set: (k, v) => setJSON(pre + k, v)
+      });
+      if (done) return true;
+    } catch (e) {
+      console.error('[team]', e && e.message ? e.message : e);
+      json(res, 502, { error: 'The team is unavailable right now.' });
+      return true;
+    }
+  }
+
   if (extras && p.indexOf('/api/flow/') === 0) {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
@@ -1691,8 +1716,11 @@ async function gate(req, res) {
         json(res, 402, plus.refusal(plus.PLUS_ONLY[p]));
         return true;
       }
+      const preT = nsPrefix(me.id);
       const done = await extras.handle(p, req, res, {
         json, readBody, user: me, mine: mineFor(me.id), plan,
+        /* his team: shared knowledge and the model he is set to */
+        team: team ? { get: (k) => getJSON(preT + k, null), set: (k, v) => setJSON(preT + k, v) } : null,
         counter: {
           get: (k) => getJSON('__auth:ctr:' + me.id + ':' + k, 0),
           set: (k, v) => setJSON('__auth:ctr:' + me.id + ':' + k, v)

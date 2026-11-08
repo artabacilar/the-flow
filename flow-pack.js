@@ -13653,7 +13653,9 @@ const Say = {
   lang() { return document.documentElement.lang === 'tr' ? 'tr' : 'en'; },
   /* The name they gave their assistant; "Assistant" until they give one. */
   name() { return String(Speech.pref('asstName') || '').replace(/\s+/g, ' ').trim().slice(0, 24); },
-  title() { return Say.name() || 'Assistant'; },
+  title() { try { if (Say.agent) { const a = Team.agent(Say.agent); if (a) return a.name; } } catch (e) {} return Say.name() || 'Assistant'; },
+  /* Which agent the console is talking to: null is J.A.R.V.I.S. himself. */
+  agent: null,
   /* How it addresses you: sir, ma'am, your first name, or nothing. */
   call() {
     const c = Speech.pref('asstCall') || 'name', tr = Say.lang() === 'tr';
@@ -14084,6 +14086,23 @@ const Say = {
     Say.state('Working it out…'); Say.mode('thinking');
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
+      /* One of the team, not him: their own thread, their own model, no
+         actions on The Flow — they answer, remember, and that is all. */
+      if (Say.agent) {
+        try { Team.status(Say.agent, 'working'); } catch (e) {}
+        const r0 = await fetch('/api/team/say', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent: Say.agent, text, lang: Say.lang() }) });
+        const j0 = await r0.json().catch(() => ({}));
+        try { Team.status(Say.agent, ''); } catch (e) {}
+        if (!r0.ok) { Say.state(j0.error || 'That did not work. Try again.'); try { if (j0.paused) Team.paintRail(); } catch (e) {} return; }
+        const reply0 = String(j0.say || '');
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply0 });
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        try { Team.afterReply(Say.agent, j0); } catch (e) {}
+        await Say.speak(reply0);
+        Say.follow(false);
+        return;
+      }
       const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
       const j = await r.json().catch(() => ({}));
@@ -14372,8 +14391,11 @@ const Say = {
     let ear = false; try { ear = Wake.on(); } catch (e) {}
     const label = ear ? (Say.lang() === 'tr' ? '“Hey ' + (Say.name() || 'J.A.R.V.I.S.') + '” deyin' : 'Say “Hey ' + (Say.name() || 'J.A.R.V.I.S.') + '”') : Say.name() ? 'Talk to ' + Say.name() : 'Talk';
     const have = hello.querySelector('.lk-say:not(.lk-hud)');
-    if (have) { const sp = have.querySelector('span'); if (sp && sp.textContent !== label) { sp.textContent = label; if (Say.name() || ear) sp.setAttribute('data-i18n', 'off'); else sp.removeAttribute('data-i18n'); } have.classList.toggle('lk-wake', ear); return; }
+    /* "Hey J.A.R.V.I.S." on: no button at all (8 Nov: "this can go"); the
+       Command centre button carries the listening dot instead. */
+    if (have) { have.hidden = ear; const sp = have.querySelector('span'); if (sp && sp.textContent !== label) { sp.textContent = label; if (Say.name() || ear) sp.setAttribute('data-i18n', 'off'); else sp.removeAttribute('data-i18n'); } have.classList.toggle('lk-wake', ear); return; }
     const b = document.createElement('button');
+    b.hidden = ear;
     b.type = 'button'; b.className = ear ? 'lk-say lk-wake' : 'lk-say';
     b.setAttribute('aria-label', Say.name() ? 'Talk to ' + Say.name() : 'Talk to your assistant');
     b.innerHTML = Nav.svg('mic') + '<span' + (Say.name() || ear ? ' data-i18n="off"' : '') + '>' + esc(label) + '</span>';
@@ -14431,6 +14453,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
+    try { Team.load().then(() => { Team.paintRail(); Hud.paint(); }); } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14439,6 +14462,7 @@ const Hud = {
     document.documentElement.classList.remove('hud-on');
     if (Hud.el) Hud.el.classList.remove('on');
     cancelAnimationFrame(Hud.raf); clearInterval(Hud.timer);
+    try { Team.select(null, true); } catch (e) {}
     if (!fromSay) { try { Say.close(); } catch (e) {} }
   },
   build() {
@@ -14451,6 +14475,7 @@ const Hud = {
       '<header class="hud-top"><div class="hud-brand"><b data-i18n="off"></b><span>Command centre</span></div>' +
         '<div class="hud-clock"><b class="hud-time">--:--:--</b><span class="hud-date"></span></div>' +
         '<button type="button" class="hud-x" data-hud="close" aria-label="Close the command centre">×</button></header>' +
+      '<nav class="hud-team" aria-label="The team" data-i18n="off"></nav>' +
       '<aside class="hud-col hud-left"></aside>' +
       '<div class="hud-core"><canvas class="hud-orb" aria-hidden="true"></canvas><div class="hud-status" aria-live="polite"></div></div>' +
       '<aside class="hud-col hud-right"></aside>';
@@ -14459,7 +14484,10 @@ const Hud = {
       const a = b.getAttribute('data-hud');
       if (a === 'close') Hud.close();
       else if (a === 'go') { const t = b.getAttribute('data-to'); Hud.close(); try { Nav.go(t); } catch (x) {} }
+      else { try { Team.click(a, b, e); } catch (x) { console.warn('[Flow] team', x); } }
     });
+    el.addEventListener('change', (e) => { try { Team.change(e); } catch (x) { console.warn('[Flow] team', x); } });
+    el.addEventListener('submit', (e) => { const f = e.target.closest('form[data-team]'); if (!f) return; e.preventDefault(); try { Team.submit(f); } catch (x) { console.warn('[Flow] team', x); } });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && !(Say.el && Say.el.classList.contains('on'))) Hud.close(); });
     document.body.appendChild(el);
     Hud.el = el;
@@ -14476,7 +14504,10 @@ const Hud = {
   paint() {
     if (!Hud.el) return;
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
+    /* One of the team selected: their workspace, not the day. */
+    if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
+    Hud.el.querySelector('.hud-brand span').textContent = 'Command centre';
     const B = TodayBeta, t = B.todayO();
     let rocks = []; try { rocks = B.rocksOn(t).slice().sort((a, b) => (a.done - b.done) || B.byTime(a, b)); } catch (e) {}
     const open = rocks.filter((r) => !r.done);
@@ -14499,7 +14530,8 @@ const Hud = {
     const body = Hud.panel('body', 'Recovery', '<div class="hud-big' + (rec.recovery == null ? '' : rec.recovery >= 67 ? ' good' : rec.recovery >= 34 ? ' warn' : ' bad') + '">' + esc(rv) + '</div><p class="hud-sub">' + esc(rec.recovery != null && rec.hrs != null ? rec.hrs.toFixed(1) + 'h sleep' : rec.hrs != null ? 'sleep, last logged' : 'nothing logged') + '</p>', 'sleep');
     let sp = null; try { sp = TodayPlus.spend(); } catch (e) {}
     const money = Hud.panel('money', 'Spend', sp ? '<div class="hud-big">' + esc(TodayPlus.money(sp.today)) + '</div><p class="hud-sub">' + esc(TodayPlus.money(sp.mtd)) + ' this month' + (sp.budget ? ' · ' + esc(TodayPlus.money(Math.max(0, sp.budget - sp.mtd))) + ' left' : '') + '</p>' : '<p class="hud-none">Nothing logged.</p>', 'finance');
-    Hud.el.querySelector('.hud-right').innerHTML = cal + body + money;
+    let team = ''; try { team = Team.jarvisPanels(); } catch (e) {}
+    Hud.el.querySelector('.hud-right').innerHTML = cal + body + money + team;
   },
   clock() {
     if (!Hud.el) return;
@@ -14584,6 +14616,234 @@ const Hud = {
 };
 window.FlowHud = Hud;
 
+/* ── The team ─────────────────────────────────────────────────────────────
+ * J.A.R.V.I.S. and the agents he manages, in the command centre. A strip of
+ * them under the clock; choose one and the room becomes their workspace —
+ * who they are, what they think with (the model, switchable, keeping
+ * everything), what they remember, what the whole team knows — and the
+ * console at the bottom becomes their conversation. "Hey Sarah … over"
+ * works like "Hey J.A.R.V.I.S."; so does typing. Every agent says, in its
+ * own words, that it has no tools connected yet: this is the team that
+ * can be talked to and re-wired, and the honest status of the rest.
+ *
+ * Everything an agent is lives on the server under the account
+ * (/api/team): nothing here survives a reload except which one was chosen. */
+const Team = {
+  data: null, sel: null, st: {}, busy: false, adding: false, editing: null, loadedAt: 0,
+  async load(force) {
+    if (Team.data && !force && Date.now() - Team.loadedAt < 20000) return Team.data;
+    try {
+      const r = await fetch('/api/team', { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok) { Team.data = j; Team.loadedAt = Date.now(); }
+    } catch (e) {}
+    return Team.data;
+  },
+  agents() { return ((Team.data && Team.data.agents) || []).filter((a) => !a.archived); },
+  agent(id) { return ((Team.data && Team.data.agents) || []).find((a) => a.id === id) || null; },
+  know(scope) { return ((Team.data && Team.data.knowledge) || []).filter((k) => k.scope === scope); },
+  paused() { return !!(Team.data && Team.data.paused); },
+  /* read: how many of each thread has been seen on this device */
+  seen() { try { return JSON.parse(localStorage.getItem('flow:team:seen') || '{}') || {}; } catch (e) { return {}; } },
+  markSeen(id) { try { const s = Team.seen(); s[id] = (Team.data && Team.data.counts && Team.data.counts[id]) || 0; localStorage.setItem('flow:team:seen', JSON.stringify(s)); } catch (e) {} },
+  unread(id) { const c = (Team.data && Team.data.counts && Team.data.counts[id]) || 0, s = Team.seen()[id] || 0; return Math.max(0, c - s); },
+  status(id, st) { Team.st[id] = st || ''; Team.paintRail(); },
+  stateOf(a) { if (Team.paused()) return 'paused'; if (Team.st[a.id] === 'working') return 'working'; return 'available'; },
+  modelOk(a) { const P = (Team.data && Team.data.providers) || []; return P.some((p) => p.configured && (p.id === a.provider || p.models.indexOf(a.model) >= 0)); },
+  short(m) { return String(m || '').replace(/^claude-/, '').replace(/-\d{8}$/, ''); },
+  /* ---- the strip ---- */
+  paintRail() {
+    const nav = Hud.el && Hud.el.querySelector('.hud-team'); if (!nav) return;
+    if (!Team.data) { nav.innerHTML = '<span class="hud-tm-wait">Team…</span>'; return; }
+    const sel = Team.sel || 'jarvis';
+    nav.innerHTML = Team.agents().map((a) => {
+      const st = Team.stateOf(a), un = Team.unread(a.id), ok = Team.modelOk(a);
+      return '<button type="button" class="hud-ag' + (a.id === sel ? ' sel' : '') + '" data-hud="agent" data-ag="' + esc(a.id) + '" aria-label="' + esc(a.name) + ', ' + esc(a.role) + '">' +
+        '<i class="hud-av" aria-hidden="true">' + esc(a.avatar || a.name.charAt(0)) + '</i>' +
+        '<span class="hud-agn">' + esc(a.name) + '</span><small>' + esc(a.role) + ' · ' + esc(ok ? Team.short(a.model) : 'no model') + '</small>' +
+        '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
+    }).join('') +
+      '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
+      '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
+  },
+  /* ---- choosing one ---- */
+  async select(id, quiet) {
+    const next = id && id !== 'jarvis' ? id : null;
+    if ((Say.agent || null) === next && !quiet) return;
+    Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null;
+    try {
+      if (Say.el) {
+        Say.plan = null; Say.askView(); Say.state('');
+        const k = Say.el.querySelector('.sy-k'); if (k) { k.textContent = Say.title(); k.setAttribute('data-i18n', 'off'); }
+        const ta = Say.el.querySelector('#sy-text'); if (ta) { if (!Say.ph) Say.ph = ta.getAttribute('placeholder'); const ag = next && Team.agent(next); ta.setAttribute('placeholder', ag ? (Say.lang() === 'tr' ? ag.name + '’a yazın…' : 'Message ' + ag.name + '…') : Say.ph); }
+      }
+    } catch (e) {}
+    if (next) {
+      Say.history = [];
+      try {
+        const r = await fetch('/api/team/thread?agent=' + encodeURIComponent(next), { credentials: 'same-origin', cache: 'no-store' });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && Say.agent === next) Say.history = (j.messages || []).slice(-12).map((m) => ({ role: m.role, text: m.text }));
+      } catch (e) {}
+      Team.markSeen(next);
+    } else { Say.history = []; }
+    try { Say.logPaint(); } catch (e) {}
+    if (!quiet) { Team.paintRail(); Hud.paint(); }
+  },
+  afterReply(id, j) {
+    if (Team.data) {
+      if (Team.data.counts) Team.data.counts[id] = (Team.data.counts[id] || 0) + 2;
+      if (j && Array.isArray(j.remembered) && j.remembered.length) { Team.data.knowledge = (Team.data.knowledge || []).concat(j.remembered); toast(j.remembered.length === 1 ? 'Remembered ✓' : 'Remembered ' + j.remembered.length + ' things ✓', null, 1600); }
+      if (j && j.usage && Team.data.usage) Team.data.usage[id] = j.usage;
+    }
+    Team.markSeen(id);
+    if (Team.sel === id) Hud.paint(); else Team.paintRail();
+  },
+  /* "Hey Sarah" — first names, lower-case, for the ear */
+  wakeNames() {
+    return Team.agents().filter((a) => a.id !== 'jarvis').map((a) => String(a.name).split(/\s+/)[0].toLowerCase().replace(/[^\p{L}]/gu, '')).filter((n) => n.length >= 3);
+  },
+  calledBy(phrase) {
+    const w = String(phrase || '').toLowerCase();
+    const hit = Team.agents().find((a) => a.id !== 'jarvis' && new RegExp('(?:^|[^\\p{L}])' + String(a.name).split(/\s+/)[0].toLowerCase().replace(/[^\p{L}]/gu, '') + '(?![\\p{L}])', 'iu').test(w));
+    if (hit) { if (Team.sel !== hit.id) Team.select(hit.id); }
+    else if (Team.sel && Team.sel !== 'jarvis') Team.select('jarvis');
+  },
+  /* ---- the workspace ---- */
+  badge(a) {
+    const st = Team.stateOf(a);
+    return '<span class="hud-badge" data-st="' + st + '">' + (st === 'working' ? 'Working' : st === 'paused' ? 'Paused' : 'Available') + '</span>';
+  },
+  modelSelect(a) {
+    const P = (Team.data && Team.data.providers) || [];
+    let html = '<select class="hud-sel" data-team-model="' + esc(a.id) + '" aria-label="Model">';
+    let any = false;
+    for (const p of P) {
+      if (p.configured) {
+        any = true;
+        html += '<optgroup label="' + esc(p.name) + '">' + p.models.map((m) => '<option value="' + esc(m) + '"' + (m === a.model ? ' selected' : '') + '>' + esc(m) + '</option>').join('') + '</optgroup>';
+      } else {
+        html += '<optgroup label="' + esc(p.name) + ' — awaiting configuration"><option disabled>Add ' + esc(p.env) + ' in Render to use ' + esc(p.name) + '</option></optgroup>';
+      }
+    }
+    if (!Team.modelOk(a)) html += '<option value="' + esc(a.model) + '" selected disabled>' + esc(a.model) + ' (no key)</option>';
+    html += '</select>';
+    if (!any) html += '<p class="hud-sub">No provider has a key yet.</p>';
+    return html;
+  },
+  knowList(scope, items, title) {
+    const rows = items.length ? items.slice().reverse().map((k) => Team.editing === k.id
+      ? '<li class="hud-k ed"><form data-team="kedit" data-id="' + esc(k.id) + '"><input type="text" name="text" value="' + esc(k.text) + '" maxlength="300" aria-label="Edit"><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="kcancel">Cancel</button></form></li>'
+      : '<li class="hud-k"><span>' + esc(k.text) + '</span><small>' + esc(Team.source(k)) + ' · ' + esc(Team.when(k.updated || k.at)) + '</small><span class="hud-kb"><button type="button" class="hud-ic" data-hud="kedit" data-id="' + esc(k.id) + '" aria-label="Edit">✎</button><button type="button" class="hud-ic" data-hud="kdrop" data-id="' + esc(k.id) + '" aria-label="Remove">×</button></span></li>').join('')
+      : '<li class="hud-none">' + (scope === 'shared' ? 'Nothing yet. What the whole team should know: who you are, what the business does, how things are done.' : 'Nothing yet. What only ' + esc(title) + ' needs to keep in mind.') + '</li>';
+    return '<ul class="hud-kl">' + rows + '</ul><form class="hud-kadd" data-team="kadd" data-scope="' + esc(scope) + '"><input type="text" name="text" maxlength="300" placeholder="Add a fact…" aria-label="Add a fact"><button type="submit" class="hud-btn">Add</button></form>';
+  },
+  source(k) { if (k.source === 'you') return 'you'; if (/^agent:/.test(k.source || '')) { const a = Team.agent(k.source.slice(6)); return a ? a.name : 'an agent'; } return k.source || ''; },
+  when(t) { try { const d = new Date(t); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch (e) { return ''; } },
+  toolsPanel(a) {
+    const rows = [['Gmail & Calendar', 'stage 2'], ['Google Drive', 'stage 2'], ['WhatsApp · Telegram · Slack', 'stage 3'], ['A phone number (SMS & calls)', 'stage 3'], ['Cloud browser', 'stage 4']];
+    return Hud.panel('tools', 'Tools & channels', '<p class="hud-sub">None connected yet — ' + esc(a.name) + ' says so when asked to send or do anything.</p>' +
+      rows.map((r) => '<div class="hud-r"><span data-i18n="off">' + esc(r[0]) + '</span><b class="hud-await">Awaiting setup · ' + esc(r[1]) + '</b></div>').join(''));
+  },
+  paintAgent() {
+    const a = Team.agent(Team.sel); if (!a) { Team.sel = null; Hud.paint(); return; }
+    Hud.el.querySelector('.hud-brand b').textContent = a.name;
+    Hud.el.querySelector('.hud-brand span').textContent = a.role;
+    const use = (Team.data.usage || {})[a.id] || { calls: 0, in: 0, out: 0 };
+    const who = Hud.panel('agent', 'Agent', '<div class="hud-who"><i class="hud-av big">' + esc(a.avatar || a.name.charAt(0)) + '</i><div><b data-i18n="off">' + esc(a.name) + '</b><small>' + esc(a.role) + '</small>' + Team.badge(a) + '</div></div>' +
+      '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(a) + '</label>' +
+      '<label class="hud-opt"><span>Manner</span><select class="hud-sel" data-team-pref="manner" data-ag="' + esc(a.id) + '"><option value="plain"' + (a.manner === 'plain' ? ' selected' : '') + '>Plain and friendly</option><option value="butler"' + (a.manner === 'butler' ? ' selected' : '') + '>Butler</option><option value="loose"' + (a.manner === 'loose' ? ' selected' : '') + '>Loose</option></select></label>' +
+      '<label class="hud-opt"><span>Permissions</span><select class="hud-sel" data-team-pref="permissions" data-ag="' + esc(a.id) + '">' + [['read', 'Read — answer only'], ['draft', 'Draft — prepare, I approve'], ['approve', 'Execute after my yes'], ['auto', 'Automatic within policy']].map((o) => '<option value="' + o[0] + '"' + (a.permissions === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+      '<label class="hud-opt"><span>Daily limit</span><input class="hud-sel" type="number" min="0" max="5000" value="' + esc(a.dailyCap) + '" data-team-pref="dailyCap" data-ag="' + esc(a.id) + '" aria-label="Messages a day"></label>' +
+      '<p class="hud-sub">Today: ' + use.calls + ' message' + (use.calls === 1 ? '' : 's') + (use.in || use.out ? ' · ' + (use.in + use.out).toLocaleString('en-GB') + ' tokens' : '') + (a.dailyCap ? ' · limit ' + a.dailyCap : '') + '</p>' +
+      (a.id !== 'jarvis' ? '<button type="button" class="hud-btn ghost" data-hud="archive" data-ag="' + esc(a.id) + '">Archive ' + esc(a.name) + '</button>' : ''));
+    const instr = Hud.panel('instr', 'Instructions', '<form data-team="instr" data-ag="' + esc(a.id) + '"><textarea name="instructions" rows="6" maxlength="4000" aria-label="Instructions">' + esc(a.instructions || '') + '</textarea><div class="hud-row"><input type="text" name="name" value="' + esc(a.name) + '" maxlength="40" aria-label="Name" placeholder="Name"><input type="text" name="role" value="' + esc(a.role) + '" maxlength="60" aria-label="Role" placeholder="Role"><button type="submit" class="hud-btn">Save</button></div></form>');
+    Hud.el.querySelector('.hud-left').innerHTML = who + instr;
+    const mem = Hud.panel('memory', a.name + ' remembers', Team.knowList('agent:' + a.id, Team.know('agent:' + a.id), a.name));
+    const sh = Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
+    const lg = (Team.data.log || []).filter((l) => l.agent === a.id).slice(-6).reverse();
+    const act = Hud.panel('activity', 'Activity', lg.length ? lg.map((l) => '<div class="hud-r"><span data-i18n="off">' + esc(l.what) + '</span><b>' + esc(Team.when(l.at)) + '</b></div>').join('') : '<p class="hud-none">Nothing yet.</p>');
+    Hud.el.querySelector('.hud-right').innerHTML = Team.toolsPanel(a) + mem + sh + act;
+    Team.paintRail();
+  },
+  /* On his own view: his model, and the shared knowledge, under the day. */
+  jarvisPanels() {
+    if (!Team.data) return '';
+    const j = Team.agent('jarvis'); if (!j) return '';
+    if (Team.adding) return Team.addPanel();
+    return Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
+      Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
+  },
+  addPanel() {
+    const T = (Team.data && Team.data.templates) || [];
+    return Hud.panel('add', 'Add an agent', '<form data-team="add"><label class="hud-opt"><span>Name</span><input class="hud-sel" type="text" name="name" maxlength="40" placeholder="e.g. Nadia" required aria-label="Name"></label>' +
+      '<label class="hud-opt"><span>Role</span><select class="hud-sel" name="template" aria-label="Role">' + T.map((t) => '<option value="' + esc(t.id) + '">' + esc(t.role) + '</option>').join('') + '</select></label>' +
+      '<div class="hud-row"><button type="submit" class="hud-btn">Create</button><button type="button" class="hud-btn ghost" data-hud="addcancel">Cancel</button></div>' +
+      '<p class="hud-sub">Then: connect tools, choose where to reach them, teach them the business. Tools and channels arrive in the next stages.</p></form>');
+  },
+  /* ---- clicks, changes, forms ---- */
+  async click(a, b) {
+    if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
+    if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
+    if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
+    if (a === 'pause') { await Team.post('/api/team/pause', { paused: !Team.paused() }); await Team.load(true); Team.paintRail(); Hud.paint(); toast(Team.paused() ? 'Every agent is paused' : 'Resumed', null, 1600); return; }
+    if (a === 'kedit') { Team.editing = b.getAttribute('data-id'); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="kedit"] input'); if (i) { i.focus(); i.select(); } }, 60); return; }
+    if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
+    if (a === 'kdrop') { const j = await Team.post('/api/team/knowledge', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.data.knowledge = j.knowledge; Hud.paint(); toast('Removed', null, 1200); } return; }
+    if (a === 'archive') { const id = b.getAttribute('data-ag'); const ag = Team.agent(id); if (!ag || !confirm('Archive ' + ag.name + '? The conversation and memory are kept; it can be restored later.')) return; const j = await Team.post('/api/team/agent/update', { id, archived: true }); if (j && j.ok) { await Team.load(true); Team.select('jarvis'); } return; }
+  },
+  async change(e) {
+    const t = e.target;
+    if (t.matches('[data-team-model]')) {
+      const id = t.getAttribute('data-team-model'); const j = await Team.post('/api/team/agent/update', { id, model: t.value });
+      if (j && j.ok) { Object.assign(Team.agent(id), j.agent); toast('Now thinking with ' + Team.short(j.agent.model), null, 1800); Team.paintRail(); if (Team.sel === id) Hud.paint(); }
+      else if (j && j.error) { Say.state(j.error); Hud.paint(); }
+      return;
+    }
+    if (t.matches('[data-team-pref]')) {
+      const id = t.getAttribute('data-ag'), k = t.getAttribute('data-team-pref');
+      const patch = {}; patch[k] = k === 'dailyCap' ? +t.value : t.value;
+      const j = await Team.post('/api/team/agent/update', Object.assign({ id }, patch));
+      if (j && j.ok) { Object.assign(Team.agent(id), j.agent); toast('Saved', null, 1000); }
+    }
+  },
+  async submit(f) {
+    const kind = f.getAttribute('data-team');
+    if (kind === 'add') {
+      const name = f.name.value.trim(); if (!name) return;
+      const j = await Team.post('/api/team/agent', { name, template: f.template.value });
+      if (j && j.ok) { Team.adding = false; await Team.load(true); Team.select(j.agent.id); toast(j.agent.name + ' joined the team', null, 1800); }
+      else if (j && j.error) Say.state(j.error);
+      return;
+    }
+    if (kind === 'instr') {
+      const id = f.getAttribute('data-ag');
+      const j = await Team.post('/api/team/agent/update', { id, instructions: f.instructions.value, name: f.name.value, role: f.role.value });
+      if (j && j.ok) { Object.assign(Team.agent(id), j.agent); toast('Saved', null, 1200); Hud.paint(); try { Say.el && (Say.el.querySelector('.sy-k').textContent = Say.title()); } catch (e) {} }
+      return;
+    }
+    if (kind === 'kadd') {
+      const text = f.text.value.trim(); if (!text) return;
+      const j = await Team.post('/api/team/knowledge', { op: 'add', text, scope: f.getAttribute('data-scope') });
+      if (j && j.ok) { Team.data.knowledge = j.knowledge; Hud.paint(); toast('Added', null, 1000); }
+      return;
+    }
+    if (kind === 'kedit') {
+      const j = await Team.post('/api/team/knowledge', { op: 'edit', id: f.getAttribute('data-id'), text: f.text.value.trim() });
+      if (j && j.ok) { Team.data.knowledge = j.knowledge; Team.editing = null; Hud.paint(); toast('Saved', null, 1000); }
+    }
+  },
+  async post(url, body) {
+    try {
+      const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok && j && j.error) toast(j.error, 'bad', 2600);
+      return j;
+    } catch (e) { toast('That did not reach the server.', 'bad', 2000); return null; }
+  }
+};
+window.FlowTeam = Team;
+
 /* ── "Hey J.A.R.V.I.S." ───────────────────────────────────────────────────
  * With the setting on (Voice and manners), The Flow keeps an ear open while
  * it is open and on screen: a recogniser that types nowhere and shows
@@ -14605,6 +14865,9 @@ const Wake = {
     let n = ''; try { n = String(Say.name() || '').replace(/\./g, '').trim().toLowerCase(); } catch (e) {}
     const list = ['jarvis', 'jervis', 'javis', 'charvis', 'jarvas', 'jarviz', 'travis', 'jarvi', 'jarves'];
     if (n && list.indexOf(n) < 0 && /^[\p{L} ]{2,24}$/u.test(n)) list.push(n.replace(/[.*+?^${}()|[\]\\]/g, ''));
+    /* "Hey Sarah" — the team answer to their first names too (while the
+       command centre is open, where they live). */
+    try { if (Hud.on) Team.wakeNames().forEach((w) => { if (list.indexOf(w) < 0) list.push(w); }); } catch (e) {}
     return list;
   },
   re() { return new RegExp('(?:^|[^\\p{L}])(?:hey|hi|ok|okay|yo|hello|hay|hei|ey|eh|a)[\\s,.!]+(?:' + Wake.names().join('|') + ')(?![\\p{L}])[\\s,.!?]*', 'iu'); },
@@ -14665,6 +14928,9 @@ const Wake = {
   },
   check(final) {
     const all = Wake.all();
+    /* Called by name — his, or one of the team's — at any point: the last
+       name said is who answers, even inside the follow-up window. */
+    try { if (Hud.on) { const g = new RegExp(Wake.re().source, 'giu'); let m, lastName = ''; while ((m = g.exec(all))) { lastName = m[0]; if (!m[0].length) g.lastIndex++; } if (lastName) Team.calledBy(lastName); } } catch (e) {}
     if (Wake.phase === 'idle') {
       if (!Wake.re().test(all)) { if (Wake.buf.length > 400) Wake.buf = Wake.buf.slice(-200); return; }
       Wake.chime();
@@ -14703,7 +14969,7 @@ const Wake = {
   /* The Talk button on Today shows a small live dot while the ear is open. */
   paint() {
     const on = Wake.mine && Wake.phase === 'idle';
-    document.querySelectorAll('#today-feed .lk-hello .lk-say:not(.lk-hud)').forEach((b) => b.classList.toggle('ear', on));
+    document.querySelectorAll('#today-feed .lk-hello .lk-say').forEach((b) => b.classList.toggle('ear', on));
     document.documentElement.classList.toggle('wake-on', Wake.on());
     try { Say.decorate(); } catch (e) {}
   },

@@ -3886,7 +3886,7 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud{position:fixed;inset:0;z-index:955;display:none;color:#dbeaff;
   background:radial-gradient(1200px 700px at 50% 45%,rgba(40,90,200,.28),transparent 70%),linear-gradient(180deg,#040814 0%,#050b1c 60%,#03060f 100%);
   font-variant-numeric:tabular-nums;overflow:hidden;
-  grid-template-columns:minmax(220px,300px) 1fr minmax(220px,300px);grid-template-rows:auto 1fr;gap:16px;
+  grid-template-columns:minmax(220px,300px) 1fr minmax(220px,300px);grid-template-rows:auto auto 1fr;gap:16px;
   padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(min(40vh,330px) + 24px) max(20px,env(safe-area-inset-left))}
 #flow-hud.on{display:grid}
 #flow-hud .hud-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
@@ -3920,6 +3920,57 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud .hud-bar{display:block;height:4px;border-radius:4px;background:rgba(110,170,255,.15);margin-top:8px;overflow:hidden}
 #flow-hud .hud-bar b{display:block;height:100%;background:linear-gradient(90deg,#3ab0ff,#7fe8ff);box-shadow:0 0 10px rgba(80,200,255,.6)}
 /* the console: the Say sheet, docked and in the room's colours */
+/* the team strip, under the clock */
+#flow-hud .hud-team{grid-column:1/-1;display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;position:relative;z-index:1;padding:2px 2px 4px;min-height:0}
+#flow-hud .hud-team::-webkit-scrollbar{display:none}
+#flow-hud .hud-tm-wait{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:rgba(170,200,255,.5);padding:8px}
+#flow-hud .hud-ag{appearance:none;flex:none;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;min-width:132px;max-width:200px;padding:6px 12px 6px 7px;border-radius:14px;border:1px solid rgba(110,170,255,.22);background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66));color:#dbeaff;cursor:pointer;position:relative;font:inherit}
+#flow-hud .hud-ag:hover{border-color:rgba(127,216,255,.6)}
+#flow-hud .hud-ag.sel{border-color:#7fd8ff;box-shadow:0 0 18px rgba(80,190,255,.25),inset 0 0 0 1px rgba(127,216,255,.35)}
+#flow-hud .hud-av{grid-row:1/3;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#021022;background:linear-gradient(135deg,#7fd8ff,#3a8dff);font-style:normal;flex:none}
+#flow-hud .hud-av.big{width:52px;height:52px;font-size:22px}
+#flow-hud .hud-add .hud-av,#flow-hud .hud-pause .hud-av{background:rgba(110,170,255,.15);color:#7fd8ff;font-size:18px}
+#flow-hud .hud-pause.on .hud-av{background:#ffd36b;color:#2a1a00}
+#flow-hud .hud-pause.on{border-color:#ffd36b}
+#flow-hud .hud-agn{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}
+#flow-hud .hud-ag small{font-size:10.5px;color:rgba(170,200,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#flow-hud .hud-st{position:absolute;top:9px;right:9px;width:8px;height:8px;border-radius:50%;background:#6cf0b2;box-shadow:0 0 8px rgba(108,240,178,.7)}
+#flow-hud .hud-st[data-st="working"]{background:#7fd8ff;animation:fw-ear 1.2s ease-out infinite}
+#flow-hud .hud-st[data-st="paused"]{background:#ffd36b}
+#flow-hud .hud-st[data-st="offline"]{background:rgba(170,200,255,.35);box-shadow:none}
+#flow-hud .hud-unread{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff6b3d;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
+/* an agent's workspace */
+#flow-hud .hud-who{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+#flow-hud .hud-who b{display:block;font-size:16px;color:#e8f4ff}
+#flow-hud .hud-who small{display:block;font-size:12px;color:rgba(170,200,255,.6);margin:1px 0 4px}
+#flow-hud .hud-badge{display:inline-block;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:2px 8px;border-radius:9px;background:rgba(108,240,178,.14);color:#6cf0b2}
+#flow-hud .hud-badge[data-st="working"]{background:rgba(127,216,255,.16);color:#7fd8ff}
+#flow-hud .hud-badge[data-st="paused"]{background:rgba(255,211,107,.16);color:#ffd36b}
+#flow-hud .hud-opt{display:flex;flex-direction:column;gap:4px;margin:8px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(170,200,255,.55)}
+#flow-hud .hud-sel,#flow-hud .hud-row input,#flow-hud textarea,#flow-hud .hud-kadd input,#flow-hud .hud-k.ed input{appearance:none;width:100%;box-sizing:border-box;font:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:#e8f4ff;background:rgba(3,8,20,.7);border:1px solid rgba(110,170,255,.3);border-radius:10px;padding:8px 10px;min-height:36px}
+#flow-hud textarea{resize:vertical;line-height:1.45}
+#flow-hud .hud-sel option,#flow-hud .hud-sel optgroup{color:#111;background:#fff}
+#flow-hud .hud-row{display:flex;gap:8px;margin-top:8px;align-items:center}
+#flow-hud .hud-btn{appearance:none;flex:none;font:inherit;font-size:12.5px;font-weight:700;letter-spacing:.04em;padding:8px 14px;border-radius:10px;border:1px solid #7fd8ff;background:rgba(40,120,255,.22);color:#bfe9ff;cursor:pointer;min-height:36px}
+#flow-hud .hud-btn:hover{background:rgba(40,120,255,.38)}
+#flow-hud .hud-btn.ghost{border-color:rgba(110,170,255,.3);background:transparent;color:rgba(170,200,255,.8);margin-top:10px}
+#flow-hud .hud-kl{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+#flow-hud .hud-k{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:6px 0;border-top:1px solid rgba(110,170,255,.1);font-size:13px;align-items:center}
+#flow-hud .hud-k:first-child{border-top:0}
+#flow-hud .hud-k>span:first-child{grid-column:1;color:#dbeaff;overflow-wrap:anywhere}
+#flow-hud .hud-k small{grid-column:1;font-size:10.5px;color:rgba(170,200,255,.5)}
+#flow-hud .hud-kb{grid-column:2;grid-row:1/3;display:flex;gap:2px}
+#flow-hud .hud-ic{appearance:none;border:0;background:transparent;color:rgba(170,210,255,.7);font-size:15px;width:28px;height:28px;border-radius:8px;cursor:pointer}
+#flow-hud .hud-ic:hover{background:rgba(110,170,255,.15);color:#fff}
+#flow-hud .hud-k.ed{display:block}
+#flow-hud .hud-k.ed form,#flow-hud .hud-kadd{display:flex;gap:6px;align-items:center;margin-top:8px}
+#flow-hud .hud-k.ed .hud-btn.ghost{margin-top:0}
+#flow-hud .hud-await{color:#ffd36b;font-weight:600;font-size:11px}
+#flow-hud .hud-none{list-style:none}
+@media (max-width:900px){
+  #flow-hud .hud-team{flex:none;order:0;margin-top:-4px}
+  #flow-hud .hud-ag{min-width:138px}
+}
 html.hud-on #flow-say{pointer-events:none;z-index:958}
 html.hud-on #flow-say .fn-scrim,html.hud-on #flow-say .fn-grab,html.hud-on #flow-say .fn-capture-close,html.hud-on #flow-say .sy-orb,html.hud-on #flow-say .sy-hello,html.hud-on #flow-say .sy-ex{display:none!important}
 html.hud-on #flow-say .fn-sheet{pointer-events:auto;position:fixed;left:50%;right:auto;top:auto;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);

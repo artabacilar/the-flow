@@ -2253,10 +2253,18 @@ function doMemory(body) {
     .filter((m) => m && m.id && m.text);
 }
 
+let teamMod = null;
+try { teamMod = require('./flow-team'); } catch (e) { teamMod = null; }
+
 async function handleDo(p, req, res, ctx) {
   if (p !== '/api/flow/do' || req.method !== 'POST') return false;
   const key = process.env.ANTHROPIC_API_KEY || '';
-  if (!key) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
+  /* His team: what the whole team knows, the model he is set to, and the
+     emergency pause. Absent module or no team yet: exactly as before. */
+  let team = { model: '', shared: [], paused: false };
+  try { if (teamMod && ctx.team) team = await teamMod.forJarvis(ctx.team); } catch (e) {}
+  if (team.paused) { ctx.json(res, 423, { error: 'The team is paused. Resume it from the command centre.', paused: true }); return true; }
+  if (!key && !team.model) { ctx.json(res, 503, { error: ASSISTANT_OFF }); return true; }
   let body = {};
   try { body = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
   const said = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 3000);
@@ -2289,6 +2297,7 @@ async function handleDo(p, req, res, ctx) {
     known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
     'WHAT YOU KNOW ABOUT THEM (memory id | fact):',
     known.memory.length ? known.memory.map((m) => m.id + ' | ' + m.text).join('\n') : '(nothing yet)',
+    team.shared.length ? 'WHAT THE TEAM KNOWS (shared business knowledge, read-only here — id | fact):\n' + team.shared.map((k) => k.id + ' | ' + k.text).join('\n') : '',
     '',
     onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
@@ -2301,18 +2310,28 @@ async function handleDo(p, req, res, ctx) {
     system.push(data);
   }
   try {
-    const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] }, 45000);
-    if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true; }
-    if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' }); return true; }
-    if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
-    const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
-    const out = parseDo(parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), known);
+    let answer = '';
+    if (team.model && teamMod) {
+      /* Set to another model in the command centre: the same brief, the
+         same data, through the team's adapters (any provider with a key). */
+      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000 });
+      if (r2.error) { ctx.json(res, r2.status === 429 ? 429 : 502, { error: r2.error }); return true; }
+      answer = r2.text;
+    } else {
+      const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] }, 45000);
+      if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true; }
+      if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' }); return true; }
+      if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
+      const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+      answer = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+    }
+    const out = parseDo(answer, known);
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
     out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP });
+    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL });
   } catch (e) {
     ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
   }
