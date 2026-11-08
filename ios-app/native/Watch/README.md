@@ -37,3 +37,8 @@ Settings → Watch (or theflow.today/watch).
   server writes the headline in the same one.
 - **Complications**: circular, corner, inline and rectangular — Priorities
   left today and the next one.
+- **J.A.R.V.I.S. & the team** (the blue button on Today): approvals with
+  Approve/Decline bound to the server's ids, the email waiting with Send
+  (bound to the draft's hash) / Don't send, work in flight with answer by
+  dictation, what just finished, the briefing, and **Ask the team** by
+  dictation. `GET/POST /api/watch/team` with the watch's own bearer.
