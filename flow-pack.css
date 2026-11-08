@@ -4184,3 +4184,18 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-scpf textarea{width:100%;box-sizing:border-box}
 #flow-hud .hud-skl .hud-row input[type="time"]{max-width:120px}
 #flow-hud .hud-skl .hud-row input[type="text"]{min-width:120px;flex:1}
+/* ---- Efficiency ---- */
+#flow-hud .hud-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 8px}
+#flow-hud .hud-kpi{padding:8px 10px;border-radius:10px;background:rgba(3,8,20,.45);border:1px solid rgba(110,170,255,.14);display:grid;gap:2px}
+#flow-hud .hud-kpi b{font-size:20px;color:#dbeaff;letter-spacing:0}
+#flow-hud .hud-kpi span{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#7fd8ff}
+#flow-hud .hud-kpi small{font-size:11px;color:rgba(200,225,255,.6)}
+#flow-hud .hud-tbl5 .hud-tr-h,#flow-hud .hud-tbl5 .hud-tr-r{grid-template-columns:2fr .6fr .8fr 1fr .9fr}
+#flow-hud .hud-tbl4 .hud-tr-h,#flow-hud .hud-tbl4 .hud-tr-r{grid-template-columns:2fr 1fr 1fr .8fr}
+#flow-hud .hud-good{color:#7fffbe}
+#flow-hud .hud-bad{color:#ff9f9f}
+#flow-hud .hud-ev{margin:2px 0 6px;padding-left:18px;font-size:12.5px}
+#flow-hud .hud-ev li{margin:2px 0}
+#flow-hud .hud-eff .hud-tr p{margin:4px 0;font-size:12.5px}
+#flow-hud .hud-tabs .hud-tick{margin-left:auto}
+@media (max-width:900px){#flow-hud .hud-kpis{grid-template-columns:repeat(2,1fr)}}

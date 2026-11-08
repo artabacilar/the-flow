@@ -52,6 +52,7 @@ const crypto = require('crypto');
 const memory = require('./flow-memory');
 const skills = require('./flow-skills');
 const scripts = require('./flow-scripts');
+const efficiency = require('./flow-efficiency');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -412,6 +413,7 @@ async function handle(p, req, res, ctx) {
   if (await memory.handle(p, req, res, ctx, memDeps())) return true;
   if (await skills.handle(p, req, res, ctx, skillDeps())) return true;
   if (await scripts.handle(p, req, res, ctx, scriptDeps())) return true;
+  if (await efficiency.handle(p, req, res, ctx, effDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -627,6 +629,15 @@ async function saveTasks(ctx, list) { await ctx.set('team:tasks', list.slice(-MA
 async function approvals(ctx) { const v = await ctx.get('team:approvals'); return Array.isArray(v) ? v : []; }
 async function saveApprovals(ctx, list) { await ctx.set('team:approvals', list.slice(-400)); }
 
+/* Per-task metrics for the efficiency review: every model call, token, retry,
+   page read, question and hand-over is counted on the task itself. */
+async function meter(ctx, id, patch, u, model) {
+  await patchTask(ctx, id, (x) => {
+    const m = x.metrics || (x.metrics = { calls: 0, in: 0, out: 0, usd: 0, retries: 0, reads: 0, browses: 0, scripts: 0, questions: 0, handoffs: 0, proposals: 0, skillUsed: 0, planCalls: 0, reviewCalls: 0 });
+    Object.keys(patch || {}).forEach((k) => { m[k] = (m[k] || 0) + patch[k]; });
+    if (u) { m.calls += 1; m.in += u.in || 0; m.out += u.out || 0; const c = costOf(model, u); if (c) m.usd = Math.round((m.usd + c) * 1e6) / 1e6; }
+  });
+}
 /* One task's record, changed in place and saved: the one way a task moves. */
 async function patchTask(ctx, id, fn) {
   const list = await tasks(ctx);
@@ -786,7 +797,7 @@ async function runTask(uid, ctx, id) {
     /* the web: pages asked for, or a browsing run, then the model again */
     let out = r.error ? null : parseStep(r.text);
     for (let round = 0; round < 2 && out && !out.result && !out.question && (out.read.length || out.browse || out.run); round++) {
-      await bumpUsage(ctx, a.id, r.usage, which.model);
+      await bumpUsage(ctx, a.id, r.usage, which.model); await meter(ctx, id, { reads: out.read.length, browses: out.browse ? 1 : 0, scripts: out.run ? 1 : 0 }, r.usage, which.model);
       let pages = '';
       if (out.run) {
         const sc = (await scripts.all(ctx)).find((z) => z.id === out.run.script && z.status === 'active');
@@ -809,6 +820,7 @@ async function runTask(uid, ctx, id) {
           if (br.shots && br.shots.length) await saveShots(ctx, id, br.shots, a.id);
           await patchTask(ctx, id, (x) => { delete x.steps[i].browsing; x.shots = (x.shots || 0) + ((br.shots || []).length); });
           if (br.handoff) {
+            await meter(ctx, id, { handoffs: 1 });
             const why = br.why || 'This page needs you.';
             await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'awaiting_info'; x.question = why + ' (Stopped at ' + br.url + '.) When you have done it, or if you can tell me what I need another way, answer here and I carry on.'; x.asker = a.id; x.answer = ''; x.seen = false; x.handoff = { url: br.url, why, found: br.found || '', at: Date.now() }; });
             await log(ctx, a.id, a.name + ' needs you at ' + br.url.replace(/^https?:\/\//, '').split('/')[0]);
@@ -825,7 +837,7 @@ async function runTask(uid, ctx, id) {
     if (r.error) {
       const attempts = (st.attempts || 0) + 1;
       if (attempts < MAX_ATTEMPTS && r.status !== 401 && r.status !== 403) {
-        await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.steps[i].error = r.error; });
+        await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.steps[i].error = r.error; }); await meter(ctx, id, { retries: 1 });
         await new Promise((res) => setTimeout(res, fakeDelay ? 50 : 4000 * attempts));
         i--; continue;
       }
@@ -834,8 +846,9 @@ async function runTask(uid, ctx, id) {
       await notify(uid, ctx, t, 'failed');
       return;
     }
-    await bumpUsage(ctx, a.id, r.usage, which.model);
+    await bumpUsage(ctx, a.id, r.usage, which.model); await meter(ctx, id, { skillUsed: st.skill && st.skill.id && !st.skill.blocked ? 1 : 0 }, r.usage, which.model);
     if (out.question && !out.result) {
+      await meter(ctx, id, { questions: 1 });
       await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'awaiting_info'; x.question = out.question; x.asker = a.id; x.answer = ''; x.seen = false; delete x.handoff; });
       await log(ctx, a.id, a.name + ' has a question on "' + t.title + '".');
       await notify(uid, ctx, t, 'question');
@@ -849,7 +862,7 @@ async function runTask(uid, ctx, id) {
         const item = { id: 'p' + newId(), task: id, step: st.id, agent: a.id, kind: p.kind, summary: p.summary || (p.kind + (p.to ? ' to ' + p.to : '')), detail: { to: p.to, subject: p.subject, body: p.body }, status: 'pending', key: 'k' + newId(), at: Date.now() };
         ap.push(item); newApprovals.push(item.id);
       }
-      await saveApprovals(ctx, ap);
+      await saveApprovals(ctx, ap); await meter(ctx, id, { proposals: newApprovals.length });
     }
     if (out.remember.length) {
       const k2 = await knowledge(ctx); let n = 0;
@@ -865,7 +878,8 @@ async function runTask(uid, ctx, id) {
   t = (await tasks(ctx)).find((x) => x.id === id); if (!t || t.status !== 'running') return;
   let result = '';
   const done = t.steps.filter((s) => s.status === 'done');
-  if (done.length === 1 && t.by !== 'jarvis') result = done[0].result;
+  const effS = await effSettings(ctx);
+  if (done.length === 1 && (t.by !== 'jarvis' || effS.skipHandoverSingle)) result = done[0].result;
   else {
     const j = list.find((x) => x.id === 'jarvis');
     const which = j && await resolveModel(j.model);
@@ -873,12 +887,12 @@ async function runTask(uid, ctx, id) {
       const sys = 'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + '. The specialists have finished the task "' + t.title + '". Review their work and hand it over: a short, plain summary of what was done and what needs the person\'s yes (approvals are listed separately in the app), then each specialist\'s deliverable in full under a heading with their name. Plain text, no markdown symbols. Be exact; invent nothing. ' + (t.lang === 'tr' ? 'Write in Turkish.' : 'Write in English.');
       const body = done.map((s) => ((list.find((x) => x.id === s.agent) || {}).name || s.agent) + ' — ' + s.title + ':\n' + s.result).join('\n\n');
       const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 3500, timeoutMs: 90000 });
-      if (!r.error) { result = block(r.text, 16000); await bumpUsage(ctx, 'jarvis', r.usage, which.model); }
+      if (!r.error) { result = block(r.text, 16000); await bumpUsage(ctx, 'jarvis', r.usage, which.model); await meter(ctx, id, { reviewCalls: 1 }, r.usage, which.model); }
     }
     if (!result) result = done.map((s) => ((list.find((x) => x.id === s.agent) || {}).name || s.agent) + ' — ' + s.title + '\n' + s.result).join('\n\n');
   }
   const pending = (await approvals(ctx)).filter((x) => x.task === id && x.status === 'pending').length;
-  t = await patchTask(ctx, id, (x) => { x.result = result; x.status = pending ? 'awaiting_approval' : 'done'; x.doneAt = Date.now(); x.seen = false; });
+  t = await patchTask(ctx, id, (x) => { x.result = result; x.status = pending ? 'awaiting_approval' : 'done'; x.doneAt = Date.now(); x.seen = false; if (x.metrics) x.metrics.ms = x.doneAt - (x.startedAt || x.createdAt); });
   await log(ctx, t.agent, '"' + t.title + '" is ' + (pending ? 'ready — ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting' : 'done') + '.');
   await notify(uid, ctx, t, pending ? 'approval' : 'done');
 }
@@ -909,6 +923,8 @@ async function bumpUsage(ctx, agentId, u, model) {
   mo[agentId] = { calls: mm.calls + 1, in: mm.in + ((u && u.in) || 0), out: mm.out + ((u && u.out) || 0), usd: Math.round(((mm.usd || 0) + (c || 0)) * 1e6) / 1e6, unpriced: (mm.unpriced || 0) + (c == null && u ? 1 : 0) };
   await ctx.set(monthKey(), mo);
 }
+/* Orchestration settings the efficiency review may change (versioned there). */
+async function effSettings(ctx) { const v = await ctx.get('team:eff:settings'); return Object.assign({ skipHandoverSingle: false, maxReadRounds: 2 }, v && typeof v === 'object' ? v : {}); }
 async function limits(ctx) { const v = await ctx.get('team:limits'); return Object.assign({ monthlyUsd: 0 }, v && typeof v === 'object' ? v : {}); }
 /* The month so far against the limit (0 = none). */
 async function budget(ctx) {
@@ -1015,6 +1031,7 @@ async function delegateText(ctx, uid, text, lang, opts) {
   if (!plan.steps.length) return { task: null, say: plan.say || 'That needs none of the team; I can do it myself.' };
   try {
     const t = await newTask(ctx, uid, { title: plan.title || str(text, 80), brief: text, agent: 'jarvis', by: 'jarvis', lang, steps: plan.steps, callMe: !!(opts && opts.callMe), via: (opts && opts.via) || '' });
+    await meter(ctx, t.id, { planCalls: 1 }, r.usage, which.model);
     return { task: t, say: plan.say };
   } catch (e) { return { error: e.message, status: 400 }; }
 }
@@ -1247,7 +1264,7 @@ const BRIEF_WINDOW = 6;
 async function tickScripts(now) {
   if (!bootCtx || !usersFn) return;
   let ids = []; try { ids = await usersFn(); } catch (e) { return; }
-  for (const uid of ids) { try { const ctx = bootCtx(uid); ctx.user = await userOf(uid); await scripts.tick(ctx, scriptDeps(), uid, now || new Date()); } catch (e) {} }
+  for (const uid of ids) { try { const ctx = bootCtx(uid); ctx.user = await userOf(uid); await scripts.tick(ctx, scriptDeps(), uid, now || new Date()); await efficiency.tick(ctx, effDeps(), uid, now || new Date()); } catch (e) {} }
 }
 async function tickBriefings(now) {
   if (!bootCtx || !usersFn) return [];
@@ -1350,7 +1367,7 @@ async function handleStage4(p, req, res, ctx) {
     json(res, 200, Object.assign({ ok: true }, await connectors(uid, ctx))); return true;
   }
   /* tests only: the briefing tick at a chosen moment, and what mail "went" */
-  if (FAKE && p === '/api/team/_tick' && req.method === 'GET') { const at = new Date(ctx.query.get('at') || Date.now()); json(res, 200, { ok: true, out: await tickBriefings(at), scripts: await scripts.tick(ctx, scriptDeps(), ctx.user && ctx.user.id, at) }); return true; }
+  if (FAKE && p === '/api/team/_tick' && req.method === 'GET') { const at = new Date(ctx.query.get('at') || Date.now()); json(res, 200, { ok: true, out: await tickBriefings(at), scripts: await scripts.tick(ctx, scriptDeps(), ctx.user && ctx.user.id, at), efficiency: await efficiency.tick(ctx, effDeps(), ctx.user && ctx.user.id, at) }); return true; }
   if (FAKE && p === '/api/team/_mail' && req.method === 'GET') { json(res, 200, { ok: true, n: mailSent.length, last: mailSent[mailSent.length - 1] || null }); return true; }
   if (p === '/api/team/task/shots' && req.method === 'GET') {
     const id = str(ctx.query.get('id'), 40); const v = await ctx.get('team:shots:' + id);
@@ -1402,6 +1419,40 @@ function skillDeps() {
     addKnowledge: async (ctx, k) => { const list = await knowledge(ctx); const item = { id: 'k' + newId(), text: str(k.text, 300), scope: k.scope === 'shared' || /^agent:/.test(String(k.scope || '')) ? k.scope : 'shared', kind: k.kind || 'preference', source: 'you', at: Date.now(), updated: Date.now() }; list.push(item); await ctx.set('team:knowledge', list.slice(-400)); await log(ctx, 'team', 'Preference added from skill feedback: ' + item.text); return item; },
     draft: FAKE ? null : draftSkill, revise: FAKE ? null : reviseSkill, run: runSample
   };
+}
+/* ---------- efficiency: what the review needs from here -------------------- */
+function effDeps() {
+  const D = scriptDeps();
+  return {
+    tasks: (ctx) => tasks(ctx), approvals: (ctx) => approvals(ctx), knowledge: (ctx) => knowledge(ctx), agents: (ctx) => agents(ctx),
+    skills: (ctx) => skills.all(ctx), scripts: (ctx) => scripts.all(ctx), scriptRuns: (ctx) => scripts.runs(ctx),
+    provenance: async (ctx) => { const v = await ctx.get('team:prov'); return Array.isArray(v) ? v : []; }, memlog: async (ctx) => { const v = await ctx.get('team:memlog'); return Array.isArray(v) ? v : []; },
+    overlap: memory.overlap, log: (ctx, who, what) => log(ctx, who, what), toolsReady: D.tools, userTz: (ctx) => userTz(ctx), localParts, notify: D.notify,
+    supersede: (ctx, id) => memory.edit(ctx, memDeps(), { id, op: 'supersede' }), restoreEntry: (ctx, id) => memory.edit(ctx, memDeps(), { id, op: 'restore' }),
+    skillStatus: (ctx, id, status) => skills.setStatus(ctx, skillDeps(), { id, status }), skillCreate: (ctx, task) => skills.create(ctx, skillDeps(), { from: 'task', task, force: true }),
+    scriptCreate: (ctx, task) => scripts.create(ctx, scriptDeps(), { from: 'task', task, force: true }), scriptCreateDoc: (ctx, doc) => scripts.create(ctx, scriptDeps(), { doc, force: true }), scriptStatus: (ctx, id, status) => scripts.setStatus(ctx, scriptDeps(), { id, status }),
+    appendInstructions: async (ctx, agentId, text) => { const list = await agents(ctx); const a = list.find((x) => x.id === agentId); if (!a) return { error: 'No such agent.', status: 404 }; const before = a.instructions || ''; a.instrHistory = (a.instrHistory || []).concat([{ at: Date.now(), field: 'instructions', before, by: 'you', why: 'efficiency review' }]).slice(-20); a.instructions = block(before + (before ? '\n' : '') + text, 4000); a.updatedAt = Date.now(); await saveAgents(ctx, list); return { ok: true, before, after: a.instructions }; },
+    setInstructions: async (ctx, agentId, text) => { const list = await agents(ctx); const a = list.find((x) => x.id === agentId); if (!a) return { error: 'No such agent.', status: 404 }; a.instrHistory = (a.instrHistory || []).concat([{ at: Date.now(), field: 'instructions', before: a.instructions || '', by: 'you', why: 'efficiency revert' }]).slice(-20); a.instructions = block(text, 4000); a.updatedAt = Date.now(); await saveAgents(ctx, list); return { ok: true }; },
+    runStep: (ctx, agentId, brief) => runStepDry(ctx, agentId, brief)
+  };
+}
+/* One step, for real, with nothing kept: the agent's prompt as a task would
+   build it (skill matched if one applies), the agent's model, no task saved,
+   proposals returned as drafts. What the efficiency baseline measures. */
+async function runStepDry(ctx, agentId, brief) {
+  const list = await agents(ctx); const a = list.find((x) => x.id === agentId && !x.archived) || list.find((x) => x.id !== 'jarvis' && !x.archived); if (!a) return { error: 'No such agent.' };
+  const which = await resolveModel(a.model); if (!which) return { error: a.name + ' has no model available here.' };
+  const bud = await budget(ctx); if (bud.over) return { error: bud.message };
+  const K = await knowledge(ctx); const shared = K.filter((k) => k.scope === 'shared' || k.scope === 'agent:' + a.id).slice(-200);
+  const owner = ctx.user && (ctx.user.name || ctx.user.email);
+  const task = { title: str(brief, 80), brief, by: 'you', lang: 'en' }; const step = { title: str(brief, 80), brief };
+  let pick = null; try { pick = await skills.forStep(ctx, skillDeps(), a, step, task, K); } catch (e) {}
+  const system = stepSystem(a, owner, shared, [], 'en', task, step, [], (pick && pick.block ? pick.block + '\n' : '') + 'THIS IS A MEASUREMENT RUN: do the work as you would for real; nothing you propose is sent.');
+  const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: 'Do your part now.' }], maxTokens: 3000, timeoutMs: 90000 });
+  if (r.error) return { error: r.error };
+  await bumpUsage(ctx, a.id, r.usage, which.model);
+  const out = parseStep(r.text);
+  return { result: out.result, question: out.question, proposals: out.proposals.map((p) => Object.assign({}, p, { status: 'draft' })), usage: r.usage, calls: 1, usd: costOf(which.model, r.usage) || 0, model: which.model, skill: pick && pick.meta && pick.meta.id && !pick.meta.blocked ? pick.meta : null };
 }
 /* ---------- automations: what the module needs from here ------------------ */
 function scriptDeps() {
@@ -1579,6 +1630,7 @@ module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
 module.exports.memory = memory;
 module.exports.skills = skills;
 module.exports.scripts = scripts;
+module.exports.efficiency = efficiency;
 module.exports.scriptDeps = scriptDeps;
 module.exports.provenance = (ctx, p) => memory.record(ctx, p);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,
