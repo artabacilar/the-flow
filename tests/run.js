@@ -116,6 +116,7 @@ const SUITES = [
   ['weekretire','test-weekretire.js',{ FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['hud',      'test-hud.js',      { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['wake',     'test-wake.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
+  ['team',     'test-team.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['audit',    'test-audit.js',    {}],
   ['links',    'test-links.js',    {}],
   ['training', 'test-training.js', {}],

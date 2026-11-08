@@ -55,8 +55,8 @@ window.__say = function (text, isFinal) {
   const on = await p.evaluate(() => ({ listening: FlowVoice.listening, sink: !!FlowVoice.sink, mine: FlowWake.mine, dot: !!document.querySelector('#today-feed .lk-say.ear'), say: !!(document.getElementById('flow-say') && document.getElementById('flow-say').classList.contains('on')) }));
   ok('the ear opens by itself, typing nowhere, with no sheet open', on.listening && on.sink && on.mine && !on.say, on);
   ok('Today shows a small live dot', on.dot, on);
-  const tb = await p.evaluate(() => { const b = document.querySelector('#today-feed .lk-hello .lk-say:not(.lk-hud)'); return b && b.textContent.trim(); });
-  ok('there is no Talk button on Today — it says “Say Hey J.A.R.V.I.S.”', /^Say “Hey /.test(tb || '') && !/Talk/.test(tb || ''), tb);
+  const tb = await p.evaluate(() => { const b = document.querySelector('#today-feed .lk-hello .lk-say:not(.lk-hud)'); return { hidden: !b || b.hidden, dot: !!document.querySelector('#today-feed .lk-hud.ear') }; });
+  ok('there is no Talk button on Today at all; the Command centre button carries the listening dot', tb.hidden && tb.dot, tb);
   /* a field with focus must not receive what is heard */
   await p.evaluate(() => { const t = document.createElement('textarea'); t.id = 'other'; document.body.appendChild(t); t.focus(); });
   await p.evaluate(() => window.__say('we were saying the venue is nice', true)); await p.waitForTimeout(300);
@@ -89,8 +89,8 @@ window.__say = function (text, isFinal) {
   console.log('\n— the console by hand —');
   await p.evaluate(() => { FlowSay.close(); FlowWake.tick(); }); await p.waitForTimeout(300);
   ok('closing the console goes back to waiting for his name', await p.evaluate(() => FlowWake.phase === 'idle' && FlowVoice.listening && !!FlowVoice.sink));
-  await p.click('#today-feed .lk-hello .lk-say:not(.lk-hud)'); await p.waitForTimeout(500);
-  ok('tapping it opens the console listening — no name needed, until "over"', await p.evaluate(() => FlowWake.phase === 'cmd' && FlowWake.until === 0 && FlowVoice.listening && !!FlowVoice.sink));
+  await p.evaluate(() => FlowSay.open()); await p.waitForTimeout(500);
+  ok('opening the console (⌘⇧Space, Siri) listens at once — no name needed, until "over"', await p.evaluate(() => FlowWake.phase === 'cmd' && FlowWake.until === 0 && FlowVoice.listening && !!FlowVoice.sink));
   const bh = dos.length;
   await p.evaluate(() => window.__say('what is left today over', true)); await p.waitForTimeout(900);
   ok('and "over" sends it', dos.length === bh + 1 && dos[dos.length - 1].text === 'what is left today', dos.map((d) => d.text));
@@ -100,7 +100,7 @@ window.__say = function (text, isFinal) {
   console.log('\n— with it off, Talk is back —');
   await p.evaluate(async () => { FlowSay.close(); await Flow.Settings.set('asstWake', false); FlowWake.tick(); FlowSay.open({ idle: true }); FlowSay.paintMic(); });
   await p.waitForTimeout(300);
-  ok('Talk shows again, and the Today button says Talk', await p.evaluate(() => !document.querySelector('#flow-say .sy-mic').hidden && /Talk/.test(document.querySelector('#today-feed .lk-hello .lk-say:not(.lk-hud)').textContent)));
+  ok('Talk shows again, and so does the Today button', await p.evaluate(() => { const b = document.querySelector('#today-feed .lk-hello .lk-say:not(.lk-hud)'); return !document.querySelector('#flow-say .sy-mic').hidden && b && !b.hidden && /Talk/.test(b.textContent); }));
   await p.click('#flow-say .sy-mic'); await p.waitForTimeout(300);
   const t = await p.evaluate(() => ({ listening: FlowVoice.listening, sink: !!FlowVoice.sink, waiting: FlowSay.waiting, label: document.querySelector('#flow-say .sy-mic').textContent.trim() }));
   ok('pressing Talk: he listens to you, Stop showing', t.listening && !t.sink && t.waiting && t.label === 'Stop', t);
