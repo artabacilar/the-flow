@@ -317,6 +317,9 @@ const SETTINGS_DEFAULTS = {
   /* How he talks: 'butler' (composed, British) or 'loose' (casual, hype,
      swears). Changed under Voice and manners, or by asking him. */
   asstStyle: 'butler',
+  /* "Hey J.A.R.V.I.S." — listening for his name while The Flow is open and
+     on screen; "over" ends what you say. Off until chosen. */
+  asstWake: false,
   asstSheen: true,
   asstFx: false,                 // the robotic 'AI finish' on the premium voice: off = the clean voice
   asstName: '',
@@ -13762,6 +13765,7 @@ const Say = {
             '<label class="sy-opt"><span>Manner</span><select data-say-pref="asstStyle"><option value="butler">Butler — composed, British</option><option value="loose">Loose — casual, hype, swears</option></select></label>' +
             '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
             '<label class="sy-opt sy-chpick" hidden><span>Input</span><select data-say-ch></select></label>' +
+            '<label class="sy-own"><input type="checkbox" data-say-pref="asstWake"> “Hey J.A.R.V.I.S.” — listen for his name while The Flow is open; end with “over”. No buttons.</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHandsFree"> Hands-free — listen when opened and after each answer; a pause sends (off: tap Talk to start, tap again to send)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
@@ -13785,7 +13789,7 @@ const Say = {
       const b = e.target.closest('[data-say]'); if (!b) return;
       const a = b.getAttribute('data-say');
       if (a === 'close') return Say.close();
-      if (a === 'listen') return FlowVoice && FlowVoice.listening ? FlowVoice.stop() : Say.listen();
+      if (a === 'listen') return FlowVoice && FlowVoice.listening && !FlowVoice.sink ? FlowVoice.stop() : Say.listen();
       if (a === 'send') return Say.send();
       if (a === 'doc') return Say.pickFile();
       if (a === 'again') return Say.again();
@@ -13815,6 +13819,7 @@ const Say = {
         try { Settings.set(k, k === 'asstName' ? String(v).replace(/\s+/g, ' ').trim().slice(0, 24) : v); } catch (x) {}
         if (k === 'asstName') { try { Say.decorate(); } catch (x) {} const kk = Say.el.querySelector('.sy-k'); if (kk) kk.textContent = Say.title(); Speech.say(Say.name() ? (Say.lang() === 'tr' ? Say.name() + ' hizmetinizde.' : Say.name() + ', at your service.') : (Say.lang() === 'tr' ? 'Peki.' : 'Very good.'), Say.lang()); return; }
         if (k === 'asstVoice' && v !== 'off') { Speech.unlock(); Speech.say(Say.lang() === 'tr' ? 'Ses böyle' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'At your service' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }
+        if (k === 'asstWake') { setTimeout(() => { try { Wake.tick(); } catch (x) {} }, 50); if (v) Say.state(Say.lang() === 'tr' ? '“Hey J.A.R.V.I.S.” deyin; bitince “over”.' : 'Say “Hey J.A.R.V.I.S.” any time; end with “over”.'); }
         if (k === 'asstCall') Speech.say(Say.lang() === 'tr' ? 'Peki' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'Very good' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang());
         return;
       }
@@ -13833,14 +13838,14 @@ const Say = {
     });
     /* A real keystroke means typing — the answer is read, not spoken. The
        microphone writes with a synthetic event; Wispr Flow is dictation. */
-    wrap.addEventListener('input', (e) => { if (e.target.id === 'sy-text' && e.isTrusted) { let own = false; try { own = Say.own(); } catch (x) {} if (!own) Say.typed = true; } });
+    wrap.addEventListener('input', (e) => { if (e.target.id === 'sy-text' && e.isTrusted) { let own = false; try { own = Say.own(); } catch (x) {} if (!own) Say.typed = true; } if (e.target.id === 'sy-text' && !e.isTrusted && Say.waiting) Say.overCheck(''); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('on')) Say.close(); });
     /* The turn ends by itself after a pause; what was said goes off then. */
     try {
       if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
         if (state === 'level') { Say.meter(extra); return; }
-        if (state === 'partial') { if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } return; }
+        if (state === 'partial') { Say.overCheck((extra && extra.text) || ''); if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } return; }
         if (state === 'listening') { const lv0 = Say.el.querySelector('.sy-live'); if (lv0) { lv0.textContent = ''; lv0.hidden = true; }
           /* The Mac app listening for 12 s and not one word: say which
              microphone it is listening to, and offer the others. */
@@ -13902,7 +13907,10 @@ const Say = {
     const db = +x.db, pct = Math.max(0, Math.min(100, Math.round((db + 60) / 60 * 100)));
     m.querySelector('.sy-mdev').textContent = '🎙 ' + (x.device || 'Microphone') + (x.channels > 1 ? ' · input ' + x.input + (x.chosen ? '' : ' (auto)') : '');
     m.querySelector('b').style.width = pct + '%';
-    m.hidden = false;
+    /* Which input it hears on is for when something is wrong: shown only
+       with Voice and manners open. */
+    const set0 = Say.el.querySelector('.sy-set');
+    m.hidden = !(set0 && set0.open);
     const now = Date.now();
     if (!Say._diagAt || now - Say._diagAt > 5000) {
       Say._diagAt = now;
@@ -13919,7 +13927,7 @@ const Say = {
     const b = Say.el && Say.el.querySelector('.sy-mic'); if (!b) return;
     const can = !!(window.FlowVoice && FlowVoice.available);
     b.hidden = !can;
-    const on = can && FlowVoice.listening;
+    const on = can && FlowVoice.listening && !FlowVoice.sink;
     b.classList.toggle('on', on);
     b.innerHTML = Nav.svg('mic') + '<span>' + (on ? 'Stop' : 'Talk') + '</span>';
   },
@@ -13985,6 +13993,16 @@ const Say = {
     try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
   handsFree() { try { return Speech.pref('asstHandsFree') === true; } catch (e) { return false; } },
+  /* While Talk is listening, "over" at the end of what was said ends the
+     turn, as Stop would — no button needed. */
+  overT: 0,
+  overCheck(partial) {
+    clearTimeout(Say.overT);
+    const ta = Say.el && Say.el.querySelector('#sy-text'); if (!ta) return;
+    const all = (String(ta.value || '') + ' ' + (partial || '')).replace(/\s+/g, ' ').trim();
+    if (!Wake.OVER.test(all)) return;
+    Say.overT = setTimeout(() => { try { if (Say.waiting && FlowVoice.listening && !FlowVoice.sink) FlowVoice.stop(); } catch (e) {} }, partial ? 700 : 200);
+  },
   /* How he talks: the composed butler, or loose — casual, hype, swears. */
   style() { try { return Speech.pref('asstStyle') === 'loose' ? 'loose' : 'butler'; } catch (e) { return 'butler'; } },
   /* Uber with the route filled in; the ride is confirmed in Uber. A
@@ -13997,6 +14015,10 @@ const Say = {
   },
   openRide(a) {
     const url = Say.rideUrl(a);
+    /* The Mac and iPhone apps hand any other site to the system — without
+       needing a tap, which a spoken "yes" does not give. */
+    const shell = !!window.FlowMac || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if (shell) { try { location.href = url; } catch (e) {} return url; }
     let w = null; try { w = window.open(url, '_blank', 'noopener'); } catch (e) {}
     /* Opened without a tap (a spoken "yes"), a browser may refuse; the link
        is then a tap away. */
@@ -14010,6 +14032,8 @@ const Say = {
     try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
     if (Say.own()) { Say.state('Dictate with Wispr Flow or your keyboard, then press Go.'); return; }
     if (!(window.FlowVoice && FlowVoice.available)) { Say.state('Type it here — this browser cannot listen.'); return; }
+    /* Talk pressed while the ear is open: the ear makes way. */
+    try { if (FlowVoice.listening && FlowVoice.sink) { Wake.release(); } } catch (e) {}
     Say.waiting = true;
     /* Hands-free: 1.6 s of quiet after words ends the turn. Otherwise the
        person ends it — Talk again sends — and a pause ends nothing. */
@@ -14027,7 +14051,8 @@ const Say = {
   async send() {
     if (Say.busy) return;
     const ta = Say.el.querySelector('#sy-text');
-    const text = String(ta.value || '').trim();
+    /* "…, over." ends a spoken request; it is not part of it. */
+    const text = String(ta.value || '').replace(Wake.OVER, '').trim();
     if (!text) { Say.state('Say or type what you want first.'); return; }
     /* Sent by hand while the microphone was open: stop it without its "idle"
        sending this again or calling it spoken. */
@@ -14202,7 +14227,8 @@ const Say = {
     const k = el.querySelector('.sy-k'); if (k) { k.textContent = Say.title(); if (Say.name()) k.setAttribute('data-i18n', 'off'); else k.removeAttribute('data-i18n'); }
     el.querySelectorAll('[data-say-pref]').forEach((f) => {
       const v = Speech.pref(f.getAttribute('data-say-pref'));
-      if (f.type === 'checkbox') f.checked = f.getAttribute('data-say-pref') === 'asstHandsFree' ? v === true : v !== false; else if (v != null) f.value = v;
+      const k0 = f.getAttribute('data-say-pref');
+      if (f.type === 'checkbox') f.checked = (k0 === 'asstHandsFree' || k0 === 'asstWake') ? v === true : v !== false; else if (v != null) f.value = v;
     });
     const note = el.querySelector('.sy-premium');
     if (note) Speech.premiumOn().then((on) => { note.textContent = on ? 'The premium voice is on for this account.' : 'The premium voice is not available here yet — it uses this device\'s best British voice.'; });
@@ -14464,7 +14490,7 @@ const Hud = {
   state() {
     const sy = Say.el ? Say.el.getAttribute('data-sy') : 'idle';
     if (Speech.speaking()) return 'speaking';
-    if (window.FlowVoice && FlowVoice.listening) return 'listening';
+    if (window.FlowVoice && FlowVoice.listening && !(FlowVoice.sink && Wake.phase !== 'cmd')) return 'listening';
     if (sy === 'thinking' || Say.busy) return 'thinking';
     return 'idle';
   },
@@ -14525,7 +14551,8 @@ const Hud = {
   status(st) {
     const el = Hud.el && Hud.el.querySelector('.hud-status'); if (!el) return;
     const tr = (() => { try { return Say.lang() === 'tr'; } catch (e) { return false; } })();
-    el.textContent = ({ idle: tr ? 'Hazır — konuşmak için Konuş\'a dokun' : 'Standing by — tap Talk to speak', listening: tr ? 'Dinliyorum' : 'Listening', thinking: tr ? 'Düşünüyorum' : 'Thinking', speaking: '' })[st] || '';
+    const ear = (() => { try { return Wake.mine && Wake.phase === 'idle'; } catch (e) { return false; } })();
+    el.textContent = ({ idle: ear ? (tr ? '“Hey J.A.R.V.I.S.” deyin — bitince “over”' : 'Say “Hey J.A.R.V.I.S.” — end with “over”') : tr ? 'Hazır — konuşmak için Konuş\'a dokun' : 'Standing by — tap Talk to speak', listening: tr ? 'Dinliyorum' : 'Listening', thinking: tr ? 'Düşünüyorum' : 'Thinking', speaking: '' })[st] || '';
   },
   boot() {
     document.addEventListener('keydown', (e) => {
@@ -14535,6 +14562,137 @@ const Hud = {
   }
 };
 window.FlowHud = Hud;
+
+/* ── "Hey J.A.R.V.I.S." ───────────────────────────────────────────────────
+ * With the setting on (Voice and manners), The Flow keeps an ear open while
+ * it is open and on screen: a recogniser that types nowhere and shows
+ * nothing, listening for his name. "Hey J.A.R.V.I.S." opens him; what follows
+ * is the request, shown as it is heard; "over" sends it. After he answers,
+ * the next few seconds need no name — a follow-up, or "yes, over" to a plan,
+ * just goes. Talk still works and the ear makes way for it; the ear is shut
+ * while he speaks, so he never hears himself, and while he is thinking.
+ *
+ * The words go to the speech service the device uses (Apple's on a Mac or
+ * iPhone, the browser's elsewhere) for as long as the ear is open, which is
+ * why it is off until chosen. */
+const Wake = {
+  phase: 'off', mine: false, buf: '', partial: '', follow: false, until: 0, lastWords: 0, overT: 0, blockedUntil: 0, wasFree: true,
+  on() {
+    try { return TodayLook.on() && Speech.pref('asstWake') === true && !!(window.FlowVoice && FlowVoice.available); } catch (e) { return false; }
+  },
+  names() {
+    let n = ''; try { n = String(Say.name() || '').replace(/\./g, '').trim().toLowerCase(); } catch (e) {}
+    const list = ['jarvis', 'jervis', 'javis', 'charvis', 'jarvas', 'jarviz'];
+    if (n && list.indexOf(n) < 0 && /^[\p{L} ]{2,24}$/u.test(n)) list.push(n.replace(/[.*+?^${}()|[\]\\]/g, ''));
+    return list;
+  },
+  re() { return new RegExp('(?:^|[^\\p{L}])(?:hey|hi|ok|okay|yo|hello|hay|hei)[\\s,.!]+(?:' + Wake.names().join('|') + ')(?![\\p{L}])[\\s,.!?]*', 'iu'); },
+  OVER: /(?:^|[^\p{L}])(?:over and out|over)[\s.!?,]*$/iu,
+  free() {
+    try { return !Say.busy && !Say.waiting && !Speech.speaking() && !(Say.el && Say.el.getAttribute('data-sy') === 'thinking'); } catch (e) { return true; }
+  },
+  release() {
+    if (Wake.mine) { Wake.mine = false; try { if (FlowVoice.listening && FlowVoice.sink) FlowVoice.cancel(); } catch (e) {} }
+    clearTimeout(Wake.overT);
+  },
+  tick() {
+    if (!Wake.on()) { if (Wake.mine) Wake.release(); Wake.phase = 'off'; Wake.paint(); return; }
+    if (Wake.phase === 'off') Wake.phase = 'idle';
+    const free = Wake.free();
+    /* He is speaking or thinking: the ear closes so it cannot hear him. */
+    if (!free) { if (Wake.mine) Wake.release(); Wake.wasFree = false; Wake.paint(); return; }
+    /* Just finished answering a request made by voice: a few seconds in
+       which the next thing needs no name. */
+    if (!Wake.wasFree && Wake.follow) { Wake.follow = false; if (Say.el && Say.el.classList.contains('on')) Wake.command(''); }
+    Wake.wasFree = true;
+    if (Wake.phase === 'cmd' && Wake.until && Date.now() > Wake.until && !Wake.heardSince()) { Wake.phase = 'idle'; Wake.buf = ''; Wake.partial = ''; Wake.live(''); try { Say.state(''); Say.mode('idle'); } catch (e) {} }
+    if (document.hidden || Date.now() < Wake.blockedUntil) { Wake.paint(); return; }
+    if (FlowVoice.listening) { Wake.paint(); return; }
+    Wake.mine = true;
+    try { FlowVoice.start(null, { sink: Wake.heard }); } catch (e) { Wake.mine = false; }
+    if (!FlowVoice.listening) Wake.mine = false;
+    Wake.paint();
+  },
+  heardSince() { return Wake.lastWords && Date.now() - Wake.lastWords < 8000; },
+  heard(text) { Wake.buf = (Wake.buf + ' ' + text).trim(); Wake.partial = ''; Wake.check(true); },
+  all() { return (Wake.buf + ' ' + (Wake.partial || '')).replace(/\s+/g, ' ').trim(); },
+  command(rest) {
+    if (rest === '' && Wake.phase !== 'cmd' && !Wake.re().test(Wake.all())) { Wake.buf = ''; Wake.partial = ''; }
+    Wake.phase = 'cmd'; Wake.until = Date.now() + 9000; Wake.lastWords = 0;
+    try {
+      if (!Say.el || !Say.el.classList.contains('on')) Say.open({ idle: true });
+      Say.mode('listening'); Say.paintMic();
+      Say.state(Say.lang() === 'tr' ? 'Dinliyorum — bitince “over” deyin.' : 'Listening — say “over” when you’re done.');
+    } catch (e) {}
+    Wake.live(rest || '');
+  },
+  live(t) { try { const lv = Say.el && Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = t || ''; lv.hidden = !t; } } catch (e) {} },
+  /* What has been said since his name (or, in the few seconds after an
+     answer, everything): the finals so far and the words still arriving. */
+  said() {
+    const all = Wake.all(), re = Wake.re();
+    let rest = all, m, i = 0;
+    const g = new RegExp(re.source, 'giu');
+    while ((m = g.exec(all))) { rest = all.slice(m.index + m[0].length); i++; if (m[0].length === 0) g.lastIndex++; }
+    return { rest, named: i > 0 };
+  },
+  check(final) {
+    const all = Wake.all();
+    if (Wake.phase === 'idle') {
+      if (!Wake.re().test(all)) { if (Wake.buf.length > 400) Wake.buf = Wake.buf.slice(-200); return; }
+      Wake.chime();
+      Wake.command('');
+    }
+    if (Wake.phase !== 'cmd') return;
+    const cmd = Wake.said().rest.trim();
+    if (cmd) Wake.lastWords = Date.now();
+    Wake.live(cmd);
+    clearTimeout(Wake.overT);
+    if (Wake.OVER.test(cmd)) Wake.overT = setTimeout(Wake.fire, final ? 150 : 700);
+  },
+  fire() {
+    const said = Wake.said().rest.replace(Wake.OVER, '').replace(/^[\s,.!?]+|[\s,]+$/g, '').trim();
+    Wake.release();
+    Wake.phase = 'idle'; Wake.buf = ''; Wake.partial = ''; Wake.until = 0;
+    Wake.live('');
+    if (!said || /^(cancel|never ?mind|forget it|nothing)\W*$/i.test(said)) { try { Say.mode('idle'); Say.state(''); } catch (e) {} Wake.paint(); return; }
+    try {
+      const ta = Say.el.querySelector('#sy-text'); ta.value = said;
+      Say.spoken = true; Say.typed = false; Say.mode('idle');
+      Wake.follow = true; Wake.wasFree = false;
+      if (Say.plan) Say.confirmBy(said); else Say.send();
+    } catch (e) { console.warn('[Flow] wake', e); }
+    Wake.paint();
+  },
+  chime() {
+    try {
+      const ac = Speech.ac || new (window.AudioContext || window.webkitAudioContext)(); Speech.ac = ac;
+      const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+      o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(1320, t + 0.12);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.25);
+    } catch (e) {}
+  },
+  /* The Talk button on Today shows a small live dot while the ear is open. */
+  paint() {
+    const on = Wake.mine && Wake.phase === 'idle';
+    document.querySelectorAll('#today-feed .lk-hello .lk-say:not(.lk-hud)').forEach((b) => b.classList.toggle('ear', on));
+    document.documentElement.classList.toggle('wake-on', Wake.on());
+  },
+  boot() {
+    try {
+      FlowVoice.on((st, x) => {
+        if (!FlowVoice.sink || !Wake.mine) return;
+        if (st === 'partial') { Wake.partial = (x && x.text) || ''; Wake.check(false); }
+        if (st === 'error' && x && x.sink) { Wake.blockedUntil = Date.now() + 60000; Wake.mine = false; try { if (Say.el && Say.el.classList.contains('on')) Say.state(x.text || ''); } catch (e) {} }
+        if (st === 'idle') { Wake.mine = false; }
+      });
+    } catch (e) {}
+    setInterval(() => { try { Wake.tick(); } catch (e) {} }, 1200);
+    document.addEventListener('visibilitychange', () => { try { Wake.tick(); } catch (e) {} });
+  }
+};
+window.FlowWake = Wake;
 
 /* ── He greets you ───────────────────────────────────────────────────────
  * Opening the app in a new part of the day — morning, afternoon, evening —
@@ -18733,6 +18891,7 @@ async function boot() {
   try { HabitDo.boot(); } catch (e) { console.warn('[Flow] habit do', e); }
   try { Say.boot(); } catch (e) { console.warn('[Flow] say', e); }
   try { Hud.boot(); } catch (e) { console.warn('[Flow] hud', e); }
+  try { Wake.boot(); } catch (e) { console.warn('[Flow] wake', e); }
   try { Greet.boot(); } catch (e) { console.warn('[Flow] greet', e); }
   try { SimpleSkin.boot(); } catch (e) { console.warn('[Flow] simple skin', e); }
   try { Plus.boot(); } catch (e) { console.warn('[Flow] plus', e); }

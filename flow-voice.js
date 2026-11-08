@@ -450,7 +450,7 @@
      stop() rather than cancel(), so a sentence already half-spoken still
      lands in the field it was meant for. */
   function detach() {
-    if (Voice.listening) { Voice.stop(); }
+    if (Voice.listening && !Voice.sink) { Voice.stop(); }
     ui.field = null;
     if (ui.mic) ui.mic.classList.remove('on');
     if (ui.bubble) ui.bubble.hidden = true;
@@ -540,19 +540,28 @@
        after a stretch of silence, and says "no-speech") is opened again
        behind the same lit microphone, and a pause never ends anything. Ten
        minutes is the most one turn listens. */
+    /* opts.sink: a function that takes the words instead of a field — the
+       "Hey J.A.R.V.I.S." ear. Nothing is typed anywhere, nothing takes
+       focus, no bubble is shown, and moving between fields does not end it.
+       It is always manual, and silence never ends it. */
     start: function (field, opts) {
       if (Voice.listening) return;
       opts = opts || {};
-      field = field || ui.field || doc.activeElement;
-      if (!wants(field)) return;
+      var sink = typeof opts.sink === 'function' ? opts.sink : null;
+      if (sink) { field = null; }
+      else {
+        field = field || ui.field || doc.activeElement;
+        if (!wants(field)) return;
+      }
 
       var b = backend();
       if (!b) return;
 
       Voice.backend = b;
       Voice.field = field;
+      Voice.sink = sink;
       Voice.listening = true;
-      if (ui.mic) ui.mic.classList.add('live');
+      if (ui.mic && !sink) ui.mic.classList.add('live');
       /* Deliberately nothing on screen yet. The ring pulsing round the
          microphone already says it is listening, and a panel that says so in
          words as well is a panel sitting on top of something worth reading
@@ -560,7 +569,8 @@
       say('');
       Voice.emit('listening');
 
-      var manual = !!opts.manual, userStop = false, failed = false, since = Date.now();
+      var manual = !!opts.manual || !!sink, userStop = false, failed = false, since = Date.now();
+      var limit = sink ? Infinity : 600000;
       Voice.userStop = function () { userStop = true; };
       var pauseMs = manual ? 0 : (+opts.pauseEnd || 0), pauseTimer = 0;
       var armPause = function () {
@@ -572,7 +582,7 @@
 
       var handlers = {
         partial: function (text) {
-          say(text);
+          if (!sink) say(text);
           Voice.emit('partial', { text: text });
           if (text && text.trim()) armPause();
         },
@@ -580,24 +590,29 @@
           /* Straight into the field, at the caret, as a real edit — and the
              bubble empties, because what it was holding is now in the field
              where the person can see it properly. */
-          commit(Voice.field, text);
-          say('');
+          if (sink) { try { sink(text); } catch (e) {} }
+          else { commit(Voice.field, text); say(''); }
         },
         error: function (code) {
           /* Silence is not a failure when the person decides when to stop. */
           if (manual && !userStop && (code === 'no-speech' || code === 'aborted')) return;
+          /* The ear: a quiet room, or the recogniser's own hiccups, are not
+             failures — it opens again. A refusal of the microphone is. */
+          if (sink && !userStop && !/denied|not-allowed|service-not-allowed|audio-capture|unavailable/.test(String(code))) return;
           failed = true;
           var why = explain(code);
+          if (sink) { Voice.emit('error', { code: code, text: why, sink: true }); return; }
           say(why, 'bad');
           Voice.emit('error', { code: code, text: why });
         },
         end: function () {
-          if (manual && !userStop && !failed && Voice.listening && Voice.backend === b && Date.now() - since < 600000) {
+          if (manual && !userStop && !failed && Voice.listening && Voice.backend === b && Date.now() - since < limit) {
             try { b.start(locale(), handlers); return; } catch (e) {}
           }
           if (Voice.clearPause) Voice.clearPause();
           Voice.listening = false;
           Voice.backend = null;
+          Voice.sink = null;
           if (ui.mic) ui.mic.classList.remove('live');
           /* An error stays long enough to read. Anything else goes now — a
              half-heard guess is not worth leaving on screen once there is no
@@ -629,6 +644,7 @@
       Voice.listening = false;
       Voice.backend = null;
       Voice.field = null;
+      Voice.sink = null;
       if (ui.mic) ui.mic.classList.remove('live');
       say('');
       if (b) b.cancel();

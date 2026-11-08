@@ -2091,6 +2091,7 @@ FlowI18n.add('tr', { name: 'Turkish', native: 'Türkçe', locale: 'tr-TR' }, {
   "Everything fits. Nothing needs to move.": "Her şey sığıyor. Taşınacak bir şey yok.",
   "Nothing open today. The day is yours.": "Bugün açık bir şey yok. Gün senin.",
   "Review the week": "Haftayı gözden geçir",
+  "“Hey J.A.R.V.I.S.” — listen for his name while The Flow is open; end with “over”. No buttons.": "“Hey J.A.R.V.I.S.” — The Flow açıkken adını dinler; bitince “over” deyin. Düğme yok.",
   "Command centre": "Komuta merkezi",
   "Manner": "Tarz",
   "Butler — composed, British": "Uşak — ağırbaşlı, İngiliz",
