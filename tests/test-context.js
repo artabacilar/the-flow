@@ -36,6 +36,9 @@ API key: sk-test-abcdefghijklmnop1234 (internal, do not share)`;
   ok('rules are typed as rules, each entry keeps the passage it came from', ex.find((e) => /Always reply/.test(e.fact)).kind === 'rule' && ex.find((e) => /never offer/.test(e.fact)).kind === 'rule' && ex.every((e) => e.quote && e.quote.length >= e.fact.length - 2), ex.map((e) => e.kind));
   const srcs = X.sourcesFor([{ id: 'k1', text: 'a', source: 'import:s1', origin: { id: 's1', title: 'Price list', quote: 'q' } }, { id: 'k2', text: 'b', source: 'you' }, { id: 'k3', text: 'c', source: 'import:s1', origin: { id: 's1', title: 'Price list' } }], ['k1', 'k2', 'k3']);
   ok('sources are grouped by origin: an import by its title, what you said as itself; the chat footer names only imports', srcs.length === 2 && srcs.find((s) => s.id === 's1').entries.length === 2 && srcs.find((s) => s.id === 's1').kind === 'import' && X.footer(srcs) === '\n\n— From: Price list' && X.footer([srcs[1]]) === '');
+  const trx = X.extractPlain('Merhaba!\nPremium plan ayda 1.500 dolar.\nMüşteriye her zaman bir iş günü içinde cevap verilmeli.\nİndirim asla %20\'yi geçmez.\nTeşekkürler.');
+  ok('Turkish: the language is told apart, Turkish rules are typed as rules and the Turkish filler is skipped', X.langOf('Premium plan ayda 1.500 dolar') === 'tr' && X.langOf('The premium plan costs 1500') === 'en' && trx.length === 3 && trx[0].kind === 'fact' && trx[1].kind === 'rule' && trx[2].kind === 'rule' && !trx.some((e) => /Merhaba|Teşekkürler/.test(e.fact)), trx);
+  ok('Turkish: ten questions and ten labels of their own; the source line reads Kaynak', X.QUESTIONS_TR.length === 10 && X.SPEC_FIELDS.every((f) => X.SPEC_LABELS_TR[f]) && X.footer([{ id: 's', kind: 'import', title: 'Fiyat listesi' }], 'tr') === '\n\n— Kaynak: Fiyat listesi');
   ok('ten interview questions, each about one thing; the spec has ten fields with labels', X.QUESTIONS.length === 10 && X.QUESTIONS.every((q) => (q.match(/\?/g) || []).length <= 2) && X.SPEC_FIELDS.length === 10 && X.SPEC_FIELDS.every((f) => X.SPEC_LABELS[f]));
 
   const b = await chromium.launch();
@@ -136,6 +139,12 @@ API key: sk-test-abcdefghijklmnop1234 (internal, do not share)`;
   ok('from a chat: /interview asks, plain replies are taken as answers, "done" writes it up', /keep asking until I have the whole picture/.test(r3.text) && /What starts it/.test(r4.text) && /information does it need/.test(r5.text) && /Workflow: the weekly ad report/.test(r6.text) && /Every Monday morning/.test(r6.text), { r3: r3.text.slice(0, 80), r6: r6.text.slice(0, 200) });
   const r7 = await tg(88001, 'turn it into a skill');
   ok('…and "turn it into a skill" from the chat makes the skill', /is a skill now, version 1/.test(r7.text), r7.text);
+  const t1 = await tg(88001, '/sor haftalık reklam raporu');
+  const t2 = await tg(88001, 'Harcama, lead ve lead başına maliyet içeren tek sayfalık bir rapor');
+  const t3 = await tg(88001, 'bitti');
+  ok('Turkish: /sor asks in Turkish, a Turkish reply is taken as the answer, "bitti" writes the spec up with Turkish labels', /Beş soru, sonra yazıya dökerim/.test(t1.text) && /İlk soru:/.test(t1.text) && /\?/.test(t2.text) && !/What starts it/.test(t2.text) && /İş akışı: haftalık reklam raporu/.test(t3.text) && /Amaç/.test(t3.text) && /Harcama, lead/.test(t3.text), { t1: t1.text, t2: t2.text, t3: t3.text });
+  const t4 = await tg(88001, 'beceriye dönüştür');
+  ok('…and "beceriye dönüştür" makes the skill, said in Turkish', /artık bir beceri, sürüm 1/.test(t4.text), t4.text);
 
   console.log('\n— the workspace —');
   await p.evaluate(() => FlowHud.open()); await p.waitForTimeout(1500);
@@ -165,6 +174,12 @@ API key: sk-test-abcdefghijklmnop1234 (internal, do not share)`;
   const q2 = await p.evaluate(() => (((FlowSay.history || []).slice(-1)[0] || {}).text || ''));
   ok('…the next message is taken as the answer and the second question comes back', /What starts it/.test(q2) && !/First:/.test(q2), q2);
   ok('the Discovery panel shows it running with the answers so far', await p.evaluate(() => { const t = (document.querySelector('#flow-hud [data-k="disc"]') || {}).innerText || ''; return /onboarding new clients/.test(t) && /1 answered/.test(t) && !!document.querySelector('#flow-hud [data-hud="discfinish"]'); }));
+
+  console.log('\n— spoken Turkish names —');
+  await p.evaluate(() => { const i = document.querySelector('[data-say-pref="asstNames"]'); i.value = 'Oğuz, Abko, Gebze'; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); });
+  const fx = await p.evaluate(() => [FlowTeam.fixNames('call Oguz about the Apko order from Gebse'), FlowTeam.fixNames('what about the weather today'), FlowTeam.fixNames('Sarah, send the price list to Bobby'), FlowSpeech.pref('asstNames')]);
+  ok('the names list is kept; what the microphone bent is put right against it, ordinary words and the team\'s own names are left alone', fx[0] === 'call Oğuz about the Abko order from Gebze' && fx[1] === 'what about the weather today' && fx[2] === 'Sarah, send the price list to Bobby' && fx[3] === 'Oğuz, Abko, Gebze', fx);
+  ok('the names field sits in Voice and manners with its note', await p.evaluate(() => !!document.querySelector('#flow-say .sy-names input[data-say-pref="asstNames"]') && /Oz/.test((document.querySelector('#flow-say .sy-sub') || {}).textContent || '')));
 
   ok('no page errors', errs.length === 0, errs);
   await b.close();
