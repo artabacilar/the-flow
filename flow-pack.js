@@ -14566,37 +14566,59 @@ const Hud = {
   frame(now) {
     if (!Hud.on) return;
     Hud.raf = requestAnimationFrame(Hud.frame);
-    const cv = Hud.el.querySelector('.hud-orb'); if (!cv) return;
+    /* Nothing to see: don't draw. Idle: half rate is plenty — the wake ear
+       and the microphone share this CPU, on a phone or a Mac web view. */
+    if (document.hidden) return;
+    const st = Hud.state();
+    const idle = st === 'idle';
+    if (idle && now - (Hud.lastDraw || 0) < 31) return;
+    Hud.lastDraw = now;
+    let cv = Hud.cv; if (!cv || !cv.isConnected) { cv = Hud.cv = Hud.el.querySelector('.hud-orb'); Hud.g = null; } if (!cv) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
-    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
-    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
-    const st = Hud.state(), t = (now - Hud.t0) / 1000;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); Hud.g = null; }
+    const g = Hud.g || (Hud.g = cv.getContext('2d')); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const t = (now - Hud.t0) / 1000;
     const st2 = Hud.el.getAttribute('data-st'); if (st2 !== st) { Hud.el.setAttribute('data-st', st); Hud.status(st); }
     let target = st === 'speaking' ? Math.max(Hud.voiceLevel(), 0.25 + 0.25 * Math.abs(Math.sin(t * 7.3)) * Math.abs(Math.sin(t * 2.1))) : st === 'listening' ? 0.15 + Hud.mic : st === 'thinking' ? 0.2 : 0.05 + 0.03 * Math.sin(t * 1.4);
     Hud.mic *= 0.9;
     Hud.energy += (target - Hud.energy) * 0.18;
     const e = Hud.energy, cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.3 * (1 + e * 0.18);
     const hue = st === 'listening' ? '120,240,255' : st === 'thinking' ? '150,170,255' : st === 'speaking' ? '110,220,255' : '90,170,255';
-    /* the sphere: points on a Fibonacci lattice, turning */
-    if (!Hud.pts) { const n = 900, out = []; for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * 2.399963; out.push([Math.cos(th) * r, y, Math.sin(th) * r]); } Hud.pts = out; }
+    /* the sphere: points on a Fibonacci lattice, turning. Fewer on a small
+       screen; drawn in six depth bands, one fill each, instead of 900. */
+    const n = Math.min(w, h) < 260 ? 420 : 720;
+    if (!Hud.pts || Hud.pts.length !== n) { const out = []; for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * 2.399963; out.push([Math.cos(th) * r, y, Math.sin(th) * r]); } Hud.pts = out; }
     const rot = t * (st === 'thinking' ? 0.9 : 0.25), cr = Math.cos(rot), sr = Math.sin(rot), tilt = 0.35, ct = Math.cos(tilt), stl = Math.sin(tilt);
+    const NB = 6; const bands = Hud.bands || (Hud.bands = Array.from({ length: NB }, () => []));
+    for (const b of bands) b.length = 0;
+    const wobble = e > 0.08;
     for (const [x0, y0, z0] of Hud.pts) {
       const x1 = x0 * cr + z0 * sr, z1 = -x0 * sr + z0 * cr;
       const y2 = y0 * ct - z1 * stl, z2 = y0 * stl + z1 * ct;
-      const wob = 1 + e * 0.12 * Math.sin(t * 6 + y0 * 9 + x0 * 5);
-      const px = cx + x1 * R * wob, py = cy + y2 * R * wob, d = (z2 + 1) / 2;
-      g.fillStyle = 'rgba(' + hue + ',' + (0.12 + 0.75 * d).toFixed(3) + ')';
-      const s = 0.6 + 1.6 * d; g.fillRect(px - s / 2, py - s / 2, s, s);
+      const wob = wobble ? 1 + e * 0.12 * Math.sin(t * 6 + y0 * 9 + x0 * 5) : 1;
+      const d = (z2 + 1) / 2;
+      bands[Math.min(NB - 1, (d * NB) | 0)].push(cx + x1 * R * wob, cy + y2 * R * wob, 0.6 + 1.6 * d);
     }
-    /* rings and ticks */
+    for (let i = 0; i < NB; i++) {
+      const b = bands[i]; if (!b.length) continue;
+      g.fillStyle = 'rgba(' + hue + ',' + (0.12 + 0.75 * ((i + 0.5) / NB)).toFixed(3) + ')';
+      g.beginPath();
+      for (let k = 0; k < b.length; k += 3) { const s = b[k + 2]; g.rect(b[k] - s / 2, b[k + 1] - s / 2, s, s); }
+      g.fill();
+    }
+    /* rings and ticks: one path per weight */
     g.lineWidth = 1;
     g.strokeStyle = 'rgba(' + hue + ',.35)'; g.beginPath(); g.arc(cx, cy, R * 1.28, 0, Math.PI * 2); g.stroke();
     g.strokeStyle = 'rgba(' + hue + ',.18)'; g.beginPath(); g.arc(cx, cy, R * 1.45, 0, Math.PI * 2); g.stroke();
-    for (let i = 0; i < 72; i++) {
-      const a = i / 72 * Math.PI * 2 + t * 0.05, long = i % 6 === 0;
-      g.strokeStyle = 'rgba(' + hue + ',' + (long ? 0.6 : 0.25) + ')';
-      g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 1.45, cy + Math.sin(a) * R * 1.45); g.lineTo(cx + Math.cos(a) * R * (long ? 1.53 : 1.49), cy + Math.sin(a) * R * (long ? 1.53 : 1.49)); g.stroke();
+    for (const long of [false, true]) {
+      g.strokeStyle = 'rgba(' + hue + ',' + (long ? 0.6 : 0.25) + ')'; g.beginPath();
+      for (let i = long ? 0 : 1; i < 72; i += long ? 6 : 1) {
+        if (!long && i % 6 === 0) continue;
+        const a = i / 72 * Math.PI * 2 + t * 0.05, r2 = R * (long ? 1.53 : 1.49);
+        g.moveTo(cx + Math.cos(a) * R * 1.45, cy + Math.sin(a) * R * 1.45); g.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+      }
+      g.stroke();
     }
     const sweep = st === 'thinking' ? t * 3.2 : st === 'listening' ? t * 1.2 : t * 0.4;
     g.lineWidth = 2.5; g.strokeStyle = 'rgba(' + hue + ',' + (0.5 + e * 0.5).toFixed(2) + ')';
