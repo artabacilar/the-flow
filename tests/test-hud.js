@@ -41,6 +41,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     cData.rocks = {}; cData.rocks[w] = [{ id: 'a', title: 'Write the brief', day: d, prio: 'med', done: false, time: '11:00' }, { id: 'b', title: 'Call the venue', day: d, prio: 'med', done: false }, { id: 'c', title: 'Old one', day: d, prio: 'med', done: true }];
     cSave();
     await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); renderToday();
+    await Flow.Settings.set('asstWake', false); /* Talk is tested here; "Hey J.A.R.V.I.S." (on by default) in test-wake */
     window.__opened = []; window.open = (u) => { window.__opened.push(u); return {}; };
   });
   await p.waitForTimeout(900);

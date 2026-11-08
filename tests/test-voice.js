@@ -600,6 +600,7 @@ window.__fail = function (code) {
   ok('Stop ends it, and everything said across the gap is in the field', !man.after.listening && /book the studio/.test(man.after.value) && /for Friday/.test(man.after.value), man);
   const sayMan = await p.evaluate(async () => {
     await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); renderToday();
+    await Flow.Settings.set('asstWake', false); /* Talk is tested here; "Hey J.A.R.V.I.S." (on by default) in test-wake */
     await new Promise((r) => setTimeout(r, 900));
     const talk = document.querySelector('#today-feed .lk-say'); if (talk) talk.click();
     await new Promise((r) => setTimeout(r, 400));

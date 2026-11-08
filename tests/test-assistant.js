@@ -117,6 +117,7 @@ function wav() {
     const t = new Date(); cData.rocks[weekId(t)] = []; cSave();
     await Flow.Settings.set('displayName', 'Artur Abacilar');
     await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); Flow.Nav.go('today'); renderToday();
+    await Flow.Settings.set('asstWake', false); /* Talk is tested here; "Hey J.A.R.V.I.S." (on by default) in test-wake */
     /* What the device voice would have said, and what the microphone was asked to do. */
     window.__said = []; window.__listen = 0;
     if (window.speechSynthesis) speechSynthesis.speak = (u) => { window.__said.push(u.text); setTimeout(() => u.onend && u.onend(), 30); };
