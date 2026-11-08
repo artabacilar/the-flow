@@ -51,6 +51,7 @@
 const crypto = require('crypto');
 const memory = require('./flow-memory');
 const skills = require('./flow-skills');
+const scripts = require('./flow-scripts');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -171,6 +172,10 @@ function fakePost(url, opts) {
     /* a skill in the prompt: the stand-in says which it followed, step by step, like a model should */
     const sk = system.match(/SKILL TO FOLLOW: (.+?) \(v(\d+), (\w+)\)/);
     if (sk) { const steps = (system.split(/Steps, in order:|Guidance:/)[1] || '').split('\n').slice(1).filter((l) => /^\d+\. /.test(l)).map((l) => l.replace(/^\d+\. /, '')); out.result = who + ' followed the skill "' + sk[1] + '" v' + sk[2] + ' for: ' + brief + '\n' + steps.map((s, i) => 'Step ' + (i + 1) + ' — ' + s + ': done.').join('\n'); if (/\bemail|send\b/i.test(steps.join(' ')) && /email|send/i.test(brief)) out.proposals.push({ kind: 'email', summary: 'Email drafted by the skill', to: 'customer@example.com', subject: 'From the skill', body: 'Draft per "' + sk[1] + '".' }); }
+    /* a skill that uses an automation: the stand-in asks for it to run, then reports its result — like a model should */
+    const auto = system.match(/AUTOMATIONS THIS SKILL USES[\s\S]*?\((sc[0-9a-f]+), v\d+\)/);
+    if (auto && !/AUTOMATION "/.test(whole)) text = JSON.stringify({ result: '', run: { script: auto[1], inputs: {} } });
+    else if (/AUTOMATION "/.test(whole)) out.result = who + ' used the automation: ' + whole.split('Result:\n')[1].replace(/\s+/g, ' ').trim().slice(0, 400) + (sk ? ' (skill "' + sk[1] + '" v' + sk[2] + ')' : '');
     const nosk = system.match(/SKILL REQUESTED BUT NOT FOUND: the person asked for a skill called "([^"]+)"/) || system.match(/SKILL (?:REQUESTED BUT NOT USABLE|THAT WOULD APPLY BUT CANNOT RUN HERE): "([^"]+)"[^\n]*/);
     if (nosk) out.result = who + ' could not use the skill "' + nosk[1] + '": ' + (nosk[0].split(/: "[^"]+"/)[1] || 'it does not exist').replace(/^\s*(?:\(v\d+\))?\s*/, '').slice(0, 200) + '. Did the work without it: ' + brief;
     if (/ask me/i.test(brief) && !/answered your question/.test(String((last && last.content) || ''))) { out.question = 'Which address should it go to?'; out.result = ''; }
@@ -187,6 +192,8 @@ function fakePost(url, opts) {
     /* a skill named in the request, found in the catalogue → on the step */
     const want = skills.invoked(said);
     if (want && steps.length) { const row = (system.split('SKILLS THE TEAM HAS')[1] || '').split('\n').find((l) => l.toLowerCase().indexOf('| ' + want.toLowerCase() + ' |') >= 0); if (row) steps[0].skill = row.split(' | ')[0].trim(); }
+    const wantAuto = (said.match(/\b(?:run|use|start) the (.+?) automation/i) || [])[1];
+    if (wantAuto) { const row = (system.split('AUTOMATIONS THE TEAM HAS')[1] || '').split('\n').find((l) => l.toLowerCase().indexOf('| ' + wantAuto.toLowerCase() + ' |') >= 0); if (row) { if (!steps.length) steps.push({ agent: 'jarvis', title: 'Run ' + wantAuto, brief: said }); steps[0].script = row.split(' | ')[0].trim(); } }
     text = JSON.stringify({ title: 'Team: ' + said.slice(0, 40), say: steps.length ? 'Putting ' + steps.map((x) => x.agent).join(' and ') + ' on it, sir.' : 'That needs none of the team.', steps });
   } else if (/answering a text message from them/.test(system)) {
     /* J.A.R.V.I.S. over a channel */
@@ -404,6 +411,7 @@ async function handle(p, req, res, ctx) {
   if (await handleWork(p, req, res, ctx)) return true;
   if (await memory.handle(p, req, res, ctx, memDeps())) return true;
   if (await skills.handle(p, req, res, ctx, skillDeps())) return true;
+  if (await scripts.handle(p, req, res, ctx, scriptDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -643,11 +651,12 @@ function stepSystem(agent, owner, shared, mine, lang, task, step, earlier, extra
     'If you truly cannot proceed without one fact only the person has, ask one clear question in "question" and leave "result" empty.',
     '',
     'Return ONLY a JSON object, no prose around it:',
-    '{ "result": "the finished work, plain text, as long as it needs to be", "question": "", "proposals": [ { "kind": "email|message|post|spend|change|other", "summary": "one line: what would happen", "to": "", "subject": "", "body": "" } ], "remember": [ { "scope": "shared|mine", "fact": "" } ], "read": [], "browse": null }',
+    '{ "result": "the finished work, plain text, as long as it needs to be", "question": "", "proposals": [ { "kind": "email|message|post|spend|change|other", "summary": "one line: what would happen", "to": "", "subject": "", "body": "" } ], "remember": [ { "scope": "shared|mine", "fact": "" } ], "read": [], "browse": null, "run": null }',
     '· "result": the work itself. Plain text; short headings and dashes are fine; no markdown symbols like ** or #.',
     '· "proposals": only real outside actions, each complete enough to approve as-is (an email has to, subject and body). Usually empty.',
     '· "remember": lasting facts only; usually empty.',
     '· "read": up to three public web addresses to fetch first; leave "result" empty when you ask and you are called again with the pages.',
+    '· "run": { "script": "<automation id>", "inputs": { } } when an automation named in your skill or brief does the routine part (collecting, counting, formatting); leave "result" empty and you are called again with its result. Never invent an id.',
     (browserLib() && browserLib().available().mode === 'browser' ? '· "browse": { "url": "", "goal": "" } when reading is not enough and you must click through a public site (search, compare, follow links); leave "result" empty. Sign-ins, codes and payments are handed to the person.' : '· "browse": not available here (reader only); leave it null.')
   ].join('\n'));
 }
@@ -656,7 +665,7 @@ function parseStep(text) {
   const s = String(text || '').trim();
   const m = s.match(/\{[\s\S]*\}/);
   let j = null; if (m) { try { j = JSON.parse(m[0]); } catch (e) {} }
-  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [], read: [], browse: null };
+  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [], read: [], browse: null, run: null };
   const browse = j.browse && typeof j.browse === 'object' && /^https?:\/\//i.test(String(j.browse.url || '')) ? { url: str(j.browse.url, 500), goal: str(j.browse.goal, 400) || 'Find what the task needs.' } : null;
   const props = (Array.isArray(j.proposals) ? j.proposals : []).slice(0, 6).map((p) => p && {
     kind: APPROVAL_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'other', summary: str(p.summary, 200),
@@ -665,24 +674,27 @@ function parseStep(text) {
   const rem = (Array.isArray(j.remember) ? j.remember : []).slice(0, 4)
     .map((r) => r && { scope: r.scope === 'shared' ? 'shared' : 'mine', fact: str(r.fact, 200) })
     .filter((r) => r && r.fact && !/\d[\d\s-]{9,}\d/.test(r.fact) && !/(password|passcode|pin code|şifre|parola)/i.test(r.fact));
-  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem, read: cleanReads(j.read), browse };
+  const run = j.run && typeof j.run === 'object' && /^sc[0-9a-f]{6,}$/.test(String(j.run.script || '')) ? { script: String(j.run.script), inputs: j.run.inputs && typeof j.run.inputs === 'object' ? j.run.inputs : {} } : null;
+  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem, read: cleanReads(j.read), browse, run };
 }
 
 /* J.A.R.V.I.S. decides who does what. */
-function planSystem(agents, owner, shared, lang, skillList) {
+function planSystem(agents, owner, shared, lang, skillList, scriptList) {
   const cat = skillList && skillList.length ? skills.catalog(skillList, null) : '';
+  const auto = scriptList && scriptList.length ? 'AUTOMATIONS THE TEAM HAS (id | name | what it does — tested scripts, no model needed):\n' + scriptList.map((x) => x.id + ' | ' + x.name + ' | ' + str(x.purpose, 140)).join('\n') : '';
   return [
     'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', inside The Flow. You have just been asked for a piece of work that the team should do. Plan it.',
     'THE TEAM (id | name | role | instructions):',
     agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id + ' | ' + a.name + ' | ' + a.role + ' | ' + str(a.instructions, 160)).join('\n') || '(nobody yet)',
     shared.length ? 'WHAT THE TEAM KNOWS (current):\n' + shared.map((k) => '· ' + k.text).join('\n') : '',
-    cat,
+    cat, auto,
     'Language: ' + (lang === 'tr' ? 'Turkish' : 'English') + '.',
     '',
     'Return ONLY a JSON object:',
-    '{ "title": "short title for the task", "say": "one or two spoken sentences: who you are putting on it and what they will deliver", "steps": [ { "agent": "<id from the team>", "title": "what this specialist delivers", "brief": "exactly what to do, with every detail from the request that matters", "skill": "<skill id when one of the team\'s skills fits this step, else empty>" } ] }',
+    '{ "title": "short title for the task", "say": "one or two spoken sentences: who you are putting on it and what they will deliver", "steps": [ { "agent": "<id from the team>", "title": "what this specialist delivers", "brief": "exactly what to do, with every detail from the request that matters", "skill": "<skill id when one of the team\'s skills fits this step, else empty>", "script": "<automation id when the step is exactly what a tested automation does — it then runs as a script, with no model call>" } ] }',
     '· One to ' + MAX_STEPS + ' steps, in the order they should run; a later step can build on the earlier ones. Each step goes to the one specialist whose role fits. Do not invent agents.',
     cat ? '· When a skill\'s purpose and "when" fit a step, name it in "skill" (its id) so the specialist follows the taught procedure; when the person names a skill, use that one. Never invent skills.' : '',
+    auto ? '· When an automation does exactly what a step needs (a routine collection, calculation or report), name it in "script" instead of asking a specialist: it is cheaper and more consistent. Never invent automations.' : '',
     '· If the request is really one specialist\'s job, one step. If it needs no specialist at all, "steps": [] and say so in "say".',
     '· Steps are work done in words here (drafts, analysis, research, checks, plans). Nothing is sent or changed outside without approval; the specialists know this.',
     '· "say" is spoken aloud: plain, brief, no lists.'
@@ -694,7 +706,7 @@ function parsePlan(text, agents) {
   if (!j || typeof j !== 'object') return null;
   const ids = new Set(agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id));
   const steps = (Array.isArray(j.steps) ? j.steps : []).slice(0, MAX_STEPS)
-    .map((st) => st && ids.has(String(st.agent)) ? Object.assign({ agent: String(st.agent), title: str(st.title, 140) || 'Work', brief: block(st.brief, 3000) }, /^sk[0-9a-f]{6,}$/.test(String(st.skill || '')) ? { skill: String(st.skill) } : {}) : null)
+    .map((st) => st && (ids.has(String(st.agent)) || /^sc[0-9a-f]{6,}$/.test(String(st.script || ''))) ? Object.assign({ agent: ids.has(String(st.agent)) ? String(st.agent) : 'jarvis', title: str(st.title, 140) || 'Work', brief: block(st.brief, 3000) }, /^sk[0-9a-f]{6,}$/.test(String(st.skill || '')) ? { skill: String(st.skill) } : {}, /^sc[0-9a-f]{6,}$/.test(String(st.script || '')) ? { script: String(st.script) } : {}) : null)
     .filter(Boolean);
   return { title: str(j.title, 120), say: str(j.say, 600), steps };
 }
@@ -731,6 +743,20 @@ async function runTask(uid, ctx, id) {
     t = (await tasks(ctx)).find((x) => x.id === id); if (!t || t.status !== 'running') return;
     const st = t.steps[i];
     if (st.status === 'done') continue;
+    /* a step that is a tested automation: the script runs, no model is asked */
+    if (st.script) {
+      await patchTask(ctx, id, (x) => { x.steps[i].status = 'running'; x.steps[i].startedAt = Date.now(); x.steps[i].attempts = (x.steps[i].attempts || 0) + 1; });
+      const sc = (await scripts.all(ctx)).find((z) => z.id === st.script);
+      if (!sc || sc.status !== 'active') { await patchTask(ctx, id, (x) => { x.steps[i].status = 'failed'; x.steps[i].error = sc ? 'The automation is ' + sc.status + '.' : 'No such automation.'; x.status = 'failed'; x.error = x.steps[i].title + ': ' + x.steps[i].error; }); await notify(uid, ctx, t, 'failed'); return; }
+      await log(ctx, 'team', 'Running the automation "' + sc.name + '" v' + sc.version + ' for "' + st.title + '" — no model call.');
+      const run = await scripts.startRun(ctx, scriptDeps(), sc, { uid, trigger: 'task ' + id, inputs: st.inputs || {} });
+      if (run.status === 'awaiting_approval') { await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.steps[i].run = { id: run.id, script: sc.id, name: sc.name, version: sc.version, status: run.status }; x.status = 'awaiting_approval'; x.seen = false; }); await notify(uid, ctx, t, 'approval'); return; }
+      const okRun = run.status === 'ok' || run.status === 'partial';
+      await patchTask(ctx, id, (x) => { x.steps[i].run = { id: run.id, script: sc.id, name: sc.name, version: sc.version, status: run.status, ms: run.metrics && run.metrics.ms, items: run.metrics && run.metrics.items, modelCalls: run.metrics && run.metrics.modelCalls }; if (okRun) { x.steps[i].status = 'done'; x.steps[i].result = (run.output || '(no output)') + (run.status === 'partial' ? '\n\nPartly done: ' + (run.error || '') : ''); x.steps[i].doneAt = Date.now(); x.steps[i].model = 'script'; } else { x.steps[i].status = 'failed'; x.steps[i].error = run.error || 'The automation did not finish.'; x.status = 'failed'; x.error = x.steps[i].title + ': ' + x.steps[i].error; } });
+      if (!okRun) { await notify(uid, ctx, t, 'failed'); return; }
+      await log(ctx, 'team', '"' + sc.name + '" finished for "' + st.title + '": ' + (run.metrics ? run.metrics.items + ' items in ' + run.metrics.ms + ' ms' : 'done') + '.');
+      continue;
+    }
     const a = list.find((x) => x.id === st.agent);
     if (!a || a.archived) { await patchTask(ctx, id, (x) => { x.steps[i].status = 'failed'; x.steps[i].error = 'No such agent any more.'; x.status = 'failed'; x.error = (x.steps[i].title) + ': the agent is gone.'; }); return; }
     const which = await resolveModel(a.model);
@@ -750,7 +776,7 @@ async function runTask(uid, ctx, id) {
       if (pick) { skillBlock = pick.block; await log(ctx, a.id, a.name + ' is ' + pick.log + ' for "' + st.title + '".'); if (metaS.id && !metaS.blocked) await skills.recordRun(ctx, metaS.id, { kind: 'task', task: id, step: st.id, agent: a.id, version: metaS.version, how: metaS.how }); }
       st.skill = metaS;
     }
-    else if (st.skill && !st.skill.missing) { try { const sk = (await skills.all(ctx)).find((s) => s.id === st.skill.id); if (sk && !st.skill.blocked) skillBlock = skills.text(sk, know); else if (sk && st.skill.blocked) skillBlock = 'SKILL REQUESTED BUT NOT USABLE: "' + sk.name + '" is ' + st.skill.blocked + '. Say so in your result and do the work without it.'; } catch (e) {} }
+    else if (st.skill && !st.skill.missing) { try { const sk = (await skills.all(ctx)).find((s) => s.id === st.skill.id); if (sk && !st.skill.blocked) skillBlock = skills.text(sk, know, sk.scripts.length ? await scripts.all(ctx) : []); else if (sk && st.skill.blocked) skillBlock = 'SKILL REQUESTED BUT NOT USABLE: "' + sk.name + '" is ' + st.skill.blocked + '. Say so in your result and do the work without it.'; } catch (e) {} }
     else if (st.skill && st.skill.missing) skillBlock = 'SKILL REQUESTED BUT NOT FOUND: the person asked for a skill called "' + st.skill.missing + '", and no skill with that name exists. Say so plainly in your result, then do the work as best you can without it.';
     const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier, skillBlock);
     const user = (t.answer ? 'The person answered your question: "' + t.answer + '"\n\n' : '') + (t.handoff && t.handoff.found ? 'What you found before stopping at ' + t.handoff.url + ':\n' + t.handoff.found + '\n\n' : '') + 'Do your part now.';
@@ -759,9 +785,19 @@ async function runTask(uid, ctx, id) {
     let r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
     /* the web: pages asked for, or a browsing run, then the model again */
     let out = r.error ? null : parseStep(r.text);
-    for (let round = 0; round < 2 && out && !out.result && !out.question && (out.read.length || out.browse); round++) {
+    for (let round = 0; round < 2 && out && !out.result && !out.question && (out.read.length || out.browse || out.run); round++) {
       await bumpUsage(ctx, a.id, r.usage, which.model);
       let pages = '';
+      if (out.run) {
+        const sc = (await scripts.all(ctx)).find((z) => z.id === out.run.script && z.status === 'active');
+        if (!sc) pages += 'AUTOMATION ' + out.run.script + ' does not exist or is not active. Do the work yourself and say so.';
+        else {
+          await log(ctx, a.id, a.name + ' is running the automation "' + sc.name + '" v' + sc.version + ' (script, no model).');
+          const run = await scripts.startRun(ctx, scriptDeps(), sc, { uid, trigger: 'task ' + id + ' by ' + a.id, inputs: out.run.inputs });
+          await patchTask(ctx, id, (x) => { x.steps[i].run = { id: run.id, script: sc.id, name: sc.name, version: sc.version, status: run.status, ms: run.metrics && run.metrics.ms, items: run.metrics && run.metrics.items }; });
+          pages += 'AUTOMATION "' + sc.name + '" v' + sc.version + ' ran: status ' + run.status + (run.error ? ' — ' + run.error : '') + (run.status === 'awaiting_approval' ? ' (its email batch waits for the person\'s yes; nothing was sent)' : '') + '\nResult:\n' + String(run.output || '(no output)').slice(0, 8000);
+        }
+      }
       if (out.read.length) { pages = await fetchPages(out.read); await log(ctx, a.id, a.name + ' read ' + out.read.map((u) => u.replace(/^https?:\/\//, '').split('/')[0]).join(', ')); }
       if (out.browse) {
         const B = browserLib(); const av = B ? B.available() : { mode: 'reader' };
@@ -782,7 +818,7 @@ async function runTask(uid, ctx, id) {
           pages += (pages ? '\n\n' : '') + 'BROWSING ' + out.browse.url + (br.error ? ' failed: ' + br.error : '') + '\nWhat was found:\n' + String(br.found || '').slice(0, 8000) + (br.log && br.log.length ? '\nSteps: ' + br.log.join(' · ').slice(0, 1200) : '');
         }
       }
-      messages = pagesTurn(messages, r.text, pages).map((m, k, arr) => k === arr.length - 1 ? { role: 'user', content: m.content.replace('Now answer in the same JSON shape (no more "read").', 'Now do your part in the same JSON shape (no more "read" or "browse").') } : m);
+      messages = pagesTurn(messages, r.text, pages).map((m, k, arr) => k === arr.length - 1 ? { role: 'user', content: m.content.replace('Now answer in the same JSON shape (no more "read").', 'Now do your part in the same JSON shape (no more "read", "browse" or "run").') } : m);
       r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
       out = r.error ? null : parseStep(r.text);
     }
@@ -903,6 +939,7 @@ let channelsTo = null;   /* (uid, text, opts) => Promise — set by start() */
 async function notify(uid, ctx, t0, what) {
   /* the freshest record: the caller's copy may predate the last save */
   const t = (await tasks(ctx)).find((x) => x.id === t0.id) || t0;
+  if (what === 'done' && !(t.from && t.from.script)) { try { await scripts.onEvent(ctx, scriptDeps(), uid, 'task.done', { title: t.title }); } catch (e) {} }
   const list = await agents(ctx); const a = list.find((x) => x.id === t.agent) || { name: 'The team' };
   const title = what === 'done' ? a.name + ' is done: ' + t.title : what === 'approval' ? t.title + ' — needs your yes' : what === 'question' ? a.name + ' has a question' : t.title + ' did not finish';
   const body = what === 'question' ? String(t.question || '').slice(0, 160) : what === 'failed' ? String(t.error || '').slice(0, 160) : 'Open the command centre to see it.';
@@ -928,7 +965,7 @@ function start(deps) {
   usersKey = deps.usersKey || '';
   rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
   /* the morning briefing: a minute tick, in each person's own clock */
-  if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
+  if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
   bootCtx = (uid) => {
     const pre = deps.nsPrefix(uid);
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
@@ -941,6 +978,7 @@ function start(deps) {
         const ctx = bootCtx(uid);
         const list = await tasks(ctx);
         if (list.some((t) => t.status === 'queued' || t.status === 'running')) { if (deps.log) deps.log('[team] resuming work for an account'); kick(uid, ctx); }
+        try { ctx.user = await userOf(uid); await scripts.resumeAll(ctx, scriptDeps()); } catch (e) {}
       }
     } catch (e) { if (deps.log) deps.log('[team] resume failed: ' + (e && e.message)); }
   })();
@@ -968,8 +1006,8 @@ async function delegateText(ctx, uid, text, lang, opts) {
   if (!which) return { error: 'J.A.R.V.I.S. has no model available here.', status: 503 };
   const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429 };
   const know = await knowledge(ctx);
-  let skillList = []; try { skillList = (await skills.all(ctx)).filter((s) => s.status === 'active'); } catch (e) {}
-  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), memory.current(know).filter((k) => k.scope === 'shared').slice(-60), lang, skillList), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
+  let skillList = [], scriptList = []; try { skillList = (await skills.all(ctx)).filter((s) => s.status === 'active'); scriptList = (await scripts.all(ctx)).filter((s) => s.status === 'active'); } catch (e) {}
+  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), memory.current(know).filter((k) => k.scope === 'shared').slice(-60), lang, skillList, scriptList), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
   if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
   await bumpUsage(ctx, 'jarvis', r.usage, which.model);
   const plan = parsePlan(r.text, list);
@@ -992,6 +1030,19 @@ async function decide(ctx, id, decision, detail) {
   if (detail && typeof detail === 'object' && !retry) { item.detail = { to: str(detail.to, 200), subject: str(detail.subject, 200), body: block(detail.body, 6000) }; item.edited = true; }
   item.decidedAt = item.decidedAt || Date.now();
   const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent', permissions: 'draft' };
+  if (item.kind === 'batch') {
+    /* an automation's email batch: the yes releases the script to send, once per recipient; the no cancels the run */
+    item.status = decision === 'approve' ? 'executed' : 'rejected'; item.executedAt = decision === 'approve' ? Date.now() : undefined;
+    item.note = decision === 'approve' ? 'Approved: the automation sends them now, once each; the run shows what went.' : 'Declined: nothing was sent and the run was cancelled.';
+    await saveApprovals(ctx, ap);
+    await log(ctx, 'team', (decision === 'approve' ? 'Approved: ' : 'Declined: ') + item.summary);
+    let run = null; try { run = await scripts.onApproval(ctx, scriptDeps(), item, decision); } catch (e) {}
+    if (run && decision === 'approve') { item.note = run.status === 'ok' ? 'Sent. ' + ((run.steps || []).find((st) => st.op === 'email.batch') || {}).note : run.status === 'partial' ? 'Partly sent: ' + (run.error || '') : 'Approved, but the run ended ' + run.status + (run.error ? ': ' + run.error : ''); await saveApprovals(ctx, ap); }
+    /* a task step that was waiting on this batch carries on */
+    const tl = await tasks(ctx); const waiting = tl.find((t) => t.status === 'awaiting_approval' && (t.steps || []).some((st) => st.run && st.run.id === item.run));
+    if (waiting) { await patchTask(ctx, waiting.id, (x) => { const st = x.steps.find((y) => y.run && y.run.id === item.run); if (run && (run.status === 'ok' || run.status === 'partial') && st) { st.status = 'done'; st.result = run.output || ''; st.doneAt = Date.now(); st.model = 'script'; st.run.status = run.status; x.status = 'queued'; } else if (st) { st.status = 'failed'; st.error = run ? (run.error || run.status) : 'declined'; x.status = 'failed'; x.error = st.title + ': ' + st.error; } }); if (run && (run.status === 'ok' || run.status === 'partial')) kick(ctx.user && ctx.user.id, ctx); }
+    return { approval: item, agent: 'Automation', run };
+  }
   if (decision === 'reject') { item.status = 'rejected'; }
   else if (item.kind === 'email' && mailReady() && a.permissions !== 'read' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.detail && item.detail.to || ''))) {
     /* The one tool that exists: it goes now, once. 'sending' is saved first
@@ -1010,6 +1061,7 @@ async function decide(ctx, id, decision, detail) {
   await log(ctx, item.agent, (decision === 'approve' ? (item.status === 'executed' ? 'Sent: ' : item.status === 'send_failed' ? 'Could not send: ' : 'Approved: ') : 'Declined: ') + item.summary + (item.status === 'awaiting_tool' ? ' (awaiting a connection)' : ''));
   const stillPending = ap.some((x) => x.task === item.task && x.status === 'pending');
   if (!stillPending) await patchTask(ctx, item.task, (x) => { if (x.status === 'awaiting_approval') x.status = 'done'; });
+  if (item.status === 'executed') { try { await scripts.onEvent(ctx, scriptDeps(), ctx.user && ctx.user.id, 'approval.executed', { title: item.summary }); } catch (e) {} }
   return { approval: item, agent: a.name };
 }
 
@@ -1184,6 +1236,7 @@ async function sendBriefing(uid, ctx, L, lang, how) {
   const text = await briefingText(ctx, L, lang);
   const s = await briefSettings(ctx);
   s.lastDate = L.date; s.last = { at: Date.now(), text, how: how || 'schedule' };
+  try { await scripts.onEvent(ctx, scriptDeps(), uid, 'brief.sent', { title: 'morning briefing' }); } catch (e) {}
   await ctx.set('team:brief', s);
   if (pushTo) { try { await pushTo(uid, { title: lang === 'tr' ? 'Sabah özetiniz' : 'Your morning briefing', body: text.split('\n').slice(2, 4).join(' ').slice(0, 160) || 'Open the command centre.', thread: 'team', data: { team: 'brief' } }); } catch (e) {} }
   if (channelsTo) { try { await channelsTo(uid, text, { what: 'briefing' }); } catch (e) {} }
@@ -1191,6 +1244,11 @@ async function sendBriefing(uid, ctx, L, lang, how) {
   return text;
 }
 const BRIEF_WINDOW = 6;
+async function tickScripts(now) {
+  if (!bootCtx || !usersFn) return;
+  let ids = []; try { ids = await usersFn(); } catch (e) { return; }
+  for (const uid of ids) { try { const ctx = bootCtx(uid); ctx.user = await userOf(uid); await scripts.tick(ctx, scriptDeps(), uid, now || new Date()); } catch (e) {} }
+}
 async function tickBriefings(now) {
   if (!bootCtx || !usersFn) return [];
   now = now || new Date();
@@ -1292,7 +1350,7 @@ async function handleStage4(p, req, res, ctx) {
     json(res, 200, Object.assign({ ok: true }, await connectors(uid, ctx))); return true;
   }
   /* tests only: the briefing tick at a chosen moment, and what mail "went" */
-  if (FAKE && p === '/api/team/_tick' && req.method === 'GET') { json(res, 200, { ok: true, out: await tickBriefings(new Date(ctx.query.get('at') || Date.now())) }); return true; }
+  if (FAKE && p === '/api/team/_tick' && req.method === 'GET') { const at = new Date(ctx.query.get('at') || Date.now()); json(res, 200, { ok: true, out: await tickBriefings(at), scripts: await scripts.tick(ctx, scriptDeps(), ctx.user && ctx.user.id, at) }); return true; }
   if (FAKE && p === '/api/team/_mail' && req.method === 'GET') { json(res, 200, { ok: true, n: mailSent.length, last: mailSent[mailSent.length - 1] || null }); return true; }
   if (p === '/api/team/task/shots' && req.method === 'GET') {
     const id = str(ctx.query.get('id'), 40); const v = await ctx.get('team:shots:' + id);
@@ -1338,12 +1396,49 @@ function memDeps() {
 /* ---------- skills: what the module needs from here ------------------------ */
 function skillDeps() {
   return {
-    agents: (ctx) => agents(ctx), tasks: (ctx) => tasks(ctx), knowledge: (ctx) => knowledge(ctx),
+    agents: (ctx) => agents(ctx), tasks: (ctx) => tasks(ctx), knowledge: (ctx) => knowledge(ctx), scripts: (ctx) => scripts.all(ctx),
     tools: () => { const B = browserLib(); return { flow: true, web: true, browser: !!(B && B.available().mode === 'browser'), email: mailReady() }; },
     log: (ctx, who, what) => log(ctx, who, what),
     addKnowledge: async (ctx, k) => { const list = await knowledge(ctx); const item = { id: 'k' + newId(), text: str(k.text, 300), scope: k.scope === 'shared' || /^agent:/.test(String(k.scope || '')) ? k.scope : 'shared', kind: k.kind || 'preference', source: 'you', at: Date.now(), updated: Date.now() }; list.push(item); await ctx.set('team:knowledge', list.slice(-400)); await log(ctx, 'team', 'Preference added from skill feedback: ' + item.text); return item; },
     draft: FAKE ? null : draftSkill, revise: FAKE ? null : reviseSkill, run: runSample
   };
+}
+/* ---------- automations: what the module needs from here ------------------ */
+function scriptDeps() {
+  return {
+    tasks: (ctx) => tasks(ctx), agents: (ctx) => agents(ctx), monthUsage: (ctx) => monthUsage(ctx),
+    userTz: (ctx) => userTz(ctx), localParts, paused: async (ctx) => (await ctx.get('team:paused')) === true,
+    tools: () => { const B = browserLib(); return { flow: true, web: true, browser: !!(B && B.available().mode === 'browser'), email: mailReady() }; },
+    log: (ctx, who, what) => log(ctx, who, what),
+    read: async (url) => { const B = browserLib(); if (!B) throw new Error('reader not available'); const r = await B.read(url); return r; },
+    notify: async (uid, ctx, text) => { let n = 0; if (pushTo) { try { await pushTo(uid, { title: 'Automation', body: String(text).slice(0, 160), thread: 'team', data: { team: 'script' } }); n++; } catch (e) {} } if (channelsTo) { try { const r = await channelsTo(uid, text, { what: 'script' }); n += typeof r === 'number' ? r : 1; } catch (e) {} } return n; },
+    sendEmail: async (ctx, m) => { const owner = ctx.user && (ctx.user.name || ctx.user.email); return sendEmail({ to: m.to, subject: m.subject, text: m.text, agent: 'Automation', owner, replyTo: ctx.user && ctx.user.email, key: m.key }); },
+    newTask: async (ctx, uid, f) => { const list = await agents(ctx); const a = list.find((x) => x.id === f.agent && !x.archived) || list.find((x) => x.id === 'jarvis'); if (a.id === 'jarvis') { const r = await delegateText(ctx, uid, f.brief, 'en', { via: 'script' }); if (r.task) return r.task; return await newTask(ctx, uid, { title: f.title, brief: f.brief, agent: 'jarvis', by: 'you', lang: 'en', steps: [{ agent: (list.find((x) => x.id !== 'jarvis' && !x.archived) || {}).id || 'jarvis', title: f.title, brief: f.brief }], from: f.from }); } return await newTask(ctx, uid, { title: f.title, brief: f.brief, agent: a.id, by: 'you', lang: 'en', steps: [{ agent: a.id, title: f.title, brief: f.brief }], from: f.from }); },
+    askApproval: async (ctx, uid, sc, run, aw) => {
+      const ap = await approvals(ctx);
+      const item = { id: 'p' + newId(), task: '', step: '', run: run.id, agent: 'script', script: sc.id, kind: 'batch', summary: 'Send ' + aw.count + ' email' + (aw.count === 1 ? '' : 's') + ' from "' + sc.name + '": ' + str(aw.subject, 80), detail: { to: aw.count + ' recipient' + (aw.count === 1 ? '' : 's') + ': ' + aw.recipients.slice(0, 8).join(', ') + (aw.recipients.length > 8 ? ' … +' + (aw.recipients.length - 8) : ''), subject: aw.subject, body: 'Sample (' + aw.sample.to + '):\n' + aw.sample.body + '\n\nTemplate: ' + (aw.template && aw.template.body || ''), run: run.id, count: aw.count, recipients: aw.recipients }, status: 'pending', key: 'k' + newId(), at: Date.now() };
+      ap.push(item); await saveApprovals(ctx, ap);
+      await log(ctx, 'team', 'The automation "' + sc.name + '" is waiting for your yes: ' + item.summary);
+      if (pushTo) { try { await pushTo(uid, { title: item.summary, body: 'Review the recipients and content in the command centre.', thread: 'team', data: { team: 'approval' } }); } catch (e) {} }
+      if (channelsTo) { try { await channelsTo(uid, item.summary + '\n\n' + item.detail.to + '\n\nSubject: ' + item.detail.subject + '\n\nReply "/yes 1" to send them once, or "/no 1".', { what: 'approval' }); } catch (e) {} }
+      return item;
+    },
+    cancelApproval: async (ctx, id) => { const ap = await approvals(ctx); const it = ap.find((x) => x.id === id); if (it && it.status === 'pending') { it.status = 'rejected'; it.decidedAt = Date.now(); it.note = 'The run was cancelled.'; await saveApprovals(ctx, ap); } },
+    saveRun: null, draft: FAKE ? null : draftScript
+  };
+}
+/* A model turns a finished task into a pipeline of the vetted operations; the
+   deterministic draft is the fallback and anything outside the catalogue is
+   dropped by cleanDoc. The model never writes code that runs here. */
+async function draftScript(ctx, o) {
+  const list = await agents(ctx); const j = list.find((a) => a.id === 'jarvis'); const which = j && await resolveModel(j.model); if (!which) return null;
+  const ops = Object.keys(o.ops).map((id) => id + ' (' + o.ops[id].kind + '): ' + o.ops[id].label + (o.ops[id].params.length ? ' — params: ' + o.ops[id].params.map((p) => p.name + (p.choices ? ' [' + p.choices.join('|') + ']' : ':' + p.type)).join(', ') : '')).join('\n');
+  const sys = 'You design an AUTOMATION for a team of AI employees: a pipeline of vetted operations that runs the same way every time, with no model involved except an explicit jarvis.review step for exceptions. Only these operations exist:\n' + ops + '\nValues that change (an address, a threshold, a page) are inputs ({{inputs.name}}), typed, not hard-coded. Templates may use {{item.field}}, {{count}}, {{text}}, {{totals.sum}}, {{today}}. Keep the routine, countable, formattable part in the script; leave writing, replies and judgment to the agents (jarvis.review or nothing). Return ONLY JSON: { "name": "", "purpose": "", "inputs": [ { "name": "", "label": "", "type": "text|number|date|url|email|list|choice", "default": "", "required": true } ], "steps": [ { "op": "<id>", ...params, "as": "" } ], "schedule": { "kind": "daily|weekdays|weekly|none", "at": "08:00", "day": 0 }, "stop": "conditions that should stop a run", "judgment": "what still needs a human or an agent" }';
+  const body = 'The task the team completed:\nTitle: ' + o.task.title + '\nRequest: ' + (o.task.brief || '') + '\nSteps done:\n' + (o.task.steps || []).map((s) => '- ' + s.agent + ': ' + s.title + ' — ' + str(s.brief, 300) + '\n  result: ' + str(s.result, 500)).join('\n') + '\n\nA first draft to improve (keep what is right, use only the operations above):\n' + JSON.stringify(o.draft);
+  const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 2500, timeoutMs: 60000 });
+  if (r.error) return null; await bumpUsage(ctx, 'jarvis', r.usage, which.model);
+  const m = String(r.text || '').match(/\{[\s\S]*\}/); if (!m) return null;
+  try { return JSON.parse(m[0]); } catch (e) { return null; }
 }
 /* A model turns a description or a finished task into the skill document; the
    deterministic draft is the fallback and the shape the model must keep. */
@@ -1378,7 +1473,7 @@ async function runSample(ctx, agentId, sk, input, know) {
   const shared = K.filter((k) => k.scope === 'shared' || k.scope === 'agent:' + a.id).slice(-200);
   const owner = ctx.user && (ctx.user.name || ctx.user.email);
   const task = { title: 'Test run of the skill "' + sk.name + '"', brief: input, by: 'you', lang: 'en' };
-  const system = stepSystem(a, owner, shared, [], 'en', task, { title: 'Test run', brief: input }, [], skills.text(sk, K) + '\nTHIS IS A TEST RUN of the skill: do the work exactly as you would for real, but know that nothing you propose is sent — proposals are shown to the person as drafts.');
+  const system = stepSystem(a, owner, shared, [], 'en', task, { title: 'Test run', brief: input }, [], skills.text(sk, K, sk.scripts && sk.scripts.length ? await scripts.all(ctx) : []) + '\nTHIS IS A TEST RUN of the skill: do the work exactly as you would for real, but know that nothing you propose is sent — proposals are shown to the person as drafts.');
   const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: 'Do your part now.' }], maxTokens: 3000, timeoutMs: 90000 });
   if (r.error) return { error: r.error };
   await bumpUsage(ctx, a.id, r.usage, which.model);
@@ -1483,6 +1578,8 @@ module.exports.bumpUsage = bumpUsage;
 module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
 module.exports.memory = memory;
 module.exports.skills = skills;
+module.exports.scripts = scripts;
+module.exports.scriptDeps = scriptDeps;
 module.exports.provenance = (ctx, p) => memory.record(ctx, p);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,
   tickBriefings, suggestions, suggestAct, briefingText, localParts, userTz, connectors, costOf, budget, mailSent, parseSuggest, sendEmail, toolsText, parseReply, SUGGEST_SYSTEM, PRICES };

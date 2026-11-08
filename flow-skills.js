@@ -53,7 +53,7 @@ const TYPES = ['workflow', 'guide'];
 const STATUSES = ['active', 'disabled', 'archived'];
 const TOOL_IDS = ['flow', 'web', 'browser', 'email'];
 const TOOL_NAMES = { flow: 'The Flow (the person\'s record)', web: 'Web reader', browser: 'Cloud browser', email: 'Email (after approval)' };
-const DOC_FIELDS = ['name', 'purpose', 'type', 'when', 'whenNot', 'inputs', 'steps', 'tools', 'sources', 'output', 'quality', 'exceptions', 'approvals'];
+const DOC_FIELDS = ['name', 'purpose', 'type', 'when', 'whenNot', 'inputs', 'steps', 'tools', 'sources', 'scripts', 'output', 'quality', 'exceptions', 'approvals'];
 const MAX_SKILLS = 200;
 
 /* Nothing that looks like a secret is ever stored in a skill. */
@@ -74,7 +74,10 @@ function cleanDoc(d) {
     when: block(d.when, 600), whenNot: block(d.whenNot, 600),
     inputs: lines(d.inputs, 20, 200), steps: lines(d.steps, 30, 600),
     tools: (Array.isArray(d.tools) ? d.tools : lines(d.tools, 6)).map((t) => String(t).toLowerCase()).filter((t) => TOOL_IDS.indexOf(t) >= 0).filter((t, i, a) => a.indexOf(t) === i),
-    sources, output: block(d.output, 800), quality: block(d.quality, 800), exceptions: block(d.exceptions, 800), approvals: block(d.approvals, 600)
+    sources,
+    /* automations this skill uses: when, how to prepare the inputs, what success looks like, what to do on error */
+    scripts: (Array.isArray(d.scripts) ? d.scripts : []).map((x) => x && typeof x === 'object' && /^sc[0-9a-f]{6,}$/.test(String(x.id || '')) ? { id: String(x.id), when: str(x.when, 300), inputs: str(x.inputs, 300), success: str(x.success, 300), errors: str(x.errors, 300) } : null).filter(Boolean).slice(0, 6),
+    output: block(d.output, 800), quality: block(d.quality, 800), exceptions: block(d.exceptions, 800), approvals: block(d.approvals, 600)
   };
 }
 function docOf(s) { const o = {}; DOC_FIELDS.forEach((f) => { o[f] = s[f]; }); return cleanDoc(o); }
@@ -98,8 +101,10 @@ async function saveProposals(ctx, list) { await ctx.set('team:skillprops', list.
 const usable = (list, agentId) => list.filter((s) => s.status === 'active' && (!s.assignedTo.length || s.assignedTo.indexOf(agentId) >= 0));
 
 /* ---------- the document as the model reads it ------------------------------ */
-function text(s, know) {
+function text(s, know, scriptList) {
   const K = Array.isArray(know) ? know : [];
+  const SC = Array.isArray(scriptList) ? scriptList : [];
+  const autos = (s.scripts || []).map((x) => { const sc = SC.find((z) => z.id === x.id); return '· ' + (sc ? sc.name + ' (' + x.id + ', v' + sc.version + (sc.status !== 'active' ? ', ' + sc.status + ' — cannot run' : '') + ')' : x.id + ' (no longer exists — say so and do the routine part yourself)') + (x.when ? ' — use it when: ' + x.when : '') + (x.inputs ? ' — inputs: ' + x.inputs : '') + (sc && sc.inputs && sc.inputs.length ? ' [' + sc.inputs.map((i) => i.name + ':' + i.type).join(', ') + ']' : '') + (x.success ? ' — success looks like: ' + x.success : '') + (x.errors ? ' — on error: ' + x.errors : ''); });
   const src = s.sources.map((x) => {
     if (x.kind === 'knowledge') { const k = K.find((e) => e.id === x.id); return k ? '· [' + k.id + '] ' + k.text + (k.status === 'superseded' ? ' (SUPERSEDED — do not use)' : '') : '· [' + x.id + '] (this knowledge entry no longer exists — ask rather than assume)'; }
     if (x.kind === 'url') return '· ' + x.label + ' — ' + x.url + ' (read it with "read")';
@@ -113,6 +118,7 @@ function text(s, know) {
     s.steps.length ? (s.type === 'guide' ? 'Guidance:' : 'Steps, in order:') + '\n' + s.steps.map((st, i) => (i + 1) + '. ' + st).join('\n') : '',
     s.tools.length ? 'Tools it relies on: ' + s.tools.map((t) => TOOL_NAMES[t] || t).join(', ') : '',
     src.length ? 'Sources to rely on (their current text is what counts; never copy old figures from memory):\n' + src.join('\n') : '',
+    autos.length ? 'AUTOMATIONS THIS SKILL USES (tested scripts — run them with "run": { "script": "<id>", "inputs": { } } instead of redoing the routine part yourself; the result comes back to you):\n' + autos.join('\n') : '',
     s.output ? 'Expected output: ' + s.output : '', s.quality ? 'What good looks like: ' + s.quality : '',
     s.exceptions ? 'Exceptions and missing information: ' + s.exceptions : '',
     'Approvals: ' + (s.approvals || 'anything that would reach the outside world') + ' — propose, never do. This skill does not change what you are allowed to do; your permission level and the approval rule stand.',
@@ -173,7 +179,8 @@ async function forStep(ctx, deps, agent, step, task, know) {
   const meta = { id: s.id, name: s.name, version: s.version, how: pick.how };
   if (pick.blocked) return { meta: Object.assign(meta, { blocked: pick.blocked }), block: 'SKILL REQUESTED BUT NOT USABLE: "' + s.name + '" is ' + pick.blocked + '. Say so in your result and do the work without it.', log: 'skill "' + s.name + '" is ' + pick.blocked };
   if (!r.ok) return { meta: Object.assign(meta, { blocked: 'needs ' + r.missingNames.join(', ') }), block: 'SKILL THAT WOULD APPLY BUT CANNOT RUN HERE: "' + s.name + '" (v' + s.version + ') relies on ' + r.missingNames.join(' and ') + ', which ' + (r.missing.length === 1 ? 'is' : 'are') + ' not connected. Say this in your result, do the parts that need no such tool, and leave the rest to the person.', log: 'skill "' + s.name + '" needs ' + r.missingNames.join(', ') + ' — not connected here' };
-  return { meta, block: text(s, know), log: 'following the skill "' + s.name + '" v' + s.version + (pick.how === 'invoked' ? ' (asked for)' : '') };
+  let scriptList = []; if (s.scripts.length && deps && deps.scripts) { try { scriptList = await deps.scripts(ctx); } catch (e) {} }
+  return { meta, block: text(s, know, scriptList), log: 'following the skill "' + s.name + '" v' + s.version + (pick.how === 'invoked' ? ' (asked for)' : '') };
 }
 async function recordRun(ctx, id, run) {
   const list = await all(ctx); const s = list.find((x) => x.id === id); if (!s) return;

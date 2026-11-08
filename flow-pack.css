@@ -4167,3 +4167,20 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-skp>p:not(.hud-sub){font-size:12.5px;margin:4px 0}
 #flow-hud .hud-tick{font-size:12.5px}
 #flow-hud .hud-skassign .hud-row,#flow-hud .hud-skl .hud-row{display:flex;flex-wrap:wrap}
+/* ---- Automations ---- */
+#flow-hud .hud-skc.wait{color:#ffd36b;border-color:rgba(255,211,107,.35);background:rgba(255,211,107,.08)}
+#flow-hud .hud-scsteps{margin:4px 0 8px;padding-left:18px;font-size:12.5px}
+#flow-hud .hud-scsteps li{margin:3px 0}
+#flow-hud .hud-scsteps small{color:rgba(200,225,255,.55);margin-left:6px}
+#flow-hud .hud-scp{font-size:11.5px;color:rgba(200,225,255,.7);margin-top:2px}
+#flow-hud .hud-scrun{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(3,8,20,.45);border:1px solid rgba(110,170,255,.14);display:grid;gap:6px}
+#flow-hud .hud-scsteps-ed{display:grid;gap:8px}
+#flow-hud .hud-scstep{padding:8px 10px;border-radius:10px;background:rgba(3,8,20,.45);border:1px solid rgba(110,170,255,.18)}
+#flow-hud .hud-scstep>.hud-row{margin-top:0;justify-content:space-between}
+#flow-hud .hud-scstep>.hud-row small{color:rgba(200,225,255,.55);flex:1;margin-left:8px}
+#flow-hud .hud-scpf{display:grid;gap:2px;margin-top:6px;flex:1}
+#flow-hud .hud-scpf small{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#7fd8ff}
+#flow-hud .hud-scpf i{font-style:normal;display:inline-block;width:14px;height:14px;line-height:14px;text-align:center;border-radius:50%;background:rgba(127,216,255,.15);cursor:help;text-transform:none;letter-spacing:0}
+#flow-hud .hud-scpf textarea{width:100%;box-sizing:border-box}
+#flow-hud .hud-skl .hud-row input[type="time"]{max-width:120px}
+#flow-hud .hud-skl .hud-row input[type="text"]{min-width:120px;flex:1}

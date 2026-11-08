@@ -14099,6 +14099,15 @@ const Say = {
       }
       /* "Turn the workflow we just completed into a reusable skill": the
          last finished task becomes a skill document, opened for review. */
+      if (Team.isScriptRequest(text)) {
+        const t = await Team.scriptFromLast(text);
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: t.say });
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        await Say.speak(t.say);
+        if (t.ok) { Team.scOpen = t.script.id; Team.sc = null; if (!Hud.on) Hud.open(); await Team.select('scripts'); }
+        Say.follow(false);
+        return;
+      }
       if (Team.isSkillRequest(text)) {
         const t = await Team.skillFromLast(text);
         Say.history.push({ role: 'user', text }, { role: 'assistant', text: t.say });
@@ -14478,7 +14487,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14512,7 +14521,7 @@ const Hud = {
       else { try { Team.click(a, b, e); } catch (x) { console.warn('[Flow] team', x); } }
     });
     el.addEventListener('change', (e) => { try { Team.change(e); } catch (x) { console.warn('[Flow] team', x); } });
-    el.addEventListener('submit', (e) => { const f = e.target.closest('form[data-team]'); if (!f) return; e.preventDefault(); try { Team.submit(f); } catch (x) { console.warn('[Flow] team', x); } });
+    el.addEventListener('submit', (e) => { const f = e.target.closest('form[data-team]'); if (!f) return; e.preventDefault(); f.__submitter = e.submitter || null; try { Team.submit(f); } catch (x) { console.warn('[Flow] team', x); } });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && !(Say.el && Say.el.classList.contains('on'))) Hud.close(); });
     document.body.appendChild(el);
     Hud.el = el;
@@ -14532,6 +14541,7 @@ const Hud = {
     /* One of the team selected: their workspace, not the day. */
     if (Team.sel === 'memory') { try { Team.paintMemory(); } catch (e) { console.warn('[Flow] memory', e); } return; }
     if (Team.sel === 'skills') { try { Team.paintSkills(); } catch (e) { console.warn('[Flow] skills', e); } return; }
+    if (Team.sel === 'scripts') { try { Team.paintScripts(); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     Hud.el.classList.remove('hud-memview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
@@ -14728,13 +14738,14 @@ const Team = {
     }).join('') +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'skills' ? ' sel' : '') + '" data-hud="skills" aria-label="Skills: what the team has been taught to do"><i class="hud-av">S</i><span class="hud-agn">Skills</span><small>' + (Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done') + '</small></button>' +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'scripts' ? ' sel' : '') + '" data-hud="scripts" aria-label="Automations: routine work done by scripts, not a model"><i class="hud-av">A</i><span class="hud-agn">Automations</span><small>' + (Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' + (Team.sc.counts.running ? ' · ' + Team.sc.counts.running + ' running' : '') : 'scripts, schedules') + '</small></button>' +
       '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
       '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
   },
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory' || id === 'skills') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
+    if (id === 'memory' || id === 'skills' || id === 'scripts') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -14978,7 +14989,8 @@ const Team = {
   },
   taskPanel(id) {
     const t = ((Team.data && Team.data.tasks) || []).find((x) => x.id === id); if (!t) return '';
-    const skillChip = (st) => !st.skill ? '' : st.skill.missing ? '<i class="hud-skc miss" title="No such skill">no skill “' + esc(st.skill.missing) + '”</i>' : '<i class="hud-skc' + (st.skill.blocked ? ' miss' : '') + '" title="' + esc(st.skill.blocked ? 'Skill not usable: ' + st.skill.blocked : 'Followed this skill' + (st.skill.how === 'invoked' ? ' (asked for)' : '')) + '">' + esc(st.skill.name) + ' v' + esc(st.skill.version) + '</i>';
+    const runChip = (st) => !st.run ? '' : '<i class="hud-skc' + (/^(ok|partial)$/.test(st.run.status) ? '' : st.run.status === 'awaiting_approval' ? ' wait' : ' miss') + '" title="' + esc('Automation — a script, no model: ' + st.run.status + (st.run.ms != null ? ' · ' + st.run.ms + ' ms' : '') + (st.run.items != null ? ' · ' + st.run.items + ' items' : '')) + '">⚙ ' + esc(st.run.name) + ' v' + esc(st.run.version) + ' · ' + esc(st.run.status) + '</i>';
+    const skillChip = (st) => (!st.skill ? '' : st.skill.missing ? '<i class="hud-skc miss" title="No such skill">no skill “' + esc(st.skill.missing) + '”</i>' : '<i class="hud-skc' + (st.skill.blocked ? ' miss' : '') + '" title="' + esc(st.skill.blocked ? 'Skill not usable: ' + st.skill.blocked : 'Followed this skill' + (st.skill.how === 'invoked' ? ' (asked for)' : '')) + '">' + esc(st.skill.name) + ' v' + esc(st.skill.version) + '</i>') + runChip(st);
     const steps = (t.steps || []).map((st) => '<div class="hud-step" data-st="' + esc(st.status) + '"><b data-i18n="off">' + esc((Team.agent(st.agent) || {}).name || st.agent) + '</b><span data-i18n="off">' + esc(st.title) + skillChip(st) + '</span><em>' + esc(Team.STATUS[st.status] || st.status) + '</em></div>').join('');
     const hand = t.handoff && t.status === 'awaiting_info' ? '<div class="hud-hand"><b>Needs you:</b> <span data-i18n="off">' + esc(t.handoff.why || '') + '</span> <a href="' + esc(t.handoff.url || '#') + '" target="_blank" rel="noopener noreferrer" data-i18n="off">' + esc(String(t.handoff.url || '').replace(/^https?:\/\//, '').slice(0, 60)) + '</a></div>' : '';
     const q = t.status === 'awaiting_info' ? hand + '<div class="hud-q"><b data-i18n="off">' + esc((Team.agent(t.asker) || {}).name || 'They') + ' asks:</b> <span data-i18n="off">' + esc(t.question) + '</span><form data-team="answer" data-id="' + esc(t.id) + '"><input type="text" name="answer" maxlength="2000" placeholder="' + (t.handoff ? 'Done — carry on (or what you found)…' : 'Your answer…') + '" aria-label="Your answer" required><button type="submit" class="hud-btn">Answer</button></form></div>' : '';
@@ -14986,7 +14998,7 @@ const Team = {
     const shots = t.shots ? (Team.shots && Team.shots.id === id ? (Team.shots.list.length ? '<div class="hud-shots">' + Team.shots.list.slice(-4).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(s.title || s.url) + '"><img src="' + esc(s.img) + '" alt="' + esc(s.title || 'What the agent saw') + '"></a>').join('') + '</div><p class="hud-sub">What ' + esc((Team.agent(Team.shots.list[0].agent) || {}).name || 'the agent') + ' saw, step by step.</p>' : '') : (Team.loadShots(id), '<p class="hud-sub">Loading what the agent saw…</p>')) : '';
     const res = t.result ? '<pre class="hud-res" data-i18n="off">' + esc(t.result) + '</pre>' : (t.status === 'running' || t.status === 'queued' ? '<p class="hud-sub">' + (browsing ? 'Browsing ' + esc(String(browsing.browsing).replace(/^https?:\/\//, '').split('/')[0]) + ' — ' : 'Working on it — ') + 'this carries on even if you close The Flow.</p>' : '');
     const err = t.error ? '<p class="hud-alert" data-i18n="off">' + esc(t.error) + '</p>' : '';
-    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + (/^(done|awaiting_approval)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '" title="Keep this workflow as a reusable skill the team can follow again">Turn into a skill</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
+    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + (/^(done|awaiting_approval)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '" title="Keep this workflow as a reusable skill the team can follow again">Turn into a skill</button><button type="button" class="hud-btn ghost" data-hud="scfromtask" data-id="' + esc(t.id) + '" title="Move the routine part into a script that runs without a model">Turn into an automation</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
     return Hud.panel('taskv', esc(t.title), '<div class="hud-tmeta"><em class="hud-tst" data-st="' + esc(t.status) + '">' + esc(Team.STATUS[t.status] || t.status) + '</em><small data-i18n="off">' + esc(t.brief || '').slice(0, 300) + '</small></div>' + steps + q + err + res + shots + btns);
   },
   shots: null,
@@ -15199,6 +15211,176 @@ const Team = {
     if (kind === 'memverify') { const ask = f.ask.value.trim(); if (!ask) return true; Team.memBusy = true; Hud.paint(); const j = await Team.post('/api/team/memory/verify', { newText: f.getAttribute('data-new'), oldTexts: (f.getAttribute('data-old') || '').split('\u0001').filter(Boolean), entryId: f.getAttribute('data-entry'), ask, agent: f.agent.value }); Team.memBusy = false; Team.verifyResult = j && j.ok ? j : null; Hud.paint(); return true; }
     return false;
   },
+  /* ================= Automations: routine work done by scripts ================= */
+  sc: null, scLoading: false, scQ: '', scFilter: 'active', scOpen: null, scEdit: null, scNew: false, scBusy: false, scRun: null, scRunOpen: null, scCmp: null,
+  isScriptRequest(text) { return /\b(?:turn|make|move)\b[^.]{0,60}\b(?:repeatable|routine|repetitive|recurring)\b[^.]{0,60}\b(?:into|as) an? (?:automation|script)\b|\bautomate (?:that|this|it|the (?:workflow|task|process))\b|\b(?:turn|make) (?:that|this|it|the workflow) (?:into )?an? (?:automation|script)\b/i.test(String(text || '')); },
+  async scriptFromLast(text) {
+    await Team.load(true);
+    const done = ((Team.data && Team.data.tasks) || []).filter((t) => t.status === 'done' || t.status === 'awaiting_approval').sort((a, b) => (b.doneAt || b.updatedAt || 0) - (a.doneAt || a.updatedAt || 0));
+    const t = Team.openId && done.find((x) => x.id === Team.openId) || done[0];
+    if (!t) return { ok: false, say: 'There is no finished piece of work to automate yet. When the team completes a task, say this again and I will pull the repeatable part into a script.' };
+    const j = await Team.post('/api/team/scripts', { op: 'create', from: 'task', task: t.id });
+    if (!j || !j.ok) return { ok: false, say: (j && j.error) || 'I could not write the automation.' };
+    const s = j.script, x = j.explanation;
+    return { ok: true, script: s, say: 'Done: "' + s.name + '" is an automation now, version 1. It ' + x.does.charAt(0).toLowerCase() + x.does.slice(1) + '. Inputs: ' + (x.inputs.length ? x.inputs.join(', ') : 'none') + '. It touches ' + x.affects.join(', ') + '. It stops when ' + x.stops[0] + '. ' + (x.judgment[0].indexOf('none') === 0 ? 'It decides nothing itself — it applies the rules exactly.' : 'Judgment stays with the team: ' + x.judgment[0]) + ' It is open in Automations: run a test first, then schedule it.' };
+  },
+  async loadSc(force) {
+    if (Team.sc && !force) return Team.sc;
+    try { const r = await fetch('/api/team/scripts?q=' + encodeURIComponent(Team.scQ || ''), { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.sc = (r.ok && j && j.ok) ? j : (Team.sc || { items: [], runs: [], counts: {}, ops: [], failed: true }); } catch (e) { Team.sc = Team.sc || { items: [], runs: [], counts: {}, ops: [], failed: true }; }
+    return Team.sc;
+  },
+  script(id) { return ((Team.sc && Team.sc.items) || []).find((s) => s.id === id) || null; },
+  scStatus(st) { return st === 'ok' ? 'done' : st === 'partial' ? 'awaiting_info' : st === 'running' || st === 'queued' ? 'running' : st === 'awaiting_approval' ? 'awaiting_approval' : /^(failed|invalid|stopped)$/.test(st) ? 'failed' : 'cancelled'; },
+  scRow(s) {
+    const open = Team.scOpen === s.id;
+    const meta = ['v' + s.version + (s.untested ? ' · untested' : ' · tested'), s.next, s.lastRun ? 'last: ' + s.lastRun.status + ' ' + Team.when(s.lastRun.at) : 'never run', s.stats && s.stats.runs ? s.stats.runs + ' run' + (s.stats.runs === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    return '<div class="hud-mi' + (open ? ' open' : '') + (s.status !== 'active' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="scopen" data-id="' + esc(s.id) + '"><span data-i18n="off">⚙ ' + esc(s.name) + '</span><small data-i18n="off">' + esc(Team.cut(s.purpose, 100)) + ' · ' + esc(meta) + '</small><em class="hud-badge" data-st="' + (s.status === 'active' ? (s.untested ? 'awaiting' : 'working') : s.status === 'paused' ? 'awaiting' : 'not_built') + '">' + esc(s.status === 'active' ? (s.untested ? 'Untested' : 'Ready') : s.status) + '</em></button></div>';
+  },
+  paintScripts() {
+    Hud.el.classList.add('hud-memview');
+    if (!Team.sc && !Team.scLoading) { Team.scLoading = true; Team.loadSc().then(() => { Team.scLoading = false; if (Hud.on && Team.sel === 'scripts') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Automations';
+    Hud.el.querySelector('.hud-brand span').textContent = 'Routine work done by scripts — the same rules every time, no model unless judgment is needed';
+    const S = Team.sc || { items: [], runs: [], counts: {}, ops: [] };
+    const items = (S.items || []).filter((s) => Team.scFilter === 'all' ? true : s.status === (Team.scFilter || 'active'));
+    const search = '<form class="hud-msearch" data-team="scsearch"><input type="search" name="q" value="' + esc(Team.scQ || '') + '" placeholder="Search automations…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
+      '<div class="hud-tabs">' + [['active', 'Active'], ['paused', 'Paused'], ['disabled', 'Disabled'], ['archived', 'Archived'], ['all', 'Everything']].map((t) => '<button type="button" class="hud-tab' + ((Team.scFilter || 'active') === t[0] ? ' on' : '') + '" data-hud="scfilter" data-f="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
+    const c = S.counts || {};
+    const list = Hud.panel('sclist', 'Automations · ' + (c.active || 0) + ' active' + (c.running ? ' · ' + c.running + ' running' : ''), search + (Team.sc ? (items.length ? items.map(Team.scRow).join('') : '<p class="hud-none">' + (Team.scFilter === 'active' || !Team.scFilter ? 'No automations yet. Build one on the right, or open a finished task and press “Turn into an automation”.' : 'Nothing here.') + '</p>') : '<p class="hud-sub">Looking…</p>') +
+      '<div class="hud-row"><button type="button" class="hud-btn' + (Team.scNew ? ' ghost' : '') + '" data-hud="scnew">' + (Team.scNew ? 'Cancel' : 'Build an automation') + '</button></div>' +
+      '<p class="hud-sub">An automation is a pipeline of vetted steps — read your rocks, expenses, habits, the team\'s tasks or a public page; filter, sort, count, format; report, notify with a fixed message, update rocks by rule, or send templated emails after your yes. No code is written or run; the steps apply the same rules every time. A model is used only where you put a “hand exceptions to an agent” step. Time zone: ' + esc(S.tz || '') + '.</p>');
+    const runsPanel = Team.scRunsPanel(S);
+    Hud.el.querySelector('.hud-left').innerHTML = list + runsPanel;
+    let right = '';
+    if (Team.scNew) right = Team.scEditorPanel(null);
+    const open = Team.scOpen && Team.script(Team.scOpen);
+    if (open) right += Team.scEdit === open.id ? Team.scEditorPanel(open) : Team.scDetailPanel(open);
+    if (open && Team.scEdit !== open.id) right += Team.scVersionsPanel(open);
+    if (!right) right = Hud.panel('schint', 'Pick an automation', '<p class="hud-sub">Open one on the left to read what it does, which inputs and services it needs, what it affects, when it stops and what is left to judgment — then run a test (nothing sent, nothing changed), run it for real, schedule it, or pause it. Every run keeps its trigger, version, inputs, per-step counts and timings, model calls and a cost line.</p>');
+    Hud.el.querySelector('.hud-right').innerHTML = right;
+    Team.paintRail();
+  },
+  scRunsPanel(S) {
+    const runs = (S.runs || []).filter((r) => !Team.scOpen || r.script === Team.scOpen).slice(0, 12);
+    const row = (r) => { const open = Team.scRunOpen === r.id; const m = r.metrics || {}; return '<div class="hud-mi' + (open ? ' open' : '') + '"><button type="button" class="hud-mih" data-hud="scrunopen" data-id="' + esc(r.id) + '"><span data-i18n="off">' + esc(r.scriptName || '') + ' v' + esc(r.version) + (r.dry ? ' · test' : '') + '</span><small data-i18n="off">' + esc(r.trigger || '') + ' · ' + esc(Team.when(r.finishedAt || r.createdAt)) + ' · ' + (m.items != null ? m.items + ' items · ' : '') + (m.ms != null ? m.ms + ' ms · ' : '') + (m.modelCalls || 0) + ' model call' + ((m.modelCalls || 0) === 1 ? '' : 's') + (r.tz ? ' · ' + esc(r.tz) : '') + '</small><em class="hud-tst" data-st="' + Team.scStatus(r.status) + '">' + esc(r.status) + '</em></button>' + (open ? Team.scRunView(r) : '') + '</div>'; };
+    return Hud.panel('scruns', 'Runs' + (Team.scOpen && Team.script(Team.scOpen) ? ' · ' + esc(Team.script(Team.scOpen).name) : ''), runs.length ? runs.map(row).join('') : '<p class="hud-none">No runs yet.</p>');
+  },
+  scRunView(r) {
+    const full = Team.scRun && Team.scRun.id === r.id ? Team.scRun : null;
+    if (!full) { Team.loadRun(r.id); return '<p class="hud-sub">Loading the details…</p>'; }
+    const steps = (full.steps || []).map((st, i) => '<div class="hud-step" data-st="' + esc(st.status === 'done' ? 'done' : st.status === 'awaiting' ? 'awaiting_approval' : st.status) + '"><b data-i18n="off">' + (i + 1) + '. ' + esc(st.label || st.op) + '</b><span data-i18n="off">' + esc(st.note || st.error || '') + (st.ms != null ? ' <small>' + st.ms + ' ms</small>' : '') + (st.task ? ' <button type="button" class="hud-link" data-hud="task" data-id="' + esc(st.task) + '">open task</button>' : '') + '</span><em>' + esc(st.status) + '</em></div>' + (st.preview ? '<pre class="hud-res" data-i18n="off">' + esc(String(st.preview).slice(0, 800)) + '</pre>' : '') + (st.failures && st.failures.length ? '<p class="hud-alert" data-i18n="off">' + esc(st.failures.join('; ').slice(0, 400)) + '</p>' : '')).join('');
+    const inputs = full.inputs && Object.keys(full.inputs).length ? '<p class="hud-sub" data-i18n="off"><b>Inputs:</b> ' + esc(Object.keys(full.inputs).map((k) => k + ' = ' + (Array.isArray(full.inputs[k]) ? full.inputs[k].join(', ') : full.inputs[k])).join(' · ')) + '</p>' : '';
+    const cost = full.cost ? '<p class="hud-sub" data-i18n="off"><b>Cost:</b> AI ' + esc(full.cost.ai) + ' · hosting ' + esc(full.cost.hosting) + (full.cost.services.length ? ' · services: ' + esc(full.cost.services.join('; ')) : ' · no external services') + '. <i>' + esc(full.cost.note) + '</i></p>' : '';
+    const err = full.error ? '<p class="hud-alert" data-i18n="off">' + esc(full.error) + '</p>' : '';
+    const out = full.output ? '<pre class="hud-res" data-i18n="off">' + esc(String(full.output).slice(0, 4000)) + '</pre>' : (full.dry ? '<p class="hud-sub">Test run: nothing was sent or changed; previews are shown per step.</p>' : '');
+    const btns = (/^(running|queued|awaiting_approval)$/.test(full.status) ? '<button type="button" class="hud-btn ghost" data-hud="scruncancel" data-id="' + esc(full.id) + '">Cancel the run</button>' : '') + (full.status === 'awaiting_approval' ? '<button type="button" class="hud-btn" data-hud="agent" data-ag="jarvis">Open the approval</button>' : '');
+    return '<div class="hud-tr">' + inputs + err + steps + out + cost + (btns ? '<div class="hud-row">' + btns + '</div>' : '') + '</div>';
+  },
+  async loadRun(id) {
+    if (Team.scRun && Team.scRun.id === id && Team.scRun.busy) return;
+    Team.scRun = { id, busy: true };
+    try { const r = await fetch('/api/team/scripts/run?id=' + encodeURIComponent(id), { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.scRun = (r.ok && j && j.ok) ? j.run : { id, error: 'not found' }; } catch (e) { Team.scRun = { id, error: 'not found' }; }
+    if (Hud.on && Team.sel === 'scripts') Hud.paint();
+  },
+  scExplain(x) {
+    const li = (arr) => '<ul>' + arr.map((v) => '<li data-i18n="off">' + esc(v) + '</li>').join('') + '</ul>';
+    return '<div class="hud-skdoc">' + '<div class="hud-skf"><b>What it does</b><span data-i18n="off">' + esc(x.does) + '</span></div>' + '<div class="hud-skf"><b>Inputs</b><span>' + (x.inputs.length ? li(x.inputs) : '<span>none — everything is fixed in the steps</span>') + '</span></div>' + '<div class="hud-skf"><b>Services</b><span>' + li(x.services) + '</span></div>' + '<div class="hud-skf"><b>It affects</b><span>' + li(x.affects) + '</span></div>' + '<div class="hud-skf"><b>Outputs</b><span>' + li(x.outputs) + '</span></div>' + '<div class="hud-skf"><b>Stops when</b><span>' + li(x.stops) + '</span></div>' + '<div class="hud-skf"><b>Judgment</b><span>' + li(x.judgment) + '<small>Model calls: ' + esc(x.modelCalls) + '</small></span></div>' + '</div>';
+  },
+  scStepsView(s) {
+    const ops = (Team.sc && Team.sc.ops) || [];
+    return '<ol class="hud-scsteps">' + s.steps.map((st) => { const def = ops.find((o) => o.id === st.op) || { label: st.op, params: [] }; const ps = def.params.map((p) => st[p.name] !== undefined && st[p.name] !== '' ? p.name + ': ' + esc(Array.isArray(st[p.name]) ? st[p.name].join(', ') : String(st[p.name])) : '').filter(Boolean).join(' · '); return '<li data-i18n="off"><b>' + esc(st.label || def.label) + '</b> <small>' + esc(st.op) + (st.as ? ' → ' + esc(st.as) : '') + (st.from ? ' ← ' + esc(st.from) : '') + '</small>' + (ps ? '<div class="hud-scp">' + ps + '</div>' : '') + '</li>'; }).join('') + '</ol>';
+  },
+  scDetailPanel(s) {
+    const x = s.explanation || { does: s.purpose, inputs: [], services: [], affects: [], outputs: [], stops: [], judgment: [], modelCalls: '' };
+    const head = '<div class="hud-tmeta"><em class="hud-tst" data-st="' + (s.status === 'active' ? 'done' : s.status === 'paused' ? 'awaiting_info' : 'cancelled') + '">' + esc(s.status) + '</em><small data-i18n="off">v' + esc(s.version) + (s.untested ? ' · untested — run a test before scheduling' : ' · tested v' + esc(s.tested)) + ' · ' + esc(s.next) + (s.from && s.from.task ? ' · from “' + esc(Team.cut(s.from.title || '', 50)) + '”' : '') + '</small></div>';
+    const st = s.stats || {};
+    const stats = st.runs ? '<p class="hud-sub" data-i18n="off"><b>So far:</b> ' + st.runs + ' run' + (st.runs === 1 ? '' : 's') + ' · ' + st.ok + ' ok · ' + st.partial + ' partial · ' + st.failed + ' failed · ' + st.items + ' items · ' + Math.round(st.ms / Math.max(1, st.runs)) + ' ms avg · ' + st.modelCalls + ' model call' + (st.modelCalls === 1 ? '' : 's') + (st.emails ? ' · ' + st.emails + ' emails' : '') + (st.notifications ? ' · ' + st.notifications + ' notifications' : '') + '</p>' : '';
+    const inputsForm = '<form data-team="scrun" data-id="' + esc(s.id) + '" class="hud-scrun">' + (s.inputs.length ? s.inputs.map((i) => '<label class="hud-skl"><span>' + esc(i.label || i.name) + ' <small>' + esc(i.type) + (i.required ? '' : ', optional') + '</small></span>' + (i.type === 'choice' && i.choices && i.choices.length ? '<select class="hud-sel" name="in_' + esc(i.name) + '">' + i.choices.map((c) => '<option value="' + esc(c) + '"' + (String(i.default) === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' : '<input class="hud-sel" type="text" name="in_' + esc(i.name) + '" value="' + esc(Array.isArray(i.default) ? i.default.join(', ') : (i.default || '')) + '" placeholder="' + esc(i.help || '') + '">') + '</label>').join('') : '<p class="hud-sub">No inputs: everything this needs is in the steps.</p>') +
+      '<div class="hud-row"><button type="submit" class="hud-btn ghost" name="mode" value="test"' + (Team.scBusy || s.status !== 'active' ? ' disabled' : '') + '>' + (Team.scBusy ? 'Running…' : 'Test (dry run)') + '</button><button type="submit" class="hud-btn" name="mode" value="run"' + (Team.scBusy || s.status !== 'active' ? ' disabled' : '') + '>Run now</button></div><p class="hud-sub">A test reads and computes for real but sends nothing, changes nothing and creates no task — each step shows what it would do. A passing test marks this version tested.</p></form>';
+    const btns = '<div class="hud-row">' + (s.status === 'active' ? '<button type="button" class="hud-btn ghost" data-hud="scedit" data-id="' + esc(s.id) + '">Edit</button><button type="button" class="hud-btn ghost" data-hud="scstatus" data-id="' + esc(s.id) + '" data-st="paused">Pause</button><button type="button" class="hud-btn ghost" data-hud="scstatus" data-id="' + esc(s.id) + '" data-st="disabled">Disable</button>' : s.status === 'archived' ? '<button type="button" class="hud-btn" data-hud="scstatus" data-id="' + esc(s.id) + '" data-st="active">Restore</button>' : '<button type="button" class="hud-btn" data-hud="scstatus" data-id="' + esc(s.id) + '" data-st="active">' + (s.status === 'paused' ? 'Resume' : 'Enable') + '</button><button type="button" class="hud-btn ghost" data-hud="scedit" data-id="' + esc(s.id) + '">Edit</button>') + (s.status !== 'archived' ? '<button type="button" class="hud-btn ghost" data-hud="scstatus" data-id="' + esc(s.id) + '" data-st="archived">Archive</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="scclose">Close</button></div>';
+    return Hud.panel('scview', '⚙ ' + esc(s.name), head + Team.scExplain(x) + '<p class="hud-sub"><b>Steps</b></p>' + Team.scStepsView(s) + stats + inputsForm + btns);
+  },
+  scEditorPanel(s) {
+    const ops = (Team.sc && Team.sc.ops) || []; const events = (Team.sc && Team.sc.events) || [];
+    const d = s || { name: '', purpose: '', inputs: [], steps: [{ op: 'flow.rocks', period: 'this week', only: 'open' }, { op: 'format', template: '· {{item.day}} {{item.time}} {{item.title}}' }, { op: 'report', template: 'Open rocks — {{today}}\n{{text}}' }], schedule: null, triggers: [], stop: '', judgment: '' };
+    const stepRows = (Team.scDraft || d.steps).map((st, i) => Team.scStepRow(st, i, ops)).join('');
+    const f = (n, l, v, rows, ph) => '<label class="hud-skl"><span>' + l + '</span>' + (rows ? '<textarea name="' + n + '" rows="' + rows + '" placeholder="' + esc(ph || '') + '">' + esc(v || '') + '</textarea>' : '<input class="hud-sel" type="text" name="' + n + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '">') + '</label>';
+    const D = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return Hud.panel('scedit', s ? 'Edit “' + esc(s.name) + '” → v' + (s.version + 1) : 'Build an automation', '<form data-team="scedit" data-id="' + esc(s ? s.id : '') + '" class="hud-skform">' +
+      f('name', 'Name', d.name) + f('purpose', 'What it is for', d.purpose, 2) +
+      f('inputs', 'Inputs (one per line: name | type | default | label) — types: text, number, date, url, email, list, choice', (d.inputs || []).map((i) => i.name + ' | ' + i.type + ' | ' + (Array.isArray(i.default) ? i.default.join(', ') : (i.default || '')) + ' | ' + (i.label || '')), 3, 'threshold | number | 500 | Flag anything above') +
+      '<div class="hud-skl"><span>Steps, in order</span><div class="hud-scsteps-ed" data-flow-no-chip>' + stepRows + '</div><div class="hud-row"><select class="hud-sel" name="addop" aria-label="Add a step">' + ops.map((o) => '<option value="' + esc(o.id) + '">' + esc(o.label) + ' (' + esc(o.kind) + ')</option>').join('') + '</select><button type="button" class="hud-btn ghost" data-hud="scaddstep">Add step</button></div></div>' +
+      '<div class="hud-skl"><span>Schedule (in your time zone' + (Team.sc && Team.sc.tz ? ', ' + esc(Team.sc.tz) : '') + ')</span><div class="hud-row"><select class="hud-sel" name="skind">' + [['none', 'no schedule (manual or events)'], ['daily', 'every day'], ['weekdays', 'weekdays'], ['weekly', 'weekly'], ['hourly', 'every hour']].map((o) => '<option value="' + o[0] + '"' + ((d.schedule ? d.schedule.kind : 'none') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><input class="hud-sel" type="time" name="sat" value="' + esc(d.schedule ? d.schedule.at : '08:00') + '"><select class="hud-sel" name="sday">' + D.map((n, i) => '<option value="' + i + '"' + ((d.schedule && d.schedule.day) === i ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div></div>' +
+      '<div class="hud-skl"><span>Also run when</span><div class="hud-row">' + events.map((ev) => { const t = (d.triggers || []).find((x) => x.event === ev); return '<label class="hud-tick" data-flow-no-chip><input type="checkbox" name="ev_' + esc(ev) + '"' + (t ? ' checked' : '') + '> ' + esc(ev) + '</label><input class="hud-sel" type="text" name="evm_' + esc(ev) + '" value="' + esc(t ? t.match : '') + '" placeholder="title matches (optional)">'; }).join('') + '</div></div>' +
+      f('stop', 'Also stop when', d.stop, 2, 'e.g. more than 50 emails would go') + f('judgment', 'What still needs a human or an agent', d.judgment, 2) +
+      (s ? f('why', 'Why this change', '', 0) : '') +
+      '<div class="hud-row"><button type="submit" class="hud-btn"' + (Team.scBusy ? ' disabled' : '') + '>' + (s ? 'Save as v' + (s.version + 1) : 'Create') + '</button><button type="button" class="hud-btn ghost" data-hud="sceditcancel">Cancel</button></div><p class="hud-sub">Values use {{inputs.name}}, {{item.field}}, {{count}}, {{text}}, {{totals.sum}}, {{today}}. A new version is untested until a dry run passes. Only the listed operations exist; nothing else can run.</p></form>');
+  },
+  scStepRow(st, i, ops) {
+    const def = ops.find((o) => o.id === st.op) || { label: st.op, params: [] };
+    const fields = def.params.map((p) => '<label class="hud-scpf"><small>' + esc(p.name) + (p.help ? ' <i title="' + esc(p.help) + '">?</i>' : '') + '</small>' + (p.type === 'choice' ? '<select class="hud-sel" data-step="' + i + '" data-param="' + esc(p.name) + '">' + (p.choices || []).map((c) => '<option value="' + esc(c) + '"' + (String(st[p.name] !== undefined ? st[p.name] : p.default) === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' : (p.name === 'template' || p.name === 'body' || p.name === 'brief' ? '<textarea rows="2" data-step="' + i + '" data-param="' + esc(p.name) + '" placeholder="' + esc(p.help || '') + '">' + esc(st[p.name] !== undefined ? (Array.isArray(st[p.name]) ? st[p.name].join(', ') : st[p.name]) : (p.default || '')) + '</textarea>' : '<input class="hud-sel" type="text" data-step="' + i + '" data-param="' + esc(p.name) + '" value="' + esc(st[p.name] !== undefined ? (Array.isArray(st[p.name]) ? st[p.name].join(', ') : st[p.name]) : (p.default !== undefined ? p.default : '')) + '" placeholder="' + esc(p.help || '') + '">')) + '</label>').join('');
+    return '<div class="hud-scstep" data-i="' + i + '"><div class="hud-row"><b data-i18n="off">' + (i + 1) + '. ' + esc(def.label) + '</b><small>' + esc(st.op) + '</small><span class="hud-acts"><button type="button" class="hud-btn ghost" data-hud="scstepup" data-i="' + i + '" aria-label="Move up">↑</button><button type="button" class="hud-btn ghost" data-hud="scstepdown" data-i="' + i + '" aria-label="Move down">↓</button><button type="button" class="hud-btn ghost" data-hud="scstepdrop" data-i="' + i + '" aria-label="Remove">×</button></span></div>' + fields + '<div class="hud-row"><label class="hud-scpf"><small>save as (name)</small><input class="hud-sel" type="text" data-step="' + i + '" data-param="as" value="' + esc(st.as || '') + '"></label><label class="hud-scpf"><small>take items from (name)</small><input class="hud-sel" type="text" data-step="' + i + '" data-param="from" value="' + esc(st.from || '') + '"></label></div></div>';
+  },
+  scReadSteps() {
+    const ops = (Team.sc && Team.sc.ops) || [];
+    return [...Hud.el.querySelectorAll('.hud-scstep')].map((el) => { const i = +el.getAttribute('data-i'); const base = (Team.scDraft || [])[i] || {}; const st = { op: base.op }; el.querySelectorAll('[data-param]').forEach((inp) => { const v = inp.value; if (v !== '' && v !== undefined) st[inp.getAttribute('data-param')] = v; }); const def = ops.find((o) => o.id === st.op); if (def) def.params.forEach((p) => { if (p.type === 'list' && typeof st[p.name] === 'string') st[p.name] = st[p.name].split(/,|\n/).map((x) => x.trim()).filter(Boolean); }); return st; });
+  },
+  scVersionsPanel(s) {
+    const vs = (s.versions || []).slice().reverse();
+    const cmp = Team.scCmp && Team.scCmp.id === s.id ? (() => { const v = (s.versions || []).find((x) => x.v === Team.scCmp.v); return v ? '<p class="hud-sub">v' + esc(v.v) + ' → v' + esc(s.version) + ' (current)</p>' + Team.skDiffView(Team.skLocalDiff(Object.assign({}, v.doc, { steps: (v.doc.steps || []).map((x) => JSON.stringify(x)), inputs: (v.doc.inputs || []).map((x) => x.name + ':' + x.type + '=' + x.default), schedule: v.doc.schedule ? JSON.stringify(v.doc.schedule) : '', triggers: (v.doc.triggers || []).map((x) => x.event + (x.match ? '~' + x.match : '')) }), { name: s.name, purpose: s.purpose, steps: s.steps.map((x) => JSON.stringify(x)), inputs: s.inputs.map((x) => x.name + ':' + x.type + '=' + x.default), schedule: s.schedule ? JSON.stringify(s.schedule) : '', triggers: s.triggers.map((x) => x.event + (x.match ? '~' + x.match : '')), stop: s.stop, judgment: s.judgment })) + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="scrollback" data-id="' + esc(s.id) + '" data-v="' + esc(v.v) + '">Go back to v' + esc(v.v) + '</button><button type="button" class="hud-btn ghost" data-hud="sccmpclose">Close</button></div>' : ''; })() : '';
+    return Hud.panel('scvers', 'Versions', (vs.length ? vs.map((v) => '<div class="hud-r hud-lg"><span data-i18n="off">v' + esc(v.v) + '<small>' + esc(Team.when(v.at)) + ' · ' + esc(v.why || '') + '</small></span><button type="button" class="hud-btn ghost" data-hud="sccmp" data-id="' + esc(s.id) + '" data-v="' + esc(v.v) + '">Compare</button></div>').join('') : '<p class="hud-none">Only v1 so far.</p>') + cmp);
+  },
+  async scClick(a, b) {
+    if (a === 'scopen') { const id = b.getAttribute('data-id'); Team.scOpen = Team.scOpen === id ? null : id; Team.scEdit = null; Team.scCmp = null; Team.scRunOpen = null; Team.scDraft = null; Hud.paint(); return true; }
+    if (a === 'scfilter') { Team.scFilter = b.getAttribute('data-f'); Hud.paint(); return true; }
+    if (a === 'scnew') { Team.scNew = !Team.scNew; Team.scOpen = null; Team.scDraft = null; Hud.paint(); return true; }
+    if (a === 'scclose') { Team.scOpen = null; Team.scEdit = null; Team.scDraft = null; Hud.paint(); return true; }
+    if (a === 'scedit') { Team.scOpen = b.getAttribute('data-id'); Team.scEdit = Team.scOpen; Team.scNew = false; Team.scDraft = (Team.script(Team.scOpen) || { steps: [] }).steps.map((x) => Object.assign({}, x)); Hud.paint(); return true; }
+    if (a === 'sceditcancel') { Team.scEdit = null; Team.scNew = false; Team.scDraft = null; Hud.paint(); return true; }
+    if (a === 'scaddstep') { Team.scDraft = Team.scReadSteps(); const op = (Hud.el.querySelector('select[name="addop"]') || {}).value; if (op) Team.scDraft.push({ op }); Hud.paint(); return true; }
+    if (a === 'scstepdrop' || a === 'scstepup' || a === 'scstepdown') { const i = +b.getAttribute('data-i'); const d = Team.scReadSteps(); if (a === 'scstepdrop') d.splice(i, 1); else { const j = a === 'scstepup' ? i - 1 : i + 1; if (j >= 0 && j < d.length) { const t = d[i]; d[i] = d[j]; d[j] = t; } } Team.scDraft = d; Hud.paint(); return true; }
+    if (a === 'scfromtask') {
+      b.disabled = true; b.textContent = 'Writing it up…';
+      const j = await Team.post('/api/team/scripts', { op: 'create', from: 'task', task: b.getAttribute('data-id') });
+      if (j && j.ok) { Team.scOpen = j.script.id; Team.scNew = false; await Team.loadSc(true); await Team.select('scripts', true); Team.paintRail(); Hud.paint(); toast('“' + j.script.name + '” is an automation now — v1, untested: run a test first', null, 3000); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3000); }
+      return true;
+    }
+    if (a === 'scstatus') { const j = await Team.post('/api/team/scripts', { op: 'status', id: b.getAttribute('data-id'), status: b.getAttribute('data-st') }); if (j && j.ok) { await Team.loadSc(true); Team.paintRail(); Hud.paint(); toast(j.script.status === 'active' ? 'Active' : j.script.status === 'paused' ? 'Paused — schedules and events wait' : j.script.status === 'disabled' ? 'Disabled' : 'Archived', null, 1800); } return true; }
+    if (a === 'scrunopen') { const id = b.getAttribute('data-id'); Team.scRunOpen = Team.scRunOpen === id ? null : id; Hud.paint(); return true; }
+    if (a === 'scruncancel') { const j = await Team.post('/api/team/scripts', { op: 'cancel', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.scRun = null; await Team.loadSc(true); await Team.load(true); Hud.paint(); toast('Cancelled', null, 1200); } return true; }
+    if (a === 'sccmp') { Team.scCmp = { id: b.getAttribute('data-id'), v: +b.getAttribute('data-v') }; Hud.paint(); return true; }
+    if (a === 'sccmpclose') { Team.scCmp = null; Hud.paint(); return true; }
+    if (a === 'scrollback') { if (!confirm('Go back to v' + b.getAttribute('data-v') + '? The current version is kept too; the result is untested until a dry run passes.')) return true; const j = await Team.post('/api/team/scripts', { op: 'rollback', id: b.getAttribute('data-id'), to: +b.getAttribute('data-v') }); if (j && j.ok) { Team.scCmp = null; await Team.loadSc(true); Hud.paint(); toast('Back to v' + j.restored + ' (saved as v' + j.script.version + ')', null, 2200); } return true; }
+    return false;
+  },
+  async scSubmit(kind, f) {
+    const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+    if (kind === 'scsearch') { Team.scQ = f.q.value.trim(); await Team.loadSc(true); Hud.paint(); return true; }
+    if (kind === 'scrun') {
+      const mode = (f.__submitter && f.__submitter.value) || 'test';
+      const inputs = {}; [...f.querySelectorAll('[name^="in_"]')].forEach((el) => { inputs[el.name.slice(3)] = el.value; });
+      Team.scBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/scripts', { op: mode === 'run' ? 'run' : 'test', id: f.getAttribute('data-id'), inputs });
+      Team.scBusy = false;
+      if (j && j.ok) { Team.scRun = null; Team.scRunOpen = j.run.id; await Team.loadSc(true); await Team.load(true); Hud.paint(); toast((mode === 'run' ? 'Run ' : 'Test ') + j.run.status + (j.run.error ? ' — ' + j.run.error : '') + (j.run.metrics ? ' · ' + j.run.metrics.items + ' items · ' + j.run.metrics.modelCalls + ' model call' + (j.run.metrics.modelCalls === 1 ? '' : 's') : ''), /^(ok)$/.test(j.run.status) ? null : 'warn', 3600); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3000); }
+      return true;
+    }
+    if (kind === 'scedit') {
+      const inputs = lines(f.inputs.value).map((l) => { const p = l.split('|').map((x) => x.trim()); return { name: p[0], type: p[1] || 'text', default: p[2] || '', label: p[3] || '' }; }).filter((i) => i.name);
+      const events = (Team.sc && Team.sc.events) || [];
+      const doc = { name: f.name.value.trim(), purpose: f.purpose.value.trim(), inputs, steps: Team.scReadSteps(), schedule: f.skind.value === 'none' ? null : { kind: f.skind.value, at: f.sat.value || '08:00', day: +f.sday.value }, triggers: events.filter((ev) => f['ev_' + ev] && f['ev_' + ev].checked).map((ev) => ({ event: ev, match: (f['evm_' + ev] || {}).value || '' })), stop: f.stop.value.trim(), judgment: f.judgment.value.trim() };
+      Team.scBusy = true; Hud.paint();
+      const id = f.getAttribute('data-id');
+      const j = await Team.post('/api/team/scripts', id ? { op: 'update', id, doc, why: (f.why || {}).value || '' } : { op: 'create', doc });
+      Team.scBusy = false;
+      if (j && j.ok) { Team.scEdit = null; Team.scNew = false; Team.scDraft = null; Team.scOpen = j.script.id; await Team.loadSc(true); Team.paintRail(); Hud.paint(); toast(j.unchanged ? 'Nothing changed' : (id ? 'Saved as v' + j.script.version : 'Created') + ' — untested until a dry run passes', null, 2600); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3200); }
+      return true;
+    }
+    return false;
+  },
   /* ================= Skills: how work is done, taught once ================= */
   cut(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n); },
   sk: null, skLoading: false, skQ: '', skFilter: 'active', skOpen: null, skEdit: null, skNew: false, skBusy: false, skProp: null, skTest: null, skCmp: null,
@@ -15229,6 +15411,7 @@ const Team = {
   paintSkills() {
     Hud.el.classList.add('hud-memview');
     if (!Team.sk && !Team.skLoading) { Team.skLoading = true; Team.loadSk().then(() => { Team.skLoading = false; if (Hud.on && Team.sel === 'skills') Hud.paint(); }); }
+    if (!Team.sc && !Team.scLoading) { Team.scLoading = true; Team.loadSc().then(() => { Team.scLoading = false; if (Hud.on && Team.sel === 'skills') Hud.paint(); }); }
     Hud.el.querySelector('.hud-brand b').textContent = 'Skills';
     Hud.el.querySelector('.hud-brand span').textContent = 'How the team does recurring work — taught once, followed every time';
     const S = Team.sk || { items: [], counts: {}, proposals: [] };
@@ -15268,6 +15451,7 @@ const Team = {
       (s.steps.length ? '<div class="hud-skf"><b>' + (s.type === 'guide' ? 'Guidance' : 'Steps') + '</b><ol>' + s.steps.map((st) => '<li data-i18n="off">' + esc(st) + '</li>').join('') + '</ol></div>' : '') +
       (s.tools.length ? '<div class="hud-skf"><b>Tools</b><span>' + s.tools.map((t) => '<em class="hud-badge" data-st="' + ((Team.sk && Team.sk.tools && Team.sk.tools[t]) ? 'working' : 'awaiting') + '">' + esc((Team.sk && Team.sk.toolNames && Team.sk.toolNames[t]) || t) + '</em>').join(' ') + '</span></div>' : '') +
       (src.length ? '<div class="hud-skf"><b>Sources</b><ul>' + src.join('') + '</ul></div>' : '') +
+      ((s.scripts || []).length ? '<div class="hud-skf"><b>Automations</b><ul>' + s.scripts.map((x) => { const sc = Team.script(x.id); return '<li data-i18n="off">⚙ ' + esc(sc ? sc.name + ' v' + sc.version : x.id) + (x.when ? ' — when: ' + esc(x.when) : '') + (x.inputs ? ' · inputs: ' + esc(x.inputs) : '') + (x.success ? ' · success: ' + esc(x.success) : '') + (x.errors ? ' · on error: ' + esc(x.errors) : '') + '</li>'; }).join('') + '</ul></div>' : '') +
       row('Expected output', s.output) + row('What good looks like', s.quality) + row('Exceptions · missing information', s.exceptions) + row('Needs your yes', s.approvals || 'Anything that would reach the outside world — proposed, never done.') + '</div>';
   },
   skDetailPanel(s) {
@@ -15288,6 +15472,7 @@ const Team = {
       f('inputs', 'Inputs (one per line)', s.inputs, 3, 'the customer\'s email address\nthe week to report on') + f('steps', (s.type === 'guide' ? 'Guidance' : 'Steps') + ' (one per line, in order; include decision points)', s.steps, 8) +
       '<div class="hud-skl"><span>Tools it relies on</span><div class="hud-row" data-flow-no-chip>' + tools.map((t) => '<label class="hud-tick"><input type="checkbox" name="tools" value="' + t + '"' + (s.tools.indexOf(t) >= 0 ? ' checked' : '') + '> ' + esc((Team.sk && Team.sk.toolNames && Team.sk.toolNames[t]) || t) + '</label>').join('') + '</div></div>' +
       f('sources', 'Sources (one per line: a Memory entry id like k1a2b3c4d5, a web address, or a note)', (s.sources || []).map((x) => x.kind === 'knowledge' ? x.id : x.kind === 'url' ? x.url : x.label), 3) +
+      f('scripts', 'Automations it uses (one per line: automation id | when to use it | how to prepare its inputs | what success looks like | what to do on error)' + (Team.sc && Team.sc.items && Team.sc.items.length ? ' — available: ' + Team.sc.items.filter((x) => x.status === 'active').map((x) => x.id + ' ' + x.name).join(', ') : ''), (s.scripts || []).map((x) => [x.id, x.when, x.inputs, x.success, x.errors].join(' | ')), 2, 'sc1a2b3c4d5e | every Monday report | period = last week | a table of spend by campaign | say the numbers are unavailable and carry on') +
       f('output', 'Expected output', s.output, 2) + f('quality', 'What good looks like', s.quality, 2) + f('exceptions', 'Exceptions · missing information', s.exceptions, 2) + f('approvals', 'What needs your yes', s.approvals, 2) +
       f('why', 'Why this change (kept with the version)', '', 0, 'e.g. added the exchange-rate check') +
       '<div class="hud-row"><button type="submit" class="hud-btn"' + (Team.skBusy ? ' disabled' : '') + '>Save as v' + (s.version + 1) + '</button><button type="button" class="hud-btn ghost" data-hud="skeditcancel">Cancel</button></div><p class="hud-sub">The current version is kept; you can go back to it under Versions. Secrets are refused.</p></form>');
@@ -15372,7 +15557,7 @@ const Team = {
       return true;
     }
     if (kind === 'skedit') {
-      const doc = { name: f.name.value.trim(), type: f.type.value, purpose: f.purpose.value.trim(), when: f.when.value.trim(), whenNot: f.whenNot.value.trim(), inputs: lines(f.inputs.value), steps: lines(f.steps.value), tools: [...f.querySelectorAll('input[name="tools"]:checked')].map((x) => x.value), sources: lines(f.sources.value), output: f.output.value.trim(), quality: f.quality.value.trim(), exceptions: f.exceptions.value.trim(), approvals: f.approvals.value.trim() };
+      const doc = { name: f.name.value.trim(), type: f.type.value, purpose: f.purpose.value.trim(), when: f.when.value.trim(), whenNot: f.whenNot.value.trim(), inputs: lines(f.inputs.value), steps: lines(f.steps.value), tools: [...f.querySelectorAll('input[name="tools"]:checked')].map((x) => x.value), sources: lines(f.sources.value), scripts: lines(f.scripts.value).map((l) => { const p = l.split('|').map((x) => x.trim()); return { id: p[0], when: p[1] || '', inputs: p[2] || '', success: p[3] || '', errors: p[4] || '' }; }), output: f.output.value.trim(), quality: f.quality.value.trim(), exceptions: f.exceptions.value.trim(), approvals: f.approvals.value.trim() };
       Team.skBusy = true; Hud.paint();
       const j = await Team.post('/api/team/skills', { op: 'update', id: f.getAttribute('data-id'), doc, why: f.why.value.trim() });
       Team.skBusy = false;
@@ -15391,9 +15576,10 @@ const Team = {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
-    if (a === 'memory' || a === 'skills') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
+    if (a === 'memory' || a === 'skills' || a === 'scripts') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
     if (await Team.memClick(a, b)) return;
     if (await Team.skClick(a, b)) return;
+    if (await Team.scClick(a, b)) return;
     if (a === 'pause') { await Team.post('/api/team/pause', { paused: !Team.paused() }); await Team.load(true); Team.paintRail(); Hud.paint(); toast(Team.paused() ? 'Every agent is paused' : 'Resumed', null, 1600); return; }
     if (a === 'kedit') { Team.editing = b.getAttribute('data-id'); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="kedit"] input'); if (i) { i.focus(); i.select(); } }, 60); return; }
     if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
@@ -15457,6 +15643,7 @@ const Team = {
     const kind = f.getAttribute('data-team');
     if (/^mem/.test(kind)) { try { await Team.memSubmit(kind, f); } catch (e) { console.warn('[Flow] memory', e); } return; }
     if (/^sk/.test(kind)) { try { await Team.skSubmit(kind, f); } catch (e) { console.warn('[Flow] skills', e); } return; }
+    if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });
