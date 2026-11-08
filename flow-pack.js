@@ -14086,6 +14086,17 @@ const Say = {
     Say.state('Working it out…'); Say.mode('thinking');
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
+      /* "Where did that come from?" is answered from the record of the last
+         reply, not by asking the model to guess about itself. */
+      if (Team.isTraceQuestion(text)) {
+        const t = await Team.traceLast(Say.agent || 'jarvis', text);
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: t.say });
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        await Say.speak(t.say);
+        if (t.ok && Hud.on) { Team.memView = 'trace'; Team.traceResult = t.result; await Team.select('memory'); }
+        Say.follow(false);
+        return;
+      }
       /* One of the team, not him: their own thread, their own model, no
          actions on The Flow — they answer, remember, and that is all. */
       if (Say.agent) {
@@ -14456,7 +14467,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14508,6 +14519,8 @@ const Hud = {
     if (!Hud.el) return;
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     /* One of the team selected: their workspace, not the day. */
+    if (Team.sel === 'memory') { try { Team.paintMemory(); } catch (e) { console.warn('[Flow] memory', e); } return; }
+    Hud.el.classList.remove('hud-memview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
     Hud.el.querySelector('.hud-brand span').textContent = 'Command centre';
@@ -14701,11 +14714,14 @@ const Team = {
         '<span class="hud-agn">' + esc(a.name) + '</span><small>' + esc(a.role) + ' · ' + esc(ok ? Team.short(a.model) : 'no model') + '</small>' +
         '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
     }).join('') +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
       '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
       '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
   },
   /* ---- choosing one ---- */
   async select(id, quiet) {
+    /* Memory is a view, not a person: the conversation stays where it is. */
+    if (id === 'memory') { Team.sel = 'memory'; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -15020,11 +15036,162 @@ const Team = {
       '<div class="hud-row"><button type="submit" class="hud-btn">Create</button><button type="button" class="hud-btn ghost" data-hud="addcancel">Cancel</button></div>' +
       '<p class="hud-sub">Then: connect tools, choose where to reach them, teach them the business. Tools and channels arrive in the next stages.</p></form>');
   },
+  /* ---- memory: sources, corrections, history ----
+     What the team knows, where each thing came from, and the way to correct
+     it so the old version stops coming back — as a proposal first, then
+     applied, then verified from the prompts themselves. */
+  mem: null, memQ: '', memFilter: 'current', memBusy: false, traceResult: null, proposal: null, applied: null, memOpen: null, memEdit: null, memHist: null, verifyResult: null, audit: null, correctDraft: '', auditDraft: '', traceAgent: '',
+  isTraceQuestion(text) { return /\b(where|how) (did|do|does) (that|this|it|you|the)( [\w,]+){0,3} (come|get|know)|\bkaynağı ne|\bnereden (geldi|aldın|biliyorsun)|\bwhat('s| is) (that|this|your) (based on|source)\b|\bsource of that\b/i.test(String(text || '')); },
+  async traceLast(agent, text) {
+    const claim = String(text || '').replace(/^.*?(?:come from|based on|source)\??\s*/i, '').trim();
+    const j = await Team.post('/api/team/memory/trace', { agent, claim: claim.length > 12 ? claim : '' });
+    if (!j || !j.ok) return { ok: false, say: (j && j.error) || 'I have no record of that answer to trace.' };
+    const names = { knowledge: 'the team\'s knowledge', instructions: 'standing instructions', memory: 'what I remember about you', record: 'your own Flow record', pages: 'a web page', history: 'our conversation' };
+    let say = '';
+    if (j.confirmed.length) say = 'That came from ' + j.confirmed.slice(0, 3).map((c) => names[c.source] + (c.status === 'superseded' ? ' — an entry that is now superseded' : '') + ': “' + String(c.passage).slice(0, 90) + '”').join('; ') + '.';
+    else say = 'Nothing in what I was given says that. The prompt held ' + (j.present.length ? j.present.map((p) => names[p.source] || p.source).filter((v, i, arr) => arr.indexOf(v) === i).join(', ') : 'only the conversation') + ', none of which matches — so it most likely came from the model itself and should be treated as unverified. Tell me what is true and I will make it a current fact.';
+    say += ' The full trace is in Memory.';
+    return { ok: true, say, result: j };
+  },
+  async loadMem(force) {
+    if (Team.mem && !force) return Team.mem;
+    try { const r = await fetch('/api/team/memory?q=' + encodeURIComponent(Team.memQ || ''), { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.mem = (r.ok && j && j.ok) ? j : (Team.mem || { items: [], counts: {}, log: [], proposals: [], failed: true }); } catch (e) { Team.mem = Team.mem || { items: [], counts: {}, log: [], proposals: [], failed: true }; }
+    return Team.mem;
+  },
+  SRC: { knowledge: 'Team knowledge', instructions: 'Instructions', memory: 'J.A.R.V.I.S. remembers', preferences: 'Your preferences', record: 'Your Flow record', history: 'Conversation', pages: 'Web page', platform: 'Platform rule' },
+  memBadge(it) { return '<em class="hud-badge" data-st="' + esc(it.status === 'superseded' ? 'superseded' : it.protected ? 'not_built' : it.editable ? 'working' : 'ready') + '">' + esc(it.status === 'superseded' ? 'Superseded' : it.protected ? 'Protected' : it.editable ? 'Editable' : 'Read here') + '</em>'; },
+  memRow(it) {
+    const key = it.source + ':' + it.id; const open = Team.memOpen === key;
+    const meta = [Team.SRC[it.source] || it.source, it.kind, it.scope === 'shared' ? 'shared' : it.scope === 'jarvis' ? 'his memory' : it.scope === 'you' ? 'you' : it.scope === 'platform' ? 'code' : (it.agent || String(it.scope || '').replace('agent:', '')), it.since ? 'since ' + it.since : '', it.until ? 'until ' + it.until : '', it.versions ? it.versions + ' version' + (it.versions === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    let body = '';
+    if (open) {
+      if (Team.memEdit === key && it.source === 'knowledge') body = '<form data-team="memedit" data-id="' + esc(it.id) + '"><textarea name="text" rows="3" maxlength="300" aria-label="Fact">' + esc(it.text) + '</textarea><div class="hud-row"><select class="hud-sel" name="kind" aria-label="Kind">' + ['fact', 'rule', 'preference', 'procedure'].map((k) => '<option value="' + k + '"' + (it.kind === k ? ' selected' : '') + '>' + k + '</option>').join('') + '</select><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="memeditcancel">Cancel</button></div></form>';
+      else {
+        body = '<p class="hud-sub" data-i18n="off">' + (it.where ? 'Lives in: ' + esc(it.where) + '. ' : '') + (it.supersededBy ? 'Replaced by ' + esc(it.supersededBy) + '. ' : '') + (it.supersedes && it.supersedes.length ? 'Replaced ' + esc(it.supersedes.join(', ')) + '. ' : '') + (it.by ? 'Added by ' + esc(it.by === 'you' ? 'you' : (Team.agent(String(it.by).replace('agent:', '')) || {}).name || it.by) + '.' : '') + '</p>';
+        if (Team.memHist && Team.memHist.id === it.id) body += '<div class="hud-vers">' + (Team.memHist.versions.length ? Team.memHist.versions.slice().reverse().map((v) => '<div class="hud-ver" data-i18n="off"><small>' + esc(Team.when(v.at)) + ' · ' + esc(v.why || v.by || '') + '</small><span>' + esc(v.text || v.before || '') + '</span></div>').join('') : '<p class="hud-none">No earlier versions.</p>') + '</div>';
+        const btns = [];
+        if (it.source === 'knowledge') { btns.push('<button type="button" class="hud-btn ghost" data-hud="memvers" data-id="' + esc(it.id) + '">Versions</button>'); if (it.status === 'current') { btns.push('<button type="button" class="hud-btn ghost" data-hud="memedit" data-id="' + esc(it.id) + '">Edit</button>', '<button type="button" class="hud-btn ghost" data-hud="memsup" data-id="' + esc(it.id) + '">Mark superseded</button>'); } else btns.push('<button type="button" class="hud-btn ghost" data-hud="memres" data-id="' + esc(it.id) + '">Make current again</button>'); btns.push('<button type="button" class="hud-btn ghost" data-hud="memdrop" data-id="' + esc(it.id) + '">Remove</button>'); }
+        if (it.source === 'instructions') btns.push('<button type="button" class="hud-btn ghost" data-hud="agent" data-ag="' + esc(it.id) + '">Open ' + esc(it.agent || 'the room') + '</button>', '<button type="button" class="hud-btn ghost" data-hud="memvers" data-id="' + esc(it.id) + '">Versions</button>');
+        if (it.source === 'memory') btns.push('<button type="button" class="hud-btn ghost" data-hud="memforget" data-id="' + esc(it.id) + '">Forget</button>');
+        if (!it.protected) btns.push('<button type="button" class="hud-btn ghost" data-hud="memcorrectthis" data-text="' + esc(it.text) + '">Correct this…</button>');
+        body += '<div class="hud-row">' + btns.join('') + '</div>';
+      }
+    }
+    return '<div class="hud-mi' + (open ? ' open' : '') + (it.status === 'superseded' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="memopen" data-key="' + esc(key) + '"><span data-i18n="off">' + esc(it.text) + '</span><small data-i18n="off">' + esc(meta) + '</small>' + Team.memBadge(it) + '</button>' + body + '</div>';
+  },
+  paintMemory() {
+    Hud.el.classList.add('hud-memview');
+    if (!Team.mem && !Team.memLoading) { Team.memLoading = true; Team.loadMem().then(() => { Team.memLoading = false; if (Hud.on && Team.sel === 'memory') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Memory';
+    Hud.el.querySelector('.hud-brand span').textContent = 'What the team knows, and where it came from';
+    const M = Team.mem || { items: [], counts: {}, log: [], proposals: [] };
+    const items = (M.items || []).filter((it) => Team.memFilter === 'superseded' ? it.status === 'superseded' : Team.memFilter === 'rules' ? (it.kind === 'rule' || it.kind === 'procedure') : Team.memFilter === 'all' ? true : it.status !== 'superseded');
+    const search = '<form class="hud-msearch" data-team="memsearch"><input type="search" name="q" value="' + esc(Team.memQ || '') + '" placeholder="Search facts, rules, instructions…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
+      '<div class="hud-tabs">' + [['current', 'Current'], ['rules', 'Rules'], ['superseded', 'Superseded'], ['all', 'Everything']].map((t) => '<button type="button" class="hud-tab' + ((Team.memFilter || 'current') === t[0] ? ' on' : '') + '" data-hud="memfilter" data-f="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
+    const list = Hud.panel('memlist', 'Sources · ' + ((M.counts || {}).current || 0) + ' current · ' + ((M.counts || {}).superseded || 0) + ' superseded', search + (Team.mem ? (items.length ? items.map(Team.memRow).join('') : '<p class="hud-none">Nothing matches.</p>') : '<p class="hud-sub">Looking…</p>') +
+      '<p class="hud-sub">Facts and rules the team is shown; J.A.R.V.I.S.\'s memory of you; each agent\'s instructions; your preferences; and the platform rules (code — shown, never edited here). Your Flow record and the conversation are read, not listed.</p>');
+    Hud.el.querySelector('.hud-left').innerHTML = list;
+    Hud.el.querySelector('.hud-right').innerHTML = Team.tracePanel() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M);
+    Team.paintRail();
+  },
+  tracePanel() {
+    const ags = [{ id: 'jarvis', name: 'J.A.R.V.I.S.' }].concat(Team.agents().filter((a) => a.id !== 'jarvis'));
+    const form = '<form data-team="memtrace"><div class="hud-row"><select class="hud-sel" name="agent" aria-label="Whose answer">' + ags.map((a) => '<option value="' + esc(a.id) + '"' + ((Team.traceAgent || Say.agent || (Team.mem && Team.mem.lastAnswer && Team.mem.lastAnswer.agent) || 'jarvis') === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</select></div><input class="hud-sel" type="text" name="claim" maxlength="300" placeholder="The claim to trace (optional — the whole last answer otherwise)" aria-label="Claim"><div class="hud-row"><button type="submit" class="hud-btn">Where did that come from?</button></div></form>';
+    const t = Team.traceResult; let res = '';
+    if (t && t.ok) {
+      const row = (c, kind) => '<div class="hud-src' + (kind === 'confirmed' ? ' hit' : '') + '"><b data-i18n="off">' + esc(Team.SRC[c.source] || c.source) + (c.status === 'superseded' ? ' · superseded' : '') + (c.agent ? ' · ' + esc(c.agent) : '') + '</b><span data-i18n="off">' + esc(c.passage) + '</span><small data-i18n="off">' + esc(c.where || '') + (c.matched && c.matched.length ? ' · matched: ' + esc(c.matched.join(', ')) : '') + '</small></div>';
+      res = '<div class="hud-tr"><p class="hud-sub" data-i18n="off"><b>' + esc(t.record.agentName) + '</b> · ' + esc(Team.when(t.record.at)) + ' · ' + esc(t.record.model || '') + ' · via ' + esc(t.record.via) + '</p><p class="hud-trq" data-i18n="off">“' + esc(String(t.record.reply || '').slice(0, 300)) + '”</p>' +
+        '<p data-i18n="off">' + esc(t.explanation) + '</p>' +
+        (t.confirmed.length ? '<h4>Confirmed sources (in the prompt and matching)</h4>' + t.confirmed.map((c) => row(c, 'confirmed')).join('') : '') +
+        (t.present.length ? '<h4>Also in the prompt (no matching passage)</h4>' + t.present.map((c) => row(c, 'present')).join('') : '') +
+        '<h4>Not inspected</h4>' + t.notInspected.map((n) => '<p class="hud-sub" data-i18n="off">' + esc(n) + '</p>').join('') + '</div>';
+    } else if (t && t.error) res = '<p class="hud-alert" data-i18n="off">' + esc(t.error) + '</p>';
+    return Hud.panel('trace', 'Where did that come from?', form + res);
+  },
+  correctPanel() {
+    const ags = Team.agents().filter((a) => a.id !== 'jarvis');
+    const form = Team.applied ? '' : '<form data-team="memcorrect"><textarea name="text" rows="2" maxlength="600" placeholder="What is actually true now, in one sentence — e.g. “The onboarding service costs $1,500.”" aria-label="The correction">' + esc(Team.correctDraft || '') + '</textarea><div class="hud-row"><select class="hud-sel" name="kind" aria-label="Kind"><option value="">fact or rule (decide for me)</option><option value="fact">fact</option><option value="rule">rule</option><option value="preference">preference</option><option value="procedure">procedure</option></select><select class="hud-sel" name="scope" aria-label="Who should know"><option value="shared">the whole team</option>' + ags.map((a) => '<option value="agent:' + esc(a.id) + '">only ' + esc(a.name) + '</option>').join('') + '</select></div><div class="hud-row"><button type="submit" class="hud-btn"' + (Team.memBusy ? ' disabled' : '') + '>' + (Team.memBusy ? 'Looking for every copy…' : 'Find conflicts and propose') + '</button></div></form>';
+    const p = Team.proposal; let table = '';
+    if (p && !Team.applied) {
+      table = '<p class="hud-sub" data-i18n="off">' + esc(p.summary) + '</p>' + Team.conflictTable(p.proposal.rows, true) +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="memapply" data-id="' + esc(p.proposal.id) + '"' + (Team.memBusy ? ' disabled' : '') + '>' + (Team.memBusy ? 'Applying…' : 'Apply the ticked changes') + '</button><button type="button" class="hud-btn ghost" data-hud="memcancel">Cancel</button></div>' +
+        '<p class="hud-sub">Applying marks the old entries superseded (dated, kept as history), rewrites the ticked instruction and memory passages, adds the new current entry, logs every before/after for restore — and then checks the prompts themselves.</p>';
+    }
+    const A = Team.applied; let report = '';
+    if (A) {
+      report = '<p class="hud-sub" data-i18n="off"><b>Applied.</b> ' + esc(A.changes.length) + ' change' + (A.changes.length === 1 ? '' : 's') + ': ' + esc(A.changes.map((c) => c.op + ' ' + (Team.SRC[c.source] || c.source)).join(', ')) + '.</p>' +
+        (A.manual && A.manual.length ? '<p class="hud-alert" data-i18n="off">Only you can edit: ' + esc(A.manual.map((m) => (Team.SRC[m.source] || m.source) + ' (' + m.id + ')').join('; ')) + ' — the exact text to put there is “' + esc(A.proposal.text) + '”.</p>' : '') +
+        Team.verifyTable(A.verification) +
+        '<form data-team="memverify" data-entry="' + esc(A.entry.id) + '" data-new="' + esc(A.proposal.text) + '" data-old="' + esc(A.changes.filter((c) => c.before).map((c) => c.before).join('\u0001')) + '"><input class="hud-sel" type="text" name="ask" maxlength="300" placeholder="Prove it with a fresh question, e.g. “What does the onboarding service cost today?”" aria-label="Question"><div class="hud-row"><select class="hud-sel" name="agent" aria-label="Ask whom">' + ags.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>').join('') + '</select><button type="submit" class="hud-btn ghost"' + (Team.memBusy ? ' disabled' : '') + '>' + (Team.memBusy ? 'Asking…' : 'Ask and check') + '</button></div></form>' +
+        (Team.verifyResult ? Team.verifyTable(Team.verifyResult) : '') +
+        '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="memcancel">Done</button></div>';
+    }
+    return Hud.panel('correct', 'Correct something', form + table + report);
+  },
+  conflictTable(rows, tick) {
+    if (!rows || !rows.length) return '<p class="hud-none">No conflicting copies found anywhere I can read. The new entry will still be added as current.</p>';
+    return '<div class="hud-tbl" role="table" data-flow-no-chip><div class="hud-tr-h" role="row"><span>Source</span><span>Conflicting content</span><span>Why it conflicts</span><span>Proposed correction</span></div>' + rows.map((r) => {
+      const key = r.source + ':' + r.id; const can = r.editable && r.action !== 'none';
+      return '<div class="hud-tr-r' + (r.protected ? ' prot' : '') + (r.action === 'none' ? ' same' : '') + '" role="row"><span data-i18n="off">' + (tick && can ? '<label class="hud-tick"><input type="checkbox" data-mem-row="' + esc(key) + '" checked> ' : '') + esc(Team.SRC[r.source] || r.source) + (r.agent ? ' · ' + esc(r.agent) : '') + (r.status === 'superseded' ? ' · superseded' : '') + (r.protected ? ' · protected' : r.editable ? '' : ' · read-only') + (tick && can ? '</label>' : '') + '<small>' + esc(r.id) + (r.since ? ' · since ' + esc(r.since) : '') + '</small></span><span data-i18n="off">' + esc(r.content) + '</span><span data-i18n="off">' + esc(r.why) + '</span><span data-i18n="off">' + esc(r.proposed || '—') + (r.where ? '<small>' + esc(r.where) + '</small>' : '') + '</span></div>';
+    }).join('') + '</div>';
+  },
+  verifyTable(v) {
+    if (!v || !v.checks) return '';
+    return '<div class="hud-chk"><b>' + v.passed + ' passed · ' + v.failed + ' failed</b>' + v.checks.map((c) => '<div class="hud-ck" data-ok="' + (c.pass ? '1' : '0') + '"><i>' + (c.pass ? '✓' : '✗') + '</i><span data-i18n="off">' + esc(c.name) + '<small>' + esc(c.detail) + '</small></span></div>').join('') + (v.inaccessible && v.inaccessible.length ? '<p class="hud-sub">Not checked (I only read these): ' + v.inaccessible.map(esc).join(' ') + '</p>' : '') + '</div>';
+  },
+  auditPanel() {
+    const form = '<form data-team="memaudit"><textarea name="text" rows="2" maxlength="600" placeholder="The instruction that keeps coming back, or the behaviour you want gone — e.g. “Reply to customers in formal Turkish.”" aria-label="Instruction">' + esc(Team.auditDraft || '') + '</textarea><div class="hud-row"><button type="submit" class="hud-btn ghost"' + (Team.memBusy ? ' disabled' : '') + '>Find every copy</button></div></form>';
+    const a = Team.audit; let out = '';
+    if (a) out = '<p class="hud-sub" data-i18n="off">' + esc(a.summary) + '</p>' + Team.conflictTable(a.proposal.rows, false) + '<p class="hud-sub">Outdated preferences and instructions are editable above; permission levels and platform rules are shown so you can see them but stay as they are — a correction never widens what an agent may do. To fix the editable ones, state what is true in “Correct something”.</p><div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="memauditclear">Clear</button></div>';
+    return Hud.panel('audit', 'Audit an instruction', form + out);
+  },
+  changesPanel(M) {
+    const log = (M.log || []).slice(0, 12);
+    return Hud.panel('memlog', 'Changes', (log.length ? log.map((l) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(l.text) + '<small>' + esc(Team.when(l.at)) + ' · ' + esc((l.changes || []).map((c) => c.op + ' ' + (Team.SRC[c.source] || c.source) + (c.before && c.after ? ': “' + String(c.before).slice(0, 40) + '” → “' + String(c.after).slice(0, 40) + '”' : '')).join('; ')) + '</small></span>' + (l.changes && l.changes.length && !l.restoreOf ? '<button type="button" class="hud-btn ghost" data-hud="memrestore" data-id="' + esc(l.id) + '">Restore</button>' : '') + '</div>').join('') : '<p class="hud-none">No changes yet.</p>'));
+  },
+  async memClick(a, b) {
+    if (a === 'memopen') { const k = b.getAttribute('data-key'); Team.memOpen = Team.memOpen === k ? null : k; Team.memEdit = null; Team.memHist = null; Hud.paint(); return true; }
+    if (a === 'memfilter') { Team.memFilter = b.getAttribute('data-f'); Hud.paint(); return true; }
+    if (a === 'memedit') { Team.memEdit = 'knowledge:' + b.getAttribute('data-id'); Hud.paint(); return true; }
+    if (a === 'memeditcancel') { Team.memEdit = null; Hud.paint(); return true; }
+    if (a === 'memvers') { const j = await fetch('/api/team/memory/history?id=' + encodeURIComponent(b.getAttribute('data-id')), { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).catch(() => null); if (j && j.ok) { Team.memHist = { id: b.getAttribute('data-id'), versions: j.versions || [] }; Hud.paint(); } return true; }
+    if (a === 'memsup' || a === 'memres' || a === 'memdrop') {
+      if (a === 'memdrop' && !confirm('Remove this entry for good? Marking it superseded keeps it as history instead.')) return true;
+      const j = await Team.post('/api/team/memory/edit', { id: b.getAttribute('data-id'), op: a === 'memsup' ? 'supersede' : a === 'memres' ? 'restore' : 'remove' });
+      if (j && j.ok) { await Team.loadMem(true); await Team.load(true); Hud.paint(); toast(a === 'memsup' ? 'Marked superseded — kept as history' : a === 'memres' ? 'Current again' : 'Removed', null, 1600); }
+      return true;
+    }
+    if (a === 'memforget') { try { await Say.forget(b.getAttribute('data-id')); } catch (e) {} await Team.loadMem(true); Hud.paint(); toast('Forgotten', null, 1200); return true; }
+    if (a === 'memcorrectthis') { Team.correctDraft = b.getAttribute('data-text') || ''; Team.proposal = null; Team.applied = null; Hud.paint(); setTimeout(() => { const t = Hud.el.querySelector('form[data-team="memcorrect"] textarea'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 60); return true; }
+    if (a === 'memapply') {
+      const id = b.getAttribute('data-id'); const rows = [...Hud.el.querySelectorAll('[data-mem-row]')].filter((x) => x.checked).map((x) => x.getAttribute('data-mem-row'));
+      Team.memBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/memory/apply', { id, rows });
+      Team.memBusy = false;
+      if (j && j.ok) { Team.applied = j; Team.proposal = null; Team.verifyResult = null; if (Array.isArray(j.memory)) { try { await Settings.set('asstMemory', j.memory); Say.memPaint(); } catch (e) {} } await Team.loadMem(true); await Team.load(true); toast('Applied — ' + j.verification.passed + ' checks passed' + (j.verification.failed ? ', ' + j.verification.failed + ' failed' : ''), j.verification.failed ? 'warn' : null, 3000); }
+      Hud.paint(); return true;
+    }
+    if (a === 'memcancel') { Team.proposal = null; Team.applied = null; Team.verifyResult = null; Team.correctDraft = ''; Hud.paint(); return true; }
+    if (a === 'memauditclear') { Team.audit = null; Team.auditDraft = ''; Hud.paint(); return true; }
+    if (a === 'memrestore') { if (!confirm('Restore the earlier version? The newer entry becomes history.')) return true; const j = await Team.post('/api/team/memory/restore', { id: b.getAttribute('data-id') }); if (j && j.ok) { if (Array.isArray(j.memory)) { try { await Settings.set('asstMemory', j.memory); Say.memPaint(); } catch (e) {} } await Team.loadMem(true); await Team.load(true); Hud.paint(); toast('Restored', null, 1400); } return true; }
+    return false;
+  },
+  async memSubmit(kind, f) {
+    if (kind === 'memsearch') { Team.memQ = f.q.value.trim(); await Team.loadMem(true); Hud.paint(); return true; }
+    if (kind === 'memedit') { const j = await Team.post('/api/team/memory/edit', { id: f.getAttribute('data-id'), op: 'edit', text: f.text.value.trim(), kind: f.kind.value }); if (j && j.ok) { Team.memEdit = null; await Team.loadMem(true); await Team.load(true); Hud.paint(); toast('Saved — the earlier text is kept as a version', null, 1800); } return true; }
+    if (kind === 'memtrace') { Team.traceAgent = f.agent.value; Team.memBusy = true; Hud.paint(); const j = await Team.post('/api/team/memory/trace', { agent: f.agent.value, claim: f.claim.value.trim() }); Team.memBusy = false; Team.traceResult = j && j.ok ? j : { error: (j && j.error) || 'Nothing to trace.' }; Hud.paint(); return true; }
+    if (kind === 'memcorrect') { const text = f.text.value.trim(); if (!text) return true; Team.correctDraft = text; Team.memBusy = true; Team.applied = null; Hud.paint(); const j = await Team.post('/api/team/memory/correct', { text, kind: f.kind.value, scope: f.scope.value }); Team.memBusy = false; Team.proposal = j && j.ok ? j : null; Hud.paint(); return true; }
+    if (kind === 'memaudit') { const text = f.text.value.trim(); if (!text) return true; Team.auditDraft = text; Team.memBusy = true; Hud.paint(); const j = await Team.post('/api/team/memory/audit', { about: text }); Team.memBusy = false; Team.audit = j && j.ok ? j : null; Hud.paint(); return true; }
+    if (kind === 'memverify') { const ask = f.ask.value.trim(); if (!ask) return true; Team.memBusy = true; Hud.paint(); const j = await Team.post('/api/team/memory/verify', { newText: f.getAttribute('data-new'), oldTexts: (f.getAttribute('data-old') || '').split('\u0001').filter(Boolean), entryId: f.getAttribute('data-entry'), ask, agent: f.agent.value }); Team.memBusy = false; Team.verifyResult = j && j.ok ? j : null; Hud.paint(); return true; }
+    return false;
+  },
   /* ---- clicks, changes, forms ---- */
   async click(a, b) {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
+    if (a === 'memory') { await Team.select('memory', true); Team.paintRail(); Hud.paint(); return; }
+    if (await Team.memClick(a, b)) return;
     if (a === 'pause') { await Team.post('/api/team/pause', { paused: !Team.paused() }); await Team.load(true); Team.paintRail(); Hud.paint(); toast(Team.paused() ? 'Every agent is paused' : 'Resumed', null, 1600); return; }
     if (a === 'kedit') { Team.editing = b.getAttribute('data-id'); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="kedit"] input'); if (i) { i.focus(); i.select(); } }, 60); return; }
     if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
@@ -15086,6 +15253,7 @@ const Team = {
   },
   async submit(f) {
     const kind = f.getAttribute('data-team');
+    if (/^mem/.test(kind)) { try { await Team.memSubmit(kind, f); } catch (e) { console.warn('[Flow] memory', e); } return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });

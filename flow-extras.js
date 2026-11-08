@@ -2301,7 +2301,8 @@ async function handleDo(p, req, res, ctx) {
     known.habits.length ? known.habits.map((h) => h.id + ' | ' + h.name + ' | ' + (h.done ? 'yes' : 'no')).join('\n') : '(none)',
     'WHAT YOU KNOW ABOUT THEM (memory id | fact):',
     known.memory.length ? known.memory.map((m) => m.id + ' | ' + m.text).join('\n') : '(nothing yet)',
-    team.shared.length ? 'WHAT THE TEAM KNOWS (shared business knowledge, read-only here — id | fact):\n' + team.shared.map((k) => k.id + ' | ' + k.text).join('\n') : '',
+    team.shared.length ? 'WHAT THE TEAM KNOWS (shared business knowledge, current, read-only here — id | fact):\n' + team.shared.map((k) => k.id + ' | ' + k.text).join('\n') : '',
+    team.history ? 'SUPERSEDED (no longer true — only for questions about the past, with the dates; never state these as current):\n' + team.history : '',
     '',
     onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
@@ -2334,6 +2335,8 @@ async function handleDo(p, req, res, ctx) {
     }
     const out = parseDo(answer, known);
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
+    /* where this answer came from, for "where did that come from?" */
+    try { if (ctx.team && teamMod && teamMod.provenance) await teamMod.provenance(ctx.team, { agent: 'jarvis', via: onWatch ? 'watch' : 'app', model: team.model || CHAT_MODEL, said, reply: out.say, knowledge: team.shared, superseded: (team.superseded || []).map((id) => ({ id })), memory: known.memory, snapshot: !!snapshot, thread: past.length }); } catch (e) {}
     out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);

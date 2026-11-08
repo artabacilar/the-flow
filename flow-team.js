@@ -49,6 +49,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const memory = require('./flow-memory');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -192,6 +193,15 @@ function fakePost(url, opts) {
     const whole = String((last && last.content) || ''); const rd = said.match(/\bread (https?:\/\/\S+)/i);
     if (rd && !/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify({ say: '', read: [rd[1]] });
     else if (/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify({ say: b.model + ' read it: ' + whole.split('THE PAGES YOU ASKED FOR:')[1].replace(/\s+/g, ' ').trim().slice(0, 300), remember: [] });
+    else if (/cost|price|how much/i.test(said)) {
+      /* answers from the knowledge blocks exactly as a model should: current for now, superseded only for the past */
+      const cur = (system.split('WHAT THE TEAM KNOWS (current facts')[1] || '').split(/RULES AND PROCEDURES|SUPERSEDED/)[0];
+      const old = (system.split('SUPERSEDED (no longer true')[1] || '').split('\n\n')[0];
+      const pick = (blk) => (blk.split('\n').find((l) => /\$\s?\d/.test(l) && /onboarding|service|price|cost/i.test(l)) || '').replace(/^[^|]*\|\s*/, '').trim();
+      const past = /last year|before|used to|previously|old price|history/i.test(said);
+      const line = past ? pick(old) : pick(cur);
+      text = JSON.stringify({ say: b.model + (past ? ' on the past: ' : ' now: ') + (line || 'I have no figure for that.'), remember: [] });
+    }
     else text = JSON.stringify({ say: b.model + ' says: ' + said, remember: rem });
   }
   if (/anthropic/.test(url)) return Promise.resolve({ status: 200, body: { content: [{ type: 'text', text }], usage: { input_tokens: 12, output_tokens: 6 } } });
@@ -315,10 +325,7 @@ function agentSystem(agent, owner, shared, mine, lang, teamNames) {
     'MANNER: ' + manner,
     'Reply in the language they write in (app language: ' + (lang === 'tr' ? 'Turkish' : 'English') + ').',
     '',
-    'WHAT THE TEAM KNOWS (shared business knowledge — id | fact):',
-    shared.length ? shared.map((k) => k.id + ' | ' + k.text).join('\n') : '(nothing yet)',
-    'WHAT YOU REMEMBER (your own notes — id | fact):',
-    mine.length ? mine.map((k) => k.id + ' | ' + k.text).join('\n') : '(nothing yet)',
+    memory.section(shared.concat(mine), agent.id),
     '',
     toolsText(),
     'Permissions: ' + agent.permissions + ' (read = answer only; draft = prepare things for approval; approve = act after a yes; auto = act within an agreed policy). Right now every outside action needs a yes.',
@@ -386,6 +393,7 @@ async function handle(p, req, res, ctx) {
   const body = async () => { try { return JSON.parse(await ctx.readBody(req)) || {}; } catch (e) { return {}; } };
 
   if (await handleWork(p, req, res, ctx)) return true;
+  if (await memory.handle(p, req, res, ctx, memDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -502,7 +510,7 @@ async function handle(p, req, res, ctx) {
 
 /* One message to one specialist: their thread, their model, their memory.
    Used by the console and by every channel. */
-async function sayTo(ctx, agentId, said, lang) {
+async function sayTo(ctx, agentId, said, lang, opts) {
   {
     const list = await agents(ctx);
     const a = list.find((x) => x.id === agentId && !x.archived);
@@ -516,10 +524,10 @@ async function sayTo(ctx, agentId, said, lang) {
     if (!which) return { error: a.name + ' is set to ' + a.model + ', and that provider has no key here. Choose another model.', awaiting: true, status: 503 };
     const b = { lang };
     const know = await knowledge(ctx);
-    const shared = know.filter((k) => k.scope === 'shared').slice(-80);
-    const own = know.filter((k) => k.scope === 'agent:' + a.id).slice(-80);
+    const shared = know.filter((k) => k.scope === 'shared' || k.scope === 'agent:' + a.id).slice(-200);
+    const own = [];
     const names = list.filter((x) => !x.archived && x.id !== a.id && x.id !== 'jarvis').map((x) => x.name + ' (' + x.role.toLowerCase() + ')');
-    const hist = await thread(ctx, a.id);
+    const hist = opts && opts.dry ? [] : await thread(ctx, a.id);
     const turns = hist.slice(-16).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.text || '').slice(0, 4000) }));
     /* two user turns in a row confuse some providers: fold them */
     const messages = [];
@@ -542,6 +550,9 @@ async function sayTo(ctx, agentId, said, lang) {
     }
     if (!out.say) out.say = 'I looked, but could not put an answer together. Could you say it another way?';
     const now = Date.now();
+    const kb = memory.blocks(shared, a.id);
+    try { await memory.record(ctx, { agent: a.id, via: (opts && opts.via) || 'app', model: which.model, said, reply: out.say, knowledge: kb.facts.concat(kb.rules), superseded: kb.old, instructions: a.instructions, pages: pagesRead, thread: turns.length }); } catch (e) {}
+    if (opts && opts.dry) return { say: out.say, model: which.model, provider: which.provider, agent: a, read: pagesRead, dry: true };
     hist.push({ role: 'user', text: said, at: now }, { role: 'assistant', text: out.say, at: now, model: which.model });
     await ctx.set('team:thread:' + a.id, hist.slice(-160));
     const remembered = [];
@@ -652,7 +663,7 @@ function planSystem(agents, owner, shared, lang) {
     'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', inside The Flow. You have just been asked for a piece of work that the team should do. Plan it.',
     'THE TEAM (id | name | role | instructions):',
     agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id + ' | ' + a.name + ' | ' + a.role + ' | ' + str(a.instructions, 160)).join('\n') || '(nobody yet)',
-    shared.length ? 'WHAT THE TEAM KNOWS:\n' + shared.map((k) => '· ' + k.text).join('\n') : '',
+    shared.length ? 'WHAT THE TEAM KNOWS (current):\n' + shared.map((k) => '· ' + k.text).join('\n') : '',
     'Language: ' + (lang === 'tr' ? 'Turkish' : 'English') + '.',
     '',
     'Return ONLY a JSON object:',
@@ -712,7 +723,7 @@ async function runTask(uid, ctx, id) {
     if (!which) { await patchTask(ctx, id, (x) => { x.status = 'failed'; x.error = a.name + ' is set to ' + a.model + ' and that provider has no key here.'; }); await notify(uid, ctx, t, 'failed'); return; }
     await patchTask(ctx, id, (x) => { x.steps[i].status = 'running'; x.steps[i].startedAt = Date.now(); x.steps[i].attempts = (x.steps[i].attempts || 0) + 1; });
     const know = await knowledge(ctx);
-    const shared = know.filter((k) => k.scope === 'shared').slice(-80), own = know.filter((k) => k.scope === 'agent:' + a.id).slice(-80);
+    const shared = know.filter((k) => k.scope === 'shared' || k.scope === 'agent:' + a.id).slice(-200), own = [];
     const earlier = t.steps.slice(0, i).filter((s) => s.status === 'done').map((s) => ({ agent: (list.find((x) => x.id === s.agent) || {}).name || s.agent, title: s.title, result: s.result }));
     const bud = await budget(ctx);
     if (bud.over) { await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'failed'; x.error = bud.message; }); await notify(uid, ctx, t, 'failed'); return; }
@@ -784,6 +795,7 @@ async function runTask(uid, ctx, id) {
       for (const rm of out.remember) { if (k2.some((k) => k.text.toLowerCase() === rm.fact.toLowerCase())) continue; k2.push({ id: 'k' + newId(), text: rm.fact, scope: rm.scope === 'shared' ? 'shared' : 'agent:' + a.id, source: 'agent:' + a.id, at: Date.now(), updated: Date.now() }); n++; }
       if (n) await ctx.set('team:knowledge', k2.slice(-400));
     }
+    try { const kb = memory.blocks(shared, a.id); await memory.record(ctx, { agent: a.id, via: 'task:' + id, model: which.model, said: st.title + ' — ' + (st.brief || ''), reply: out.result, knowledge: kb.facts.concat(kb.rules), superseded: kb.old, instructions: a.instructions, pages: out.read || [] }); } catch (e) {}
     await patchTask(ctx, id, (x) => { x.steps[i].status = 'done'; x.steps[i].result = out.result; x.steps[i].model = which.model; x.steps[i].doneAt = Date.now(); x.steps[i].approvals = newApprovals; x.answer = ''; x.question = ''; delete x.handoff; });
     await log(ctx, a.id, a.name + ' finished: ' + st.title + (newApprovals.length ? ' (' + newApprovals.length + ' for approval)' : ''));
     if ((await ctx.get('team:paused')) === true) return;
@@ -931,7 +943,7 @@ async function delegateText(ctx, uid, text, lang, opts) {
   if (!which) return { error: 'J.A.R.V.I.S. has no model available here.', status: 503 };
   const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429 };
   const know = await knowledge(ctx);
-  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), know.filter((k) => k.scope === 'shared').slice(-60), lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
+  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), memory.current(know).filter((k) => k.scope === 'shared').slice(-60), lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
   if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
   await bumpUsage(ctx, 'jarvis', r.usage, which.model);
   const plan = parsePlan(r.text, list);
@@ -1070,7 +1082,7 @@ async function suggestions(ctx, opts) {
   const which = await resolveModel(j.model);
   if (!which) return Object.assign(rec, { error: 'J.A.R.V.I.S. has no model available here yet.' });
   const bud = await budget(ctx); if (bud.over) return Object.assign(rec, { error: bud.message });
-  const know = (await knowledge(ctx)).filter((k) => k.scope === 'shared').slice(-40);
+  const know = memory.current(await knowledge(ctx)).filter((k) => k.scope === 'shared').slice(-40);
   const tl = (await tasks(ctx)).filter((t) => !/^(cancelled|failed)$/.test(t.status)).slice(-12);
   const snapshot = await snapshotOf(ctx);
   const open = rec.items.filter((it) => it.status === 'open').map((it) => it.title);
@@ -1263,6 +1275,40 @@ async function handleStage4(p, req, res, ctx) {
   return false;
 }
 
+/* ---- memory auditing: what flow-memory needs from here -------------------- */
+function platformRules() {
+  const out = [
+    { id: 'approval', text: 'Every outside action — sending an email or message, posting, paying, changing a live setting — needs the person\'s yes first; agents propose, never do.', why: 'A platform rule, not a memory: it is in the system prompt of every agent and cannot be changed by a correction.' },
+    { id: 'permissions', text: 'Permission levels: read = answer only; draft = prepare things for approval; approve = act after a yes; auto = act within an agreed policy. Set per agent in its room.', why: 'Permission control. A memory correction never changes it; raise or lower it in the agent\'s room if you mean to.' },
+    { id: 'tools', text: toolsText(), why: 'What the tools can and cannot do here; code.' },
+    { id: 'honesty', text: 'Never claim something was sent, done, checked or changed. Never invent numbers, accounts, results or people.', why: 'Platform rule.' }
+  ];
+  for (const t of TEMPLATE_IDS) out.push({ id: 'template:' + t, text: TEMPLATES[t].name + ' (' + TEMPLATES[t].role + ') starter instructions: ' + TEMPLATES[t].instructions, why: 'A role template: the starting instructions a new agent is given. Each agent\'s own copy is editable in its room.' });
+  return out;
+}
+/* With a model: does each candidate really conflict, and how should it read now? */
+async function judgeConflicts(ctx, correction, rows) {
+  if (FAKE) return rows.map((r) => ({ conflicts: true, replacement: r.source === 'knowledge' ? '' : correction }));
+  const list = await agents(ctx); const j = list.find((a) => a.id === 'jarvis'); const which = j && await resolveModel(j.model);
+  if (!which) return null;
+  const sys = 'You audit a team\'s memory. The person has just stated what is TRUE NOW: "' + correction + '". For each numbered passage below, say whether it conflicts with that statement (states something that is no longer true, or an older version of it), and for passages from instructions or memory write the one-sentence replacement that keeps the passage\'s purpose but states the truth. Return ONLY JSON: { "rows": [ { "n": 1, "conflicts": true, "replacement": "" } ] }. Mark "conflicts": false for passages that are compatible or about something else.';
+  const body = rows.map((r, i) => (i + 1) + '. [' + r.source + (r.agent ? ' of ' + r.agent : '') + '] ' + r.content).join('\n');
+  const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 1500, timeoutMs: 45000 });
+  if (r.error) return null;
+  await bumpUsage(ctx, 'jarvis', r.usage, which.model);
+  const m = String(r.text || '').match(/\{[\s\S]*\}/); if (!m) return null;
+  try { const o = JSON.parse(m[0]); const byN = {}; (o.rows || []).forEach((x) => { byN[+x.n] = x; }); return rows.map((_, i) => byN[i + 1] ? { conflicts: byN[i + 1].conflicts !== false, replacement: str(byN[i + 1].replacement, 400) } : { conflicts: true, replacement: '' }); } catch (e) { return null; }
+}
+function memDeps() {
+  return {
+    snapshot: (ctx) => snapshotOf(ctx),
+    platform: platformRules,
+    judge: judgeConflicts,
+    ask: (ctx, agentId, text) => sayTo(ctx, agentId, text, 'en', { dry: true, via: 'verify' }),
+    log: (ctx, who, what) => log(ctx, who, what)
+  };
+}
+
 async function handleWork(p, req, res, ctx) {
   const json = ctx.json;
   const uid = ctx.user && ctx.user.id;
@@ -1358,6 +1404,8 @@ module.exports.kick = kick;
 module.exports.log = log;
 module.exports.bumpUsage = bumpUsage;
 module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
+module.exports.memory = memory;
+module.exports.provenance = (ctx, p) => memory.record(ctx, p);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,
   tickBriefings, suggestions, suggestAct, briefingText, localParts, userTz, connectors, costOf, budget, mailSent, parseSuggest, sendEmail, toolsText, parseReply, SUGGEST_SYSTEM, PRICES };
 
@@ -1367,9 +1415,11 @@ async function forJarvis(ctx) {
   try {
     const list = await ctx.get('team:agents'); const know = await ctx.get('team:knowledge');
     const j = Array.isArray(list) ? list.find((a) => a.id === 'jarvis') : null;
-    const shared = (Array.isArray(know) ? know : []).filter((k) => k && k.scope === 'shared').slice(-80).map((k) => ({ id: k.id, text: k.text }));
+    const kb = memory.blocks(Array.isArray(know) ? know : [], 'jarvis');
+    const shared = kb.facts.concat(kb.rules).slice(-80).map((k) => ({ id: k.id, text: k.text + (k.kind === 'rule' || k.kind === 'procedure' ? ' [rule]' : '') }));
+    const history = kb.historyText;
     const paused = (await ctx.get('team:paused')) === true;
-    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, paused };
+    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused };
   } catch (e) { return { model: '', shared: [], paused: false }; }
 }
 

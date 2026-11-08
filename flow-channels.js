@@ -259,7 +259,7 @@ const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot) => [
   'You never act yourself and never pretend to have done something: you answer from THEIR DATA below, or you start work for the team, or you approve/decline on their word.',
   '',
   'THE TEAM (id | name | role): ' + agents.filter((a) => a.id !== 'jarvis').map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('; '),
-  know.length ? 'WHAT THE TEAM KNOWS: ' + know.map((k) => k.text).join(' · ') : '',
+  know.length ? 'WHAT THE TEAM KNOWS (current): ' + know.map((k) => k.text).join(' · ') : '',
   tasks.length ? 'WORK IN FLIGHT / RECENT: ' + tasks.map((t) => t.title + ' (' + t.status.replace('_', ' ') + ')').join('; ') : 'No work in flight.',
   pending.length ? 'WAITING FOR THEIR YES: ' + pending.map((x, i) => '[' + (i + 1) + '] ' + x.summary).join('; ') : '',
   '',
@@ -278,14 +278,17 @@ async function jarvis(ctx, uid, channel, text, meta) {
   const j = list.find((a) => a.id === 'jarvis');
   const which = await team.resolveModel(j.model);
   if (!which) return 'J.A.R.V.I.S. has no model available here yet.';
-  const know = (await team.knowledge(ctx)).filter((k) => k.scope === 'shared').slice(-40);
+  const allKnow = await team.knowledge(ctx);
+  const kb = team.memory.blocks(allKnow, 'jarvis');
+  const know = kb.facts.concat(kb.rules).slice(-40);
   const tl = (await team.tasks(ctx)).slice(-8);
   const pending = (await team.approvals(ctx)).filter((x) => x.status === 'pending');
   let snapshot = '';
   try { if (extras && extras._internals && extras._internals.buildContext) snapshot = await extras._internals.buildContext(ctx.mine); } catch (e) {}
   const hist = await histGet(ctx, channel);
   const messages = hist.concat([{ role: 'user', content: text }]);
-  const r = await team.complete({ model: which.model, system: J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot), messages, maxTokens: 1200, timeoutMs: 60000 });
+  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA');
+  const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: 1200, timeoutMs: 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
   let say = '', actions = [];
@@ -305,6 +308,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
     }
   }
   const reply = [say].concat(extra).filter(Boolean).join('\n\n') || 'Noted, sir.';
+  try { await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); } catch (e) {}
   await histSet(ctx, channel, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply;
 }
