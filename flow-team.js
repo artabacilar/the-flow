@@ -53,6 +53,7 @@ const memory = require('./flow-memory');
 const skills = require('./flow-skills');
 const scripts = require('./flow-scripts');
 const efficiency = require('./flow-efficiency');
+const setup = require('./flow-setup');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -414,6 +415,7 @@ async function handle(p, req, res, ctx) {
   if (await skills.handle(p, req, res, ctx, skillDeps())) return true;
   if (await scripts.handle(p, req, res, ctx, scriptDeps())) return true;
   if (await efficiency.handle(p, req, res, ctx, effDeps())) return true;
+  if (await setup.handle(p, req, res, ctx, setupDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -856,6 +858,7 @@ async function runTask(uid, ctx, id) {
     }
     /* proposals → approvals, waiting */
     const newApprovals = [];
+    if (out.proposals.length && t.readOnly) { out.result = (out.result || '') + '\n\n(Read-only task: ' + out.proposals.length + ' proposed action' + (out.proposals.length === 1 ? ' was' : 's were') + ' recorded, not raised for approval.)'; out.proposals = []; }
     if (out.proposals.length) {
       const ap = await approvals(ctx);
       for (const p of out.proposals) {
@@ -1454,6 +1457,16 @@ async function runStepDry(ctx, agentId, brief) {
   const out = parseStep(r.text);
   return { result: out.result, question: out.question, proposals: out.proposals.map((p) => Object.assign({}, p, { status: 'draft' })), usage: r.usage, calls: 1, usd: costOf(which.model, r.usage) || 0, model: which.model, skill: pick && pick.meta && pick.meta.id && !pick.meta.blocked ? pick.meta : null };
 }
+/* ---------- guided setup: what the module needs from here ------------------ */
+function setupDeps() {
+  const C = channelsLib();
+  return {
+    agents: (ctx) => agents(ctx), saveAgents: (ctx, list) => saveAgents(ctx, list), providers: () => providers(), resolveModel: (m) => resolveModel(m),
+    test: async (ctx, model) => { const r = await complete({ model, system: 'You are being tested. Reply with the single word READY and nothing else.', messages: [{ role: 'user', content: 'Ready?' }], maxTokens: 200, timeoutMs: 30000 }); if (r.error) return { error: r.error }; try { await bumpUsage(ctx, 'jarvis', r.usage, model); } catch (e) {} return { text: r.text, usage: r.usage }; },
+    channels: async (uid) => (C && C.statusList ? await C.statusList(uid) : []), newCode: C && C._internals && C._internals.newCode ? (uid) => C._internals.newCode(uid) : null, send: (channel, to, text, ctx) => (C ? C.send(channel, to, text, ctx) : Promise.reject(new Error('channels unavailable'))),
+    connectors: (uid, ctx) => connectors(uid, ctx), tasks: (ctx) => tasks(ctx), newTask: (ctx, uid, f) => newTask(ctx, uid, f), log: (ctx, who, what) => log(ctx, who, what)
+  };
+}
 /* ---------- automations: what the module needs from here ------------------ */
 function scriptDeps() {
   return {
@@ -1631,6 +1644,11 @@ module.exports.memory = memory;
 module.exports.skills = skills;
 module.exports.scripts = scripts;
 module.exports.efficiency = efficiency;
+module.exports.setup = setup;
+module.exports.setupDeps = setupDeps;
+module.exports.setupPong = (ctx, channel) => setup.pong(ctx, channel);
+module.exports.setupText = (ctx, uid) => setup.text(ctx, setupDeps(), uid);
+module.exports.setupAct = (ctx, uid, b) => setup.act(ctx, setupDeps(), uid, b);
 module.exports.scriptDeps = scriptDeps;
 module.exports.provenance = (ctx, p) => memory.record(ctx, p);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,

@@ -139,7 +139,7 @@ async function whose(channel, externalId) { const v = await rawGet('__team:link:
 const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you would in the app. Also:\n' +
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
-  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n' +
+  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n' +
   '"call me when it is ready" — he rings you (needs the phone channel)';
 
 const UNKNOWN = (channel) => 'This ' + (channel === 'sms' || channel === 'voice' ? 'number' : 'account') + ' is not linked to a Flow. In The Flow, open the command centre → Channels → ' + CHANNELS[channel].name + ' → "Link", and send the six-digit code here.';
@@ -168,6 +168,9 @@ async function inbound(channel, externalId, text, meta) {
   const active = list.filter((a) => !a.archived);
   const names = active.filter((a) => a.id !== 'jarvis').map(firstName);
   if (!text) return 'Say something and I will take it from there.';
+  /* the setup's two-way test: this reply is the proof */
+  let ponged = false; try { if (team.setupPong) ponged = await team.setupPong(ctx, channel); } catch (e) {}
+  if (ponged) return 'Confirmed: ' + CHANNELS[channel].name + ' works both ways. The setup in the command centre has moved on.';
   if ((await ctx.get('team:paused')) === true && !/^\/(team|tasks|help)\b/i.test(text)) return 'The team is paused. Resume it from the command centre.';
 
   /* 3. commands */
@@ -216,6 +219,19 @@ async function inbound(channel, externalId, text, meta) {
       if (pick.status !== 'active') return '"' + pick.name + '" is ' + pick.status + '. Enable it in the command centre first.';
       const run = await team.scripts.startRun(ctx, team.scriptDeps(), pick, { uid, trigger: 'channel ' + channel });
       return '"' + pick.name + '" v' + pick.version + ': ' + run.status + (run.error ? ' — ' + run.error : '') + (run.output ? '\n\n' + String(run.output).slice(0, 2500) : '') + (run.metrics ? '\n\n(' + run.metrics.items + ' items · ' + run.metrics.ms + ' ms · ' + run.metrics.modelCalls + ' model call' + (run.metrics.modelCalls === 1 ? '' : 's') + ')' : '');
+    }
+    if (c === 'setup') {
+      if (!team.setupText) return 'Setup is not available here.';
+      if (/^first\b/i.test(rest)) { const which = (rest.split(/\s+/)[1] || 'today').toLowerCase(); const r = await team.setupAct(ctx, uid, { step: 'first', which, via: channel }); if (r.error) return r.error; return 'Started the first task: "' + r.task.title + '" — read-only; ' + ((list.find((a) => a.id === r.task.agent) || {}).name || 'an agent') + ' is on it and the result lands here.'; }
+      return await team.setupText(ctx, uid);
+    }
+    if (c === 'deliver' || c === 'delivery') {
+      if (!rest) { const cur = await ctx.get('team:delivery'); return 'Results and briefings go to ' + (cur ? (cur === 'app' ? 'the app' : cur === 'push' ? 'push notifications' : (CHANNELS[cur] || {}).name || cur) : 'every linked channel') + ' by default. Say /deliver here, /deliver app or /deliver push.'; }
+      const where = /^here$/i.test(rest) ? channel : rest.toLowerCase();
+      if (!(where === 'app' || where === 'push' || (l[where] && l[where].id))) return 'I can deliver here, to the app, to push, or to a channel that is linked.';
+      await ctx.set('team:delivery', where);
+      try { if (team.setupAct) await team.setupAct(ctx, uid, { step: 'delivery', where }); } catch (e) {}
+      return 'Done: results and briefings go to ' + (where === 'app' ? 'the app' : where === 'push' ? 'push notifications' : CHANNELS[where].name) + ' by default.';
     }
     if (c === 'briefing' || c === 'brief') { const L = team._work.localParts(await team._work.userTz(ctx), new Date()); return await team._work.briefingText(ctx, L, 'en'); }
     if (c === 'answer') {
@@ -337,13 +353,21 @@ async function notify(uid, text, opts) {
   if (!D) return;
   const ctx = await ctxFor(uid);
   const l = await links(ctx);
+  /* a default delivery channel narrows the fan-out to that channel; a reply
+     to a message in another channel still goes where it was asked (opts.channel) */
+  const def = await ctx.get('team:delivery');
+  const only = opts && opts.channel ? opts.channel : (typeof def === 'string' && l[def] && l[def].id ? def : null);
+  if (def === 'app' && !(opts && opts.channel)) return 0;
+  let n = 0;
   for (const ch of Object.keys(l)) {
     if (!l[ch] || !l[ch].id || ch === 'voice') continue;
-    try { await send(ch, l[ch].id, text, ctx); } catch (e) { logLine(ch + ' send failed: ' + (e && e.message)); }
+    if (only && ch !== only) continue;
+    try { await send(ch, l[ch].id, text, ctx); n++; } catch (e) { logLine(ch + ' send failed: ' + (e && e.message)); }
   }
   if (opts && opts.call && l.voice && l.voice.id && configured('voice') && opts.task) {
     try { await placeCall(l.voice.id, opts.task.id, uid); } catch (e) { logLine('call failed: ' + (e && e.message)); }
   }
+  return n;
 }
 
 /* ---------- sending ------------------------------------------------------- */

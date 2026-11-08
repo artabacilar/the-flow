@@ -14487,7 +14487,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14543,6 +14543,7 @@ const Hud = {
     if (Team.sel === 'skills') { try { Team.paintSkills(); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (Team.sel === 'scripts') { try { Team.paintScripts(); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (Team.sel === 'efficiency') { try { Team.paintEfficiency(); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
+    if (Team.sel === 'setup') { try { Team.paintSetup(); } catch (e) { console.warn('[Flow] setup', e); } return; }
     Hud.el.classList.remove('hud-memview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
@@ -14737,6 +14738,7 @@ const Team = {
         '<span class="hud-agn">' + esc(a.name) + '</span><small>' + esc(a.role) + ' · ' + esc(ok ? Team.short(a.model) : 'no model') + '</small>' +
         '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
     }).join('') +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'setup' ? ' sel' : '') + '" data-hud="setup" aria-label="Setup: from nothing to the first piece of work"><i class="hud-av">✓</i><span class="hud-agn">Setup</span><small>' + (Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.progress.done + ' of ' + Team.su.progress.total) : 'guided, resumable') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'skills' ? ' sel' : '') + '" data-hud="skills" aria-label="Skills: what the team has been taught to do"><i class="hud-av">S</i><span class="hud-agn">Skills</span><small>' + (Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'scripts' ? ' sel' : '') + '" data-hud="scripts" aria-label="Automations: routine work done by scripts, not a model"><i class="hud-av">A</i><span class="hud-agn">Automations</span><small>' + (Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' + (Team.sc.counts.running ? ' · ' + Team.sc.counts.running + ' running' : '') : 'scripts, schedules') + '</small></button>' +
@@ -14747,7 +14749,7 @@ const Team = {
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
+    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -14857,7 +14859,7 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.approvalsPanel() + Team.suggestPanel() + Team.tasksPanel(null) +
+    return Team.suPanel() + Team.approvalsPanel() + Team.suggestPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
@@ -15215,6 +15217,133 @@ const Team = {
   },
   /* ================= Efficiency: where effort is wasted, and proof a change helped ================= */
   ef: null, efLoading: false, efBusy: false, efOpen: null, efKind: 'all', efShowDismissed: false, efNewBaseline: false,
+  /* ---- Guided setup: nine steps, each saved as it is done ---- */
+  async loadSu(force) {
+    if (Team.su && !force) return Team.su;
+    try { const r = await fetch('/api/team/setup', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.su = (r.ok && j && j.ok) ? j : (Team.su || { steps: [], failed: true }); } catch (e) { Team.su = Team.su || { steps: [], failed: true }; }
+    return Team.su;
+  },
+  suWatch() {
+    clearTimeout(Team.suTimer);
+    const V = Team.su; if (!V || !Hud.on || Team.sel !== 'setup') return;
+    const cur = V.steps.find((s) => s.id === Team.suStep) || {};
+    const waiting = (Team.suStep === 'channel' && V.facts.ping && !V.facts.ping.pong) || (Team.suStep === 'first' && cur.status === 'running');
+    if (waiting) Team.suTimer = setTimeout(async () => { await Team.loadSu(true); if (Hud.on && Team.sel === 'setup') Hud.paint(); }, 2500);
+  },
+  paintSetup() {
+    Hud.el.classList.add('hud-memview');
+    if (!Team.su && !Team.suLoading) { Team.suLoading = true; Team.loadSu().then(() => { Team.suLoading = false; if (Hud.on && Team.sel === 'setup') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Setup';
+    Hud.el.querySelector('.hud-brand span').textContent = 'From nothing to the first piece of work the team did for you';
+    const V = Team.su;
+    if (!V || !V.steps.length) { Hud.el.querySelector('.hud-left').innerHTML = Hud.panel('susteps', 'Steps', '<p class="hud-sub">Looking…</p>'); Hud.el.querySelector('.hud-right').innerHTML = ''; Team.paintRail(); return; }
+    if (!Team.suStep || !V.steps.some((s) => s.id === Team.suStep)) Team.suStep = V.current;
+    const badge = (s) => s.status === 'done' ? '<em class="hud-badge" data-st="working">done</em>' : s.status === 'skipped' ? '<em class="hud-badge" data-st="not_built">skipped</em>' : s.status === 'attention' ? '<em class="hud-badge" data-st="paused">needs attention</em>' : s.status === 'running' ? '<em class="hud-badge" data-st="awaiting">running</em>' : s.optional ? '<em class="hud-badge" data-st="not_built">optional</em>' : '';
+    const list = V.steps.map((s, i) => '<div class="hud-mi' + (Team.suStep === s.id ? ' open' : '') + (s.status === 'done' || s.status === 'skipped' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="sustep" data-id="' + esc(s.id) + '"><span data-i18n="off"><b class="hud-sun">' + (i + 1) + '</b> ' + esc(s.title) + '</span><small data-i18n="off">' + esc(Team.cut(s.note, 90)) + '</small>' + badge(s) + '</button></div>').join('');
+    const prog = '<div class="hud-big">' + V.progress.done + '<small> / ' + V.progress.total + '</small></div><i class="hud-bar"><b style="width:' + Math.round(100 * V.progress.done / V.progress.total) + '%"></b></i><p class="hud-sub">' + (V.completedAt ? 'Set up on ' + esc(new Date(V.completedAt).toLocaleDateString()) + '. Everything here can be changed later.' : 'Leave any time; it continues where it was.') + '</p>';
+    Hud.el.querySelector('.hud-left').innerHTML = Hud.panel('suprog', 'Progress', prog) + Hud.panel('susteps', 'Steps', list);
+    Hud.el.querySelector('.hud-right').innerHTML = Team.suStepPanel(V, Team.suStep);
+    Team.paintRail(); Team.suWatch();
+  },
+  suStepPanel(V, id) {
+    const s = V.steps.find((x) => x.id === id) || V.steps[0]; const F = V.facts; const nxt = V.steps[V.steps.findIndex((x) => x.id === s.id) + 1];
+    const nextBtn = nxt ? '<button type="button" class="hud-btn ghost" data-hud="sustep" data-id="' + esc(nxt.id) + '">Next: ' + esc(nxt.title) + ' ›</button>' : '';
+    const head = (title, intro) => '<div class="hud-who"><b>' + esc(title) + '</b></div><p class="hud-sub" style="margin-top:-6px">' + esc(intro) + '</p>';
+    let body = '';
+    if (s.id === 'agent') {
+      const a = F.agent || {};
+      body = head('Your main agent', 'He is the chief of staff: he answers you, plans work for the specialists and hands results over. Give him his name; the specialists each have a room of their own.') +
+        '<form data-team="suagent" class="hud-skform"><label class="hud-opt"><span>Name</span><input class="hud-sel" type="text" name="name" maxlength="40" value="' + esc(a.name || 'J.A.R.V.I.S.') + '" required></label><label class="hud-opt"><span>Role, in a few words</span><input class="hud-sel" type="text" name="role" maxlength="80" value="' + esc(a.role || 'chief of staff') + '"></label><div class="hud-row"><button type="submit" class="hud-btn">' + (s.status === 'done' ? 'Save' : 'Save and continue') + '</button>' + nextBtn + '</div></form>' +
+        (F.specialists.length ? '<p class="hud-sub" data-i18n="off"><b>Specialists already on the team:</b> ' + F.specialists.map((x) => esc(x.name) + ' (' + esc(x.role) + ')').join(' · ') + '</p>' : '');
+    } else if (s.id === 'provider') {
+      const P = F.providers; const conf = P.filter((p) => p.configured);
+      const sel = '<select class="hud-sel" name="model" aria-label="Model">' + P.map((p) => p.configured ? '<optgroup label="' + esc(p.name) + '">' + p.models.map((m) => '<option value="' + esc(m) + '"' + (F.agent && m === F.agent.model ? ' selected' : '') + '>' + esc(m) + '</option>').join('') + '</optgroup>' : '<optgroup label="' + esc(p.name) + ' — awaiting configuration"><option disabled>Add ' + esc(p.env) + ' in Render to use ' + esc(p.name) + '</option></optgroup>').join('') + '</select>';
+      const bill = P.map((p) => '<details class="hud-det"' + (p.configured ? ' open' : '') + '><summary data-i18n="off">' + esc(p.name) + ' · ' + (p.configured ? 'configured · ' + p.models.length + ' models' : 'awaiting configuration — add ' + esc(p.env) + ' in Render') + '</summary>' + (p.billing ? '<p class="hud-sub" data-i18n="off"><b>Billing:</b> ' + esc(p.billing.how) + '</p><p class="hud-sub" data-i18n="off"><b>Limits:</b> ' + esc(p.billing.limits) + ' <a class="hud-link" href="' + esc(p.billing.url) + '" target="_blank" rel="noopener">Current prices ›</a></p>' : '') + '</details>').join('');
+      const last = s.data && s.data.model && !s.data.error ? '<p class="hud-sub" data-i18n="off">Last test: ' + esc(s.data.provider + ' · ' + s.data.model) + ' answered "' + esc(s.data.reply || '') + '" in ' + s.data.ms + ' ms' + (s.data.usage ? ' · ' + ((s.data.usage.in || 0) + (s.data.usage.out || 0)) + ' tokens' : '') + '.</p>' : s.data && s.data.error ? '<p class="hud-alert" data-i18n="off">Last test failed: ' + esc(s.data.error) + '</p>' : '';
+      body = head('The model that thinks', 'Each provider bills your own account per token; this app only counts. The test sends one tiny prompt and shows the reply and the time.') +
+        (conf.length ? '<form data-team="suprovider" class="hud-skform"><label class="hud-opt"><span>Model for the main agent</span>' + sel + '</label><div class="hud-row"><button type="submit" class="hud-btn"' + (Team.suBusy ? ' disabled' : '') + '>' + (Team.suBusy ? 'Testing…' : 'Test and use this model') + '</button>' + nextBtn + '</div></form>' : '<p class="hud-alert">No provider key is in Render yet. Add one of ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY or DEEPSEEK_API_KEY there (you type it; this app never asks for it), then come back to this step.</p>') + last + '<p class="hud-sub"><b>Providers</b></p>' + bill;
+    } else if (s.id === 'channel') {
+      const C = F.channels; const linked = C.filter((c) => c.status === 'working'); const ready = C.filter((c) => c.status === 'ready'); const ping = F.ping;
+      const rows = C.filter((c) => c.status !== 'not_built').map((c) => '<div class="hud-r"><span data-i18n="off">' + esc(c.name) + (c.linked && c.linked.name ? ' <small>' + esc(c.linked.name) + '</small>' : '') + '</span><b>' + (c.status === 'working' ? (ping && ping.channel === c.id && ping.pong ? 'linked · replied' : 'linked') : c.status === 'ready' ? 'ready to link' : 'awaiting ' + esc((c.env || []).join(', '))) + '</b></div>').join('');
+      const code = Team.suCode ? '<div class="hud-code" data-i18n="off">' + esc(Team.suCode.code) + '</div><p class="hud-sub">Send this code from ' + esc(Team.suCode.name) + ' to the bot within 10 minutes. The first message links it; nothing else is shared. This page notices on its own.</p>' : '';
+      const linkBtns = ready.map((c) => '<button type="button" class="hud-btn" data-hud="sucode" data-ch="' + esc(c.id) + '" data-name="' + esc(c.name) + '">Link ' + esc(c.name) + '</button>').join('');
+      const testBtns = linked.map((c) => '<button type="button" class="hud-btn' + (ping && ping.channel === c.id && !ping.pong ? ' ghost' : '') + '" data-hud="sutest" data-ch="' + esc(c.id) + '"' + (Team.suBusy ? ' disabled' : '') + '>' + (ping && ping.channel === c.id && !ping.pong ? 'Waiting for your reply on ' + esc(c.name) + '…' : 'Send the test to ' + esc(c.name)) + '</button>').join('');
+      const state = ping && ping.pong ? '<p class="hud-sub good" data-i18n="off">Confirmed both ways: your reply came back in ' + Math.round(ping.ms / 1000) + ' s.</p>' : ping ? '<p class="hud-sub">A message is on its way. Reply with anything from that chat; the moment it arrives this step is done.</p>' : '';
+      body = head('Where you talk to him', 'Pair one messaging channel and prove it works both ways: he sends, you reply. Telegram is the quickest — one BotFather token on the server, then a code from here.') +
+        rows + (ready.length || linked.length ? '<div class="hud-row">' + linkBtns + testBtns + '</div>' : '<p class="hud-alert">No channel is configured on the server yet. The quickest: create a Telegram bot with @BotFather and add TELEGRAM_BOT_TOKEN in Render — you type it, never this app. The webhook registers itself; then Link appears here.</p>') + code + state +
+        '<p class="hud-sub">States: <b>awaiting</b> (a key is missing on the server) → <b>ready to link</b> → <b>linked</b> (your code arrived) → <b>replied</b> (the two-way test passed).</p><div class="hud-row">' + (s.status !== 'done' ? '<button type="button" class="hud-btn ghost" data-hud="sustep" data-id="delivery">Skip for now ›</button>' : '') + nextBtn + '</div>';
+    } else if (s.id === 'delivery') {
+      const C = F.channels.filter((c) => c.status === 'working'); const cur = F.delivery;
+      const opt = (v, l, sub) => '<label class="hud-tick hud-sur"><input type="radio" name="where" value="' + esc(v) + '"' + (cur === v || (!cur && v === 'app' && !C.length) ? ' checked' : '') + '> <span data-i18n="off"><b>' + esc(l) + '</b><small>' + esc(sub) + '</small></span></label>';
+      body = head('Where he delivers', 'Briefings, finished work, questions and approvals go here by default. A reply to a message always goes back where it was asked.') +
+        '<form data-team="sudelivery" class="hud-skform">' + C.map((c) => opt(c.id, c.name, 'linked' + (c.linked && c.linked.name ? ' · ' + c.linked.name : ''))).join('') + opt('push', 'Push notifications', 'this device and the Mac / iPhone apps') + opt('app', 'The app only', 'nothing leaves; you look in the command centre') + '<div class="hud-row"><button type="submit" class="hud-btn">Use this</button>' + nextBtn + '</div></form><p class="hud-sub">From any linked chat: <b>/deliver here</b>.</p>';
+    } else if (s.id === 'tools') {
+      const T = F.tools; const order = ['working', 'ready', 'awaiting', 'not_built']; const lab = { working: 'Working', ready: 'Ready to connect', awaiting: 'Awaiting configuration', not_built: 'Not built yet' };
+      const ess = T.filter((t) => t.essential); const rest = T.filter((t) => !t.essential);
+      const row = (t) => '<div class="hud-mi' + (Team.suTool === t.id ? ' open' : '') + '"><button type="button" class="hud-mih" data-hud="sutool" data-id="' + esc(t.id) + '"><span data-i18n="off">' + esc(t.name) + '</span><small data-i18n="off">' + esc(Team.cut(t.note, 100)) + '</small><em class="hud-badge" data-st="' + (t.status === 'working' ? 'working' : t.status === 'ready' ? 'ready' : t.status === 'awaiting' ? 'paused' : 'not_built') + '">' + esc(lab[t.status] || t.status) + '</em></button>' + (Team.suTool === t.id ? '<div class="hud-tr"><p class="hud-sub" data-i18n="off">' + esc(t.note) + '</p>' + (t.caps && t.caps.length ? '<p class="hud-sub"><b>What an agent may do with it here:</b></p><ul class="hud-ev">' + t.caps.map((c) => '<li data-i18n="off">' + esc(c) + '</li>').join('') + '</ul>' : '') + (t.env && t.env.length ? '<p class="hud-sub" data-i18n="off"><b>Needs on the server:</b> ' + esc(t.env.join(', ')) + ' — you add it in Render; this app never asks for a secret.</p>' : '') + (t.status === 'working' && t.kind === 'channel' ? '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="go" data-to="jarvis">Manage in Channels</button></div>' : '') + '</div>' : '') + '</div>';
+      body = head('Tools and what each may do', 'Only what exists here is listed, with its real status. Essentials first. Nothing connects without you; every tool says what an agent may do with it.') +
+        '<p class="hud-sub"><b>Essentials</b></p>' + ess.map(row).join('') + '<p class="hud-sub"><b>Everything else</b> · ' + (F.counts.working || 0) + ' working · ' + (F.counts.awaiting || 0) + ' awaiting · ' + (F.counts.not_built || 0) + ' not built</p>' + order.map((st) => rest.filter((t) => t.status === st).map(row).join('')).join('') +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="sutools">' + (s.status === 'done' ? 'Reviewed' : 'I have seen these') + '</button>' + nextBtn + '</div>';
+    } else if (s.id === 'tour') {
+      const seen = F.tourSeen || [];
+      body = head('A tour of the rooms', 'Ten rooms, one line each. Open any of them; come back with the Setup button on the strip.') +
+        F.tour.map((t) => '<div class="hud-r hud-lg"><span data-i18n="off"><b>' + esc(t.name) + '</b>' + (seen.indexOf(t.id) >= 0 ? ' <small>seen</small>' : '') + '<small>' + esc(t.what) + '</small></span><button type="button" class="hud-btn ghost" data-hud="sutour" data-id="' + esc(t.id) + '" data-to="' + esc(t.to) + '">Open</button></div>').join('') +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="sutourall">' + (s.status === 'done' ? 'Tour done' : 'Mark the tour done') + '</button>' + nextBtn + '</div>';
+    } else if (s.id === 'first') {
+      const T = F.firstTask;
+      const opts = F.first.map((f) => '<label class="hud-tick hud-sur' + (f.ready ? '' : ' off') + '"><input type="radio" name="which" value="' + esc(f.id) + '"' + (f.ready && (!Team.suFirst || Team.suFirst === f.id) ? (Team.suFirst = Team.suFirst || f.id, ' checked') : '') + (f.ready ? '' : ' disabled') + '> <span data-i18n="off"><b>' + esc(f.title) + '</b><small>' + esc(f.ready ? 'read-only · the result names its source' : f.why) + '</small></span></label>').join('');
+      const who = '<label class="hud-opt"><span>Who does it</span><select class="hud-sel" name="agent">' + F.specialists.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + ' — ' + esc(a.role) + '</option>').join('') + '</select></label>';
+      const run = T ? '<div class="hud-mi open"><div class="hud-mih"><span data-i18n="off">' + esc(T.title) + '</span><small>' + esc((F.specialists.find((a) => a.id === T.agent) || {}).name || T.agent) + ' · ' + esc(T.status.replace(/_/g, ' ')) + (T.via && T.via !== 'setup' ? ' · from ' + esc(T.via) : '') + '</small><em class="hud-badge" data-st="' + (T.status === 'done' ? 'working' : /failed|cancelled/.test(T.status) ? 'not_built' : 'awaiting') + '">' + esc(T.status === 'done' ? 'done' : /failed|cancelled/.test(T.status) ? T.status : 'running') + '</em></div><div class="hud-tr">' + (T.result ? '<pre class="hud-pre" data-i18n="off">' + esc(T.result) + '</pre>' : T.error ? '<p class="hud-alert" data-i18n="off">' + esc(T.error) + '</p>' : '<p class="hud-sub">Working… this page refreshes on its own.</p>') + (T.result ? '<p class="hud-sub">' + (/Source:/i.test(T.result) ? 'The result names its source.' : 'The result does not name its source — ask for it, or run it again.') + '</p>' : '') + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="task" data-id="' + esc(T.id) + '">Open the task</button></div></div></div>' : '';
+      body = head('The first task', 'Read-only: nothing is sent, moved or changed. The result must name where it came from. You can also start it from the paired chat with /setup first.') +
+        run + (!T || /done|failed|cancelled/.test(T.status) ? '<form data-team="sufirst" class="hud-skform">' + opts + who + '<div class="hud-row"><button type="submit" class="hud-btn"' + (Team.suBusy ? ' disabled' : '') + '>' + (T ? 'Run another' : 'Run it') + '</button>' + nextBtn + '</div></form>' : '<div class="hud-row">' + nextBtn + '</div>') +
+        (F.gmail.status !== 'working' ? '<p class="hud-sub" data-i18n="off"><b>The inbox task waits for Gmail:</b> ' + esc(F.gmail.note) + '</p>' : '');
+    } else if (s.id === 'inbox') {
+      body = head('Inbox organisation (optional)', 'A scoped pass over the inbox with rules you approve: read-only first, then only the moves you tick, then a report of what moved and what still needs you. Nothing is ever deleted.') +
+        '<div class="hud-r"><span>Scope</span><b>the last 7 days</b></div><div class="hud-r"><span>Newsletters, notifications</span><b>label Later · archive</b></div><div class="hud-r"><span>Receipts, invoices</span><b>label Finance</b></div><div class="hud-r"><span>Anything asking you for something</span><b>stays · listed</b></div><div class="hud-r"><span>Report</span><b>looked at · moved by rule · needs you · unsure</b></div>' +
+        (F.gmail.status === 'working' ? '<div class="hud-row"><button type="button" class="hud-btn" data-hud="suinbox">Review the scope and run read-only</button>' : '<p class="hud-alert" data-i18n="off">Waits for Gmail: ' + esc(F.gmail.note) + '</p><div class="hud-row">') +
+        (s.status === 'skipped' ? '<button type="button" class="hud-btn ghost" data-hud="suinboxun">Bring it back</button>' : '<button type="button" class="hud-btn ghost" data-hud="suinboxskip">Skip for now</button>') + nextBtn + '</div>';
+    } else {
+      const ck = V.checklist.map((c) => '<div class="hud-r hud-lg"><span data-i18n="off">' + (c.ok ? '✓ ' : c.soft ? '○ ' : '✗ ') + esc(c.item) + (c.ok ? '' : '<small>' + esc(c.fix) + '</small>') + '</span>' + (!c.ok && c.id !== 'gmail' ? '<button type="button" class="hud-btn ghost" data-hud="sustep" data-id="' + esc(c.id) + '">Fix</button>' : '') + '</div>').join('');
+      body = head('Ready', V.completedAt ? 'Set up on ' + new Date(V.completedAt).toLocaleDateString() + '. The checklist stays live: anything that breaks shows here.' : V.readyNow ? 'Everything essential is in place.' : 'What is still missing is marked; the soft items are good to have, not required.') +
+        ck + '<div class="hud-row">' + (!V.completedAt ? '<button type="button" class="hud-btn" data-hud="sufinish"' + (V.readyNow ? '' : ' disabled') + '>Finish setup</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="sureset">Start over</button></div>' +
+        '<p class="hud-sub"><b>Next steps</b></p><ul class="hud-ev">' + V.nextSteps.map((n) => '<li data-i18n="off">' + esc(n) + '</li>').join('') + '</ul><details class="hud-det"><summary>If something breaks later</summary><ul class="hud-ev">' + V.recovery.map((n) => '<li data-i18n="off">' + esc(n) + '</li>').join('') + '</ul></details>';
+    }
+    return Hud.panel('sustep', (V.steps.findIndex((x) => x.id === s.id) + 1) + ' · ' + s.title + (s.status === 'done' ? ' · done' : s.status === 'attention' ? ' · needs attention' : ''), body);
+  },
+  async suClick(a, b) {
+    if (a === 'sustep') { Team.suStep = b.getAttribute('data-id'); Team.suTool = null; if (Team.sel !== 'setup') { await Team.select('setup', true); Team.paintRail(); } Hud.paint(); return true; }
+    if (a === 'sucode') { const j = await Team.post('/api/team/setup', { step: 'channel', op: 'code' }); if (j && j.ok) { Team.suCode = { ch: b.getAttribute('data-ch'), name: b.getAttribute('data-name'), code: j.code, at: Date.now() }; Hud.paint(); Team.suLinkWatch(); } else if (j && j.error) toast(j.error, 'warn', 3000); return true; }
+    if (a === 'sutest') { Team.suBusy = true; Hud.paint(); const j = await Team.post('/api/team/setup', { step: 'channel', op: 'test', channel: b.getAttribute('data-ch') }); Team.suBusy = false; if (j && j.error) toast(j.error, 'warn', 3200); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'sutools') { await Team.post('/api/team/setup', { step: 'tools' }); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'sutool') { const id = b.getAttribute('data-id'); Team.suTool = Team.suTool === id ? null : id; Hud.paint(); return true; }
+    if (a === 'sutour') { const id = b.getAttribute('data-id'); const seen = ((Team.su && Team.su.facts.tourSeen) || []).concat([id]).filter((v, i, arr) => arr.indexOf(v) === i); await Team.post('/api/team/setup', { step: 'tour', seen }); await Team.loadSu(true); const to = b.getAttribute('data-to'); if (to && to !== 'jarvis' && to !== 'team') { await Team.select(to, true); Team.paintRail(); Hud.paint(); toast('Setup is on the strip when you want to go back', null, 2200); } else if (to === 'team' || to === 'jarvis') { await Team.select('jarvis', true); Team.paintRail(); Hud.paint(); toast('Setup is on the strip when you want to go back', null, 2200); } else Hud.paint(); return true; }
+    if (a === 'sutourall') { await Team.post('/api/team/setup', { step: 'tour' }); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'suinboxskip') { await Team.post('/api/team/setup', { step: 'inbox', op: 'skip' }); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'suinboxun') { await Team.post('/api/team/setup', { step: 'inbox', op: 'unskip' }); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'suinbox') { const j = await Team.post('/api/team/setup', { step: 'inbox', op: 'run' }); toast((j && j.error) || 'Started', j && j.error ? 'warn' : null, 3600); return true; }
+    if (a === 'sufinish') { const j = await Team.post('/api/team/setup', { step: 'ready', op: 'finish' }); if (j && j.error) toast(j.error, 'warn', 3600); else toast('The team is ready, sir.', null, 2600); await Team.loadSu(true); Hud.paint(); return true; }
+    if (a === 'sureset') { if (Team.suResetArmed) { Team.suResetArmed = false; await Team.post('/api/team/setup', { step: 'ready', op: 'reset' }); Team.suStep = null; await Team.loadSu(true); Hud.paint(); } else { Team.suResetArmed = true; toast('Press Start over again to confirm; nothing else is deleted.', null, 2600); setTimeout(() => { Team.suResetArmed = false; }, 4000); } return true; }
+    return false;
+  },
+  suLinkWatch() {
+    clearTimeout(Team.suLinkTimer);
+    if (!Team.suCode || Date.now() - Team.suCode.at > 10 * 60000 || !Hud.on) { Team.suCode = null; return; }
+    Team.suLinkTimer = setTimeout(async () => { await Team.loadSu(true); const V = Team.su; const lk = V && V.facts.channels.find((c) => c.id === Team.suCode.ch && c.status === 'working'); if (lk) { Team.suCode = null; Team.loadChannels(true); toast(lk.name + ' linked — send the test to finish the step', null, 2600); if (Hud.on && Team.sel === 'setup') Hud.paint(); return; } if (Hud.on && Team.sel === 'setup') Team.suLinkWatch(); }, 2500);
+  },
+  async suSubmit(kind, f) {
+    if (kind === 'suagent') { const j = await Team.post('/api/team/setup', { step: 'agent', name: f.name.value.trim(), role: f.role.value.trim() }); if (j && j.ok) { await Team.load(true); await Team.loadSu(true); Team.suStep = 'provider'; toast('Saved', null, 1400); } else if (j && j.error) toast(j.error, 'warn', 3000); Hud.paint(); return true; }
+    if (kind === 'suprovider') { Team.suBusy = true; Hud.paint(); const j = await Team.post('/api/team/setup', { step: 'provider', model: f.model.value }); Team.suBusy = false; if (j && j.ok) { await Team.load(true); toast('Answered in ' + j.test.ms + ' ms', null, 2200); } else if (j && j.error) toast(j.error, 'warn', 4000); await Team.loadSu(true); Hud.paint(); return true; }
+    if (kind === 'sudelivery') { const w = f.querySelector('input[name="where"]:checked'); if (!w) return true; const j = await Team.post('/api/team/setup', { step: 'delivery', where: w.value }); if (j && j.error) toast(j.error, 'warn', 3000); else { Team.suStep = 'tools'; toast('Saved', null, 1400); } await Team.loadSu(true); Hud.paint(); return true; }
+    if (kind === 'sufirst') { const w = f.querySelector('input[name="which"]:checked'); if (!w) return true; Team.suBusy = true; Hud.paint(); const j = await Team.post('/api/team/setup', { step: 'first', which: w.value, agent: f.agent ? f.agent.value : '' }); Team.suBusy = false; if (j && j.error) toast(j.error, 'warn', 4200); else { Team.load(true); } await Team.loadSu(true); Hud.paint(); return true; }
+    return false;
+  },
+  /* On J.A.R.V.I.S.'s own view: a nudge until the setup is finished. */
+  suPanel() {
+    const V = Team.su; if (V === undefined || V === null) { if (!Team.suLoading) { Team.suLoading = true; Team.loadSu().then(() => { Team.suLoading = false; if (Hud.on) { Team.paintRail(); if (Team.sel === 'jarvis') Hud.paint(); } }); } return ''; }
+    if (!V.steps || !V.steps.length || V.completedAt) return '';
+    const cur = V.steps.find((s) => s.id === V.current) || {};
+    return Hud.panel('sunudge', 'Setup · ' + V.progress.done + ' of ' + V.progress.total, '<div class="hud-r"><span data-i18n="off">' + esc(cur.status === 'attention' ? 'Needs attention: ' + cur.title : 'Next: ' + cur.title) + '</span></div><div class="hud-row"><button type="button" class="hud-btn" data-hud="sustep" data-id="' + esc(V.current) + '">' + (V.progress.done ? 'Continue' : 'Start') + '</button></div>');
+  },
   async loadEf(force) {
     if (Team.ef && !force) return Team.ef;
     try { const r = await fetch('/api/team/efficiency?days=30', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.ef = (r.ok && j && j.ok) ? j : (Team.ef || { metrics: null, review: null, applied: [], baselines: [], failed: true }); } catch (e) { Team.ef = Team.ef || { metrics: null, review: null, applied: [], baselines: [], failed: true }; }
@@ -15656,7 +15785,8 @@ const Team = {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
-    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
+    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
+    if (await Team.suClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
     if (await Team.skClick(a, b)) return;
     if (await Team.scClick(a, b)) return;
@@ -15728,6 +15858,7 @@ const Team = {
     if (/^sk/.test(kind)) { try { await Team.skSubmit(kind, f); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
+    if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });
