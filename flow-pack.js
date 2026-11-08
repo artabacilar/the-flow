@@ -14097,6 +14097,17 @@ const Say = {
         Say.follow(false);
         return;
       }
+      /* "Turn the workflow we just completed into a reusable skill": the
+         last finished task becomes a skill document, opened for review. */
+      if (Team.isSkillRequest(text)) {
+        const t = await Team.skillFromLast(text);
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: t.say });
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        await Say.speak(t.say);
+        if (t.ok) { Team.skOpen = t.skill.id; Team.skEdit = t.skill.id; Team.sk = null; if (!Hud.on) Hud.open(); await Team.select('skills'); }
+        Say.follow(false);
+        return;
+      }
       /* One of the team, not him: their own thread, their own model, no
          actions on The Flow — they answer, remember, and that is all. */
       if (Say.agent) {
@@ -14467,7 +14478,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14520,6 +14531,7 @@ const Hud = {
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     /* One of the team selected: their workspace, not the day. */
     if (Team.sel === 'memory') { try { Team.paintMemory(); } catch (e) { console.warn('[Flow] memory', e); } return; }
+    if (Team.sel === 'skills') { try { Team.paintSkills(); } catch (e) { console.warn('[Flow] skills', e); } return; }
     Hud.el.classList.remove('hud-memview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
@@ -14715,13 +14727,14 @@ const Team = {
         '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
     }).join('') +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'skills' ? ' sel' : '') + '" data-hud="skills" aria-label="Skills: what the team has been taught to do"><i class="hud-av">S</i><span class="hud-agn">Skills</span><small>' + (Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done') + '</small></button>' +
       '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
       '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
   },
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory') { Team.sel = 'memory'; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
+    if (id === 'memory' || id === 'skills') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -14965,14 +14978,15 @@ const Team = {
   },
   taskPanel(id) {
     const t = ((Team.data && Team.data.tasks) || []).find((x) => x.id === id); if (!t) return '';
-    const steps = (t.steps || []).map((st) => '<div class="hud-step" data-st="' + esc(st.status) + '"><b data-i18n="off">' + esc((Team.agent(st.agent) || {}).name || st.agent) + '</b><span data-i18n="off">' + esc(st.title) + '</span><em>' + esc(Team.STATUS[st.status] || st.status) + '</em></div>').join('');
+    const skillChip = (st) => !st.skill ? '' : st.skill.missing ? '<i class="hud-skc miss" title="No such skill">no skill “' + esc(st.skill.missing) + '”</i>' : '<i class="hud-skc' + (st.skill.blocked ? ' miss' : '') + '" title="' + esc(st.skill.blocked ? 'Skill not usable: ' + st.skill.blocked : 'Followed this skill' + (st.skill.how === 'invoked' ? ' (asked for)' : '')) + '">' + esc(st.skill.name) + ' v' + esc(st.skill.version) + '</i>';
+    const steps = (t.steps || []).map((st) => '<div class="hud-step" data-st="' + esc(st.status) + '"><b data-i18n="off">' + esc((Team.agent(st.agent) || {}).name || st.agent) + '</b><span data-i18n="off">' + esc(st.title) + skillChip(st) + '</span><em>' + esc(Team.STATUS[st.status] || st.status) + '</em></div>').join('');
     const hand = t.handoff && t.status === 'awaiting_info' ? '<div class="hud-hand"><b>Needs you:</b> <span data-i18n="off">' + esc(t.handoff.why || '') + '</span> <a href="' + esc(t.handoff.url || '#') + '" target="_blank" rel="noopener noreferrer" data-i18n="off">' + esc(String(t.handoff.url || '').replace(/^https?:\/\//, '').slice(0, 60)) + '</a></div>' : '';
     const q = t.status === 'awaiting_info' ? hand + '<div class="hud-q"><b data-i18n="off">' + esc((Team.agent(t.asker) || {}).name || 'They') + ' asks:</b> <span data-i18n="off">' + esc(t.question) + '</span><form data-team="answer" data-id="' + esc(t.id) + '"><input type="text" name="answer" maxlength="2000" placeholder="' + (t.handoff ? 'Done — carry on (or what you found)…' : 'Your answer…') + '" aria-label="Your answer" required><button type="submit" class="hud-btn">Answer</button></form></div>' : '';
     const browsing = (t.steps || []).find((st) => st.browsing);
     const shots = t.shots ? (Team.shots && Team.shots.id === id ? (Team.shots.list.length ? '<div class="hud-shots">' + Team.shots.list.slice(-4).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(s.title || s.url) + '"><img src="' + esc(s.img) + '" alt="' + esc(s.title || 'What the agent saw') + '"></a>').join('') + '</div><p class="hud-sub">What ' + esc((Team.agent(Team.shots.list[0].agent) || {}).name || 'the agent') + ' saw, step by step.</p>' : '') : (Team.loadShots(id), '<p class="hud-sub">Loading what the agent saw…</p>')) : '';
     const res = t.result ? '<pre class="hud-res" data-i18n="off">' + esc(t.result) + '</pre>' : (t.status === 'running' || t.status === 'queued' ? '<p class="hud-sub">' + (browsing ? 'Browsing ' + esc(String(browsing.browsing).replace(/^https?:\/\//, '').split('/')[0]) + ' — ' : 'Working on it — ') + 'this carries on even if you close The Flow.</p>' : '');
     const err = t.error ? '<p class="hud-alert" data-i18n="off">' + esc(t.error) + '</p>' : '';
-    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
+    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + (/^(done|awaiting_approval)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '" title="Keep this workflow as a reusable skill the team can follow again">Turn into a skill</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
     return Hud.panel('taskv', esc(t.title), '<div class="hud-tmeta"><em class="hud-tst" data-st="' + esc(t.status) + '">' + esc(Team.STATUS[t.status] || t.status) + '</em><small data-i18n="off">' + esc(t.brief || '').slice(0, 300) + '</small></div>' + steps + q + err + res + shots + btns);
   },
   shots: null,
@@ -15185,13 +15199,201 @@ const Team = {
     if (kind === 'memverify') { const ask = f.ask.value.trim(); if (!ask) return true; Team.memBusy = true; Hud.paint(); const j = await Team.post('/api/team/memory/verify', { newText: f.getAttribute('data-new'), oldTexts: (f.getAttribute('data-old') || '').split('\u0001').filter(Boolean), entryId: f.getAttribute('data-entry'), ask, agent: f.agent.value }); Team.memBusy = false; Team.verifyResult = j && j.ok ? j : null; Hud.paint(); return true; }
     return false;
   },
+  /* ================= Skills: how work is done, taught once ================= */
+  cut(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n); },
+  sk: null, skLoading: false, skQ: '', skFilter: 'active', skOpen: null, skEdit: null, skNew: false, skBusy: false, skProp: null, skTest: null, skCmp: null,
+  isSkillRequest(text) { return /\b(?:turn|make|save|keep)\b[^.]{0,40}\b(?:that|this|the|it|what we just did|workflow|task|process)\b[^.]{0,40}\b(?:into|as) a (?:reusable |new )?skill\b|\b(?:turn|make) (?:that|this|it) (?:into )?a skill\b|\bbunu (?:bir )?(?:beceri|skill)(?:ye| yap)/i.test(String(text || '')); },
+  async skillFromLast(text) {
+    await Team.load(true);
+    const done = ((Team.data && Team.data.tasks) || []).filter((t) => t.status === 'done' || t.status === 'awaiting_approval').sort((a, b) => (b.doneAt || b.updatedAt || 0) - (a.doneAt || a.updatedAt || 0));
+    const t = Team.openId && done.find((x) => x.id === Team.openId) || done[0];
+    if (!t) return { ok: false, say: 'There is no finished piece of work to learn from yet. When the team completes a task, say this again and I will write it up as a skill.' };
+    const j = await Team.post('/api/team/skills', { op: 'create', from: 'task', task: t.id });
+    if (j && j.duplicates && j.duplicates.some((d) => d.same)) { const ex = j.duplicates.find((d) => d.same); Team.skOpen = ex.id; Team.sk = null; if (!Hud.on) Hud.open(); await Team.select('skills'); return { ok: false, say: 'There is already a skill called "' + ex.name + '" — I have opened it. Give it feedback there to improve it, or tell me a different name for this one.' }; }
+    if (!j || !j.ok) return { ok: false, say: (j && j.error) || 'I could not write the skill.' };
+    const s = j.skill;
+    return { ok: true, skill: s, say: 'Done: "' + s.name + '" is now a skill, version 1 — ' + s.steps.length + ' step' + (s.steps.length === 1 ? '' : 's') + (s.inputs.length ? ', with ' + s.inputs.join(', ') + ' as inputs' : '') + '. The one-time details are out; the procedure is in. It is open in Skills for you to read and tidy; any agent can follow it from the next request, and I note which version was used.' };
+  },
+  async loadSk(force) {
+    if (Team.sk && !force) return Team.sk;
+    try { const r = await fetch('/api/team/skills?q=' + encodeURIComponent(Team.skQ || ''), { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.sk = (r.ok && j && j.ok) ? j : (Team.sk || { items: [], counts: {}, proposals: [], failed: true }); } catch (e) { Team.sk = Team.sk || { items: [], counts: {}, proposals: [], failed: true }; }
+    return Team.sk;
+  },
+  skill(id) { return ((Team.sk && Team.sk.items) || []).find((s) => s.id === id) || null; },
+  skBadge(s) { return '<em class="hud-badge" data-st="' + (s.status === 'archived' ? 'not_built' : s.status === 'disabled' ? 'awaiting' : s.ready ? 'working' : 'awaiting') + '">' + esc(s.status === 'archived' ? 'Archived' : s.status === 'disabled' ? 'Disabled' : s.ready ? 'Ready' : 'Needs ' + (s.missing || []).join(', ')) + '</em>'; },
+  skRow(s) {
+    const open = Team.skOpen === s.id;
+    const meta = [s.type, 'v' + s.version, s.assignedNames && s.assignedNames.length ? 'for ' + s.assignedNames.join(', ') : 'everyone', s.runs && s.runs.length ? s.runs.filter((r) => r.kind !== 'test').length + ' use' + (s.runs.filter((r) => r.kind !== 'test').length === 1 ? '' : 's') : 'not used yet', s.proposals ? s.proposals + ' proposal' + (s.proposals === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    return '<div class="hud-mi' + (open ? ' open' : '') + (s.status !== 'active' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="skopen" data-id="' + esc(s.id) + '"><span data-i18n="off">' + esc(s.name) + '</span><small data-i18n="off">' + esc(Team.cut(s.purpose, 110)) + ' · ' + esc(meta) + '</small>' + Team.skBadge(s) + '</button></div>';
+  },
+  paintSkills() {
+    Hud.el.classList.add('hud-memview');
+    if (!Team.sk && !Team.skLoading) { Team.skLoading = true; Team.loadSk().then(() => { Team.skLoading = false; if (Hud.on && Team.sel === 'skills') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Skills';
+    Hud.el.querySelector('.hud-brand span').textContent = 'How the team does recurring work — taught once, followed every time';
+    const S = Team.sk || { items: [], counts: {}, proposals: [] };
+    const items = (S.items || []).filter((s) => Team.skFilter === 'all' ? true : s.status === (Team.skFilter || 'active'));
+    const search = '<form class="hud-msearch" data-team="sksearch"><input type="search" name="q" value="' + esc(Team.skQ || '') + '" placeholder="Search skills…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
+      '<div class="hud-tabs">' + [['active', 'Active'], ['disabled', 'Disabled'], ['archived', 'Archived'], ['all', 'Everything']].map((t) => '<button type="button" class="hud-tab' + ((Team.skFilter || 'active') === t[0] ? ' on' : '') + '" data-hud="skfilter" data-f="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
+    const c = S.counts || {};
+    const list = Hud.panel('sklist', 'Skills · ' + (c.active || 0) + ' active' + (c.disabled ? ' · ' + c.disabled + ' disabled' : '') + (c.archived ? ' · ' + c.archived + ' archived' : ''), search + (Team.sk ? (items.length ? items.map(Team.skRow).join('') : '<p class="hud-none">' + (Team.skFilter === 'active' || !Team.skFilter ? 'No skills yet. Teach one on the right, or say “turn that into a skill” after a task.' : 'Nothing here.') + '</p>') : '<p class="hud-sub">Looking…</p>') +
+      '<div class="hud-row"><button type="button" class="hud-btn' + (Team.skNew ? ' ghost' : '') + '" data-hud="sknew">' + (Team.skNew ? 'Cancel' : 'Teach a new skill') + '</button></div>' +
+      '<p class="hud-sub">A skill is an instruction document you can read and edit: purpose, when to use it, inputs, the steps and decision points, the tools and sources it relies on, what good looks like, exceptions and what needs your yes. Facts stay in Memory; skills point at them. A skill never widens what an agent may do.</p>');
+    Hud.el.querySelector('.hud-left').innerHTML = list;
+    let right = '';
+    if (Team.skNew) right = Team.skTeachPanel();
+    const open = Team.skOpen && Team.skill(Team.skOpen);
+    if (open) right += Team.skEdit === open.id ? Team.skEditorPanel(open) : Team.skDetailPanel(open);
+    if (open) right += Team.skTestPanel(open) + Team.skFeedbackPanel(open, (S.proposals || []).filter((p) => p.skill === open.id)) + Team.skVersionsPanel(open);
+    if (!right) right = Hud.panel('skhint', 'Pick a skill', '<p class="hud-sub">Open one on the left to read it, test it on an example, give feedback that becomes a proposed change (shown as a diff), compare versions, assign it to agents, or disable and archive it.</p>' + ((S.proposals || []).some((p) => p.status === 'proposed') ? '<p class="hud-alert">' + (S.proposals || []).filter((p) => p.status === 'proposed').length + ' proposed change' + ((S.proposals || []).filter((p) => p.status === 'proposed').length === 1 ? '' : 's') + ' waiting: ' + esc((S.proposals || []).filter((p) => p.status === 'proposed').map((p) => p.skillName).filter((v, i, a) => a.indexOf(v) === i).join(', ')) + '</p>' : ''));
+    Hud.el.querySelector('.hud-right').innerHTML = right;
+    Team.paintRail();
+  },
+  skTeachPanel() {
+    const ags = Team.agents().filter((a) => a.id !== 'jarvis');
+    const done = ((Team.data && Team.data.tasks) || []).filter((t) => t.status === 'done' || t.status === 'awaiting_approval').slice(0, 8);
+    return Hud.panel('skteach', 'Teach a new skill', '<form data-team="skcreate"><textarea name="text" rows="6" maxlength="6000" placeholder="Describe the recurring work as you would to a new colleague: what it is for, when to use it, the steps in order, what to check, what needs your yes, and what to do when something is missing. Numbered lines become steps." aria-label="Description" required></textarea>' +
+      '<input class="hud-sel" type="text" name="name" maxlength="80" placeholder="Name (optional — taken from the first line otherwise)" aria-label="Name">' +
+      '<textarea name="examples" rows="2" maxlength="2000" placeholder="Example requests it should handle, one per line (optional)" aria-label="Examples"></textarea>' +
+      '<div class="hud-row"><select class="hud-sel" name="agents" aria-label="Who may use it"><option value="">everyone on the team</option>' + ags.map((a) => '<option value="' + esc(a.id) + '">only ' + esc(a.name) + '</option>').join('') + '</select><button type="submit" class="hud-btn"' + (Team.skBusy ? ' disabled' : '') + '>' + (Team.skBusy ? 'Writing it up…' : 'Create the skill') + '</button></div>' +
+      '<p class="hud-sub">The one-time details (addresses, amounts, dates, links) become inputs; the procedure stays. You review and edit before anyone follows it.</p></form>' +
+      (done.length ? '<p class="hud-sub"><b>Or from finished work:</b></p>' + done.map((t) => '<div class="hud-r"><span data-i18n="off">' + esc(t.title) + '</span><button type="button" class="hud-btn ghost" data-hud="skfromtask" data-id="' + esc(t.id) + '">Turn into a skill</button></div>').join('') : ''));
+  },
+  skDocView(s) {
+    const K = (Team.data && Team.data.knowledge) || [];
+    const src = (s.sources || []).map((x) => x.kind === 'knowledge' ? (() => { const k = K.find((e) => e.id === x.id); return '<li data-i18n="off">' + (k ? esc(k.text) + (k.status === 'superseded' ? ' <em class="hud-badge" data-st="superseded">superseded</em>' : '') : esc(x.id) + ' (gone)') + ' <small>Memory · ' + esc(x.id) + '</small></li>'; })() : x.kind === 'url' ? '<li data-i18n="off"><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.label || x.url) + '</a></li>' : '<li data-i18n="off">' + esc(x.label) + '</li>');
+    const row = (l, v) => v ? '<div class="hud-skf"><b>' + l + '</b><span data-i18n="off">' + esc(v) + '</span></div>' : '';
+    return '<div class="hud-skdoc">' + row('Purpose', s.purpose) + row('Use it when', s.when) + row('Not when', s.whenNot) +
+      (s.inputs.length ? '<div class="hud-skf"><b>Inputs</b><span data-i18n="off">' + s.inputs.map(esc).join(' · ') + '</span></div>' : '') +
+      (s.steps.length ? '<div class="hud-skf"><b>' + (s.type === 'guide' ? 'Guidance' : 'Steps') + '</b><ol>' + s.steps.map((st) => '<li data-i18n="off">' + esc(st) + '</li>').join('') + '</ol></div>' : '') +
+      (s.tools.length ? '<div class="hud-skf"><b>Tools</b><span>' + s.tools.map((t) => '<em class="hud-badge" data-st="' + ((Team.sk && Team.sk.tools && Team.sk.tools[t]) ? 'working' : 'awaiting') + '">' + esc((Team.sk && Team.sk.toolNames && Team.sk.toolNames[t]) || t) + '</em>').join(' ') + '</span></div>' : '') +
+      (src.length ? '<div class="hud-skf"><b>Sources</b><ul>' + src.join('') + '</ul></div>' : '') +
+      row('Expected output', s.output) + row('What good looks like', s.quality) + row('Exceptions · missing information', s.exceptions) + row('Needs your yes', s.approvals || 'Anything that would reach the outside world — proposed, never done.') + '</div>';
+  },
+  skDetailPanel(s) {
+    const ags = Team.agents().filter((a) => a.id !== 'jarvis');
+    const head = '<div class="hud-tmeta"><em class="hud-tst" data-st="' + (s.status === 'active' ? 'done' : s.status === 'disabled' ? 'awaiting_info' : 'cancelled') + '">' + esc(s.status) + '</em><small data-i18n="off">v' + esc(s.version) + ' · ' + esc(s.type) + (s.from && s.from.task ? ' · learnt from “' + esc(Team.cut(s.from.title || '', 50)) + '”' : '') + ' · ' + esc(Team.when(s.updatedAt)) + '</small></div>' + (s.ready ? '' : '<p class="hud-alert">This skill relies on ' + esc((s.missing || []).join(', ')) + ', not connected here: an agent asked to use it will say so and do the rest.</p>');
+    const assign = '<form data-team="skassign" data-id="' + esc(s.id) + '" class="hud-skassign"><b>Who may use it</b><div class="hud-row" data-flow-no-chip>' + ags.map((a) => '<label class="hud-tick"><input type="checkbox" name="ag" value="' + esc(a.id) + '"' + ((s.assignedTo || []).indexOf(a.id) >= 0 ? ' checked' : '') + '> ' + esc(a.name) + '</label>').join('') + '<button type="submit" class="hud-btn ghost">Save</button></div><small class="hud-sub">Nobody ticked = everyone. Sharing a skill shares the procedure only: no credentials travel with it, and each agent keeps its own permission level.</small></form>';
+    const btns = '<div class="hud-row">' + (s.status === 'active' ? '<button type="button" class="hud-btn" data-hud="skedit" data-id="' + esc(s.id) + '">Edit</button><button type="button" class="hud-btn ghost" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="disabled">Disable</button>' : s.status === 'disabled' ? '<button type="button" class="hud-btn" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="active">Enable</button><button type="button" class="hud-btn ghost" data-hud="skedit" data-id="' + esc(s.id) + '">Edit</button>' : '<button type="button" class="hud-btn" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="active">Restore</button><button type="button" class="hud-btn ghost" data-hud="skremove" data-id="' + esc(s.id) + '">Remove for good</button>') + (s.status !== 'archived' ? '<button type="button" class="hud-btn ghost" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="archived">Archive</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="skclose">Close</button></div>';
+    const runs = (s.runs || []).filter((r) => r.kind !== 'test').slice(-5).reverse();
+    const used = runs.length ? '<p class="hud-sub"><b>Used:</b> ' + runs.map((r) => esc((Team.agent(r.agent) || {}).name || r.agent) + ' v' + esc(r.version) + ' · ' + esc(Team.when(r.at)) + (r.task ? ' <button type="button" class="hud-link" data-hud="task" data-id="' + esc(r.task) + '">open task</button>' : '')).join(' · ') + '</p>' : '';
+    return Hud.panel('skview', esc(s.name), head + Team.skDocView(s) + used + assign + btns);
+  },
+  skEditorPanel(s) {
+    const f = (n, l, v, rows, ph) => '<label class="hud-skl"><span>' + l + '</span>' + (rows ? '<textarea name="' + n + '" rows="' + rows + '" placeholder="' + esc(ph || '') + '">' + esc(Array.isArray(v) ? v.join('\n') : (v || '')) + '</textarea>' : '<input class="hud-sel" type="text" name="' + n + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '">') + '</label>';
+    const tools = ['flow', 'web', 'browser', 'email'];
+    return Hud.panel('skedit', 'Edit “' + esc(s.name) + '” → v' + (s.version + 1), '<form data-team="skedit" data-id="' + esc(s.id) + '" class="hud-skform">' +
+      f('name', 'Name', s.name) + '<label class="hud-skl"><span>Type</span><select class="hud-sel" name="type"><option value="workflow"' + (s.type === 'workflow' ? ' selected' : '') + '>workflow — an ordered procedure</option><option value="guide"' + (s.type === 'guide' ? ' selected' : '') + '>guide — how to handle a kind of information</option></select></label>' +
+      f('purpose', 'Purpose', s.purpose, 2) + f('when', 'Use it when', s.when, 2) + f('whenNot', 'Do not use it when', s.whenNot, 2) +
+      f('inputs', 'Inputs (one per line)', s.inputs, 3, 'the customer\'s email address\nthe week to report on') + f('steps', (s.type === 'guide' ? 'Guidance' : 'Steps') + ' (one per line, in order; include decision points)', s.steps, 8) +
+      '<div class="hud-skl"><span>Tools it relies on</span><div class="hud-row" data-flow-no-chip>' + tools.map((t) => '<label class="hud-tick"><input type="checkbox" name="tools" value="' + t + '"' + (s.tools.indexOf(t) >= 0 ? ' checked' : '') + '> ' + esc((Team.sk && Team.sk.toolNames && Team.sk.toolNames[t]) || t) + '</label>').join('') + '</div></div>' +
+      f('sources', 'Sources (one per line: a Memory entry id like k1a2b3c4d5, a web address, or a note)', (s.sources || []).map((x) => x.kind === 'knowledge' ? x.id : x.kind === 'url' ? x.url : x.label), 3) +
+      f('output', 'Expected output', s.output, 2) + f('quality', 'What good looks like', s.quality, 2) + f('exceptions', 'Exceptions · missing information', s.exceptions, 2) + f('approvals', 'What needs your yes', s.approvals, 2) +
+      f('why', 'Why this change (kept with the version)', '', 0, 'e.g. added the exchange-rate check') +
+      '<div class="hud-row"><button type="submit" class="hud-btn"' + (Team.skBusy ? ' disabled' : '') + '>Save as v' + (s.version + 1) + '</button><button type="button" class="hud-btn ghost" data-hud="skeditcancel">Cancel</button></div><p class="hud-sub">The current version is kept; you can go back to it under Versions. Secrets are refused.</p></form>');
+  },
+  skTestPanel(s) {
+    const ags = Team.agents().filter((a) => a.id !== 'jarvis');
+    const exs = (s.examples || []).map((e) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(Team.cut(e.input, 140)) + (e.expected ? '<small>expects: ' + esc(e.expected) + '</small>' : '') + (e.expectQuestion ? '<small>should ask, not guess</small>' : '') + (e.lastRun ? '<small>last run v' + esc(e.lastRun.version) + ' · ' + (e.lastRun.pass ? 'passed' : 'failed') + ' · ' + esc(Team.when(e.lastRun.at)) + '</small>' : '') + '</span><span class="hud-acts"><button type="button" class="hud-btn ghost" data-hud="sktest" data-id="' + esc(s.id) + '" data-ex="' + esc(e.id) + '"' + (Team.skBusy ? ' disabled' : '') + '>Run</button><button type="button" class="hud-btn ghost" data-hud="skexdrop" data-id="' + esc(s.id) + '" data-ex="' + esc(e.id) + '" aria-label="Remove example">×</button></span></div>').join('');
+    const add = '<form data-team="skexample" data-id="' + esc(s.id) + '"><input class="hud-sel" type="text" name="input" maxlength="2000" placeholder="An example request, as you would say it" aria-label="Example request" required><div class="hud-row"><input class="hud-sel" type="text" name="expected" maxlength="400" placeholder="What the result should contain (optional)" aria-label="Expected"><label class="hud-tick" data-flow-no-chip><input type="checkbox" name="expectQuestion"> should ask, not guess</label><button type="submit" class="hud-btn ghost">Add</button></div></form>';
+    const run = '<form data-team="sktestrun" data-id="' + esc(s.id) + '"><div class="hud-row"><select class="hud-sel" name="agent" aria-label="Run as">' + ags.map((a) => '<option value="' + esc(a.id) + '"' + ((s.assignedTo || [])[0] === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</select><button type="submit" class="hud-btn"' + (Team.skBusy || !(s.examples || []).length ? ' disabled' : '') + '>' + (Team.skBusy ? 'Running…' : 'Run every example') + '</button></div></form>';
+    let res = '';
+    const T = Team.skTest;
+    if (T && T.skill && T.skill.id === s.id) {
+      res = '<div class="hud-chk"><b>' + T.passed + ' passed · ' + T.failed + ' failed · as ' + esc((Team.agent(T.agent) || {}).name || T.agent) + ' · v' + esc(T.skill.version) + '</b>' + T.results.map((r) => '<p class="hud-sub" data-i18n="off"><b>“' + esc(Team.cut(r.example.input, 100)) + '”</b></p>' + r.checks.map((c) => '<div class="hud-ck" data-ok="' + (c.pass ? '1' : '0') + '"><i>' + (c.pass ? '✓' : '✗') + '</i><span data-i18n="off">' + esc(c.name) + '<small>' + esc(c.detail) + '</small></span></div>').join('') + (r.run ? '<pre class="hud-res" data-i18n="off">' + esc(Team.cut(r.run.result || '', 1200) || (r.run.question ? 'Asked: ' + r.run.question : '')) + '</pre>' + (r.run.proposals && r.run.proposals.length ? '<p class="hud-sub">Drafts (not sent): ' + r.run.proposals.map((p) => esc(p.kind + (p.to ? ' to ' + p.to : '') + (p.subject ? ' — ' + p.subject : ''))).join('; ') + '</p>' : '') : '')).join('') + '<p class="hud-sub">' + esc(T.note) + '</p></div>';
+    } else if (T && T.error && T.for === s.id) res = '<p class="hud-alert" data-i18n="off">' + esc(T.error) + '</p>';
+    return Hud.panel('sktest', 'Test it on examples', (exs || '<p class="hud-none">No examples yet. Add two or three representative requests — an ordinary one, one with information missing.</p>') + add + run + res + '<p class="hud-sub">A test run uses the agent\'s real model and the real prompt, saves no task and sends nothing: proposals come back as drafts. Checks: it selects this skill, its tools and sources are there, the steps are followed, the output matches what you expected, missing information is asked about, outside actions stay drafts, permissions unchanged.</p>');
+  },
+  skDiffView(d) {
+    if (!d || !d.length) return '<p class="hud-none">No change to the document.</p>';
+    return '<div class="hud-skdiff">' + d.map((x) => '<div class="hud-skd"><b>' + esc(x.field) + '</b>' + (Array.isArray(x.before) ? (x.removed || []).map((l) => '<del data-i18n="off">' + esc(l) + '</del>').join('') + (x.added || []).map((l) => '<ins data-i18n="off">' + esc(l) + '</ins>').join('') + (!(x.removed || []).length && !(x.added || []).length ? '<small>reordered</small>' : '') : '<del data-i18n="off">' + esc(x.before || '(empty)') + '</del><ins data-i18n="off">' + esc(x.after || '(empty)') + '</ins>') + '</div>').join('') + '</div>';
+  },
+  skFeedbackPanel(s, props) {
+    const form = '<form data-team="skfeedback" data-id="' + esc(s.id) + '"><textarea name="text" rows="2" maxlength="2000" placeholder="What should be different — e.g. “From now on, include the total at the top” · “Just this once, make it shorter” · “I prefer a formal tone in everything”" aria-label="Feedback"></textarea><div class="hud-row"><select class="hud-sel" name="kind" aria-label="What kind of change"><option value="">decide for me</option><option value="output">this output only</option><option value="workflow">a change to this skill</option><option value="preference">a general preference</option></select><button type="submit" class="hud-btn"' + (Team.skBusy ? ' disabled' : '') + '>' + (Team.skBusy ? 'Thinking…' : 'Propose the change') + '</button></div></form>';
+    const open = props.filter((p) => p.status === 'proposed'), past = props.filter((p) => p.status !== 'proposed').slice(0, 5);
+    const card = (p) => '<div class="hud-skp" data-kind="' + esc(p.kind) + '"><p class="hud-sub" data-i18n="off"><b>' + esc(p.kind === 'output' ? 'This output only' : p.kind === 'preference' ? 'A general preference' : 'A change to the skill') + '</b> · ' + esc(Team.when(p.at)) + ' · on v' + esc(p.version) + '<br>“' + esc(Team.cut(p.feedback, 200)) + '”</p><p data-i18n="off">' + esc(p.explanation || '') + '</p>' +
+      (p.kind === 'workflow' ? Team.skDiffView(p.diff) : '') + (p.knowledge ? '<p class="hud-sub" data-i18n="off">Goes to Memory as a preference: “' + esc(p.knowledge.text) + '”</p>' : '') +
+      (p.contradictions && p.contradictions.length ? '<p class="hud-alert" data-i18n="off">Contradiction ' + esc(p.contradictions[0].where) + ': “' + esc(Team.cut(p.contradictions[0].a, 90)) + '” vs “' + esc(Team.cut(p.contradictions[0].b, 90)) + '”</p>' : '') +
+      (p.duplicates && p.duplicates.length ? '<p class="hud-sub" data-i18n="off">Similar skill: ' + esc(p.duplicates.map((d) => d.name).join(', ')) + '</p>' : '') +
+      (p.status === 'proposed' ? '<div class="hud-row">' + (p.kind !== 'output' ? '<button type="button" class="hud-btn" data-hud="skapply" data-id="' + esc(p.id) + '">' + (p.kind === 'preference' ? 'Save the preference' : 'Apply as v' + (s.version + 1)) + '</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="skdecline" data-id="' + esc(p.id) + '">' + (p.kind === 'output' ? 'Noted' : 'Decline') + '</button></div>' : '<small class="hud-sub">' + esc(p.status) + (p.newVersion ? ' → v' + p.newVersion : '') + '</small>') + '</div>';
+    return Hud.panel('skfb', 'Improve it from feedback', form + open.map(card).join('') + (past.length ? '<details class="hud-det"><summary>Earlier feedback (' + past.length + ')</summary>' + past.map(card).join('') + '</details>' : '') + '<p class="hud-sub">Feedback is sorted first: a one-off fix changes nothing; a change to the procedure becomes a proposed edit shown as a diff, checked against the rest of the skill and the team\'s rules; a general preference goes to Memory where every agent and skill reads it. Nothing changes until you apply it.</p>');
+  },
+  skVersionsPanel(s) {
+    const vs = (s.versions || []).slice().reverse();
+    const cur = Team.skDoc(s);
+    const cmp = Team.skCmp && Team.skCmp.id === s.id ? (() => { const v = (s.versions || []).find((x) => x.v === Team.skCmp.v); return v ? '<p class="hud-sub">v' + esc(v.v) + ' → v' + esc(s.version) + ' (current)</p>' + Team.skDiffView(Team.skLocalDiff(v.doc, cur)) + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="skrollback" data-id="' + esc(s.id) + '" data-v="' + esc(v.v) + '">Go back to v' + esc(v.v) + '</button><button type="button" class="hud-btn ghost" data-hud="skcmpclose">Close</button></div>' : ''; })() : '';
+    return Hud.panel('skvers', 'Versions', (vs.length ? vs.map((v) => '<div class="hud-r hud-lg"><span data-i18n="off">v' + esc(v.v) + '<small>' + esc(Team.when(v.at)) + ' · ' + esc(v.why || '') + '</small></span><button type="button" class="hud-btn ghost" data-hud="skcmp" data-id="' + esc(s.id) + '" data-v="' + esc(v.v) + '">Compare</button></div>').join('') : '<p class="hud-none">Only v1 so far.</p>') + cmp);
+  },
+  skDoc(s) { const o = {}; ['name', 'purpose', 'type', 'when', 'whenNot', 'inputs', 'steps', 'tools', 'sources', 'output', 'quality', 'exceptions', 'approvals'].forEach((f) => { o[f] = s[f]; }); return o; },
+  skLocalDiff(a, b) {
+    const out = [];
+    for (const f of Object.keys(b)) {
+      const x = a[f], y = b[f];
+      if (Array.isArray(x) || Array.isArray(y)) { const A = (x || []).map((v) => typeof v === 'string' ? v : (v.id || v.url || v.label || JSON.stringify(v))), B = (y || []).map((v) => typeof v === 'string' ? v : (v.id || v.url || v.label || JSON.stringify(v))); const removed = A.filter((v) => B.indexOf(v) < 0), added = B.filter((v) => A.indexOf(v) < 0); if (removed.length || added.length || A.join('\n') !== B.join('\n')) out.push({ field: f, before: A, after: B, added, removed }); }
+      else if (String(x || '') !== String(y || '')) out.push({ field: f, before: String(x || ''), after: String(y || '') });
+    }
+    return out;
+  },
+  async skClick(a, b) {
+    if (a === 'skopen') { const id = b.getAttribute('data-id'); Team.skOpen = Team.skOpen === id ? null : id; Team.skEdit = null; Team.skCmp = null; Team.skTest = null; Hud.paint(); return true; }
+    if (a === 'skfilter') { Team.skFilter = b.getAttribute('data-f'); Hud.paint(); return true; }
+    if (a === 'sknew') { Team.skNew = !Team.skNew; Hud.paint(); if (Team.skNew) setTimeout(() => { const t = Hud.el.querySelector('form[data-team="skcreate"] textarea'); if (t) t.focus(); }, 60); return true; }
+    if (a === 'skclose') { Team.skOpen = null; Team.skEdit = null; Hud.paint(); return true; }
+    if (a === 'skedit') { Team.skOpen = b.getAttribute('data-id'); Team.skEdit = Team.skOpen; Hud.paint(); return true; }
+    if (a === 'skeditcancel') { Team.skEdit = null; Hud.paint(); return true; }
+    if (a === 'skfromtask') {
+      b.disabled = true; b.textContent = 'Writing it up…';
+      const j = await Team.post('/api/team/skills', { op: 'create', from: 'task', task: b.getAttribute('data-id') });
+      if (j && j.ok) { Team.skOpen = j.skill.id; Team.skEdit = j.skill.id; Team.skNew = false; await Team.loadSk(true); await Team.select('skills', true); Team.paintRail(); Hud.paint(); toast('“' + j.skill.name + '” is a skill now — v1, open for review', null, 2600); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3000); }
+      return true;
+    }
+    if (a === 'skstatus') { const j = await Team.post('/api/team/skills', { op: 'status', id: b.getAttribute('data-id'), status: b.getAttribute('data-st') }); if (j && j.ok) { await Team.loadSk(true); Team.paintRail(); Hud.paint(); toast(j.skill.status === 'active' ? 'Active' : j.skill.status === 'disabled' ? 'Disabled — nobody follows it until enabled' : 'Archived', null, 1800); } return true; }
+    if (a === 'skremove') { if (!confirm('Remove this skill for good? Its versions go with it.')) return true; const j = await Team.post('/api/team/skills', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.skOpen = null; await Team.loadSk(true); Hud.paint(); toast('Removed', null, 1200); } return true; }
+    if (a === 'sktest') { Team.skBusy = true; Hud.paint(); const j = await Team.post('/api/team/skills/test', { id: b.getAttribute('data-id'), example: b.getAttribute('data-ex'), agent: (Hud.el.querySelector('form[data-team="sktestrun"] select[name="agent"]') || {}).value }); Team.skBusy = false; Team.skTest = j && j.ok ? j : { error: (j && j.error) || 'The test could not run.', for: b.getAttribute('data-id') }; await Team.loadSk(true); Hud.paint(); return true; }
+    if (a === 'skexdrop') { const j = await Team.post('/api/team/skills', { op: 'example', id: b.getAttribute('data-id'), remove: b.getAttribute('data-ex') }); if (j && j.ok) { await Team.loadSk(true); Hud.paint(); } return true; }
+    if (a === 'skapply') { Team.skBusy = true; Hud.paint(); const j = await Team.post('/api/team/skills/apply', { id: b.getAttribute('data-id') }); Team.skBusy = false; if (j && j.ok) { await Team.loadSk(true); if (j.knowledge) await Team.load(true); Hud.paint(); toast(j.skill ? 'Applied — now v' + j.skill.version + '; the earlier version is kept' : j.knowledge ? 'Saved to Memory as a preference' : 'Noted', null, 2400); } else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3000); } return true; }
+    if (a === 'skdecline') { const j = await Team.post('/api/team/skills/decline', { id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.loadSk(true); Hud.paint(); } return true; }
+    if (a === 'skcmp') { Team.skCmp = { id: b.getAttribute('data-id'), v: +b.getAttribute('data-v') }; Hud.paint(); return true; }
+    if (a === 'skcmpclose') { Team.skCmp = null; Hud.paint(); return true; }
+    if (a === 'skrollback') { if (!confirm('Go back to v' + b.getAttribute('data-v') + '? The current text is kept as a version too.')) return true; const j = await Team.post('/api/team/skills', { op: 'rollback', id: b.getAttribute('data-id'), to: +b.getAttribute('data-v') }); if (j && j.ok) { Team.skCmp = null; await Team.loadSk(true); Hud.paint(); toast('Back to v' + j.restored + ' (saved as v' + j.skill.version + ')', null, 2200); } return true; }
+    return false;
+  },
+  async skSubmit(kind, f) {
+    const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+    if (kind === 'sksearch') { Team.skQ = f.q.value.trim(); await Team.loadSk(true); Hud.paint(); return true; }
+    if (kind === 'skcreate') {
+      const text = f.text.value.trim(); if (!text) return true;
+      Team.skBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/skills', { op: 'create', text, name: f.name.value.trim(), examples: lines(f.examples.value).map((x) => ({ input: x })), agents: f.agents.value ? [f.agents.value] : [] });
+      Team.skBusy = false;
+      if (j && j.ok) { Team.skNew = false; Team.skOpen = j.skill.id; Team.skEdit = j.skill.id; await Team.loadSk(true); Team.paintRail(); Hud.paint(); toast('“' + j.skill.name + '” created — v1, read it through before anyone follows it', null, 2600); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3200); }
+      return true;
+    }
+    if (kind === 'skedit') {
+      const doc = { name: f.name.value.trim(), type: f.type.value, purpose: f.purpose.value.trim(), when: f.when.value.trim(), whenNot: f.whenNot.value.trim(), inputs: lines(f.inputs.value), steps: lines(f.steps.value), tools: [...f.querySelectorAll('input[name="tools"]:checked')].map((x) => x.value), sources: lines(f.sources.value), output: f.output.value.trim(), quality: f.quality.value.trim(), exceptions: f.exceptions.value.trim(), approvals: f.approvals.value.trim() };
+      Team.skBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/skills', { op: 'update', id: f.getAttribute('data-id'), doc, why: f.why.value.trim() });
+      Team.skBusy = false;
+      if (j && j.ok) { Team.skEdit = null; await Team.loadSk(true); Hud.paint(); toast(j.unchanged ? 'Nothing changed' : 'Saved as v' + j.skill.version + (j.contradictions && j.contradictions.length ? ' — note a contradiction: ' + j.contradictions[0].where : ''), j.contradictions && j.contradictions.length ? 'warn' : null, 2600); }
+      else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3200); }
+      return true;
+    }
+    if (kind === 'skassign') { const j = await Team.post('/api/team/skills', { op: 'assign', id: f.getAttribute('data-id'), agents: [...f.querySelectorAll('input[name="ag"]:checked')].map((x) => x.value) }); if (j && j.ok) { await Team.loadSk(true); Hud.paint(); toast('Saved — permissions unchanged', null, 1600); } return true; }
+    if (kind === 'skexample') { const j = await Team.post('/api/team/skills', { op: 'example', id: f.getAttribute('data-id'), input: f.input.value.trim(), expected: f.expected.value.trim(), expectQuestion: f.expectQuestion.checked }); if (j && j.ok) { await Team.loadSk(true); Hud.paint(); } return true; }
+    if (kind === 'sktestrun') { Team.skBusy = true; Hud.paint(); const j = await Team.post('/api/team/skills/test', { id: f.getAttribute('data-id'), agent: f.agent.value }); Team.skBusy = false; Team.skTest = j && j.ok ? j : { error: (j && j.error) || 'The test could not run.', for: f.getAttribute('data-id') }; await Team.loadSk(true); Hud.paint(); return true; }
+    if (kind === 'skfeedback') { const text = f.text.value.trim(); if (!text) return true; Team.skBusy = true; Hud.paint(); const j = await Team.post('/api/team/skills/feedback', { id: f.getAttribute('data-id'), text, kind: f.kind.value }); Team.skBusy = false; if (j && j.ok) { await Team.loadSk(true); Hud.paint(); } else { Hud.paint(); if (j && j.error) toast(j.error, 'warn', 3000); } return true; }
+    return false;
+  },
   /* ---- clicks, changes, forms ---- */
   async click(a, b) {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
-    if (a === 'memory') { await Team.select('memory', true); Team.paintRail(); Hud.paint(); return; }
+    if (a === 'memory' || a === 'skills') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
     if (await Team.memClick(a, b)) return;
+    if (await Team.skClick(a, b)) return;
     if (a === 'pause') { await Team.post('/api/team/pause', { paused: !Team.paused() }); await Team.load(true); Team.paintRail(); Hud.paint(); toast(Team.paused() ? 'Every agent is paused' : 'Resumed', null, 1600); return; }
     if (a === 'kedit') { Team.editing = b.getAttribute('data-id'); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="kedit"] input'); if (i) { i.focus(); i.select(); } }, 60); return; }
     if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
@@ -15254,6 +15456,7 @@ const Team = {
   async submit(f) {
     const kind = f.getAttribute('data-team');
     if (/^mem/.test(kind)) { try { await Team.memSubmit(kind, f); } catch (e) { console.warn('[Flow] memory', e); } return; }
+    if (/^sk/.test(kind)) { try { await Team.skSubmit(kind, f); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });

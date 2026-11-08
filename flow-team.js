@@ -50,6 +50,7 @@
 
 const crypto = require('crypto');
 const memory = require('./flow-memory');
+const skills = require('./flow-skills');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -167,6 +168,11 @@ function fakePost(url, opts) {
     if (answered) out.result = who + ' did: ' + brief + ' — with your answer: ' + answered;
     else if ((rd || bw) && !/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify(rd ? { result: '', read: [rd[1]] } : { result: '', browse: { url: bw[1], goal: 'see what is there' } });
     else if (/THE PAGES YOU ASKED FOR/.test(whole)) out.result = who + ' read it: ' + whole.split('THE PAGES YOU ASKED FOR:')[1].replace(/\s+/g, ' ').trim().slice(0, 400);
+    /* a skill in the prompt: the stand-in says which it followed, step by step, like a model should */
+    const sk = system.match(/SKILL TO FOLLOW: (.+?) \(v(\d+), (\w+)\)/);
+    if (sk) { const steps = (system.split(/Steps, in order:|Guidance:/)[1] || '').split('\n').slice(1).filter((l) => /^\d+\. /.test(l)).map((l) => l.replace(/^\d+\. /, '')); out.result = who + ' followed the skill "' + sk[1] + '" v' + sk[2] + ' for: ' + brief + '\n' + steps.map((s, i) => 'Step ' + (i + 1) + ' — ' + s + ': done.').join('\n'); if (/\bemail|send\b/i.test(steps.join(' ')) && /email|send/i.test(brief)) out.proposals.push({ kind: 'email', summary: 'Email drafted by the skill', to: 'customer@example.com', subject: 'From the skill', body: 'Draft per "' + sk[1] + '".' }); }
+    const nosk = system.match(/SKILL REQUESTED BUT NOT FOUND: the person asked for a skill called "([^"]+)"/) || system.match(/SKILL (?:REQUESTED BUT NOT USABLE|THAT WOULD APPLY BUT CANNOT RUN HERE): "([^"]+)"[^\n]*/);
+    if (nosk) out.result = who + ' could not use the skill "' + nosk[1] + '": ' + (nosk[0].split(/: "[^"]+"/)[1] || 'it does not exist').replace(/^\s*(?:\(v\d+\))?\s*/, '').slice(0, 200) + '. Did the work without it: ' + brief;
     if (/ask me/i.test(brief) && !/answered your question/.test(String((last && last.content) || ''))) { out.question = 'Which address should it go to?'; out.result = ''; }
     if (/long one/i.test(brief)) { const slow = { status: 200, body: { content: [{ type: 'text', text: JSON.stringify(out) }], usage: { input_tokens: 1, output_tokens: 1 } } }; return new Promise((r) => setTimeout(() => r(slow), 4000)); }
     if (/email/i.test(brief)) out.proposals.push({ kind: 'email', summary: 'Email to the customer', to: 'customer@example.com', subject: 'About your refund', body: 'Dear customer, ' + brief });
@@ -178,6 +184,9 @@ function fakePost(url, opts) {
     if (/bobby/i.test(said)) steps.push({ agent: 'bobby', title: 'Check the ads', brief: 'Check this week\'s ad spend: ' + said });
     if (/tom/i.test(said)) steps.push({ agent: 'tom', title: 'Look at the bug', brief: said });
     if (/command centre|checklist/i.test(said) && !steps.length) steps.push({ agent: 'tom', title: 'Build it', brief: said });
+    /* a skill named in the request, found in the catalogue → on the step */
+    const want = skills.invoked(said);
+    if (want && steps.length) { const row = (system.split('SKILLS THE TEAM HAS')[1] || '').split('\n').find((l) => l.toLowerCase().indexOf('| ' + want.toLowerCase() + ' |') >= 0); if (row) steps[0].skill = row.split(' | ')[0].trim(); }
     text = JSON.stringify({ title: 'Team: ' + said.slice(0, 40), say: steps.length ? 'Putting ' + steps.map((x) => x.agent).join(' and ') + ' on it, sir.' : 'That needs none of the team.', steps });
   } else if (/answering a text message from them/.test(system)) {
     /* J.A.R.V.I.S. over a channel */
@@ -394,6 +403,7 @@ async function handle(p, req, res, ctx) {
 
   if (await handleWork(p, req, res, ctx)) return true;
   if (await memory.handle(p, req, res, ctx, memDeps())) return true;
+  if (await skills.handle(p, req, res, ctx, skillDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -618,7 +628,7 @@ async function patchTask(ctx, id, fn) {
   return t;
 }
 
-function stepSystem(agent, owner, shared, mine, lang, task, step, earlier) {
+function stepSystem(agent, owner, shared, mine, lang, task, step, earlier, extra) {
   const base = agentSystem(agent, owner, shared, mine, lang, []);
   return base.replace(/Return ONLY a JSON object[\s\S]*$/, [
     'YOU HAVE BEEN GIVEN A PIECE OF WORK' + (task.by === 'jarvis' ? ' by J.A.R.V.I.S., for ' + str(owner, 60) : ' by ' + str(owner, 60)) + '.',
@@ -626,6 +636,7 @@ function stepSystem(agent, owner, shared, mine, lang, task, step, earlier) {
     'Your part: ' + step.title,
     'Brief: ' + (step.brief || task.brief || ''),
     earlier.length ? 'What the others have done so far:\n' + earlier.map((e) => '· ' + e.agent + ' — ' + e.title + ':\n' + String(e.result || '').slice(0, 1500)).join('\n') : '',
+    extra ? '\n' + extra + '\n' : '',
     '',
     'Do the work in full, here, in words: the draft, the analysis, the list, the plan. Be specific and complete; this is the deliverable, not a description of one.',
     'Anything that would reach the outside world — sending an email or message, posting, paying, changing a live setting — you do NOT do: you propose it, fully written out, as a proposal below, and the person approves it.',
@@ -658,17 +669,20 @@ function parseStep(text) {
 }
 
 /* J.A.R.V.I.S. decides who does what. */
-function planSystem(agents, owner, shared, lang) {
+function planSystem(agents, owner, shared, lang, skillList) {
+  const cat = skillList && skillList.length ? skills.catalog(skillList, null) : '';
   return [
     'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', inside The Flow. You have just been asked for a piece of work that the team should do. Plan it.',
     'THE TEAM (id | name | role | instructions):',
     agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id + ' | ' + a.name + ' | ' + a.role + ' | ' + str(a.instructions, 160)).join('\n') || '(nobody yet)',
     shared.length ? 'WHAT THE TEAM KNOWS (current):\n' + shared.map((k) => '· ' + k.text).join('\n') : '',
+    cat,
     'Language: ' + (lang === 'tr' ? 'Turkish' : 'English') + '.',
     '',
     'Return ONLY a JSON object:',
-    '{ "title": "short title for the task", "say": "one or two spoken sentences: who you are putting on it and what they will deliver", "steps": [ { "agent": "<id from the team>", "title": "what this specialist delivers", "brief": "exactly what to do, with every detail from the request that matters" } ] }',
+    '{ "title": "short title for the task", "say": "one or two spoken sentences: who you are putting on it and what they will deliver", "steps": [ { "agent": "<id from the team>", "title": "what this specialist delivers", "brief": "exactly what to do, with every detail from the request that matters", "skill": "<skill id when one of the team\'s skills fits this step, else empty>" } ] }',
     '· One to ' + MAX_STEPS + ' steps, in the order they should run; a later step can build on the earlier ones. Each step goes to the one specialist whose role fits. Do not invent agents.',
+    cat ? '· When a skill\'s purpose and "when" fit a step, name it in "skill" (its id) so the specialist follows the taught procedure; when the person names a skill, use that one. Never invent skills.' : '',
     '· If the request is really one specialist\'s job, one step. If it needs no specialist at all, "steps": [] and say so in "say".',
     '· Steps are work done in words here (drafts, analysis, research, checks, plans). Nothing is sent or changed outside without approval; the specialists know this.',
     '· "say" is spoken aloud: plain, brief, no lists.'
@@ -680,7 +694,7 @@ function parsePlan(text, agents) {
   if (!j || typeof j !== 'object') return null;
   const ids = new Set(agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id));
   const steps = (Array.isArray(j.steps) ? j.steps : []).slice(0, MAX_STEPS)
-    .map((st) => st && ids.has(String(st.agent)) ? { agent: String(st.agent), title: str(st.title, 140) || 'Work', brief: block(st.brief, 3000) } : null)
+    .map((st) => st && ids.has(String(st.agent)) ? Object.assign({ agent: String(st.agent), title: str(st.title, 140) || 'Work', brief: block(st.brief, 3000) }, /^sk[0-9a-f]{6,}$/.test(String(st.skill || '')) ? { skill: String(st.skill) } : {}) : null)
     .filter(Boolean);
   return { title: str(j.title, 120), say: str(j.say, 600), steps };
 }
@@ -727,7 +741,18 @@ async function runTask(uid, ctx, id) {
     const earlier = t.steps.slice(0, i).filter((s) => s.status === 'done').map((s) => ({ agent: (list.find((x) => x.id === s.agent) || {}).name || s.agent, title: s.title, result: s.result }));
     const bud = await budget(ctx);
     if (bud.over) { await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'failed'; x.error = bud.message; }); await notify(uid, ctx, t, 'failed'); return; }
-    const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier);
+    /* a skill for this step: named by the plan or the person, or matched on the request */
+    let skillBlock = '';
+    if (!st.skillChecked) {
+      let pick = null; try { pick = await skills.forStep(ctx, skillDeps(), a, st, t, know); } catch (e) { pick = null; }
+      const metaS = pick ? pick.meta : null;
+      await patchTask(ctx, id, (x) => { x.steps[i].skillChecked = true; if (metaS) x.steps[i].skill = metaS; else delete x.steps[i].skill; });
+      if (pick) { skillBlock = pick.block; await log(ctx, a.id, a.name + ' is ' + pick.log + ' for "' + st.title + '".'); if (metaS.id && !metaS.blocked) await skills.recordRun(ctx, metaS.id, { kind: 'task', task: id, step: st.id, agent: a.id, version: metaS.version, how: metaS.how }); }
+      st.skill = metaS;
+    }
+    else if (st.skill && !st.skill.missing) { try { const sk = (await skills.all(ctx)).find((s) => s.id === st.skill.id); if (sk && !st.skill.blocked) skillBlock = skills.text(sk, know); else if (sk && st.skill.blocked) skillBlock = 'SKILL REQUESTED BUT NOT USABLE: "' + sk.name + '" is ' + st.skill.blocked + '. Say so in your result and do the work without it.'; } catch (e) {} }
+    else if (st.skill && st.skill.missing) skillBlock = 'SKILL REQUESTED BUT NOT FOUND: the person asked for a skill called "' + st.skill.missing + '", and no skill with that name exists. Say so plainly in your result, then do the work as best you can without it.';
+    const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier, skillBlock);
     const user = (t.answer ? 'The person answered your question: "' + t.answer + '"\n\n' : '') + (t.handoff && t.handoff.found ? 'What you found before stopping at ' + t.handoff.url + ':\n' + t.handoff.found + '\n\n' : '') + 'Do your part now.';
     if (fakeDelay) await new Promise((r) => setTimeout(r, fakeDelay));
     let messages = [{ role: 'user', content: user }];
@@ -943,7 +968,8 @@ async function delegateText(ctx, uid, text, lang, opts) {
   if (!which) return { error: 'J.A.R.V.I.S. has no model available here.', status: 503 };
   const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429 };
   const know = await knowledge(ctx);
-  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), memory.current(know).filter((k) => k.scope === 'shared').slice(-60), lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
+  let skillList = []; try { skillList = (await skills.all(ctx)).filter((s) => s.status === 'active'); } catch (e) {}
+  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), memory.current(know).filter((k) => k.scope === 'shared').slice(-60), lang, skillList), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
   if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
   await bumpUsage(ctx, 'jarvis', r.usage, which.model);
   const plan = parsePlan(r.text, list);
@@ -1309,6 +1335,57 @@ function memDeps() {
   };
 }
 
+/* ---------- skills: what the module needs from here ------------------------ */
+function skillDeps() {
+  return {
+    agents: (ctx) => agents(ctx), tasks: (ctx) => tasks(ctx), knowledge: (ctx) => knowledge(ctx),
+    tools: () => { const B = browserLib(); return { flow: true, web: true, browser: !!(B && B.available().mode === 'browser'), email: mailReady() }; },
+    log: (ctx, who, what) => log(ctx, who, what),
+    addKnowledge: async (ctx, k) => { const list = await knowledge(ctx); const item = { id: 'k' + newId(), text: str(k.text, 300), scope: k.scope === 'shared' || /^agent:/.test(String(k.scope || '')) ? k.scope : 'shared', kind: k.kind || 'preference', source: 'you', at: Date.now(), updated: Date.now() }; list.push(item); await ctx.set('team:knowledge', list.slice(-400)); await log(ctx, 'team', 'Preference added from skill feedback: ' + item.text); return item; },
+    draft: FAKE ? null : draftSkill, revise: FAKE ? null : reviseSkill, run: runSample
+  };
+}
+/* A model turns a description or a finished task into the skill document; the
+   deterministic draft is the fallback and the shape the model must keep. */
+const SKILL_SHAPE = '{ "name": "", "type": "workflow|guide", "purpose": "", "when": "", "whenNot": "", "inputs": [""], "steps": [""], "tools": ["flow|web|browser|email"], "output": "", "quality": "", "exceptions": "", "approvals": "" }';
+async function draftSkill(ctx, o) {
+  const list = await agents(ctx); const j = list.find((a) => a.id === 'jarvis'); const which = j && await resolveModel(j.model); if (!which) return null;
+  const sys = 'You write a reusable SKILL for a team of AI employees: an instruction document a person can read and edit. Capture the procedure, not the one-time details: addresses, amounts, dates, names and links from the example become named inputs (e.g. "the customer\'s email address"). Reference facts the team already knows rather than copying them. Steps are ordered and include decision points ("if X, then…"). Say plainly what needs the person\'s approval (anything that reaches the outside world — the skill never does it). Return ONLY JSON in this shape: ' + SKILL_SHAPE + '. Keep "tools" to those really needed.';
+  const body = o.kind === 'task' ? 'The team just completed this task; turn its workflow into a skill.\nTitle: ' + o.task.title + '\nRequest: ' + (o.task.brief || '') + '\nSteps done:\n' + (o.task.steps || []).map((s) => '- ' + s.agent + ': ' + s.title + ' — ' + str(s.brief, 400) + '\n  result: ' + str(s.result, 600)).join('\n') + '\n\nA first draft to improve (keep what is right):\n' + JSON.stringify(o.draft) : 'Description from the person:\n' + o.text + (Array.isArray(o.examples) && o.examples.length ? '\n\nExamples of requests it should handle:\n' + o.examples.map((e) => '- ' + str(e.input || e, 400)).join('\n') : '') + '\n\nA first draft to improve (keep what is right):\n' + JSON.stringify(o.draft);
+  const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 2500, timeoutMs: 60000 });
+  if (r.error) return null; await bumpUsage(ctx, 'jarvis', r.usage, which.model);
+  const m = String(r.text || '').match(/\{[\s\S]*\}/); if (!m) return null;
+  try { return JSON.parse(m[0]); } catch (e) { return null; }
+}
+async function reviseSkill(ctx, o) {
+  const list = await agents(ctx); const j = list.find((a) => a.id === 'jarvis'); const which = j && await resolveModel(j.model); if (!which) return null;
+  const sys = 'You maintain a reusable SKILL (an instruction document) for a team of AI employees. The person has given feedback that should change the procedure from now on. Make the smallest precise change that incorporates it; leave every unrelated field exactly as it is; do not add facts (those live in the team\'s knowledge); never widen what the agent may do without approval. Return ONLY the full updated document as JSON in this shape: ' + SKILL_SHAPE;
+  const body = 'Current skill (v' + o.skill.version + '):\n' + JSON.stringify(skills.docOf(o.skill)) + '\n\nFeedback:\n' + o.feedback + '\n\nA mechanical draft of the change, to improve or keep:\n' + JSON.stringify(o.draft);
+  const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 2500, timeoutMs: 60000 });
+  if (r.error) return null; await bumpUsage(ctx, 'jarvis', r.usage, which.model);
+  const m = String(r.text || '').match(/\{[\s\S]*\}/); if (!m) return null;
+  try { return JSON.parse(m[0]); } catch (e) { return null; }
+}
+/* A test run of a skill on one example: the real step prompt with the skill
+   in it, the agent's own model, nothing saved as a task, nothing sent —
+   proposals come back as drafts to look at. */
+async function runSample(ctx, agentId, sk, input, know) {
+  const list = await agents(ctx); const a = list.find((x) => x.id === agentId && !x.archived); if (!a) return { error: 'No such agent.' };
+  if ((await ctx.get('team:paused')) === true) return { error: 'The team is paused.' };
+  const which = await resolveModel(a.model); if (!which) return { error: a.name + ' has no model available here.' };
+  const bud = await budget(ctx); if (bud.over) return { error: bud.message };
+  const K = know || await knowledge(ctx);
+  const shared = K.filter((k) => k.scope === 'shared' || k.scope === 'agent:' + a.id).slice(-200);
+  const owner = ctx.user && (ctx.user.name || ctx.user.email);
+  const task = { title: 'Test run of the skill "' + sk.name + '"', brief: input, by: 'you', lang: 'en' };
+  const system = stepSystem(a, owner, shared, [], 'en', task, { title: 'Test run', brief: input }, [], skills.text(sk, K) + '\nTHIS IS A TEST RUN of the skill: do the work exactly as you would for real, but know that nothing you propose is sent — proposals are shown to the person as drafts.');
+  const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: 'Do your part now.' }], maxTokens: 3000, timeoutMs: 90000 });
+  if (r.error) return { error: r.error };
+  await bumpUsage(ctx, a.id, r.usage, which.model);
+  const out = parseStep(r.text);
+  return { result: out.result, question: out.question, proposals: out.proposals.map((p) => Object.assign({}, p, { status: 'draft' })), model: which.model, permissions: a.permissions };
+}
+
 async function handleWork(p, req, res, ctx) {
   const json = ctx.json;
   const uid = ctx.user && ctx.user.id;
@@ -1405,6 +1482,7 @@ module.exports.log = log;
 module.exports.bumpUsage = bumpUsage;
 module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
 module.exports.memory = memory;
+module.exports.skills = skills;
 module.exports.provenance = (ctx, p) => memory.record(ctx, p);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,
   tickBriefings, suggestions, suggestAct, briefingText, localParts, userTz, connectors, costOf, budget, mailSent, parseSuggest, sendEmail, toolsText, parseReply, SUGGEST_SYSTEM, PRICES };

@@ -139,7 +139,7 @@ async function whose(channel, externalId) { const v = await rawGet('__team:link:
 const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you would in the app. Also:\n' +
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
-  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now\n' +
+  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n' +
   '"call me when it is ready" — he rings you (needs the phone channel)';
 
 const UNKNOWN = (channel) => 'This ' + (channel === 'sms' || channel === 'voice' ? 'number' : 'account') + ' is not linked to a Flow. In The Flow, open the command centre → Channels → ' + CHANNELS[channel].name + ' → "Link", and send the six-digit code here.';
@@ -200,6 +200,10 @@ async function inbound(channel, externalId, text, meta) {
       const r = await team._work.suggestAct(ctx, uid, it.id, 'start', 'en');
       if (r.error) return r.error;
       return 'Started: ' + it.title + (r.task ? ' (' + r.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + ')' : '') + '. I will message you here when it is ready.';
+    }
+    if (c === 'skills' || c === 'skill') {
+      const sk = team.skills ? (await team.skills.all(ctx)).filter((s) => s.status === 'active') : [];
+      return sk.length ? 'Skills the team has:\n' + sk.map((s) => '· ' + s.name + ' (v' + s.version + (s.assignedTo.length ? ', ' + s.assignedTo.map((id) => (list.find((a) => a.id === id) || {}).name || id).join('/') : '') + ') — ' + str(s.purpose, 100)).join('\n') + '\n\nSay "use the <name> skill" in a request to invoke one.' : 'No skills yet. Teach one in the command centre → Skills, or say "turn that into a skill" after a task.';
     }
     if (c === 'briefing' || c === 'brief') { const L = team._work.localParts(await team._work.userTz(ctx), new Date()); return await team._work.briefingText(ctx, L, 'en'); }
     if (c === 'answer') {
