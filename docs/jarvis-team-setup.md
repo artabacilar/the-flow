@@ -142,9 +142,19 @@ Command centre → **Setup** (on the strip; J.A.R.V.I.S.'s own view nudges until
 
 Recovery is automatic: every open of the setup re-checks the live facts. A removed or rotated provider key turns step 2 to *needs attention* with the reason; an unlinked channel turns steps 3 and 4; the checklist says the same. "Start over" clears only the setup's own record — agents, models, links and tasks stay. `/setup` in a chat shows the progress with ticks.
 
-## 12. Tests
+## 12. Business context: import, source map, answers that name their source, discovery mode
 
-`node tests/run.js team team2 team3 channels memory skills scripts efficiency setup` runs the team with a stand-in
+Command centre → **Memory** → *Import business context*. Paste a document, a policy, an FAQ, a note — or give a public page — and it becomes atomic knowledge entries (facts, rules, preferences), each carrying the passage it came from and the source it belongs to. With a model available the extraction is done by J.A.R.V.I.S.; without one, the sentences that carry a number, a name, a rule or a preference are kept and the filler dropped. Secrets (keys, passwords, tokens) are refused. Nothing is indexed or cached: every agent is shown the entries on its very next message, because the prompt is rebuilt from the store each time.
+
+- **Source map**: every imported source with when, how many entries are current, how many replies drew on it, and who reads it (shared entries go to every agent). Open one to see its entries with their quotes. **Mark outdated** supersedes its entries (kept as dated history), **Restore** brings them back, **Re-import** refreshes from the kept text or the page (what is no longer in the document is superseded, what is new is added, what is unchanged is kept — one source, not two), **Remove** deletes it with its entries. The same text twice is refused with the name it already has.
+- **Answers name their sources**: after every reply the entries it actually drew on (a number in common, or two content words) are recorded; the console shows *From: …* under the reply and a chat reply ends with *— From: Price list, Nov 2026*. An answer that drew on no imported entry names none.
+- **Ask in a fresh chat**: a question, optional expected words, an agent — answered in a new conversation with no history and nothing saved to the agent's thread, so the only way the answer can be right is from what the team is shown. The verdict (as expected / not as expected) and the sources it drew on are kept.
+- **Requests and feedback**: noted from the panel or with `/request …` and `/feedback …` in a chat, with where they came from; mark done, reopen.
+- **Discovery mode**: *Ask me questions* (five) or *Interview me relentlessly* (ten, or until you say "done") — in the console, on J.A.R.V.I.S.'s view, or with `/discover <topic>` and `/interview <topic>` in a chat. One question at a time, each answer kept against its question; with a model the next question follows the answers, without one the question bank is used in order. It ends in a written spec — goal and output, trigger, inputs, steps (routine vs judgment), never-do / needs a yes, people, cadence, pitfalls, success, notes — built only from what was said. *Turn it into a skill* makes a version-1 skill from the spec, opened for review.
+
+## 13. Tests
+
+`node tests/run.js team team2 team3 channels memory skills scripts efficiency setup context` runs the team with a stand-in
 for every provider and channel (`FLOW_TEAM_FAKE=1`, never set on the real
 server). The browser tests run where Chromium exists and say so when it
 does not.
