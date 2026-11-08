@@ -1,7 +1,8 @@
 # J.A.R.V.I.S. and the team — setting it up
 
-The command centre in The Flow (Simple interface → Today → Command centre,
-or say "Hey J.A.R.V.I.S.") runs a team of AI employees: J.A.R.V.I.S. as
+The command centre in The Flow (in **Advanced** it *is* the app; in
+**Simple** it is Today → Command centre, or say "Hey J.A.R.V.I.S.") runs a
+team of AI employees: J.A.R.V.I.S. as
 chief of staff, with Bobby (advertising), Sarah (customer support), Tom
 (development), a hiring assistant and a finance assistant to start with.
 Everything below is already in the code; what each piece needs is one or
@@ -152,6 +153,36 @@ Command centre → **Memory** → *Import business context*. Paste a document, a
 - **Requests and feedback**: noted from the panel or with `/request …` and `/feedback …` in a chat, with where they came from; mark done, reopen.
 - **Discovery mode**: *Ask me questions* (five) or *Interview me relentlessly* (ten, or until you say "done") — in the console, on J.A.R.V.I.S.'s view, or with `/discover <topic>` and `/interview <topic>` in a chat. One question at a time, each answer kept against its question; with a model the next question follows the answers, without one the question bank is used in order. It ends in a written spec — goal and output, trigger, inputs, steps (routine vs judgment), never-do / needs a yes, people, cadence, pitfalls, success, notes — built only from what was said. *Turn it into a skill* makes a version-1 skill from the spec, opened for review.
 - **Turkish**: imports are read in Turkish as well — *her zaman / asla / gerekir / -malı* become rules, *tercih / isterim / samimi* preferences, and *merhaba / teşekkürler* filler is skipped. Discovery follows the language of the topic (or of the first answer): Turkish questions, a Turkish write-up (*İş akışı / Amaç ve çıktı / Tetikleyici …*), `/sor <konu>` and `/mülakat <konu>` in a chat, *bitti* to stop, *beceriye dönüştür* for the skill; a Turkish reply ends with *— Kaynak: …*. In the console, **Voice and manners → Names to recognise** keeps the Turkish names and words the microphone bends; what is heard is corrected against that list, the team's names and the names in what the team knows (so "Oguz" becomes Oğuz) before it is sent. The recogniser itself follows the app language (Settings → Türkçe).
+
+## 12a. Advanced is the command centre
+
+In the Advanced interface the command centre is the whole app. It opens by
+itself after sign-in; there is no × — Esc, or × on a page, goes back to
+J.A.R.V.I.S. The orb stays in the middle, a circle, at all times: a room or a
+page takes a side column, never the centre.
+
+- **Rail (left)**: J.A.R.V.I.S. (home — the day round the orb), *The team*
+  (Setup · Memory · Skills · Automations · Efficiency, the rooms that used to
+  sit on the strip), *Your life* (Today · Plan · Body · Record · Settings).
+- **Strip (under the clock)**: the assistants, Add agent, Pause all — as before.
+- **A page** (Today, Plan → North Star / Priorities / Week Compass / Work /
+  Side Project, Body → Training / Body log / Habits, Record → Journal /
+  Finances / Ask, Settings) opens down the left column, as wide as the
+  right, with the group's pages as pills at the top. It is the app's own
+  page, moved whole — same ids, same listeners — and moved back when it is
+  left. Anything that navigates to a page (a panel's ›, "open my finances"
+  to J.A.R.V.I.S., `Nav.go`) lands there.
+- **A room** (Memory …) takes both side columns; the orb stays between them.
+- **The console** is docked under the orb and never goes away; "Hey
+  J.A.R.V.I.S." and Talk work as in Simple.
+- **Phone**: orb first, the rail a scrolling row, a page below the orb.
+- **Simple is untouched**: the command centre is still a room one steps into
+  and out of, Memory and the other rooms still sit on the strip, and in a
+  room the orb steps aside as before.
+- Switching interface (Settings, or the sidebar's Advanced/Simple) opens or
+  closes the command centre at once. Test suites that look at the pages
+  themselves opt out with `window.__flowNoMerge` (the replica sets it unless
+  `FLOW_MERGE=1`).
 
 ## 13. Tests
 
