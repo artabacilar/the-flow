@@ -116,9 +116,20 @@ Command centre → **Skills** (in the team strip). A skill is an instruction doc
 - **Test**: add representative example requests (an ordinary one, one with information missing). A test run uses the agent's real model and the real prompt, saves no task and sends nothing — proposals come back as drafts. Checks: selects this skill, tools and sources present, steps followed, matches the expectation, asks when information is missing, outside actions stay drafts, permissions unchanged. Each example remembers its last run and version.
 - **Assign** to some agents or share with all: the procedure travels, no credentials do, and each agent keeps its own permission level. Creating or sharing a skill authorises nothing. Disable, archive, restore; remove only once archived. Skills are stored in the account, so switching a model changes nothing about them.
 
-## 9. Tests
+## 9. Automations: routine work done by scripts, not a model
 
-`node tests/run.js team team2 team3 channels memory skills` runs the team with a stand-in
+Command centre → **Automations**. An automation is a pipeline of vetted operations saved in your account — not code a model wrote and the server ran. The operations: read your rocks, expenses or habits, the team's tasks, this month's AI usage, or a public web page; filter, sort, limit, select, count/sum/average (grouped), format a line per item, compare with the previous run; write the report, send a fixed-template message to your channels (no model), update rocks by rule, send templated emails to a list (after your yes, once per recipient); and *hand exceptions to an agent* — the only step that costs a model call. Values that change are typed inputs (`{{inputs.name}}`), checked before a run starts; a wrong one stops the run with the reason.
+
+- **Build** one in the editor (each step is a small form; nothing else can run), or open a finished task and press **Turn into an automation**, or say *"Turn the repeatable parts of this workflow into an automation"*. The result explains itself: what it does, inputs and services, what it affects, outputs, when it stops, what is left to judgment, and whether a model is ever called. With a model available J.A.R.V.I.S. tidies the draft from the catalogue; nothing outside the catalogue survives.
+- **Test** = a dry run: it reads and computes for real, sends nothing, changes nothing, creates no task; each step shows what it would do. A passing test marks the version tested; a new version is untested until then (a schedule still runs it, flagged).
+- **Run** manually, on a **schedule** in your own time zone (daily / weekdays / weekly / hourly, the same minute tick as the briefing; once per window, never twice), or on an **event** (a task done whose title matches, an approval executed, the briefing sent). `/automations` and `/run 1` in any channel. **Pause** stops schedules and events (manual runs still allowed); **Disable** stops everything; **Archive**; **Cancel** a parked run.
+- **Runs** keep: trigger, time zone, version, inputs, per-step counts, notes and timings, items, failures, model calls, and a cost line — AI (estimated, or none), hosting (included in the server plan), external services (emails, page reads, notifications counted). A run is `ok`, `partial` (some items failed — said so, never "done"), `failed`, `invalid` (inputs), `awaiting_approval`, `stopped` (paused) or `cancelled`. Saved after every step: a restart resumes at the next step; a sent email is keyed, so a resumed batch never repeats one; a send whose outcome was never seen is reported *uncertain* and not re-attempted.
+- **Batches**: an `email.batch` step parks the run and raises one approval showing recipients, content and count. Your yes releases exactly that; a no cancels the run. Creating or scheduling an automation authorises nothing by itself.
+- **With the team**: J.A.R.V.I.S. may plan a step as a script (it runs with no model and the step says so); a skill can reference an automation (when, inputs, success, errors) and the agent runs it instead of redoing the routine part; a run that hands exceptions over creates a task with the automation named as its origin. Automations are stored in the account and know nothing about models: switching a model changes nothing.
+
+## 10. Tests
+
+`node tests/run.js team team2 team3 channels memory skills scripts` runs the team with a stand-in
 for every provider and channel (`FLOW_TEAM_FAKE=1`, never set on the real
 server). The browser tests run where Chromium exists and say so when it
 does not.
