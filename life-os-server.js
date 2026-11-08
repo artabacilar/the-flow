@@ -1135,17 +1135,27 @@ if (push && push.init) push.init(rawStore);
    resumed here after a restart, with a push when something is ready. */
 let teamMod = null;
 try { teamMod = require('./flow-team'); } catch (e) { teamMod = null; }
+let channelsMod = null;
+try { channelsMod = require('./flow-channels'); } catch (e) { channelsMod = null; }
+const TEAM_USERS = async () => {
+  const v = await rawStore.get(flowAuth.USERS_KEY);
+  const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
+  return Object.values(users).map((u) => u && u.id).filter(Boolean);
+};
+if (channelsMod && channelsMod.start) {
+  try { channelsMod.start({ raw: rawStore, users: TEAM_USERS, nsPrefix: flowAuth.nsPrefix, usersKey: flowAuth.USERS_KEY, log: (m) => console.error(m) }); }
+  catch (e) { console.error('[channels] start', e && e.message ? e.message : e); }
+  /* phone calls: Twilio's relay speaks websocket */
+  server.on('upgrade', (req, socket, head) => { try { if (!channelsMod.upgrade(req, socket, head)) socket.destroy(); } catch (e) { try { socket.destroy(); } catch (x) {} } });
+}
 if (teamMod && teamMod.start) {
   try {
     teamMod.start({
       raw: rawStore,
-      users: async () => {
-        const v = await rawStore.get(flowAuth.USERS_KEY);
-        const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
-        return Object.values(users).map((u) => u && u.id).filter(Boolean);
-      },
+      users: TEAM_USERS,
       nsPrefix: flowAuth.nsPrefix,
       sendToUser: push ? push.sendToUser : null,
+      channels: channelsMod ? channelsMod.notify : null,
       log: (m) => console.error(m)
     });
   } catch (e) { console.error('[team] start', e && e.message ? e.message : e); }

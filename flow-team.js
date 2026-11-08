@@ -171,6 +171,12 @@ function fakePost(url, opts) {
     if (/bobby/i.test(said)) steps.push({ agent: 'bobby', title: 'Check the ads', brief: 'Check this week\'s ad spend: ' + said });
     if (/tom/i.test(said)) steps.push({ agent: 'tom', title: 'Look at the bug', brief: said });
     text = JSON.stringify({ title: 'Team: ' + said.slice(0, 40), say: steps.length ? 'Putting ' + steps.map((x) => x.agent).join(' and ') + ' on it, sir.' : 'That needs none of the team.', steps });
+  } else if (/answering a text message from them/.test(system)) {
+    /* J.A.R.V.I.S. over a channel */
+    const actions = [];
+    if (/have \w+ draft|ask \w+ to|get the team to/i.test(said)) actions.push({ type: 'delegate', title: 'From a message', brief: said, callMe: /call me/i.test(said) });
+    if (/^\s*(yes|approve)\b/i.test(said)) actions.push({ type: 'approve', n: 1 });
+    text = JSON.stringify({ say: b.model + ' says: ' + said, actions });
   } else if (/hand it over/.test(system)) {
     text = 'Summary by ' + b.model + ':\n' + String((last && last.content) || '');
   } else {
@@ -441,16 +447,30 @@ async function handle(p, req, res, ctx) {
 
   if (p === '/api/team/say' && req.method === 'POST') {
     const b = await body();
+    const r = await sayTo(ctx, String(b.agent || ''), block(b.text, 6000), b.lang === 'tr' ? 'tr' : 'en');
+    if (r.error) { json(res, r.status || 502, r); return true; }
+    json(res, 200, Object.assign({ ok: true }, r));
+    return true;
+  }
+
+  return false;
+}
+
+/* One message to one specialist: their thread, their model, their memory.
+   Used by the console and by every channel. */
+async function sayTo(ctx, agentId, said, lang) {
+  {
     const list = await agents(ctx);
-    const a = list.find((x) => x.id === String(b.agent || '') && !x.archived);
-    if (!a) { json(res, 404, { error: 'No such agent.' }); return true; }
-    if (a.id === 'jarvis') { json(res, 400, { error: 'J.A.R.V.I.S. answers through /api/flow/do.' }); return true; }
-    const said = block(b.text, 6000); if (!said) { json(res, 400, { error: 'Say something first.' }); return true; }
-    if ((await ctx.get('team:paused')) === true) { json(res, 423, { error: 'The team is paused. Resume it from the command centre.', paused: true }); return true; }
+    const a = list.find((x) => x.id === agentId && !x.archived);
+    if (!a) return { error: 'No such agent.', status: 404 };
+    if (a.id === 'jarvis') return { error: 'J.A.R.V.I.S. answers through /api/flow/do.', status: 400 };
+    if (!said) return { error: 'Say something first.', status: 400 };
+    if ((await ctx.get('team:paused')) === true) return { error: 'The team is paused. Resume it from the command centre.', paused: true, status: 423 };
     const use = await usage(ctx); const mine = use[a.id] || { calls: 0, in: 0, out: 0 };
-    if (a.dailyCap > 0 && mine.calls >= a.dailyCap) { json(res, 429, { error: a.name + ' has reached today\'s limit of ' + a.dailyCap + ' messages.', used: mine.calls, cap: a.dailyCap }); return true; }
+    if (a.dailyCap > 0 && mine.calls >= a.dailyCap) return { error: a.name + ' has reached today\'s limit of ' + a.dailyCap + ' messages.', used: mine.calls, cap: a.dailyCap, status: 429 };
     const which = await resolveModel(a.model);
-    if (!which) { json(res, 503, { error: a.name + ' is set to ' + a.model + ', and that provider has no key here. Choose another model.', awaiting: true }); return true; }
+    if (!which) return { error: a.name + ' is set to ' + a.model + ', and that provider has no key here. Choose another model.', awaiting: true, status: 503 };
+    const b = { lang };
     const know = await knowledge(ctx);
     const shared = know.filter((k) => k.scope === 'shared').slice(-80);
     const own = know.filter((k) => k.scope === 'agent:' + a.id).slice(-80);
@@ -465,7 +485,7 @@ async function handle(p, req, res, ctx) {
     if (last && last.role === 'user') last.content += '\n\n' + said; else messages.push({ role: 'user', content: said });
     const system = agentSystem(a, ctx.user && (ctx.user.name || ctx.user.email), shared, own, b.lang === 'tr' ? 'tr' : 'en', names);
     const r = await complete({ model: which.model, system, messages, maxTokens: 1600 });
-    if (r.error) { json(res, r.status === 429 ? 429 : 502, { error: r.error }); return true; }
+    if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
     const out = parseReply(r.text);
     const now = Date.now();
     hist.push({ role: 'user', text: said, at: now }, { role: 'assistant', text: out.say, at: now, model: which.model });
@@ -483,11 +503,8 @@ async function handle(p, req, res, ctx) {
     }
     use[a.id] = { calls: mine.calls + 1, in: mine.in + (r.usage.in || 0), out: mine.out + (r.usage.out || 0) };
     await ctx.set(dayKey(), use);
-    json(res, 200, { ok: true, say: out.say, remembered, model: which.model, provider: which.provider, usage: use[a.id] });
-    return true;
+    return { say: out.say, remembered, model: which.model, provider: which.provider, usage: use[a.id], agent: a };
   }
-
-  return false;
 }
 
 
@@ -709,17 +726,31 @@ async function bumpUsage(ctx, agentId, u) {
   use[agentId] = { calls: m.calls + 1, in: m.in + ((u && u.in) || 0), out: m.out + ((u && u.out) || 0) };
   await ctx.set(dayKey(), use);
 }
-async function notify(uid, ctx, t, what) {
-  if (!pushTo) return;
+let channelsTo = null;   /* (uid, text, opts) => Promise — set by start() */
+async function notify(uid, ctx, t0, what) {
+  /* the freshest record: the caller's copy may predate the last save */
+  const t = (await tasks(ctx)).find((x) => x.id === t0.id) || t0;
   const list = await agents(ctx); const a = list.find((x) => x.id === t.agent) || { name: 'The team' };
   const title = what === 'done' ? a.name + ' is done: ' + t.title : what === 'approval' ? t.title + ' — needs your yes' : what === 'question' ? a.name + ' has a question' : t.title + ' did not finish';
   const body = what === 'question' ? String(t.question || '').slice(0, 160) : what === 'failed' ? String(t.error || '').slice(0, 160) : 'Open the command centre to see it.';
-  try { await pushTo(uid, { title, body, thread: 'team', data: { team: 'task', id: t.id } }); } catch (e) {}
+  if (pushTo) { try { await pushTo(uid, { title, body, thread: 'team', data: { team: 'task', id: t.id } }); } catch (e) {} }
+  /* The channels he is linked on get the result itself, not a pointer. */
+  if (channelsTo) {
+    let text = title + '\n\n';
+    if (what === 'question') text += t.question + '\n\nReply with the answer, or "/answer <text>".';
+    else if (what === 'failed') text += t.error;
+    else {
+      text += String(t.result || '').slice(0, 3000) + (String(t.result || '').length > 3000 ? '\n…' : '');
+      if (what === 'approval') { const ap = (await approvals(ctx)).filter((x) => x.task === t.id && x.status === 'pending'); text += '\n\n' + ap.map((x, i) => '[' + (i + 1) + '] ' + x.summary + (x.detail && x.detail.to ? ' → ' + x.detail.to : '')).join('\n') + '\n\nReply "/yes 1" or "/no 1".'; }
+    }
+    try { await channelsTo(uid, text, { task: t, what, call: !!t.callMe && (what === 'done' || what === 'approval') }); } catch (e) {}
+  }
 }
 
 /* Boot: every account's unfinished tasks carry on. */
 function start(deps) {
   pushTo = deps.sendToUser ? (uid, note) => deps.sendToUser(deps.raw, uid, note) : null;
+  channelsTo = typeof deps.channels === 'function' ? deps.channels : null;
   bootCtx = (uid) => {
     const pre = deps.nsPrefix(uid);
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
@@ -746,6 +777,50 @@ async function newTask(ctx, uid, fields) {
   await log(ctx, t.agent, (t.by === 'jarvis' ? 'J.A.R.V.I.S. put the team on: ' : 'Task: ') + t.title);
   kick(uid, ctx);
   return t;
+}
+
+/* "Have Sarah draft…": J.A.R.V.I.S. plans and the team starts. Used by the
+   console's card and by every channel. opts.callMe: ring when it is ready. */
+async function delegateText(ctx, uid, text, lang, opts) {
+  if (!text) return { error: 'Say what the team should do.', status: 400 };
+  if ((await ctx.get('team:paused')) === true) return { error: 'The team is paused.', paused: true, status: 423 };
+  const list = await agents(ctx);
+  const j = list.find((x) => x.id === 'jarvis');
+  const which = await resolveModel(j.model);
+  if (!which) return { error: 'J.A.R.V.I.S. has no model available here.', status: 503 };
+  const know = await knowledge(ctx);
+  const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), know.filter((k) => k.scope === 'shared').slice(-60), lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
+  if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
+  await bumpUsage(ctx, 'jarvis', r.usage);
+  const plan = parsePlan(r.text, list);
+  if (!plan) return { error: 'The plan came back in a shape the app could not read. Try again.', status: 502 };
+  if (!plan.steps.length) return { task: null, say: plan.say || 'That needs none of the team; I can do it myself.' };
+  try {
+    const t = await newTask(ctx, uid, { title: plan.title || str(text, 80), brief: text, agent: 'jarvis', by: 'jarvis', lang, steps: plan.steps, callMe: !!(opts && opts.callMe), via: (opts && opts.via) || '' });
+    return { task: t, say: plan.say };
+  } catch (e) { return { error: e.message, status: 400 }; }
+}
+
+/* A yes or a no to one approval — once. */
+async function decide(ctx, id, decision, detail) {
+  const ap = await approvals(ctx);
+  const item = ap.find((x) => x.id === id);
+  if (!item) return { error: 'No such approval.', status: 404 };
+  if (decision !== 'approve' && decision !== 'reject') return { error: 'approve or reject.', status: 400 };
+  if (item.status !== 'pending') return { approval: item, already: true };
+  if (detail && typeof detail === 'object') { item.detail = { to: str(detail.to, 200), subject: str(detail.subject, 200), body: block(detail.body, 6000) }; item.edited = true; }
+  item.decidedAt = Date.now();
+  if (decision === 'reject') { item.status = 'rejected'; }
+  else {
+    item.status = 'awaiting_tool';
+    item.note = 'Approved. Nothing is connected to carry it out yet, so it has not been sent; it will go once, as approved, when the connection exists.';
+  }
+  await saveApprovals(ctx, ap);
+  const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent' };
+  await log(ctx, item.agent, (decision === 'approve' ? 'Approved: ' : 'Declined: ') + item.summary + (decision === 'approve' ? ' (awaiting a connection)' : ''));
+  const stillPending = ap.some((x) => x.task === item.task && x.status === 'pending');
+  if (!stillPending) await patchTask(ctx, item.task, (x) => { if (x.status === 'awaiting_approval') x.status = 'done'; });
+  return { approval: item, agent: a.name };
 }
 
 async function handleWork(p, req, res, ctx) {
@@ -777,23 +852,9 @@ async function handleWork(p, req, res, ctx) {
   /* J.A.R.V.I.S. plans and hands out */
   if (p === '/api/team/delegate' && req.method === 'POST') {
     const b = await body();
-    const text = block(b.text, 4000); if (!text) { json(res, 400, { error: 'Say what the team should do.' }); return true; }
-    if ((await ctx.get('team:paused')) === true) { json(res, 423, { error: 'The team is paused.', paused: true }); return true; }
-    const list = await agents(ctx);
-    const j = list.find((x) => x.id === 'jarvis');
-    const which = await resolveModel(j.model);
-    if (!which) { json(res, 503, { error: 'J.A.R.V.I.S. has no model available here.' }); return true; }
-    const know = await knowledge(ctx);
-    const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), know.filter((k) => k.scope === 'shared').slice(-60), b.lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
-    if (r.error) { json(res, r.status === 429 ? 429 : 502, { error: r.error }); return true; }
-    await bumpUsage(ctx, 'jarvis', r.usage);
-    const plan = parsePlan(r.text, list);
-    if (!plan) { json(res, 502, { error: 'The plan came back in a shape the app could not read. Try again.' }); return true; }
-    if (!plan.steps.length) { json(res, 200, { ok: true, task: null, say: plan.say || 'That needs none of the team; I can do it myself.' }); return true; }
-    try {
-      const t = await newTask(ctx, uid, { title: plan.title || str(text, 80), brief: text, agent: 'jarvis', by: 'jarvis', lang: b.lang === 'tr' ? 'tr' : 'en', steps: plan.steps });
-      json(res, 200, { ok: true, task: t, say: plan.say });
-    } catch (e) { json(res, 400, { error: e.message }); }
+    const r = await delegateText(ctx, uid, block(b.text, 4000), b.lang === 'tr' ? 'tr' : 'en', {});
+    if (r.error) { json(res, r.status || 502, r); return true; }
+    json(res, 200, Object.assign({ ok: true }, r));
     return true;
   }
 
@@ -831,36 +892,30 @@ async function handleWork(p, req, res, ctx) {
   /* approvals: the exact action, a yes or a no, and never twice */
   if (p === '/api/team/approve' && req.method === 'POST') {
     const b = await body();
-    const ap = await approvals(ctx);
-    const item = ap.find((x) => x.id === String(b.id || ''));
-    if (!item) { json(res, 404, { error: 'No such approval.' }); return true; }
-    const decision = b.decision === 'approve' ? 'approve' : b.decision === 'reject' ? 'reject' : '';
-    if (!decision) { json(res, 400, { error: 'approve or reject.' }); return true; }
-    if (item.status !== 'pending') { json(res, 200, { ok: true, approval: item, already: true }); return true; }
-    /* A change to the proposed text is a new proposal: it is saved, and
-       what gets approved is exactly what is on screen now. */
-    if (b.detail && typeof b.detail === 'object') { item.detail = { to: str(b.detail.to, 200), subject: str(b.detail.subject, 200), body: block(b.detail.body, 6000) }; item.edited = true; }
-    item.decidedAt = Date.now();
-    if (decision === 'reject') { item.status = 'rejected'; }
-    else {
-      /* No connection can carry this yet: approved, honestly not sent.
-         When a tool exists, this is where it runs — once, under item.key. */
-      item.status = 'awaiting_tool';
-      item.note = 'Approved. Nothing is connected to carry it out yet, so it has not been sent; it will go once, as approved, when the connection exists.';
-    }
-    await saveApprovals(ctx, ap);
-    const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent' };
-    await log(ctx, item.agent, (decision === 'approve' ? 'Approved: ' : 'Declined: ') + item.summary + (decision === 'approve' ? ' (awaiting a connection)' : ''));
-    /* the task it belongs to: done once nothing of it is pending */
-    const stillPending = ap.some((x) => x.task === item.task && x.status === 'pending');
-    if (!stillPending) await patchTask(ctx, item.task, (x) => { if (x.status === 'awaiting_approval') x.status = 'done'; });
-    json(res, 200, { ok: true, approval: item, agent: a.name }); return true;
+    /* A change to the proposed text is a new proposal: what gets approved
+       is exactly what is on screen now. */
+    const r = await decide(ctx, String(b.id || ''), b.decision === 'approve' ? 'approve' : b.decision === 'reject' ? 'reject' : '', b.detail && typeof b.detail === 'object' ? b.detail : null);
+    if (r.error) { json(res, r.status || 400, r); return true; }
+    json(res, 200, Object.assign({ ok: true }, r)); return true;
   }
 
   return false;
 }
 
 module.exports.start = start;
+module.exports.sayTo = sayTo;
+module.exports.delegateText = delegateText;
+module.exports.decide = decide;
+module.exports.newTask = newTask;
+module.exports.agents = agents;
+module.exports.tasks = tasks;
+module.exports.approvals = approvals;
+module.exports.knowledge = knowledge;
+module.exports.patchTask = patchTask;
+module.exports.kick = kick;
+module.exports.log = log;
+module.exports.bumpUsage = bumpUsage;
+module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
 module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops };
 
 /* For J.A.R.V.I.S.'s own engine: the shared knowledge, as lines, and the

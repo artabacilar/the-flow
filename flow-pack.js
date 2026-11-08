@@ -14456,7 +14456,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14757,8 +14757,10 @@ const Team = {
   source(k) { if (k.source === 'you') return 'you'; if (/^agent:/.test(k.source || '')) { const a = Team.agent(k.source.slice(6)); return a ? a.name : 'an agent'; } return k.source || ''; },
   when(t) { try { const d = new Date(t); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch (e) { return ''; } },
   toolsPanel(a) {
-    const rows = [['Gmail & Calendar', 'stage 2'], ['Google Drive', 'stage 2'], ['WhatsApp · Telegram · Slack', 'stage 3'], ['A phone number (SMS & calls)', 'stage 3'], ['Cloud browser', 'stage 4']];
-    return Hud.panel('tools', 'Tools & channels', '<p class="hud-sub">None connected yet — ' + esc(a.name) + ' says so when asked to send or do anything.</p>' +
+    const ch = (Team.chan && Team.chan.channels) || [];
+    const chRows = ch.filter((c) => c.status === 'working').map((c) => '<div class="hud-r"><span data-i18n="off">' + esc(c.name) + '</span><b class="hud-ok">Working · ' + (c.id === 'sms' || c.id === 'voice' ? 'via the team number' : '@' + esc(String(a.name).split(/\s+/)[0].toLowerCase()) + ' …') + '</b></div>').join('');
+    const rows = [['Gmail & Calendar', 'parked'], ['Google Drive', 'later'], ['Cloud browser', 'stage 4']];
+    return Hud.panel('tools', 'Tools & channels', '<p class="hud-sub">No tools yet — ' + esc(a.name) + ' says so when asked to send or do anything. Channels reach ' + esc(a.name) + ' through J.A.R.V.I.S. (“@' + esc(String(a.name).split(/\s+/)[0].toLowerCase()) + ' …”).</p>' + chRows +
       rows.map((r) => '<div class="hud-r"><span data-i18n="off">' + esc(r[0]) + '</span><b class="hud-await">Awaiting setup · ' + esc(r[1]) + '</b></div>').join(''));
   },
   paintAgent() {
@@ -14791,7 +14793,31 @@ const Team = {
     if (Team.adding) return Team.addPanel();
     return Team.approvalsPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
+      Team.channelsPanel() +
       Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
+  },
+  /* ---- channels: where you can reach them from ---- */
+  chan: null, chanCode: null, chanOpen: null,
+  async loadChannels(force) {
+    if (Team.chan && !force) return Team.chan;
+    try { const r = await fetch('/api/channels/me', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.chan = j; } catch (e) {}
+    return Team.chan;
+  },
+  CH_STATUS: { working: 'Working', ready: 'Ready to link', awaiting: 'Awaiting configuration', not_built: 'Not built yet' },
+  channelsPanel() {
+    if (!Team.chan) { Team.loadChannels().then(() => { if (Hud.on && (Team.sel || 'jarvis') === 'jarvis') Hud.paint(); }); return Hud.panel('channels', 'Channels', '<p class="hud-sub">Looking…</p>'); }
+    const rows = Team.chan.channels.map((c) => {
+      const open = Team.chanOpen === c.id;
+      let body = '';
+      if (open) {
+        if (c.status === 'working') body = '<p class="hud-sub" data-i18n="off">Linked' + (c.linked && c.linked.name ? ' to ' + esc(c.linked.name) : '') + (c.linked && c.linked.id ? ' (' + esc(c.linked.id) + ')' : '') + '. ' + (c.id === 'voice' ? 'Save the number as a contact called Jarvis: “Hey Siri, call Jarvis”.' : 'Message it like you would in the app; /team, /tasks, /yes 1.') + '</p><div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="chtest" data-ch="' + esc(c.id) + '">Send a test</button><button type="button" class="hud-btn ghost" data-hud="chunlink" data-ch="' + esc(c.id) + '">Unlink</button></div>';
+        else if (c.status === 'ready') body = (Team.chanCode && Team.chanCode.ch === c.id ? '<div class="hud-code" data-i18n="off">' + esc(Team.chanCode.code) + '</div><p class="hud-sub">Send this code from your ' + esc(c.name) + ' to the bot/number within 10 minutes. The first message links it; nothing else is shared.</p>' : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="chcode" data-ch="' + esc(c.id) + '">Link</button></div>') + '<p class="hud-sub" data-i18n="off">' + esc(c.how) + '</p>';
+        else body = '<p class="hud-sub" data-i18n="off">' + esc(c.how) + '</p>' + (c.env.length ? '<p class="hud-sub">Missing in Render: <code>' + c.env.map(esc).join('</code>, <code>') + '</code></p>' : '');
+      }
+      return '<div class="hud-ch' + (open ? ' open' : '') + '"><button type="button" class="hud-chh" data-hud="chopen" data-ch="' + esc(c.id) + '"><span data-i18n="off">' + esc(c.name) + '</span><em class="hud-badge" data-st="' + esc(c.status) + '">' + esc(Team.CH_STATUS[c.status] || c.status) + '</em></button>' + body + '</div>';
+    }).join('');
+    const n = Team.chan.channels.filter((c) => c.status === 'working').length;
+    return Hud.panel('channels', 'Channels' + (n ? ' · ' + n + ' working' : ''), rows + '<p class="hud-sub">Results, questions and approvals reach every linked channel. Only the sender you linked is ever answered.</p>');
   },
   /* ---- work ---- */
   STATUS: { queued: 'Queued', running: 'Working', awaiting_info: 'Needs an answer', awaiting_approval: 'Needs your yes', done: 'Done', failed: 'Did not finish', cancelled: 'Cancelled' },
@@ -14847,6 +14873,19 @@ const Team = {
     if ((Team.sel || 'jarvis') !== owner) await Team.select(owner, true);
     Team.paintRail(); Hud.paint();
   },
+  chanWatchT: 0,
+  chanWatch() {
+    clearTimeout(Team.chanWatchT);
+    if (!Team.chanCode || !Hud.on || Date.now() - Team.chanCode.at > 11 * 60 * 1000) { Team.chanCode = null; return; }
+    Team.chanWatchT = setTimeout(async () => {
+      const before = JSON.stringify((Team.chan || {}).channels || []);
+      await Team.loadChannels(true);
+      const linked = ((Team.chan || {}).channels || []).find((c) => c.id === Team.chanCode.ch && c.status === 'working');
+      if (linked) { Team.chanCode = null; toast(linked.name + ' linked ✓', null, 2200); Hud.paint(); return; }
+      if (JSON.stringify((Team.chan || {}).channels || []) !== before) Hud.paint();
+      Team.chanWatch();
+    }, 4000);
+  },
   /* while work is in flight, the room keeps up (every few seconds; not
      while a form here has the keyboard) */
   watchT: 0,
@@ -14880,6 +14919,10 @@ const Team = {
     if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
     if (a === 'kdrop') { const j = await Team.post('/api/team/knowledge', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.data.knowledge = j.knowledge; Hud.paint(); toast('Removed', null, 1200); } return; }
     if (a === 'task') { Team.openTask(b.getAttribute('data-id')); return; }
+    if (a === 'chopen') { const ch = b.getAttribute('data-ch'); Team.chanOpen = Team.chanOpen === ch ? null : ch; Hud.paint(); return; }
+    if (a === 'chcode') { const j = await Team.post('/api/channels/me/code', {}); if (j && j.ok) { Team.chanCode = { ch: b.getAttribute('data-ch'), code: j.code, at: Date.now() }; Hud.paint(); Team.chanWatch(); } return; }
+    if (a === 'chunlink') { const ch = b.getAttribute('data-ch'); if (!confirm('Unlink ' + ch + '? Messages from it will no longer be answered.')) return; const j = await Team.post('/api/channels/me/unlink', { channel: ch }); if (j && j.ok) { await Team.loadChannels(true); Hud.paint(); toast('Unlinked', null, 1200); } return; }
+    if (a === 'chtest') { const j = await Team.post('/api/channels/me/test', { channel: b.getAttribute('data-ch') }); if (j && j.ok) toast('Sent', null, 1200); return; }
     if (a === 'taskclose') { Team.openId = null; Hud.paint(); return; }
     if (a === 'cancel') { const j = await Team.post('/api/team/task/cancel', { id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.load(true); Hud.paint(); toast('Cancelled', null, 1200); } return; }
     if (a === 'retry') { const j = await Team.post('/api/team/task/retry', { id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.load(true); Hud.paint(); Team.watch(); } return; }

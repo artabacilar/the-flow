@@ -3966,6 +3966,18 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud .hud-k.ed form,#flow-hud .hud-kadd{display:flex;gap:6px;align-items:center;margin-top:8px}
 #flow-hud .hud-k.ed .hud-btn.ghost{margin-top:0}
 #flow-hud .hud-await{color:#ffd36b;font-weight:600;font-size:11px}
+#flow-hud .hud-ok{color:#6cf0b2;font-weight:600;font-size:11px}
+/* channels */
+#flow-hud .hud-ch{border-top:1px solid rgba(110,170,255,.1)}
+#flow-hud .hud-ch:first-child{border-top:0}
+#flow-hud .hud-chh{appearance:none;display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;padding:8px 2px;border:0;background:transparent;color:#dbeaff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left}
+#flow-hud .hud-badge[data-st="ready"]{background:rgba(127,216,255,.16);color:#7fd8ff}
+#flow-hud .hud-badge[data-st="awaiting"]{background:rgba(255,211,107,.16);color:#ffd36b}
+#flow-hud .hud-badge[data-st="not_built"]{background:rgba(170,200,255,.12);color:rgba(200,225,255,.7)}
+#flow-hud .hud-ch.open{padding-bottom:10px}
+#flow-hud .hud-ch .hud-row{margin-top:6px}
+#flow-hud .hud-ch code{font:inherit;font-size:11.5px;color:#7fd8ff;background:rgba(3,8,20,.6);padding:1px 5px;border-radius:5px}
+#flow-hud .hud-code{font-size:30px;font-weight:800;letter-spacing:.3em;color:#e8f4ff;text-align:center;padding:10px 0 4px;text-shadow:0 0 14px rgba(80,190,255,.45)}
 /* work */
 #flow-hud .hud-task{appearance:none;display:grid;grid-template-columns:1fr auto;gap:2px 10px;width:100%;text-align:left;padding:7px 4px;border:0;border-top:1px solid rgba(110,170,255,.1);background:transparent;color:#dbeaff;font:inherit;cursor:pointer;border-radius:8px}
 #flow-hud .hud-task:first-child{border-top:0}

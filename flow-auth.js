@@ -112,6 +112,11 @@ connect = loadModule('flow-connect', ['handle', 'purgeUser']);
 let team = null;
 team = loadModule('flow-team', ['handle']);
 
+/* The channels — Telegram, WhatsApp, SMS, calls, Slack, Discord, iMessage.
+   Absent is valid: the command centre then has no Channels panel. */
+let channels = null;
+channels = loadModule('flow-channels', ['handle', 'handleUser']);
+
 const USERS_KEY = '__auth:users';
 const FEEDBACK_KEY = '__feedback';
 const SESS = (t) => '__auth:sess:' + t;
@@ -1688,6 +1693,19 @@ async function gate(req, res) {
   /* ---- the team ----
      Signed in only. The module gets a reader/writer locked to this account's
      namespace and nothing else: it cannot reach another account's agents. */
+  if (channels && p.indexOf('/api/channels/me') === 0) {
+    const me = await currentUser(req);
+    if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
+    try {
+      const done = await channels.handleUser(p, req, res, { json, readBody, query: u.searchParams, user: me });
+      if (done) return true;
+    } catch (e) {
+      console.error('[channels]', e && e.message ? e.message : e);
+      json(res, 502, { error: 'The channels are unavailable right now.' });
+      return true;
+    }
+  }
+
   if (team && p.indexOf('/api/team') === 0) {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
@@ -2292,6 +2310,21 @@ async function gate(req, res) {
     const meC = await currentUser(req);
     const done = await connect.handle(req, res, { path: p, query: u.searchParams, me: meC, raw, json, readBody });
     if (done) return true;
+  }
+
+  /* ---- the channels' webhooks ----
+     No session: Telegram, Meta, Slack, Discord and Twilio call these. Each
+     one proves the provider sent it (a shared secret, a signature) and
+     works out whose Flow it is from the sender, inside flow-channels. */
+  if (channels && p.indexOf('/api/channels/') === 0 && p.indexOf('/api/channels/me') !== 0) {
+    try {
+      const done = await channels.handle(p, req, res, { readBody, query: u.searchParams, json });
+      if (done) return true;
+    } catch (e) {
+      console.error('[channels]', e && e.message ? e.message : e);
+      json(res, 502, { error: 'That channel is unavailable right now.' });
+      return true;
+    }
   }
 
   /* ---- everything else under /api needs a session ---- */
