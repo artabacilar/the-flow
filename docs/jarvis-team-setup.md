@@ -106,9 +106,19 @@ Command centre → **Memory** (in the team strip).
 
 Prompts are rebuilt from the store on every request, so there is no cache to refresh and no model that holds a copy: the next question, from any agent on any model, uses the current entries; superseded ones are shown only as dated history.
 
-## 8. Tests
+## 8. Skills: teaching recurring work once
 
-`node tests/run.js team team2 team3 channels memory` runs the team with a stand-in
+Command centre → **Skills** (in the team strip). A skill is an instruction document you can read and edit — never something hidden in a model — of two kinds: a *workflow* (an ordered procedure with decision points) or a *guide* (how to handle a kind of information). Each one has a name, purpose, when to use it and when not, inputs, steps, the tools and sources it relies on, the expected output and what good looks like, exceptions and what to do with missing information, and what needs your yes. Facts stay in Memory; a skill points at knowledge entries and the prompt shows their *current* text.
+
+- **Teach**: describe it (numbered lines become steps; "ask me before…" becomes an approval; "if … missing" an exception), or press **Turn into a skill** on a finished task — or say *"Turn the workflow we just completed into a reusable skill"* in the console. One-time details (addresses, amounts, dates, links) become inputs; the procedure stays. With a model available J.A.R.V.I.S. tidies the draft; without one the deterministic draft is what you get. You review before anyone follows it. Anything that looks like a secret is refused.
+- **Use**: J.A.R.V.I.S. may name a skill per step when he plans; you may invoke one ("use the Weekly ad report skill"); otherwise a step is matched on the words of the request against the active skills its agent may use. The chosen skill and version are written on the step (a chip in the task view), in the activity log, and in the skill's run history. A skill that applies but cannot run here (a tool not connected, disabled, or a name nobody has) is said so — never silently skipped, never invented. `/skills` lists them in any channel.
+- **Improve**: feedback is sorted first — *this output only* (nothing saved), *a change to the procedure* (a proposed edit shown as a diff, checked for contradictions within the skill and against team rules and for similar skills; Apply makes the next version; Compare and go back to any earlier one), or *a general preference* (saved to Memory as a preference entry every agent reads). Nothing changes until you apply it.
+- **Test**: add representative example requests (an ordinary one, one with information missing). A test run uses the agent's real model and the real prompt, saves no task and sends nothing — proposals come back as drafts. Checks: selects this skill, tools and sources present, steps followed, matches the expectation, asks when information is missing, outside actions stay drafts, permissions unchanged. Each example remembers its last run and version.
+- **Assign** to some agents or share with all: the procedure travels, no credentials do, and each agent keeps its own permission level. Creating or sharing a skill authorises nothing. Disable, archive, restore; remove only once archived. Skills are stored in the account, so switching a model changes nothing about them.
+
+## 9. Tests
+
+`node tests/run.js team team2 team3 channels memory skills` runs the team with a stand-in
 for every provider and channel (`FLOW_TEAM_FAKE=1`, never set on the real
 server). The browser tests run where Chromium exists and say so when it
 does not.
