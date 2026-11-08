@@ -121,7 +121,7 @@ async function record(ctx, p) {
 }
 
 /* ---------- matching: does this passage support that answer? ------------- */
-const STOP = new Set('the and for with that this from have will your they them their what when where which about into over under than then there here been were was are our you his her its not but can could should would also just like only very more most some such each other into onto upon about after before while since until because'.split(' '));
+const STOP = new Set('the and for with that this from have will your they them their what when where which about into over under than then there here been were was are our you his her its not but can could should would also just like only very more most some such each other into onto upon about after before while since until because ve ile için bir bu şu o da de mi mı mu mü ama fakat veya ya ki gibi kadar daha çok en olarak olan oldu olur olacak var yok değil her hiç şey ben sen biz siz onlar bana sana bize size beni seni bizi sizi benim senin bizim sizin onun onların çünkü ancak hem ise işte yani zaten hâlâ sonra önce şimdi bugün yarın dün nasıl neden niçin hangi kim nerede ne zaman bunu şunu onu bunun şunun bütün tüm bazı birkaç'.split(' '));
 function terms(text) {
   const t = String(text || '').toLowerCase();
   const words = (t.match(/[\p{L}][\p{L}\-']{3,}/gu) || []).filter((w) => !STOP.has(w));

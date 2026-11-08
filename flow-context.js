@@ -38,15 +38,31 @@ const QUESTIONS = [
   'How will we know it worked — what do you check, and what would make you redo it?',
   'Anything else I should know before I write it up — tone, format, a deadline, an example of a good result?'
 ];
+const QUESTIONS_TR = [
+  'Bu iş akışı bittiğinde ne üretmeli — bitmiş sonuç neye benziyor ve kime gidiyor?',
+  'Ne başlatıyor: senden bir mesaj mı, günün bir saati mi, gelen bir e-posta mı, kaydında değişen bir şey mi?',
+  'Her seferinde hangi bilgiye ihtiyaç duyuyor ve bu nereden geliyor (bir sayfa, gelen kutusu, kaydın, bir kişi)?',
+  'Hangi adımlar her seferinde aynı, nerede karar gerekiyor?',
+  'Asla ne olmamalı, ve dışarı çıkmadan önce ne senin onayını gerektiriyor?',
+  'Başka kim var işin içinde — müşteriler, çalışanlar, tedarikçiler — ve onlar ne almayı bekliyor?',
+  'Bu ne sıklıkla oluyor ve bugün senin ne kadar zamanını alıyor?',
+  'Elle yaparken ne ters gitti? Neyi sürekli düzeltiyorsun?',
+  'İşe yaradığını nasıl anlarız — neyi kontrol ediyorsun, neyi görünce baştan yaparsın?',
+  'Yazmadan önce bilmem gereken başka bir şey var mı — üslup, biçim, bir son tarih, iyi bir sonuç örneği?'
+];
+const SPEC_LABELS_TR = { goal: 'Amaç ve çıktı', trigger: 'Tetikleyici', inputs: 'Girdiler ve kaynakları', steps: 'Adımlar (rutin / karar)', guardrails: 'Asla yapma / onay gerekir', people: 'Kimler var', cadence: 'Ne sıklıkla, bugün ne kadar sürüyor', pitfalls: 'Elle yaparken ters gidenler', success: 'Başarıyı nasıl anlarız', notes: 'Notlar' };
 const SPEC_FIELDS = ['goal', 'trigger', 'inputs', 'steps', 'guardrails', 'people', 'cadence', 'pitfalls', 'success', 'notes'];
 const SPEC_LABELS = { goal: 'Goal and output', trigger: 'Trigger', inputs: 'Inputs and where they come from', steps: 'Steps (routine vs judgment)', guardrails: 'Never do / needs a yes', people: 'People involved', cadence: 'How often, how long today', pitfalls: 'What goes wrong by hand', success: 'How we know it worked', notes: 'Notes' };
 
+/* Turkish or English, from the text itself: Turkish letters, or the words
+   that only Turkish uses. The app's language is a hint, the text decides. */
+function langOf(text, hint) { const t = String(text || ''); if (/[ğışçöüĞİŞÇÖÜ]/.test(t)) return 'tr'; if (/\b(ve|için|bir|ile|olarak|değil|gibi|kadar|her|bu|şu|çok|daha|ama|veya|mı|mi|mu|mü|ne|nasıl|neden|hangi|ayda|haftada|günde|yılda|dolar|lira|fiyat|müşteri|rapor|toplantı)\b/i.test(t) && !/\b(the|and|with|for|that|this)\b/i.test(t)) return 'tr'; return hint === 'tr' ? 'tr' : 'en'; }
 function str(s, n) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n || 200); }
 function block(s, n) { return String(s == null ? '' : s).replace(/\r/g, '').trim().slice(0, n || 4000); }
 function newId() { return crypto.randomBytes(5).toString('hex'); }
 function hash(t) { return crypto.createHash('sha1').update(String(t)).digest('hex').slice(0, 12); }
-const RULE = /\b(always|never|must|should|do not|don't|only|every|no later|at least|at most|before|after|unless|required|forbidden|allowed)\b/i;
-const PREF = /\b(prefer|like|dislike|hate|love|want|keep it|tone|style|formal|informal|short|brief|casual)\b/i;
+const RULE = /\b(always|never|must|should|do not|don't|only|every|no later|at least|at most|before|after|unless|required|forbidden|allowed|her zaman|asla|hiçbir zaman|mutlaka|kesinlikle|gerekir|gereklidir|zorunlu|yasak|sadece|yalnızca|en az|en geç|en fazla|önce|sonra|olmadan|şart|izin|onay)\b|(?:malı|meli|malıdır|melidir|mamalı|memeli)\b/i;
+const PREF = /\b(prefer|like|dislike|hate|love|want|keep it|tone|style|formal|informal|short|brief|casual|tercih|sever|severim|sevmem|isterim|istemem|hoşlan|üslup|ton|resmi|samimi|kısa|öz|kibar)\b/i;
 const SECRET = /\b(api[_ -]?key|secret|password|passwd|token|bearer|private key)\b|sk-[A-Za-z0-9]{10,}|xox[abp]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{12,}/i;
 
 /* ---------- import ------------------------------------------------------------ */
@@ -148,10 +164,10 @@ function sourcesFor(know, usedIds) {
   for (const id of usedIds || []) { const k = know.find((x) => x.id === id); if (!k) continue; const key = k.origin && k.origin.id ? k.origin.id : (k.source || 'knowledge'); const o = by[key] = by[key] || { id: key, title: k.origin && k.origin.title ? k.origin.title : (k.source === 'you' ? 'what you told the team' : /^agent:/.test(k.source || '') ? 'what ' + k.source.slice(6) + ' remembered' : /^correction/.test(k.source || '') ? 'a correction you made' : 'team knowledge'), kind: k.origin && k.origin.id ? 'import' : 'knowledge', entries: [] }; o.entries.push({ id: k.id, text: str(k.text, 160), quote: k.origin && k.origin.quote ? str(k.origin.quote, 200) : '' }); }
   return Object.values(by);
 }
-function footer(sources) {
+function footer(sources, lang) {
   const imp = (sources || []).filter((s) => s.kind === 'import');
   if (!imp.length) return '';
-  return '\n\n— From: ' + imp.map((s) => s.title).join(' · ');
+  return '\n\n— ' + (lang === 'tr' ? 'Kaynak' : 'From') + ': ' + imp.map((s) => s.title).join(' · ');
 }
 
 /* ---------- fresh-chat verification ------------------------------------------------- */
@@ -194,7 +210,8 @@ function limitOf(mode) { return mode === 'relentless' ? QUESTIONS.length : 5; }
 async function nextQuestion(ctx, deps, d) {
   const n = d.qa.length;
   if (deps.question && n > 0) { try { const q = await deps.question(ctx, d); if (q && str(q, 300)) return str(q, 300); } catch (e) {} }
-  return QUESTIONS[n] || QUESTIONS[QUESTIONS.length - 1];
+  const bank = d.lang === 'tr' ? QUESTIONS_TR : QUESTIONS;
+  return bank[n] || bank[bank.length - 1];
 }
 function specFrom(d) {
   const spec = {}; SPEC_FIELDS.forEach((f, i) => { const a = d.qa[i]; spec[f] = a && a.a ? str(a.a, 600) : ''; });
@@ -203,8 +220,9 @@ function specFrom(d) {
 }
 function specText(d) {
   const sp = d.spec || specFrom(d);
-  const lines = ['Workflow: ' + (d.topic || 'untitled')];
-  for (const f of SPEC_FIELDS) if (sp[f]) lines.push('', SPEC_LABELS[f] + ':', sp[f]);
+  const L = d.lang === 'tr' ? SPEC_LABELS_TR : SPEC_LABELS;
+  const lines = [(d.lang === 'tr' ? 'İş akışı: ' : 'Workflow: ') + (d.topic || (d.lang === 'tr' ? 'adsız' : 'untitled'))];
+  for (const f of SPEC_FIELDS) if (sp[f]) lines.push('', L[f] + ':', sp[f]);
   return lines.join('\n');
 }
 async function discover(ctx, deps, b) {
@@ -213,11 +231,12 @@ async function discover(ctx, deps, b) {
   if (op === 'start') {
     if (active) { active.status = 'abandoned'; }
     const mode = b.mode === 'relentless' ? 'relentless' : 'ask';
-    const d = { id: 'dc' + newId(), topic: str(b.topic, 160), mode, status: 'active', qa: [], at: Date.now(), via: str(b.via || 'app', 20) };
+    const d = { id: 'dc' + newId(), topic: str(b.topic, 160), mode, lang: langOf(b.topic, b.lang), status: 'active', qa: [], at: Date.now(), via: str(b.via || 'app', 20) };
     const q = await nextQuestion(ctx, deps, d); d.qa.push({ q, a: '', at: Date.now() });
     list.push(d); await saveDiscoveries(ctx, list);
     if (deps.log) await deps.log(ctx, 'jarvis', 'Discovery started (' + (mode === 'relentless' ? 'interview' : '5 questions') + ')' + (d.topic ? ': ' + d.topic : '') + '.');
-    return { ok: true, discovery: d, say: (mode === 'relentless' ? 'Right. I will keep asking until I have the whole picture — say "done" whenever you want me to write it up. ' : 'Five questions, then I write it up. ') + 'First: ' + q, question: q, n: 1, of: limitOf(mode) };
+    const intro = d.lang === 'tr' ? (mode === 'relentless' ? 'Peki. Resmin tamamını görene kadar soracağım — yazmamı istediğinde "bitti" de. İlk soru: ' : 'Beş soru, sonra yazıya dökerim. İlk soru: ') : (mode === 'relentless' ? 'Right. I will keep asking until I have the whole picture — say "done" whenever you want me to write it up. First: ' : 'Five questions, then I write it up. First: ');
+    return { ok: true, discovery: d, say: intro + q, question: q, n: 1, of: limitOf(mode) };
   }
   if (op === 'status') return { ok: true, discovery: active || list.slice(-1)[0] || null, list: list.slice(-6).reverse().map((d) => ({ id: d.id, topic: d.topic, mode: d.mode, status: d.status, n: d.qa.filter((x) => x.a).length, at: d.at, skill: d.skill || null })) };
   const d = list.find((x) => x.id === String(b.id || '')) || active;
@@ -226,9 +245,11 @@ async function discover(ctx, deps, b) {
     if (d.status !== 'active') return { error: 'That discovery is finished.', status: 409 };
     const text = str(b.text, 1500); if (!text) return { error: 'Say your answer.', status: 400 };
     const open = d.qa[d.qa.length - 1]; if (open && !open.a) open.a = text; else d.qa.push({ q: '', a: text, at: Date.now() });
+    if (d.qa.filter((x) => x.a).length === 1 && d.lang !== 'tr' && langOf(text) === 'tr') d.lang = 'tr';
     const answered = d.qa.filter((x) => x.a).length;
-    const stop = /^\s*(done|enough|that'?s (all|it|enough)|finish|write it up|yeter|bitti|tamam(dır)?)\b/i.test(text) || answered >= limitOf(d.mode);
-    if (stop) { if (/^\s*(done|enough|that'?s|finish|write|yeter|bitti|tamam)/i.test(text)) { open.a = ''; d.qa.pop(); } return await finishDiscovery(ctx, deps, d, list); }
+    const stopWord = /^\s*(done|enough|that'?s (all|it|enough)|finish|write it up|yeter|yeterli|bitti|bu kadar|yaz(ıya dök)?|tamam(dır)?)\b/i.test(text);
+    const stop = stopWord || answered >= limitOf(d.mode);
+    if (stop) { if (stopWord) { open.a = ''; d.qa.pop(); } return await finishDiscovery(ctx, deps, d, list); }
     const q = await nextQuestion(ctx, deps, d); d.qa.push({ q, a: '', at: Date.now() }); await saveDiscoveries(ctx, list);
     return { ok: true, discovery: d, say: q, question: q, n: d.qa.length, of: limitOf(d.mode) };
   }
@@ -240,7 +261,7 @@ async function discover(ctx, deps, b) {
     const r = await deps.skillFromText(ctx, (d.topic || 'Workflow') + '\n' + specText(d));
     if (r && r.error) return r;
     d.skill = r.skill.id; await saveDiscoveries(ctx, list);
-    return { ok: true, skill: r.skill, discovery: d, say: '"' + r.skill.name + '" is a skill now, version 1. Review it in Skills before anyone follows it.' };
+    return { ok: true, skill: r.skill, discovery: d, say: d.lang === 'tr' ? '"' + r.skill.name + '" artık bir beceri, sürüm 1. Biri uygulamadan önce Beceriler\'de gözden geçir.' : '"' + r.skill.name + '" is a skill now, version 1. Review it in Skills before anyone follows it.' };
   }
   return { error: 'start, answer, finish, abandon, skill or status.', status: 400 };
 }
@@ -251,7 +272,8 @@ async function finishDiscovery(ctx, deps, d, list) {
   d.spec = spec; d.status = 'done'; d.doneAt = Date.now(); if (!d.topic && spec.goal) d.topic = str(spec.goal, 80);
   await saveDiscoveries(ctx, list);
   if (deps.log) await deps.log(ctx, 'jarvis', 'Discovery written up: ' + (d.topic || 'workflow') + ' (' + d.qa.filter((x) => x.a).length + ' answers).');
-  return { ok: true, discovery: d, done: true, spec, text: specText(d), say: 'Here is the workflow as I understand it:\n\n' + specText(d) + '\n\nSay "turn it into a skill" and the team follows it from the next request on.' };
+  const tail = d.lang === 'tr' ? 'İş akışını anladığım hâliyle yazdım:\n\n' + specText(d) + '\n\n"Beceriye dönüştür" de; ekip bir sonraki istekten itibaren buna göre çalışır.' : 'Here is the workflow as I understand it:\n\n' + specText(d) + '\n\nSay "turn it into a skill" and the team follows it from the next request on.';
+  return { ok: true, discovery: d, done: true, spec, text: specText(d), say: tail };
 }
 
 /* ---------- the view and the routes ----------------------------------------------------------- */
@@ -275,4 +297,4 @@ async function handle(p, req, res, ctx, deps) {
   return false;
 }
 
-module.exports = { handle, importContext, sourceMap, sourceAct, sourcesFor, footer, verify, addRequest, discover, view, extractPlain, specText, QUESTIONS, SPEC_FIELDS, SPEC_LABELS, _internals: { sentencesOf } };
+module.exports = { handle, importContext, sourceMap, sourceAct, sourcesFor, footer, verify, addRequest, discover, view, extractPlain, specText, langOf, QUESTIONS, QUESTIONS_TR, SPEC_FIELDS, SPEC_LABELS, SPEC_LABELS_TR, _internals: { sentencesOf } };

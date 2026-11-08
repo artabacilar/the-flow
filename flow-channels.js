@@ -220,11 +220,11 @@ async function inbound(channel, externalId, text, meta) {
       const run = await team.scripts.startRun(ctx, team.scriptDeps(), pick, { uid, trigger: 'channel ' + channel });
       return '"' + pick.name + '" v' + pick.version + ': ' + run.status + (run.error ? ' — ' + run.error : '') + (run.output ? '\n\n' + String(run.output).slice(0, 2500) : '') + (run.metrics ? '\n\n(' + run.metrics.items + ' items · ' + run.metrics.ms + ' ms · ' + run.metrics.modelCalls + ' model call' + (run.metrics.modelCalls === 1 ? '' : 's') + ')' : '');
     }
-    if ((c === 'discover' || c === 'interview' || c === 'askme') && team.context) {
-      const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'start', mode: c === 'interview' ? 'relentless' : 'ask', topic: rest, via: channel });
+    if ((c === 'discover' || c === 'interview' || c === 'askme' || c === 'sor' || c === 'mulakat' || c === 'mülakat') && team.context) {
+      const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'start', mode: (c === 'interview' || c === 'mulakat' || c === 'mülakat') ? 'relentless' : 'ask', topic: rest, via: channel, lang: team.context.langOf(rest) });
       return r.error ? r.error : r.say;
     }
-    if ((c === 'done' || c === 'writeup') && team.context) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'finish' }); return r.error ? r.error : r.say; }
+    if ((c === 'done' || c === 'writeup' || c === 'bitti' || c === 'yaz') && team.context) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'finish' }); return r.error ? r.error : r.say; }
     if ((c === 'request' || c === 'feedback') && team.context) { if (!rest) return 'Say what you want after /' + c + '.'; const r = await team.context.addRequest(ctx, team.ctxDeps(), { text: rest, kind: c, via: channel }); return r.error ? r.error : (c === 'feedback' ? 'Noted — thank you. It is on the list in the command centre.' : 'Noted. It is on the request list in the command centre; I will say when it is done.'); }
     if (c === 'setup') {
       if (!team.setupText) return 'Setup is not available here.';
@@ -255,7 +255,7 @@ async function inbound(channel, externalId, text, meta) {
   }
   /* a discovery is running: this is the answer to its question */
   if (team.context) {
-    try { const st = await team.context.discover(ctx, team.ctxDeps(), { op: 'status' }); if (st.discovery && st.discovery.status === 'active') { if (/turn (it|this|that) into a skill/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'answer', id: st.discovery.id, text, via: channel }); return r.error ? r.error : r.say; } if (st.discovery && st.discovery.status === 'done' && !st.discovery.skill && /turn (it|this|that) into a skill/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } } catch (e) {}
+    try { const st = await team.context.discover(ctx, team.ctxDeps(), { op: 'status' }); if (st.discovery && st.discovery.status === 'active') { if (/turn (it|this|that) into a skill|beceriye dönüştür|beceri yap/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'answer', id: st.discovery.id, text, via: channel }); return r.error ? r.error : r.say; } if (st.discovery && st.discovery.status === 'done' && !st.discovery.skill && /turn (it|this|that) into a skill|beceriye dönüştür|beceri yap/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } } catch (e) {}
   }
   /* "@sarah …" for one message */
   const at = text.match(/^@(\w+)[\s,:]+([\s\S]+)$/);
@@ -290,7 +290,7 @@ async function tasksText(ctx) {
 async function talk(ctx, uid, channel, agent, text, meta) {
   if (agent.id !== 'jarvis') {
     const r = await team.sayTo(ctx, agent.id, text, 'en', { via: channel });
-    return r.error ? r.error : r.say + (team.context ? team.context.footer(r.sources) : '');
+    return r.error ? r.error : r.say + (team.context ? team.context.footer(r.sources, team.context.langOf(text)) : '');
   }
   return await jarvis(ctx, uid, channel, text, meta);
 }
@@ -350,7 +350,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
     }
   }
   const reply = [say].concat(extra).filter(Boolean).join('\n\n') || 'Noted, sir.';
-  let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used)); } catch (e) {}
+  let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used), team.context.langOf(text)); } catch (e) {}
   await histSet(ctx, channel, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply + foot;
 }

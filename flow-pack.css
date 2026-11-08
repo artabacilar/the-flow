@@ -4213,3 +4213,7 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 /* sources under a reply */
 .sy-b .sy-src{display:block;margin-top:4px;font-size:11px;letter-spacing:.04em;opacity:.65}
 #flow-hud .hud-row.hud-wrap{flex-wrap:wrap}
+/* names the microphone must recognise */
+#flow-say .sy-sub{font-size:12px;line-height:1.4;opacity:.7;margin:-2px 0 8px}
+#flow-say .sy-names{flex-wrap:wrap}
+#flow-say .sy-names input{width:100%;min-width:0}

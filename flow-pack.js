@@ -13783,6 +13783,8 @@ const Say = {
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstHandsFree"> Hands-free — listen when opened and after each answer; a pause sends (off: tap Talk to start, tap again to send)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstFx"> Robotic AI effect on the voice (off is the clean voice)</label>' +
             '<label class="sy-own"><input type="checkbox" data-say-pref="asstGreet"> Greet me when I open the app</label>' +
+            '<label class="sy-opt sy-names"><span>Names to recognise</span><input type="text" data-say-pref="asstNames" maxlength="600" placeholder="Turkish names and words the microphone gets wrong: Oğuz, Abko, Gebze…" autocomplete="off"></label>' +
+            '<div class="sy-sub">What is heard is corrected against these, the team\'s names and the names in what the team knows — so “Oz” becomes Oğuz. English or Turkish speech: the recogniser follows the app language.</div>' +
             '<div class="sy-memk">What he knows about you</div>' +
             '<ul class="sy-mem"></ul>' +
             '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
@@ -14072,8 +14074,10 @@ const Say = {
     if (Say.busy) return;
     const ta = Say.el.querySelector('#sy-text');
     /* "…, over." ends a spoken request; it is not part of it. */
-    const text = String(ta.value || '').replace(Wake.OVER, '').trim();
+    let text = String(ta.value || '').replace(Wake.OVER, '').trim();
     if (!text) { Say.state('Say or type what you want first.'); return; }
+    /* spoken, not typed: names the recogniser bent are put right */
+    if (!Say.typed) { try { const fixed = Team.fixNames(text); if (fixed !== text) { text = fixed; ta.value = fixed; } } catch (e) {} }
     /* Sent by hand while the microphone was open: stop it without its "idle"
        sending this again or calling it spoken. */
     Say.waiting = false;
@@ -14090,9 +14094,9 @@ const Say = {
          reply, not by asking the model to guess about itself. */
       /* Discovery mode: "Ask me questions" starts it; while it runs, what is
          said is the answer to his question; "turn it into a skill" ends it. */
-      if (!Say.agent && (Team.isDiscoveryStart(text) || Team.discActive() || (Team.disc && Team.disc.status === 'done' && !Team.disc.skill && /turn (it|this|that) into a skill/i.test(text)))) {
+      if (!Say.agent && (Team.isDiscoveryStart(text) || Team.discActive() || (Team.disc && Team.disc.status === 'done' && !Team.disc.skill && /turn (it|this|that) into a skill|beceriye dönüştür|beceri yap/i.test(text)))) {
         const start = Team.isDiscoveryStart(text) && !Team.discActive();
-        const body = start ? { op: 'start', mode: /relentless|interview/i.test(text) ? 'relentless' : 'ask', topic: (text.match(/\babout (.+)$/i) || [])[1] || '' } : /turn (it|this|that) into a skill/i.test(text) ? { op: 'skill', id: Team.disc && Team.disc.id } : { op: 'answer', id: Team.disc && Team.disc.id, text };
+        const body = start ? { op: 'start', mode: /relentless|interview|sorgula|mülakat/i.test(text) ? 'relentless' : 'ask', topic: (text.match(/\babout (.+)$/i) || text.match(/^(.+?) (hakkında|konusunda)\b/i) || [])[1] || '', lang: Say.lang() } : /turn (it|this|that) into a skill|beceriye dönüştür|beceri yap/i.test(text) ? { op: 'skill', id: Team.disc && Team.disc.id } : { op: 'answer', id: Team.disc && Team.disc.id, text };
         const j = await Team.post('/api/team/discovery', body);
         const say = (j && (j.say || j.error)) || 'That did not work.';
         if (j && j.ok) { Team.disc = j.discovery || Team.disc; if (j.skill) { Team.skOpen = j.skill.id; Team.sk = null; } }
@@ -15284,7 +15288,37 @@ const Team = {
     }
     return Hud.panel('disc', 'Discovery', body);
   },
-  isDiscoveryStart(text) { return /^\s*(ask me (some )?questions|interview me( relentlessly)?|let'?s (work out|design|figure out) a workflow)\b/i.test(String(text || '')); },
+  /* Spoken names: the recogniser hears English (or Turkish) and bends a
+     Turkish name to the nearest word it knows. Corrected here against the
+     names we do know — the team, the people in what the team knows, and the
+     list the person keeps — by letter distance after folding accents. */
+  lexicon() {
+    const out = new Set();
+    const add = (s) => String(s || '').split(/[\s,;·]+/).forEach((w) => { w = w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''); if (w.length >= 3) out.add(w); });
+    try { add(Speech.pref('asstNames')); } catch (e) {}
+    try { Team.agents().forEach((a) => add(a.name)); } catch (e) {}
+    try { (Team.data && Team.data.knowledge || []).forEach((k) => (String(k.text || '').match(/\b[A-ZÇĞİÖŞÜ][\p{L}]{2,}\b/gu) || []).forEach((w) => out.add(w))); } catch (e) {}
+    try { Say.memory().forEach((m) => (String(m.text || '').match(/\b[A-ZÇĞİÖŞÜ][\p{L}]{2,}\b/gu) || []).forEach((w) => out.add(w))); } catch (e) {}
+    return Array.from(out);
+  },
+  fold(s) { return String(s || '').toLowerCase().replace(/ı/g, 'i').replace(/İ/g, 'i').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); },
+  lev(a, b) { const m = a.length, n = b.length; if (!m) return n; if (!n) return m; let prev = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return prev[n]; },
+  COMMON: new Set('the and for with that this from have will your they them their what when where which about into over under than then there here been were was are our you his her its not but can could should would also just like only very more most some such each other all any one two who how why yes now new old good well tell call said says make made take give need want know think come came went going done does did get got put let see saw look find keep turn start stop open close send sent read write show move play work plan note today tomorrow week month year time day days early late home back next last first ever never always often sometimes still again here there away morning evening night after before until while since because sir madam please thanks thank hello okay right left down high low big small long short full half part end top ask help'.split(' ')),
+  fixNames(text) {
+    const lex = Team.lexicon(); if (!lex.length) return text;
+    const folded = lex.map((n) => ({ n, f: Team.fold(n) }));
+    return String(text || '').replace(/[\p{L}][\p{L}'’]{2,}/gu, (w) => {
+      const f = Team.fold(w); if (Team.COMMON.has(f) || f.length < 3) return w;
+      if (lex.indexOf(w) >= 0 || folded.some((x) => x.f === f)) { const exact = folded.find((x) => x.f === f); return exact ? exact.n : w; }
+      const cap = /^[A-ZÇĞİÖŞÜ]/.test(w);
+      let best = null, bd = 99;
+      for (const x of folded) { if (Math.abs(x.f.length - f.length) > 2) continue; const d = Team.lev(f, x.f); if (d < bd) { bd = d; best = x.n; } }
+      const allow = f.length >= 7 ? 2 : f.length >= 4 ? 1 : 0;
+      if (best && bd > 0 && (bd <= allow || (cap && bd <= allow + 1 && f.length >= 4))) return best;
+      return w;
+    });
+  },
+  isDiscoveryStart(text) { return /^\s*(ask me (some )?questions|interview me( relentlessly)?|let'?s (work out|design|figure out) a workflow|bana (birkaç )?soru(lar)? sor|beni (acımasızca )?sorgula|benimle mülakat yap)\b/i.test(String(text || '')); },
   discActive() { return !!(Team.disc && Team.disc.status === 'active'); },
   /* ---- Guided setup: nine steps, each saved as it is done ---- */
   async loadSu(force) {
