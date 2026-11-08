@@ -59,7 +59,9 @@ const MEETING_DEPS=()=>({
 /* EDIT 2d: the team's background runner, mirroring life-os-server.js — tasks
    resume after a restart and a push says when one is ready. */
 let teamMod=null; try{ teamMod=require('../flow-team'); }catch(e){ teamMod=null; }
-if(teamMod&&teamMod.start){ try{ teamMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, sendToUser:push?push.sendToUser:null, log:()=>{} }); }catch(e){} }
+let channelsMod=null; try{ channelsMod=require('../flow-channels'); }catch(e){ channelsMod=null; }
+if(channelsMod&&channelsMod.start){ try{ channelsMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, usersKey:flowAuth.USERS_KEY, log:()=>{} }); }catch(e){} }
+if(teamMod&&teamMod.start){ try{ teamMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, sendToUser:push?push.sendToUser:null, channels:channelsMod?channelsMod.notify:null, log:()=>{} }); }catch(e){} }
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}
 function json(res,code,obj){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
 const server=http.createServer(async(req,res)=>{
@@ -154,6 +156,7 @@ const server=http.createServer(async(req,res)=>{
   }catch(e){ json(res,500,{error:String(e&&e.message||e)}); }
 });
 flowAuth.attach(server);                                    // EDIT 3
+if(channelsMod){ server.on('upgrade',(req,socket,head)=>{ try{ if(!channelsMod.upgrade(req,socket,head)) socket.destroy(); }catch(e){ try{socket.destroy();}catch(x){} } }); } // EDIT 3b
 require('http').createServer((rq,rs)=>{
   if(rq.url==='/break'){ global.__BROKEN=true; rs.writeHead(200);return rs.end('broken'); }
   if(rq.url==='/fix'){ global.__BROKEN=false; rs.writeHead(200);return rs.end('fixed'); }

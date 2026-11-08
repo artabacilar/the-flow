@@ -74,7 +74,7 @@ window.__say = function (text, isFinal) {
     panels: [...document.querySelectorAll('#flow-hud .hud-p')].map((x) => x.getAttribute('data-k')), tools: (document.querySelector('#flow-hud [data-k="tools"]') || {}).textContent || '', sel: document.querySelector('#flow-hud .hud-ag.sel').getAttribute('data-ag') }));
   ok('choosing Sarah makes the room hers and the console her conversation', ws.brand === 'Sarah' && ws.role === 'Customer support' && ws.k === 'Sarah' && ws.agent === 'sarah' && ws.sel === 'sarah', ws);
   ok('her workspace: agent, instructions, tools, memory, what the team knows, activity', ['agent', 'instr', 'tools', 'memory', 'know', 'activity'].every((k) => ws.panels.indexOf(k) >= 0), ws.panels);
-  ok('tools are honestly "none connected yet — awaiting setup"', /None connected yet/.test(ws.tools) && /Awaiting setup/.test(ws.tools), ws.tools);
+  ok('tools are honestly "no tools yet — awaiting setup"', /No tools yet/.test(ws.tools) && /Awaiting setup/.test(ws.tools), ws.tools);
   await p.fill('#flow-say #sy-text', 'Remember that the team answers support within one business day.');
   await p.click('#flow-say [data-say="send"]'); await p.waitForTimeout(1500);
   const t1 = await p.evaluate(() => ({ log: [...document.querySelectorAll('#flow-say .sy-log .sy-b')].map((x) => x.textContent), know: [...document.querySelectorAll('#flow-hud [data-k="know"] .hud-k > span:first-child')].map((x) => x.textContent), dos: 0 }));
