@@ -146,7 +146,7 @@ window.__say = function (text, isFinal) {
   ok('closing the room hands the console back to him', await p.evaluate(() => FlowSay.agent === null));
   await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); FlowTodayLook.applyLook(); });
   await p.waitForTimeout(300);
-  ok('no command centre, no team, in Advanced', await p.evaluate(() => { FlowHud.open(); return !FlowHud.on; }));
+  ok('Advanced with the merge off (this replica): no command centre, no team — test-hud covers Advanced as the command centre', await p.evaluate(() => { FlowHud.open(); return !FlowHud.on && !!window.__flowNoMerge; }));
 
   ok('no page errors', errs.length === 0, errs);
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');

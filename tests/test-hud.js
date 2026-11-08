@@ -113,9 +113,33 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
     orbFirst: (() => { const c = document.querySelector('#flow-hud .hud-core'), t = document.querySelector('#flow-hud [data-k="today"]'); return !!c && !!t && c.getBoundingClientRect().top < t.getBoundingClientRect().top; })() }));
   ok('/?jarvis=1 opens it (what a wall screen points at); on a phone it fits the width, orb first', m.on && m.wide <= m.vw && m.orbFirst, m);
   await q.close();
-  await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); FlowTodayLook.applyLook(); FlowHud.open(); });
-  await p.waitForTimeout(400);
-  ok('Advanced: no command centre', await p.evaluate(() => !FlowHud.on));
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); FlowTodayLook.applyLook(); });
+  await p.waitForTimeout(1500);
+  const mid = (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; };
+  const adv = await p.evaluate(() => {
+    const h = document.getElementById('flow-hud'), vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; };
+    return { on: FlowHud.on, merge: h.classList.contains('hud-merge'), rail: [...h.querySelectorAll('.hud-ri span')].map((x) => x.firstChild.textContent), heads: [...h.querySelectorAll('.hud-rh')].map((x) => x.textContent),
+      strip: [...h.querySelectorAll('.hud-team .hud-agn')].map((x) => x.textContent), x: vis('#flow-hud .hud-x'), orb: vis('#flow-hud .hud-core'), say: document.getElementById('flow-say').classList.contains('on'), sideUnder: (() => { const s = document.getElementById('flow-side'); return !s || +getComputedStyle(h).zIndex > +(getComputedStyle(s).zIndex || 0); })() };
+  });
+  ok('Advanced is the command centre: it opens by itself, the rail on the left holds J.A.R.V.I.S., the team\'s rooms and the pages of your life, the strip keeps the assistants only, the console is docked, and there is no × to close it', adv.on && adv.merge && adv.rail.join() === 'J.A.R.V.I.S.,Setup,Memory,Skills,Automations,Efficiency,Today,Plan,Body,Record,Settings' && adv.heads.join() === 'The team,Your life' && adv.strip.join() === 'J.A.R.V.I.S.,Bobby,Sarah,Tom,Hiring assistant,Finance assistant,Add agent,Pause all' && !adv.x && adv.orb && adv.say && adv.sideUnder, adv);
+  const centred = async () => p.evaluate(() => { const h = document.getElementById('flow-hud'), c = h.querySelector('.hud-core').getBoundingClientRect(), l = (h.classList.contains('hud-pagemode') ? h.querySelector('.hud-pagecol') : h.querySelector('.hud-left')).getBoundingClientRect(), r = h.querySelector('.hud-right').getBoundingClientRect(); return { vis: getComputedStyle(h.querySelector('.hud-core')).display !== 'none' && c.width > 200 && c.height > 200, off: Math.abs((c.left + c.width / 2) - (l.left + r.right) / 2), round: Math.abs(c.width - c.height) < c.width }; });
+  await p.click('#flow-hud [data-hud="page"][data-page="focus"]'); await p.waitForTimeout(900);
+  const pg = await p.evaluate(() => ({ page: FlowHud.page, moved: !!document.querySelector('#flow-hud .hud-pagecol .hud-page #tab-northstar'), shown: getComputedStyle(document.getElementById('tab-northstar')).display === 'block', tabs: [...document.querySelectorAll('#flow-hud .hud-pgt .hud-tab')].map((x) => x.textContent), sel: document.querySelector('#flow-hud .hud-ri.sel span').firstChild.textContent, cur: Flow.Nav.current() }));
+  const c1 = await centred();
+  ok('Plan opens down the left: the app\'s own North Star page, moved whole, with the group\'s pages as pills — and the orb stays in the middle, a circle', pg.page && pg.page.group === 'focus' && pg.page.tab === 'northstar' && pg.moved && pg.shown && pg.tabs.join() === 'North Star,Priorities,Week Compass,Work,Side Project' && pg.sel === 'Plan' && pg.cur === 'northstar' && c1.vis && c1.off < 3, { pg, c1 });
+  await p.click('#flow-hud .hud-pgt .hud-tab[data-tab="quad"]'); await p.waitForTimeout(700);
+  ok('a pill switches the page within the group; the one before goes back where it lives', await p.evaluate(() => FlowHud.page.tab === 'quad' && !!document.querySelector('#flow-hud .hud-page #tab-quad') && document.getElementById('tab-northstar').parentElement === document.body));
+  await p.evaluate(() => Flow.Nav.go('finance')); await p.waitForTimeout(700);
+  ok('anything that navigates to a page lands in the command centre, not behind it', await p.evaluate(() => FlowHud.on && FlowHud.page && FlowHud.page.group === 'record' && FlowHud.page.tab === 'finance' && !!document.querySelector('#flow-hud .hud-page #tab-finance')));
+  await p.click('#flow-hud [data-hud="pageclose"]'); await p.waitForTimeout(600);
+  ok('× on the page goes back to J.A.R.V.I.S.: the page is home again, the day is round the orb', await p.evaluate(() => !FlowHud.page && document.getElementById('tab-finance').parentElement === document.body && !!document.querySelector('#flow-hud .hud-left [data-k="today"]') && document.querySelector('#flow-hud .hud-ri.sel span').firstChild.textContent === 'J.A.R.V.I.S.'));
+  await p.click('#flow-hud .hud-ri[data-hud="memory"]'); await p.waitForTimeout(1500);
+  const c2 = await centred();
+  ok('Memory in Advanced: the room takes the side columns and the orb stays in the middle', await p.evaluate(() => document.getElementById('flow-hud').classList.contains('hud-memview') && !!document.querySelector('#flow-hud [data-k="memlist"]')) && c2.vis && c2.off < 3, c2);
+  await p.keyboard.press('Escape'); await p.waitForTimeout(500);
+  ok('Esc leaves the room for J.A.R.V.I.S.; the command centre itself stays', await p.evaluate(() => FlowHud.on && !document.getElementById('flow-hud').classList.contains('hud-memview') && !!document.querySelector('#flow-hud .hud-left [data-k="today"]')));
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); FlowTodayLook.applyLook(); }); await p.waitForTimeout(800);
+  ok('back to Simple: the command centre closes and Simple is as it was — a room one steps into, Memory on the strip, no rail', await p.evaluate(() => !FlowHud.on && !document.getElementById('flow-hud').classList.contains('on') && !!document.querySelector('#today-feed .lk-hud')) && await p.evaluate(async () => { FlowHud.open(); await new Promise((r) => setTimeout(r, 700)); const h = document.getElementById('flow-hud'); const r = !h.classList.contains('hud-merge') && h.querySelectorAll('.hud-ri').length === 0 && !!h.querySelector('.hud-team [data-hud="memory"]') && getComputedStyle(h.querySelector('.hud-x')).display !== 'none'; FlowHud.close(); return r; }));
 
   ok('no page errors', errs.length === 0, errs);
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');

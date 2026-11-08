@@ -25,6 +25,10 @@ function shell(){
      other suites are looking at. They opt out here; the suites that test
      the first run itself set FLOW_FIRSTRUN=1. */
   if(!process.env.FLOW_FIRSTRUN) SHELL = SHELL.replace('<head>','<head><script>window.__flowSkipFirstRun=1</script>');
+  /* Advanced is the command centre now; the page suites look at the pages
+     as they are. They opt out of the merge here; the suites that test the
+     command centre itself set FLOW_MERGE=1. */
+  if(!process.env.FLOW_MERGE) SHELL = SHELL.replace('<head>','<head><script>window.__flowNoMerge=1</script>');
   return SHELL;
 }
 
