@@ -1154,6 +1154,7 @@ if (teamMod && teamMod.start) {
       raw: rawStore,
       users: TEAM_USERS,
       nsPrefix: flowAuth.nsPrefix,
+      usersKey: flowAuth.USERS_KEY,
       sendToUser: push ? push.sendToUser : null,
       channels: channelsMod ? channelsMod.notify : null,
       log: (m) => console.error(m)

@@ -160,16 +160,23 @@ function fakePost(url, opts) {
     const brief = (system.match(/Brief: ([^\n]*)/) || [])[1] || '';
     const who = (system.match(/^You are ([^,]+),/m) || [])[1] || 'Agent';
     const out = { result: who + ' did: ' + brief, question: '', proposals: [], remember: [] };
+    const whole = String((last && last.content) || '');
+    const rd = brief.match(/\bread (https?:\/\/\S+)/i), bw = brief.match(/\bbrowse (https?:\/\/\S+)/i);
+    const answered = (whole.match(/The person answered your question: "([^"]*)"/) || [])[1];
+    if (answered) out.result = who + ' did: ' + brief + ' — with your answer: ' + answered;
+    else if ((rd || bw) && !/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify(rd ? { result: '', read: [rd[1]] } : { result: '', browse: { url: bw[1], goal: 'see what is there' } });
+    else if (/THE PAGES YOU ASKED FOR/.test(whole)) out.result = who + ' read it: ' + whole.split('THE PAGES YOU ASKED FOR:')[1].replace(/\s+/g, ' ').trim().slice(0, 400);
     if (/ask me/i.test(brief) && !/answered your question/.test(String((last && last.content) || ''))) { out.question = 'Which address should it go to?'; out.result = ''; }
     if (/long one/i.test(brief)) { const slow = { status: 200, body: { content: [{ type: 'text', text: JSON.stringify(out) }], usage: { input_tokens: 1, output_tokens: 1 } } }; return new Promise((r) => setTimeout(() => r(slow), 4000)); }
     if (/email/i.test(brief)) out.proposals.push({ kind: 'email', summary: 'Email to the customer', to: 'customer@example.com', subject: 'About your refund', body: 'Dear customer, ' + brief });
     if (/\bfail\b/i.test(brief)) return Promise.resolve({ status: 500, body: { error: { message: 'stand-in failure' } } });
-    text = JSON.stringify(out);
+    if (!text) text = JSON.stringify(out);
   } else if (/chief of staff[\s\S]*Plan it\./.test(system)) {
     const steps = [];
     if (/sarah/i.test(said)) steps.push({ agent: 'sarah', title: 'Draft the reply', brief: 'Draft an email reply: ' + said });
     if (/bobby/i.test(said)) steps.push({ agent: 'bobby', title: 'Check the ads', brief: 'Check this week\'s ad spend: ' + said });
     if (/tom/i.test(said)) steps.push({ agent: 'tom', title: 'Look at the bug', brief: said });
+    if (/command centre|checklist/i.test(said) && !steps.length) steps.push({ agent: 'tom', title: 'Build it', brief: said });
     text = JSON.stringify({ title: 'Team: ' + said.slice(0, 40), say: steps.length ? 'Putting ' + steps.map((x) => x.agent).join(' and ') + ' on it, sir.' : 'That needs none of the team.', steps });
   } else if (/answering a text message from them/.test(system)) {
     /* J.A.R.V.I.S. over a channel */
@@ -182,7 +189,10 @@ function fakePost(url, opts) {
   } else {
     const rem = []; const m = said.match(/remember that (.+?)(?:\.|$)/i);
     if (m) rem.push({ scope: /\bteam\b|\bbusiness\b/i.test(said) ? 'shared' : 'mine', fact: m[1] });
-    text = JSON.stringify({ say: b.model + ' says: ' + said, remember: rem });
+    const whole = String((last && last.content) || ''); const rd = said.match(/\bread (https?:\/\/\S+)/i);
+    if (rd && !/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify({ say: '', read: [rd[1]] });
+    else if (/THE PAGES YOU ASKED FOR/.test(whole)) text = JSON.stringify({ say: b.model + ' read it: ' + whole.split('THE PAGES YOU ASKED FOR:')[1].replace(/\s+/g, ' ').trim().slice(0, 300), remember: [] });
+    else text = JSON.stringify({ say: b.model + ' says: ' + said, remember: rem });
   }
   if (/anthropic/.test(url)) return Promise.resolve({ status: 200, body: { content: [{ type: 'text', text }], usage: { input_tokens: 12, output_tokens: 6 } } });
   return Promise.resolve({ status: 200, body: { choices: [{ message: { content: text } }], usage: { prompt_tokens: 12, completion_tokens: 6 } } });
@@ -310,15 +320,31 @@ function agentSystem(agent, owner, shared, mine, lang, teamNames) {
     'WHAT YOU REMEMBER (your own notes — id | fact):',
     mine.length ? mine.map((k) => k.id + ' | ' + k.text).join('\n') : '(nothing yet)',
     '',
-    'TOOLS: none are connected yet. You cannot send email, read an inbox, open accounts, browse the web, make calls or change anything outside this conversation. When asked to do such a thing, do the thinking part — draft the message, the plan, the analysis, the checklist — and say plainly that sending or doing it is awaiting a connection under Tools. Never claim something was sent, done, checked or changed. Never invent numbers, accounts, results or people.',
+    toolsText(),
     'Permissions: ' + agent.permissions + ' (read = answer only; draft = prepare things for approval; approve = act after a yes; auto = act within an agreed policy). Right now every outside action needs a yes.',
     '',
     'Return ONLY a JSON object, no prose around it:',
-    '{ "say": "your reply", "remember": [ { "scope": "shared" or "mine", "fact": "one short lasting fact" } ] }',
+    '{ "say": "your reply", "remember": [ { "scope": "shared" or "mine", "fact": "one short lasting fact" } ], "read": [] }',
+    '· "read": up to three public web addresses you need to look at before you can answer properly (a page they mentioned, a product page, documentation). Leave "say" empty when you ask; you are called again with the pages. Usually an empty list.',
     '· "say": your whole reply. Plain text that reads well out loud and on screen: short paragraphs; no markdown headings, no emoji, no URLs unless they gave one. Lists are fine as short lines when there are several items. Be specific; the point first.',
     '· "remember": only something lasting worth keeping — who people are, preferences, policies, how the business works, a decision taken. "shared" when the whole team should know it (a business fact); "mine" when it only matters to your own work. Never tasks, never passwords, card numbers or codes. Usually an empty list.'
   ].join('\n');
 }
+
+/* What the agents can actually use here, said truthfully. */
+let browserMod = null;
+function browserLib() { if (browserMod === null) { try { browserMod = require('./flow-browser'); } catch (e) { browserMod = false; } } return browserMod || null; }
+const mailReady = () => FAKE || !!String(process.env.RESEND_API_KEY || '').trim();
+function toolsText() {
+  const B = browserLib(); const av = B ? B.available() : { mode: 'reader' };
+  return [
+    'TOOLS YOU HAVE:',
+    '· Web: you can read public web pages — ask for them with "read". ' + (av.mode === 'browser' ? 'In a task you may also browse (click, type, follow links) with "browse"; sign-ins, codes and payments are handed to the person.' : 'You cannot click, sign in or fill forms; only read.'),
+    '· Email: ' + (mailReady() ? 'a message you propose is really sent — once, exactly as approved — after the person approves it in the app. Until then it is a draft.' : 'not connected yet; a proposal stays a draft until the connection exists.'),
+    '· Nothing else: no inbox, no calendar, no accounts, no calls, no payments. When asked for those, do the thinking part — the draft, the plan, the analysis, the checklist — and say plainly what is not connected. Never claim something was sent, done, checked or changed. Never invent numbers, accounts, results or people.'
+  ].join('\n');
+}
+const cleanReads = (v) => (Array.isArray(v) ? v : []).map((u) => str(u, 500)).filter((u) => /^https?:\/\//i.test(u)).slice(0, 3);
 
 function parseReply(text) {
   const s = String(text || '').trim();
@@ -326,16 +352,31 @@ function parseReply(text) {
   if (m) {
     try {
       const j = JSON.parse(m[0]);
-      if (j && typeof j === 'object' && typeof j.say === 'string') {
+      if (j && typeof j === 'object' && (typeof j.say === 'string' || Array.isArray(j.read))) {
         const rem = (Array.isArray(j.remember) ? j.remember : []).slice(0, 6)
           .map((r) => r && { scope: r.scope === 'shared' ? 'shared' : 'mine', fact: str(r.fact, 200) })
           .filter((r) => r && r.fact && !/\d[\d\s-]{9,}\d/.test(r.fact) && !/(password|passcode|pin code|şifre|parola)/i.test(r.fact));
-        return { say: block(j.say, 6000), remember: rem };
+        return { say: block(j.say, 6000), remember: rem, read: cleanReads(j.read) };
       }
     } catch (e) {}
   }
   /* A model that forgot the shape still said something: keep it. */
-  return { say: block(s.replace(/^```(?:json)?|```$/g, ''), 6000), remember: [] };
+  return { say: block(s.replace(/^```(?:json)?|```$/g, ''), 6000), remember: [], read: [] };
+}
+
+/* The pages an agent asked for, fetched and handed back as the next turn.
+   At most two rounds, so a model that keeps asking still ends. */
+async function fetchPages(urls) {
+  const B = browserLib(); if (!B) return 'The web is not reachable from here.';
+  const out = [];
+  for (const u of urls) {
+    const r = await B.read(u);
+    out.push('--- ' + u + (r.error ? '\n(' + r.error + ')' : '\n' + (r.title ? 'Title: ' + r.title + '\n' : '') + r.text + (r.truncated ? '\n…(cut)' : '')));
+  }
+  return out.join('\n\n');
+}
+function pagesTurn(messages, rawReply, pages) {
+  return messages.concat([{ role: 'assistant', content: String(rawReply || '').slice(0, 2000) }, { role: 'user', content: 'THE PAGES YOU ASKED FOR:\n\n' + pages.slice(0, 24000) + '\n\nNow answer in the same JSON shape (no more "read").' }]);
 }
 
 /* ---------- the routes --------------------------------------------------- */
@@ -352,8 +393,11 @@ async function handle(p, req, res, ctx) {
     for (const a of list) { const t = await thread(ctx, a.id); counts[a.id] = t.length; }
     const tl = await tasks(ctx), ap = await approvals(ctx);
     const attention = { tasks: tl.filter((t) => !t.seen && (t.status === 'done' || t.status === 'awaiting_approval' || t.status === 'awaiting_info' || t.status === 'failed')).length, approvals: ap.filter((x) => x.status === 'pending').length, running: tl.filter((t) => t.status === 'running' || t.status === 'queued').length };
-    json(res, 200, { ok: true, agents: list, providers: provs, defaultModel: DEFAULT_MODEL, knowledge: know, usage: use, counts, attention, tasks: tl.slice(-40).reverse(), approvals: ap.filter((x) => x.status === 'pending').slice(-40).reverse(),
-      paused: (await ctx.get('team:paused')) === true, log: (Array.isArray(lg) ? lg : []).slice(-60), templates: TEMPLATE_IDS.map((t) => ({ id: t, name: TEMPLATES[t].name, role: TEMPLATES[t].role })), permissions: PERMISSIONS });
+    const B = browserLib(); const bs = await briefSettings(ctx);
+    json(res, 200, { ok: true, agents: list, providers: provs, defaultModel: DEFAULT_MODEL, knowledge: know, usage: use, counts, attention, tasks: tl.slice(-40).reverse(), approvals: ap.filter((x) => x.status === 'pending' || x.status === 'send_failed').slice(-40).reverse(),
+      recent: ap.filter((x) => x.status === 'executed').slice(-5).reverse(),
+      paused: (await ctx.get('team:paused')) === true, log: (Array.isArray(lg) ? lg : []).slice(-60), templates: TEMPLATE_IDS.map((t) => ({ id: t, name: TEMPLATES[t].name, role: TEMPLATES[t].role })), permissions: PERMISSIONS,
+      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' } });
     return true;
   }
 
@@ -483,10 +527,20 @@ async function sayTo(ctx, agentId, said, lang) {
     if (messages.length && messages[0].role !== 'user') messages.shift();
     const last = messages[messages.length - 1];
     if (last && last.role === 'user') last.content += '\n\n' + said; else messages.push({ role: 'user', content: said });
+    const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429, budget: bud };
     const system = agentSystem(a, ctx.user && (ctx.user.name || ctx.user.email), shared, own, b.lang === 'tr' ? 'tr' : 'en', names);
-    const r = await complete({ model: which.model, system, messages, maxTokens: 1600 });
+    let r = await complete({ model: which.model, system, messages, maxTokens: 1600 });
     if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
-    const out = parseReply(r.text);
+    let out = parseReply(r.text); let pagesRead = [];
+    for (let round = 0; round < 2 && out.read.length && !out.say; round++) {
+      await bumpUsage(ctx, a.id, r.usage);
+      const pages = await fetchPages(out.read); pagesRead = pagesRead.concat(out.read);
+      await log(ctx, a.id, a.name + ' read ' + out.read.map((u) => u.replace(/^https?:\/\//, '').split('/')[0]).join(', '));
+      r = await complete({ model: which.model, system, messages: pagesTurn(messages, r.text, pages), maxTokens: 1600 });
+      if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
+      out = parseReply(r.text);
+    }
+    if (!out.say) out.say = 'I looked, but could not put an answer together. Could you say it another way?';
     const now = Date.now();
     hist.push({ role: 'user', text: said, at: now }, { role: 'assistant', text: out.say, at: now, model: which.model });
     await ctx.set('team:thread:' + a.id, hist.slice(-160));
@@ -501,9 +555,9 @@ async function sayTo(ctx, agentId, said, lang) {
       }
       if (remembered.length) { await ctx.set('team:knowledge', k2.slice(-400)); await log(ctx, a.id, a.name + ' remembered: ' + remembered.map((k) => k.text).join('; ')); }
     }
-    use[a.id] = { calls: mine.calls + 1, in: mine.in + (r.usage.in || 0), out: mine.out + (r.usage.out || 0) };
-    await ctx.set(dayKey(), use);
-    return { say: out.say, remembered, model: which.model, provider: which.provider, usage: use[a.id], agent: a };
+    await bumpUsage(ctx, a.id, r.usage, which.model);
+    const use2 = await usage(ctx);
+    return { say: out.say, remembered, model: which.model, provider: which.provider, usage: use2[a.id], agent: a, read: pagesRead };
   }
 }
 
@@ -567,10 +621,12 @@ function stepSystem(agent, owner, shared, mine, lang, task, step, earlier) {
     'If you truly cannot proceed without one fact only the person has, ask one clear question in "question" and leave "result" empty.',
     '',
     'Return ONLY a JSON object, no prose around it:',
-    '{ "result": "the finished work, plain text, as long as it needs to be", "question": "", "proposals": [ { "kind": "email|message|post|spend|change|other", "summary": "one line: what would happen", "to": "", "subject": "", "body": "" } ], "remember": [ { "scope": "shared|mine", "fact": "" } ] }',
+    '{ "result": "the finished work, plain text, as long as it needs to be", "question": "", "proposals": [ { "kind": "email|message|post|spend|change|other", "summary": "one line: what would happen", "to": "", "subject": "", "body": "" } ], "remember": [ { "scope": "shared|mine", "fact": "" } ], "read": [], "browse": null }',
     '· "result": the work itself. Plain text; short headings and dashes are fine; no markdown symbols like ** or #.',
     '· "proposals": only real outside actions, each complete enough to approve as-is (an email has to, subject and body). Usually empty.',
-    '· "remember": lasting facts only; usually empty.'
+    '· "remember": lasting facts only; usually empty.',
+    '· "read": up to three public web addresses to fetch first; leave "result" empty when you ask and you are called again with the pages.',
+    (browserLib() && browserLib().available().mode === 'browser' ? '· "browse": { "url": "", "goal": "" } when reading is not enough and you must click through a public site (search, compare, follow links); leave "result" empty. Sign-ins, codes and payments are handed to the person.' : '· "browse": not available here (reader only); leave it null.')
   ].join('\n'));
 }
 
@@ -578,7 +634,8 @@ function parseStep(text) {
   const s = String(text || '').trim();
   const m = s.match(/\{[\s\S]*\}/);
   let j = null; if (m) { try { j = JSON.parse(m[0]); } catch (e) {} }
-  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [] };
+  if (!j || typeof j !== 'object') return { result: block(s.replace(/^```(?:json)?|```$/g, ''), 12000), question: '', proposals: [], remember: [], read: [], browse: null };
+  const browse = j.browse && typeof j.browse === 'object' && /^https?:\/\//i.test(String(j.browse.url || '')) ? { url: str(j.browse.url, 500), goal: str(j.browse.goal, 400) || 'Find what the task needs.' } : null;
   const props = (Array.isArray(j.proposals) ? j.proposals : []).slice(0, 6).map((p) => p && {
     kind: APPROVAL_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'other', summary: str(p.summary, 200),
     to: str(p.to, 200), subject: str(p.subject, 200), body: block(p.body, 6000)
@@ -586,7 +643,7 @@ function parseStep(text) {
   const rem = (Array.isArray(j.remember) ? j.remember : []).slice(0, 4)
     .map((r) => r && { scope: r.scope === 'shared' ? 'shared' : 'mine', fact: str(r.fact, 200) })
     .filter((r) => r && r.fact && !/\d[\d\s-]{9,}\d/.test(r.fact) && !/(password|passcode|pin code|şifre|parola)/i.test(r.fact));
-  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem };
+  return { result: block(j.result, 12000), question: str(j.question, 400), proposals: props, remember: rem, read: cleanReads(j.read), browse };
 }
 
 /* J.A.R.V.I.S. decides who does what. */
@@ -657,10 +714,42 @@ async function runTask(uid, ctx, id) {
     const know = await knowledge(ctx);
     const shared = know.filter((k) => k.scope === 'shared').slice(-80), own = know.filter((k) => k.scope === 'agent:' + a.id).slice(-80);
     const earlier = t.steps.slice(0, i).filter((s) => s.status === 'done').map((s) => ({ agent: (list.find((x) => x.id === s.agent) || {}).name || s.agent, title: s.title, result: s.result }));
+    const bud = await budget(ctx);
+    if (bud.over) { await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'failed'; x.error = bud.message; }); await notify(uid, ctx, t, 'failed'); return; }
     const system = stepSystem(a, owner, shared, own, t.lang, t, st, earlier);
-    const user = (t.answer ? 'The person answered your question: "' + t.answer + '"\n\n' : '') + 'Do your part now.';
+    const user = (t.answer ? 'The person answered your question: "' + t.answer + '"\n\n' : '') + (t.handoff && t.handoff.found ? 'What you found before stopping at ' + t.handoff.url + ':\n' + t.handoff.found + '\n\n' : '') + 'Do your part now.';
     if (fakeDelay) await new Promise((r) => setTimeout(r, fakeDelay));
-    const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: 3000, timeoutMs: 90000 });
+    let messages = [{ role: 'user', content: user }];
+    let r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
+    /* the web: pages asked for, or a browsing run, then the model again */
+    let out = r.error ? null : parseStep(r.text);
+    for (let round = 0; round < 2 && out && !out.result && !out.question && (out.read.length || out.browse); round++) {
+      await bumpUsage(ctx, a.id, r.usage, which.model);
+      let pages = '';
+      if (out.read.length) { pages = await fetchPages(out.read); await log(ctx, a.id, a.name + ' read ' + out.read.map((u) => u.replace(/^https?:\/\//, '').split('/')[0]).join(', ')); }
+      if (out.browse) {
+        const B = browserLib(); const av = B ? B.available() : { mode: 'reader' };
+        if (av.mode !== 'browser') pages += (pages ? '\n\n' : '') + 'BROWSING is not available here (reader only). Use "read" for public pages, or ask the person.';
+        else {
+          await patchTask(ctx, id, (x) => { x.steps[i].browsing = out.browse.url; });
+          await log(ctx, a.id, a.name + ' is browsing ' + out.browse.url.replace(/^https?:\/\//, '').split('/')[0]);
+          const br = await B.browse({ url: out.browse.url, goal: out.browse.goal, model: which.model, agentName: a.name, maxSteps: 8 }, { complete, profileDir: profileDirFor(uid, a.id), fakeAction: FAKE ? fakeBrowse : null });
+          if (br.shots && br.shots.length) await saveShots(ctx, id, br.shots, a.id);
+          await patchTask(ctx, id, (x) => { delete x.steps[i].browsing; x.shots = (x.shots || 0) + ((br.shots || []).length); });
+          if (br.handoff) {
+            const why = br.why || 'This page needs you.';
+            await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'awaiting_info'; x.question = why + ' (Stopped at ' + br.url + '.) When you have done it, or if you can tell me what I need another way, answer here and I carry on.'; x.asker = a.id; x.answer = ''; x.seen = false; x.handoff = { url: br.url, why, found: br.found || '', at: Date.now() }; });
+            await log(ctx, a.id, a.name + ' needs you at ' + br.url.replace(/^https?:\/\//, '').split('/')[0]);
+            await notify(uid, ctx, t, 'question');
+            return;
+          }
+          pages += (pages ? '\n\n' : '') + 'BROWSING ' + out.browse.url + (br.error ? ' failed: ' + br.error : '') + '\nWhat was found:\n' + String(br.found || '').slice(0, 8000) + (br.log && br.log.length ? '\nSteps: ' + br.log.join(' · ').slice(0, 1200) : '');
+        }
+      }
+      messages = pagesTurn(messages, r.text, pages).map((m, k, arr) => k === arr.length - 1 ? { role: 'user', content: m.content.replace('Now answer in the same JSON shape (no more "read").', 'Now do your part in the same JSON shape (no more "read" or "browse").') } : m);
+      r = await complete({ model: which.model, system, messages, maxTokens: 3000, timeoutMs: 90000 });
+      out = r.error ? null : parseStep(r.text);
+    }
     if (r.error) {
       const attempts = (st.attempts || 0) + 1;
       if (attempts < MAX_ATTEMPTS && r.status !== 401 && r.status !== 403) {
@@ -673,10 +762,9 @@ async function runTask(uid, ctx, id) {
       await notify(uid, ctx, t, 'failed');
       return;
     }
-    const out = parseStep(r.text);
-    await bumpUsage(ctx, a.id, r.usage);
+    await bumpUsage(ctx, a.id, r.usage, which.model);
     if (out.question && !out.result) {
-      await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'awaiting_info'; x.question = out.question; x.asker = a.id; x.answer = ''; x.seen = false; });
+      await patchTask(ctx, id, (x) => { x.steps[i].status = 'queued'; x.status = 'awaiting_info'; x.question = out.question; x.asker = a.id; x.answer = ''; x.seen = false; delete x.handoff; });
       await log(ctx, a.id, a.name + ' has a question on "' + t.title + '".');
       await notify(uid, ctx, t, 'question');
       return;
@@ -696,7 +784,7 @@ async function runTask(uid, ctx, id) {
       for (const rm of out.remember) { if (k2.some((k) => k.text.toLowerCase() === rm.fact.toLowerCase())) continue; k2.push({ id: 'k' + newId(), text: rm.fact, scope: rm.scope === 'shared' ? 'shared' : 'agent:' + a.id, source: 'agent:' + a.id, at: Date.now(), updated: Date.now() }); n++; }
       if (n) await ctx.set('team:knowledge', k2.slice(-400));
     }
-    await patchTask(ctx, id, (x) => { x.steps[i].status = 'done'; x.steps[i].result = out.result; x.steps[i].model = which.model; x.steps[i].doneAt = Date.now(); x.steps[i].approvals = newApprovals; x.answer = ''; x.question = ''; });
+    await patchTask(ctx, id, (x) => { x.steps[i].status = 'done'; x.steps[i].result = out.result; x.steps[i].model = which.model; x.steps[i].doneAt = Date.now(); x.steps[i].approvals = newApprovals; x.answer = ''; x.question = ''; delete x.handoff; });
     await log(ctx, a.id, a.name + ' finished: ' + st.title + (newApprovals.length ? ' (' + newApprovals.length + ' for approval)' : ''));
     if ((await ctx.get('team:paused')) === true) return;
   }
@@ -712,7 +800,7 @@ async function runTask(uid, ctx, id) {
       const sys = 'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + '. The specialists have finished the task "' + t.title + '". Review their work and hand it over: a short, plain summary of what was done and what needs the person\'s yes (approvals are listed separately in the app), then each specialist\'s deliverable in full under a heading with their name. Plain text, no markdown symbols. Be exact; invent nothing. ' + (t.lang === 'tr' ? 'Write in Turkish.' : 'Write in English.');
       const body = done.map((s) => ((list.find((x) => x.id === s.agent) || {}).name || s.agent) + ' — ' + s.title + ':\n' + s.result).join('\n\n');
       const r = await complete({ model: which.model, system: sys, messages: [{ role: 'user', content: body }], maxTokens: 3500, timeoutMs: 90000 });
-      if (!r.error) { result = block(r.text, 16000); await bumpUsage(ctx, 'jarvis', r.usage); }
+      if (!r.error) { result = block(r.text, 16000); await bumpUsage(ctx, 'jarvis', r.usage, which.model); }
     }
     if (!result) result = done.map((s) => ((list.find((x) => x.id === s.agent) || {}).name || s.agent) + ' — ' + s.title + '\n' + s.result).join('\n\n');
   }
@@ -721,11 +809,59 @@ async function runTask(uid, ctx, id) {
   await log(ctx, t.agent, '"' + t.title + '" is ' + (pending ? 'ready — ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting' : 'done') + '.');
   await notify(uid, ctx, t, pending ? 'approval' : 'done');
 }
-async function bumpUsage(ctx, agentId, u) {
+/* ---------- what it costs ------------------------------------------------- *
+ * List prices, USD per million tokens (in, out), as published in 2026. An
+ * estimate, said so on screen; a model not in the table counts tokens only.
+ * The month's total is kept as it happens (team:usage:m:<yyyy-mm>), so the
+ * limit is checked with one read, not thirty. */
+const PRICES = [
+  [/^claude-opus/, 15, 75], [/^claude-sonnet/, 3, 15], [/^claude-haiku/, 1, 5],
+  [/^gpt-5-mini/, 0.25, 2], [/^gpt-5-nano/, 0.05, 0.4], [/^gpt-5/, 1.25, 10], [/^gpt-4\.1-mini/, 0.4, 1.6], [/^gpt-4\.1/, 2, 8], [/^gpt-4o-mini/, 0.15, 0.6], [/^gpt-4o/, 2.5, 10], [/^o[1-9]/, 2, 8],
+  [/^grok-4/, 3, 15], [/^grok-3-mini/, 0.3, 0.5], [/^grok-3/, 3, 15], [/^grok/, 3, 15],
+  [/^deepseek-reasoner/, 0.55, 2.19], [/^deepseek/, 0.27, 1.1]
+];
+function costOf(model, u) {
+  const p = PRICES.find((row) => row[0].test(String(model || '')));
+  if (!p || !u) return null;
+  return ((u.in || 0) * p[1] + (u.out || 0) * p[2]) / 1e6;
+}
+const monthKey = (d) => 'team:usage:m:' + (d || new Date()).toISOString().slice(0, 7);
+async function monthUsage(ctx) { const v = await ctx.get(monthKey()); return v && typeof v === 'object' ? v : {}; }
+async function bumpUsage(ctx, agentId, u, model) {
   const use = await usage(ctx); const m = use[agentId] || { calls: 0, in: 0, out: 0 };
   use[agentId] = { calls: m.calls + 1, in: m.in + ((u && u.in) || 0), out: m.out + ((u && u.out) || 0) };
   await ctx.set(dayKey(), use);
+  const mo = await monthUsage(ctx); const mm = mo[agentId] || { calls: 0, in: 0, out: 0, usd: 0, unpriced: 0 };
+  const c = costOf(model, u);
+  mo[agentId] = { calls: mm.calls + 1, in: mm.in + ((u && u.in) || 0), out: mm.out + ((u && u.out) || 0), usd: Math.round(((mm.usd || 0) + (c || 0)) * 1e6) / 1e6, unpriced: (mm.unpriced || 0) + (c == null && u ? 1 : 0) };
+  await ctx.set(monthKey(), mo);
 }
+async function limits(ctx) { const v = await ctx.get('team:limits'); return Object.assign({ monthlyUsd: 0 }, v && typeof v === 'object' ? v : {}); }
+/* The month so far against the limit (0 = none). */
+async function budget(ctx) {
+  const [mo, lim] = await Promise.all([monthUsage(ctx), limits(ctx)]);
+  const usd = Object.keys(mo).reduce((s, k) => s + ((mo[k] && mo[k].usd) || 0), 0);
+  const over = lim.monthlyUsd > 0 && usd >= lim.monthlyUsd;
+  return { usd: Math.round(usd * 100) / 100, limit: lim.monthlyUsd, over, message: over ? 'This month\'s budget of $' + lim.monthlyUsd + ' is used up ($' + (Math.round(usd * 100) / 100) + ' so far, estimated). Raise it under Usage in the command centre to carry on.' : '' };
+}
+
+/* ---------- what an agent saw ---------------------------------------------- */
+async function saveShots(ctx, taskId, shots, agentId) {
+  const v = await ctx.get('team:shots:' + taskId); const list = Array.isArray(v) ? v : [];
+  for (const s of shots) list.push({ at: s.at, url: str(s.url, 300), title: str(s.title, 120), agent: agentId, img: String(s.img || '').slice(0, 120000) });
+  await ctx.set('team:shots:' + taskId, list.slice(-8));
+}
+function profileDirFor(uid, agentId) {
+  const path = require('path'), fs = require('fs');
+  const base = process.env.FLOW_BROWSER_DIR || path.join(process.env.DATA_DIR || __dirname, 'team-browser');
+  const dir = path.join(base, String(uid).replace(/[^\w.-]/g, '_'), String(agentId).replace(/[^\w.-]/g, '_'));
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  return dir;
+}
+/* Tests: the browsing decision without a model. A page with a password
+   field hands off (flow-browser sees that itself); otherwise it is done
+   with the page's text. */
+function fakeBrowse(L) { return { action: 'done', found: 'Seen ' + L.title + ': ' + L.text.slice(0, 300) }; }
 let channelsTo = null;   /* (uid, text, opts) => Promise — set by start() */
 async function notify(uid, ctx, t0, what) {
   /* the freshest record: the caller's copy may predate the last save */
@@ -751,6 +887,11 @@ async function notify(uid, ctx, t0, what) {
 function start(deps) {
   pushTo = deps.sendToUser ? (uid, note) => deps.sendToUser(deps.raw, uid, note) : null;
   channelsTo = typeof deps.channels === 'function' ? deps.channels : null;
+  usersFn = deps.users;
+  usersKey = deps.usersKey || '';
+  rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
+  /* the morning briefing: a minute tick, in each person's own clock */
+  if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
   bootCtx = (uid) => {
     const pre = deps.nsPrefix(uid);
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
@@ -788,10 +929,11 @@ async function delegateText(ctx, uid, text, lang, opts) {
   const j = list.find((x) => x.id === 'jarvis');
   const which = await resolveModel(j.model);
   if (!which) return { error: 'J.A.R.V.I.S. has no model available here.', status: 503 };
+  const bud = await budget(ctx); if (bud.over) return { error: bud.message, status: 429 };
   const know = await knowledge(ctx);
   const r = await complete({ model: which.model, system: planSystem(list, ctx.user && (ctx.user.name || ctx.user.email), know.filter((k) => k.scope === 'shared').slice(-60), lang), messages: [{ role: 'user', content: text }], maxTokens: 1800, timeoutMs: 60000 });
   if (r.error) return { error: r.error, status: r.status === 429 ? 429 : 502 };
-  await bumpUsage(ctx, 'jarvis', r.usage);
+  await bumpUsage(ctx, 'jarvis', r.usage, which.model);
   const plan = parsePlan(r.text, list);
   if (!plan) return { error: 'The plan came back in a shape the app could not read. Try again.', status: 502 };
   if (!plan.steps.length) return { task: null, say: plan.say || 'That needs none of the team; I can do it myself.' };
@@ -807,26 +949,326 @@ async function decide(ctx, id, decision, detail) {
   const item = ap.find((x) => x.id === id);
   if (!item) return { error: 'No such approval.', status: 404 };
   if (decision !== 'approve' && decision !== 'reject') return { error: 'approve or reject.', status: 400 };
-  if (item.status !== 'pending') return { approval: item, already: true };
-  if (detail && typeof detail === 'object') { item.detail = { to: str(detail.to, 200), subject: str(detail.subject, 200), body: block(detail.body, 6000) }; item.edited = true; }
-  item.decidedAt = Date.now();
+  const retry = item.status === 'send_failed' && decision === 'approve';
+  if (item.status !== 'pending' && !retry) return { approval: item, already: true };
+  if (detail && typeof detail === 'object' && !retry) { item.detail = { to: str(detail.to, 200), subject: str(detail.subject, 200), body: block(detail.body, 6000) }; item.edited = true; }
+  item.decidedAt = item.decidedAt || Date.now();
+  const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent', permissions: 'draft' };
   if (decision === 'reject') { item.status = 'rejected'; }
-  else {
+  else if (item.kind === 'email' && mailReady() && a.permissions !== 'read' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.detail && item.detail.to || ''))) {
+    /* The one tool that exists: it goes now, once. 'sending' is saved first
+       so a second click, or a restart mid-send, cannot send it twice. */
+    item.status = 'sending'; item.note = '';
+    await saveApprovals(ctx, ap);
+    const owner = ctx.user && (ctx.user.name || ctx.user.email);
+    const sent = await sendEmail({ to: item.detail.to, subject: item.detail.subject || '(no subject)', text: item.detail.body || '', agent: a.name, owner, replyTo: ctx.user && ctx.user.email, key: item.key });
+    if (sent.ok) { item.status = 'executed'; item.executedAt = Date.now(); item.ref = sent.id || ''; item.note = 'Sent to ' + item.detail.to + ' from ' + sent.from + '.'; }
+    else { item.status = 'send_failed'; item.error = sent.error || 'The email could not be sent.'; item.note = item.error + ' Nothing went out. Approve again to retry.'; }
+  } else {
     item.status = 'awaiting_tool';
-    item.note = 'Approved. Nothing is connected to carry it out yet, so it has not been sent; it will go once, as approved, when the connection exists.';
+    item.note = a.permissions === 'read' ? 'Approved, but ' + a.name + ' is read-only: nothing is sent on their behalf. Raise their permissions to let it go.' : item.kind === 'email' ? 'Approved. Email is not connected yet (RESEND_API_KEY), so it has not been sent; it will go once, as approved, when the connection exists.' : 'Approved. Nothing is connected to carry this out yet, so it has not happened; it will go once, as approved, when the connection exists.';
   }
   await saveApprovals(ctx, ap);
-  const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent' };
-  await log(ctx, item.agent, (decision === 'approve' ? 'Approved: ' : 'Declined: ') + item.summary + (decision === 'approve' ? ' (awaiting a connection)' : ''));
+  await log(ctx, item.agent, (decision === 'approve' ? (item.status === 'executed' ? 'Sent: ' : item.status === 'send_failed' ? 'Could not send: ' : 'Approved: ') : 'Declined: ') + item.summary + (item.status === 'awaiting_tool' ? ' (awaiting a connection)' : ''));
   const stillPending = ap.some((x) => x.task === item.task && x.status === 'pending');
   if (!stillPending) await patchTask(ctx, item.task, (x) => { if (x.status === 'awaiting_approval') x.status = 'done'; });
   return { approval: item, agent: a.name };
+}
+
+/* ---------- the email tool ----------------------------------------------- *
+ * The same provider The Flow uses for password resets (RESEND_API_KEY), from
+ * the verified address, in the agent's name and the owner's; replies go to
+ * the owner. The footer says what it is: an assistant's message, approved by
+ * a person. In the test stand-in nothing leaves; the call is recorded. */
+const mailSent = [];
+async function sendEmail(m) {
+  const fromAddr = (process.env.MAIL_FROM || '').trim().replace(/^.*<|>.*$/g, '') || 'mail@theflow.today';
+  const from = str(m.agent, 40) + (m.owner ? ' for ' + str(m.owner, 40) : '') + ' <' + fromAddr + '>';
+  const text = String(m.text || '') + '\n\n—\n' + str(m.agent, 40) + ' is an AI assistant working for ' + str(m.owner || 'The Flow', 60) + '. This message was reviewed and approved by them before it was sent. Replies reach them directly.';
+  const payload = { from, to: [m.to], subject: str(m.subject, 200), text, headers: { 'X-Entity-Ref-ID': m.key || '' } };
+  if (m.replyTo && /^[^\s@]+@[^\s@]+$/.test(m.replyTo)) payload.reply_to = m.replyTo;
+  if (FAKE) { mailSent.push(payload); return { ok: true, id: 'fake-' + mailSent.length, from }; }
+  try {
+    const r = await fetchJSON('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + String(process.env.RESEND_API_KEY || '').trim(), 'content-type': 'application/json', 'Idempotency-Key': String(m.key || '').slice(0, 64) }, body: JSON.stringify(payload) }, 20000);
+    if (r.status >= 200 && r.status < 300) return { ok: true, id: r.body && r.body.id, from };
+    return { ok: false, error: 'The email provider refused it (' + r.status + (r.body && r.body.message ? ': ' + str(r.body.message, 120) : '') + ').' };
+  } catch (e) { return { ok: false, error: 'The email provider could not be reached.' }; }
+}
+
+/* =========================================================================
+ * Stage 4 — what J.A.R.V.I.S. suggests, the morning briefing, the month's
+ * cost, and the honest list of what is connected
+ * -------------------------------------------------------------------------
+ *   team:suggest     { date, at, items[{ id, title, why, brief, agent, status: open|started|dismissed, task }], skipped[] }
+ *   team:brief       { on, at: 'HH:MM', lastDate, last: { at, text } }
+ *   team:limits      { monthlyUsd }
+ *   team:usage:m:<yyyy-mm>   { <agent>: { calls, in, out, usd, unpriced } }
+ *   team:shots:<task>        [{ at, url, title, agent, img }]
+ * ====================================================================== */
+let extrasMod = null;
+function extrasLib() { if (extrasMod === null) { try { extrasMod = require('./flow-extras'); } catch (e) { extrasMod = false; } } return extrasMod || null; }
+let channelsLib_ = null;
+function channelsLib() { if (channelsLib_ === null) { try { channelsLib_ = require('./flow-channels'); } catch (e) { channelsLib_ = false; } } return channelsLib_ || null; }
+let remindLib_ = null;
+function localParts(tz, now) {
+  if (remindLib_ === null) { try { remindLib_ = require('./flow-remind'); } catch (e) { remindLib_ = false; } }
+  if (remindLib_ && remindLib_._internals) return remindLib_._internals.localParts(tz, now);
+  const d = now || new Date(); return { date: d.toISOString().slice(0, 10), hhmm: d.toISOString().slice(11, 16), day: (d.getUTCDay() + 6) % 7, minutes: d.getUTCHours() * 60 + d.getUTCMinutes() };
+}
+async function userTz(ctx) { try { const s = await ctx.get('flow:settings'); return (s && s.timezone) || 'Europe/Istanbul'; } catch (e) { return 'Europe/Istanbul'; } }
+async function snapshotOf(ctx) {
+  const X = extrasLib();
+  try { if (X && X._internals && X._internals.buildContext) return String(await X._internals.buildContext({ get: ctx.get })).slice(0, 20000); } catch (e) {}
+  return '';
+}
+
+/* ---- what he suggests ---------------------------------------------------- *
+ * J.A.R.V.I.S. reads the person's own record — this week's rocks, the
+ * mission and roles, notes, the journal, spend, habits — and proposes pieces
+ * of work the team could take off their plate: a travel command centre for
+ * the trip in the notes, a comparison, a follow-up, research. Each must point
+ * at something that is really there; nothing is invented. Once a day unless
+ * asked for more; what was dismissed is not offered again. */
+const SUGGEST_SYSTEM = (owner, agents, know, tasks, skipped, snapshot, lang) => [
+  'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', inside The Flow. Look at THEIR DATA below and propose three to five pieces of work your team could do for them right now — things that would make their life or business easier this week.',
+  'Good suggestions are anchored in the data: a trip or booking mentioned in the notes → a travel command centre (bookings, payments, check-in, host messages, a checklist, kept apart from anything cancelled); a recurring expense → a review; a stalled rock → the preparation that unblocks it; a customer question → a drafted reply; a goal in the mission → a plan or research. Work is done in words here (drafts, plans, research, checklists, comparisons); emails go out only after their yes.',
+  'THE TEAM (id | name | role): ' + agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('; '),
+  know.length ? 'WHAT THE TEAM KNOWS: ' + know.map((k) => k.text).join(' · ') : '',
+  tasks.length ? 'ALREADY IN HAND (do not repeat): ' + tasks.map((t) => t.title).join('; ') : '',
+  skipped.length ? 'THEY SAID NO TO (do not offer again): ' + skipped.join('; ') : '',
+  'Language: ' + (lang === 'tr' ? 'Turkish' : 'English') + '.',
+  '',
+  'Return ONLY a JSON object:',
+  '{ "items": [ { "title": "short, concrete, 3–8 words", "why": "one sentence quoting the thing in their data this comes from", "brief": "the full brief the team would work from: every relevant detail from the data, what to produce, what to keep separate", "agent": "<id of the specialist best placed, or empty for J.A.R.V.I.S. to plan>" } ] }',
+  '· Nothing generic ("organise your inbox"). If the data shows nothing worth doing, return fewer items, even one.',
+  '',
+  snapshot ? '# THEIR DATA\n' + snapshot : '# THEIR DATA\n(nothing recorded yet)'
+].filter((x) => x !== '').join('\n');
+
+function parseSuggest(text, agents) {
+  const s = String(text || ''); const m = s.match(/\{[\s\S]*\}/);
+  let j = null; if (m) { try { j = JSON.parse(m[0]); } catch (e) {} }
+  if (!j || !Array.isArray(j.items)) return null;
+  const ids = new Set(agents.filter((a) => a.id !== 'jarvis' && !a.archived).map((a) => a.id));
+  return j.items.slice(0, 5).map((it) => it && str(it.title, 90) && block(it.brief, 3000) ? { id: 'g' + newId(), title: str(it.title, 90), why: str(it.why, 240), brief: block(it.brief, 3000), agent: ids.has(String(it.agent || '')) ? String(it.agent) : '', status: 'open', at: Date.now() } : null).filter(Boolean);
+}
+function fakeSuggest(snapshot) {
+  const items = [];
+  if (/dubai/i.test(snapshot)) items.push({ title: 'Dubai trip command centre', why: 'Your notes mention the Dubai apartment booking.', brief: 'Build a travel command centre for the Dubai stay: active booking vs the cancelled one, payments due, check-in and access, host messages, a pre-arrival checklist.', agent: '' });
+  items.push({ title: 'Review this month\'s spend', why: 'There are expenses recorded this month.', brief: 'Go through this month\'s expenses, group them, flag anything unusual or recurring, and propose where to save.', agent: 'finance' });
+  items.push({ title: 'Prepare Monday\'s priorities', why: 'This week\'s rocks are on the board.', brief: 'Turn the week\'s rocks into a prepared Monday: what needs doing first, what can be dropped, what to delegate.', agent: '' });
+  return JSON.stringify({ items });
+}
+async function suggestions(ctx, opts) {
+  const v = await ctx.get('team:suggest'); const rec = v && typeof v === 'object' ? v : { items: [], skipped: [] };
+  rec.items = Array.isArray(rec.items) ? rec.items : []; rec.skipped = Array.isArray(rec.skipped) ? rec.skipped : [];
+  const L = localParts(await userTz(ctx), new Date());
+  const fresh = opts && opts.fresh;
+  if (!fresh && rec.date === L.date && rec.items.length) return rec;
+  const list = await agents(ctx);
+  const j = list.find((a) => a.id === 'jarvis');
+  const which = await resolveModel(j.model);
+  if (!which) return Object.assign(rec, { error: 'J.A.R.V.I.S. has no model available here yet.' });
+  const bud = await budget(ctx); if (bud.over) return Object.assign(rec, { error: bud.message });
+  const know = (await knowledge(ctx)).filter((k) => k.scope === 'shared').slice(-40);
+  const tl = (await tasks(ctx)).filter((t) => !/^(cancelled|failed)$/.test(t.status)).slice(-12);
+  const snapshot = await snapshotOf(ctx);
+  const open = rec.items.filter((it) => it.status === 'open').map((it) => it.title);
+  const r = FAKE ? { text: fakeSuggest(snapshot), usage: { in: 1, out: 1 } } : await complete({ model: which.model, system: SUGGEST_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list, know, tl, rec.skipped.concat(fresh ? open : []), snapshot, (opts && opts.lang) || 'en'), messages: [{ role: 'user', content: 'What could the team take off my plate' + (fresh ? ' — other ideas than before' : '') + '?' }], maxTokens: 1800, timeoutMs: 60000 });
+  if (r.error) return Object.assign(rec, { error: r.error });
+  await bumpUsage(ctx, 'jarvis', r.usage, which.model);
+  const items = parseSuggest(r.text, list);
+  if (!items) return Object.assign(rec, { error: 'The suggestions came back in a shape the app could not read.' });
+  /* keep what was started today; replace the open ones */
+  const keep = rec.date === L.date ? rec.items.filter((it) => it.status === 'started') : [];
+  const next = { date: L.date, at: Date.now(), items: keep.concat(items.filter((it) => !rec.skipped.some((s) => s.toLowerCase() === it.title.toLowerCase()))).slice(0, 8), skipped: rec.skipped.slice(-60) };
+  await ctx.set('team:suggest', next);
+  if (items.length) await log(ctx, 'jarvis', 'J.A.R.V.I.S. suggested: ' + items.map((it) => it.title).join('; '));
+  return next;
+}
+async function suggestAct(ctx, uid, id, op, lang) {
+  const v = await ctx.get('team:suggest'); const rec = v && typeof v === 'object' ? v : { items: [], skipped: [] };
+  const it = (rec.items || []).find((x) => x.id === id); if (!it) return { error: 'No such suggestion.', status: 404 };
+  if (op === 'dismiss') { it.status = 'dismissed'; rec.skipped = (rec.skipped || []).concat([it.title]).slice(-60); await ctx.set('team:suggest', rec); return { ok: true, item: it }; }
+  if (op !== 'start') return { error: 'start or dismiss.', status: 400 };
+  if (it.status === 'started' && it.task) return { ok: true, item: it, already: true };
+  let r;
+  if (it.agent) {
+    const list = await agents(ctx); const a = list.find((x) => x.id === it.agent && !x.archived);
+    if (a) { try { const t = await newTask(ctx, uid, { title: it.title, brief: it.brief, agent: a.id, by: 'jarvis', lang: lang || 'en', steps: [{ agent: a.id, title: it.title, brief: it.brief }] }); r = { task: t, say: a.name + ' is on it.' }; } catch (e) { r = { error: e.message, status: 400 }; } }
+  }
+  if (!r) r = await delegateText(ctx, uid, it.brief, lang || 'en', { via: 'suggestion' });
+  if (r.error) return r;
+  if (!r.task) return { error: 'J.A.R.V.I.S. found nobody on the team for it: ' + (r.say || ''), status: 409 };
+  it.status = 'started'; it.task = r.task ? r.task.id : ''; it.startedAt = Date.now();
+  await ctx.set('team:suggest', rec);
+  return { ok: true, item: it, task: r.task, say: r.say };
+}
+
+/* ---- the morning briefing ------------------------------------------------ *
+ * At the hour they chose (08:00 by default), in their own clock: today's
+ * rocks, what the team has waiting for them, and what J.A.R.V.I.S. suggests.
+ * It goes to every linked channel and as a push; the text is kept so the
+ * command centre can show this morning's. */
+async function briefSettings(ctx) { const v = await ctx.get('team:brief'); return Object.assign({ on: true, at: '08:00', lastDate: '', last: null }, v && typeof v === 'object' ? v : {}); }
+function weekIdOf(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number); const dt = new Date(Date.UTC(y, m - 1, d)); const day = dt.getUTCDay() || 7; dt.setUTCDate(dt.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1)); return dt.getUTCFullYear() + '-W' + String(Math.ceil(((dt - y0) / 86400000 + 1) / 7)).padStart(2, '0');
+}
+async function briefingText(ctx, L, lang) {
+  const owner = ctx.user && (ctx.user.name || '');
+  const tr = lang === 'tr';
+  const lines = [(tr ? 'Günaydın' : 'Good morning') + (owner ? ', ' + String(owner).split(/\s+/)[0] : '') + '. ' + new Date(L.date + 'T12:00:00Z').toLocaleDateString(tr ? 'tr-TR' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) + '.'];
+  try {
+    const compass = await ctx.get('ld_compass');
+    const rocks = (((compass || {}).rocks || {})[weekIdOf(L.date)] || []).filter((r) => r && r.day === L.day && !r.done);
+    if (rocks.length) lines.push('', (tr ? 'Bugün' : 'Today') + ':', rocks.slice(0, 8).map((r) => '· ' + (r.time ? r.time + ' ' : '') + str(r.title, 80)).join('\n'));
+    else lines.push('', tr ? 'Bugün için planlanmış bir Büyük Taş yok.' : 'No Big Rocks planned for today.');
+  } catch (e) {}
+  const tl = await tasks(ctx); const ap = (await approvals(ctx)).filter((x) => x.status === 'pending');
+  const running = tl.filter((t) => t.status === 'running' || t.status === 'queued'), asking = tl.filter((t) => t.status === 'awaiting_info'), ready = tl.filter((t) => !t.seen && t.status === 'done');
+  const team = [];
+  if (ready.length) team.push((tr ? 'Hazır' : 'Ready for you') + ': ' + ready.map((t) => t.title).join('; '));
+  if (ap.length) team.push((tr ? 'Onayınızı bekleyen' : 'Needs your yes') + ': ' + ap.map((x, i) => '[' + (i + 1) + '] ' + x.summary).join('; '));
+  if (asking.length) team.push((tr ? 'Soru bekleyen' : 'Waiting for an answer') + ': ' + asking.map((t) => t.title).join('; '));
+  if (running.length) team.push((tr ? 'Devam eden' : 'In progress') + ': ' + running.map((t) => t.title).join('; '));
+  lines.push('', (tr ? 'Ekip' : 'The team') + ': ' + (team.length ? '' : (tr ? 'bekleyen bir şey yok.' : 'nothing waiting on you.')));
+  if (team.length) lines.push(team.map((t) => '· ' + t).join('\n'));
+  try {
+    const sg = await suggestions(ctx, { lang });
+    const open = (sg.items || []).filter((it) => it.status === 'open').slice(0, 3);
+    if (open.length) lines.push('', (tr ? 'Ekibin üstlenebileceği işler' : 'What the team could take off your plate') + ':', open.map((it, i) => (i + 1) + '. ' + it.title + (it.why ? ' — ' + it.why : '')).join('\n'), tr ? 'Başlatmak için "/start 1" yazın.' : 'Reply "/start 1" to put the team on one.');
+  } catch (e) {}
+  lines.push('', tr ? 'Buradayım, efendim.' : 'I am here, sir.');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+async function sendBriefing(uid, ctx, L, lang, how) {
+  const text = await briefingText(ctx, L, lang);
+  const s = await briefSettings(ctx);
+  s.lastDate = L.date; s.last = { at: Date.now(), text, how: how || 'schedule' };
+  await ctx.set('team:brief', s);
+  if (pushTo) { try { await pushTo(uid, { title: lang === 'tr' ? 'Sabah özetiniz' : 'Your morning briefing', body: text.split('\n').slice(2, 4).join(' ').slice(0, 160) || 'Open the command centre.', thread: 'team', data: { team: 'brief' } }); } catch (e) {} }
+  if (channelsTo) { try { await channelsTo(uid, text, { what: 'briefing' }); } catch (e) {} }
+  await log(ctx, 'jarvis', 'Morning briefing ' + (how === 'now' ? 'sent on request.' : 'sent.'));
+  return text;
+}
+const BRIEF_WINDOW = 6;
+async function tickBriefings(now) {
+  if (!bootCtx || !usersFn) return [];
+  now = now || new Date();
+  let ids = []; try { ids = await usersFn(); } catch (e) { return []; }
+  const out = [];
+  for (const uid of ids) {
+    try {
+      const ctx = bootCtx(uid); ctx.user = await userOf(uid);
+      const s = await briefSettings(ctx);
+      if (s.on === false) { out.push({ uid, skipped: 'off' }); continue; }
+      const L = localParts(await userTz(ctx), now);
+      if (s.lastDate === L.date) { out.push({ uid, skipped: 'sent' }); continue; }
+      const m = /^(\d{1,2}):(\d{2})$/.exec(String(s.at || '08:00')); const at = m ? (+m[1]) * 60 + (+m[2]) : 8 * 60;
+      if (!(L.minutes >= at && L.minutes < at + BRIEF_WINDOW)) { out.push({ uid, skipped: 'not yet' }); continue; }
+      /* only where it can land: a linked channel, or a device for push */
+      const C = channelsLib(); let linked = false;
+      try { if (C && C.linkedCount) linked = (await C.linkedCount(uid)) > 0; } catch (e) {}
+      let device = false; try { const d = await rawGet('__push:dev:' + uid); device = Array.isArray(d) && d.length > 0; } catch (e) {}
+      if (!linked && !device) { s.lastDate = L.date; s.last = { at: Date.now(), text: await briefingText(ctx, L, 'en'), how: 'kept' }; await ctx.set('team:brief', s); out.push({ uid, kept: true }); continue; }
+      const settings = await ctx.get('flow:settings');
+      await sendBriefing(uid, ctx, L, settings && settings.lang === 'tr' ? 'tr' : 'en', 'schedule');
+      out.push({ uid, sent: true });
+    } catch (e) { out.push({ uid, error: e && e.message }); }
+  }
+  return out;
+}
+let usersFn = null, usersKey = '', rawGet = async () => null, briefTimer = null;
+async function userOf(uid) {
+  try { const users = (await rawGet(usersKey)) || {}; return Object.values(users).find((u) => u && u.id === uid) || { id: uid }; } catch (e) { return { id: uid }; }
+}
+
+/* ---- what is connected, truthfully --------------------------------------- */
+const WISHLIST = [
+  ['Gmail', 'Read and send from your own mailbox. Needs Google consent from you.'], ['Google Calendar', 'See and book your day. Needs Google consent.'], ['Google Drive', 'Read and write your documents. Needs Google consent.'],
+  ['Notion', 'Pages and databases.'], ['Meta Ads', 'Campaign spend and results for Bobby.'], ['Instagram', 'Comments and messages.'], ['YouTube', 'Channel and comments.'],
+  ['QuickBooks', 'The books, for the finance assistant.'], ['GitHub', 'Issues and pull requests, for Tom.'], ['Shopify', 'Orders and customers.'], ['HubSpot', 'Contacts and deals.'], ['Stripe', 'Payments and payouts.']
+];
+async function connectors(uid, ctx) {
+  const out = [];
+  const B = browserLib(); const av = B ? B.available() : { mode: 'reader', status: 'awaiting', env: [], note: 'The browser module is missing.' };
+  out.push({ id: 'flow', kind: 'tool', name: 'The Flow', status: 'working', note: 'Your week, rocks, habits, training, spend and notes: what J.A.R.V.I.S. answers from.' });
+  out.push({ id: 'web', kind: 'tool', name: 'Web reader', status: 'working', note: 'Agents read public pages when they need them (ask for a link, a product page, documentation).' });
+  out.push({ id: 'browser', kind: 'tool', name: 'Cloud browser', status: av.status, env: av.env || [], note: av.note });
+  out.push({ id: 'email', kind: 'tool', name: 'Email (outbound)', status: mailReady() ? 'working' : 'awaiting', env: mailReady() ? [] : ['RESEND_API_KEY'], note: mailReady() ? 'An approved email really goes, once, from ' + ((process.env.MAIL_FROM || '').trim() || 'mail@theflow.today') + ' in the agent\'s name, replies to you.' : 'Approved emails will go from The Flow\'s address once the key is in Render.' });
+  for (const P of await providers()) out.push({ id: 'model:' + P.id, kind: 'model', name: P.name, status: P.configured ? 'working' : 'awaiting', env: P.configured ? [] : [P.env], note: P.configured ? P.models.length + ' models' : 'Add ' + P.env + ' in Render.' });
+  const C = channelsLib();
+  if (C && C.statusList) { try { for (const ch of await C.statusList(uid)) out.push({ id: 'channel:' + ch.id, kind: 'channel', name: ch.name, status: ch.status, env: ch.env, note: ch.status === 'working' ? 'Linked.' : ch.status === 'ready' ? 'Configured; link it from Channels.' : ch.status === 'not_built' ? 'Not built yet.' : 'Missing in Render: ' + ch.env.join(', ') }); } catch (e) {} }
+  for (const w of WISHLIST) out.push({ id: 'wish:' + w[0].toLowerCase().replace(/\W+/g, '-'), kind: 'app', name: w[0], status: 'not_built', note: w[1] + ' Not built yet — ask for it and it goes on the list.' });
+  const counts = { working: out.filter((x) => x.status === 'working').length, ready: out.filter((x) => x.status === 'ready').length, awaiting: out.filter((x) => x.status === 'awaiting').length, not_built: out.filter((x) => x.status === 'not_built').length };
+  return { connectors: out, counts };
+}
+
+async function handleStage4(p, req, res, ctx) {
+  const json = ctx.json;
+  const uid = ctx.user && ctx.user.id;
+  const body = async () => { try { return JSON.parse(await ctx.readBody(req)) || {}; } catch (e) { return {}; } };
+
+  if (p === '/api/team/suggest' && req.method === 'GET') {
+    const rec = await suggestions(ctx, { fresh: ctx.query.get('fresh') === '1', lang: ctx.query.get('lang') === 'tr' ? 'tr' : 'en' });
+    json(res, 200, { ok: true, date: rec.date, at: rec.at, items: (rec.items || []).filter((it) => it.status !== 'dismissed'), error: rec.error || '' });
+    return true;
+  }
+  if (p === '/api/team/suggest' && req.method === 'POST') {
+    const b = await body();
+    const r = await suggestAct(ctx, uid, String(b.id || ''), String(b.op || ''), b.lang === 'tr' ? 'tr' : 'en');
+    if (r.error) { json(res, r.status || 502, r); return true; }
+    json(res, 200, Object.assign({ ok: true }, r)); return true;
+  }
+  if (p === '/api/team/brief' && req.method === 'GET') {
+    const s = await briefSettings(ctx);
+    json(res, 200, { ok: true, on: s.on !== false, at: s.at || '08:00', last: s.last || null, tz: await userTz(ctx) }); return true;
+  }
+  if (p === '/api/team/brief' && req.method === 'POST') {
+    const b = await body(); const s = await briefSettings(ctx);
+    if (typeof b.on === 'boolean') s.on = b.on;
+    if (typeof b.at === 'string' && /^\d{1,2}:\d{2}$/.test(b.at.trim())) { const [h, m] = b.at.trim().split(':').map(Number); if (h >= 0 && h < 24 && m >= 0 && m < 60) s.at = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); }
+    await ctx.set('team:brief', s); await log(ctx, 'jarvis', 'Morning briefing: ' + (s.on === false ? 'off' : 'at ' + s.at) + '.');
+    json(res, 200, { ok: true, on: s.on !== false, at: s.at }); return true;
+  }
+  if (p === '/api/team/brief/now' && req.method === 'POST') {
+    const b = await body();
+    const L = localParts(await userTz(ctx), new Date());
+    const text = await sendBriefing(uid, ctx, L, b.lang === 'tr' ? 'tr' : 'en', 'now');
+    json(res, 200, { ok: true, text }); return true;
+  }
+  if (p === '/api/team/usage' && req.method === 'GET') {
+    const [mo, lim, bud, list] = await Promise.all([monthUsage(ctx), limits(ctx), budget(ctx), agents(ctx)]);
+    const rows = Object.keys(mo).map((id) => Object.assign({ id, name: (list.find((a) => a.id === id) || {}).name || id }, mo[id])).sort((a, b) => (b.usd || 0) - (a.usd || 0));
+    json(res, 200, { ok: true, month: new Date().toISOString().slice(0, 7), agents: rows, total: { usd: bud.usd, calls: rows.reduce((s, r) => s + (r.calls || 0), 0), tokens: rows.reduce((s, r) => s + (r.in || 0) + (r.out || 0), 0), unpriced: rows.reduce((s, r) => s + (r.unpriced || 0), 0) }, limit: lim.monthlyUsd, over: bud.over, note: 'Estimated from list prices per million tokens; the providers\' invoices are the truth.' });
+    return true;
+  }
+  if (p === '/api/team/limits' && req.method === 'POST') {
+    const b = await body(); const lim = await limits(ctx);
+    if (Number.isFinite(+b.monthlyUsd)) lim.monthlyUsd = Math.max(0, Math.min(100000, Math.round(+b.monthlyUsd)));
+    await ctx.set('team:limits', lim); await log(ctx, 'team', 'Monthly budget: ' + (lim.monthlyUsd ? '$' + lim.monthlyUsd : 'none') + '.');
+    json(res, 200, { ok: true, limit: lim.monthlyUsd }); return true;
+  }
+  if (p === '/api/team/connectors' && req.method === 'GET') {
+    json(res, 200, Object.assign({ ok: true }, await connectors(uid, ctx))); return true;
+  }
+  /* tests only: the briefing tick at a chosen moment, and what mail "went" */
+  if (FAKE && p === '/api/team/_tick' && req.method === 'GET') { json(res, 200, { ok: true, out: await tickBriefings(new Date(ctx.query.get('at') || Date.now())) }); return true; }
+  if (FAKE && p === '/api/team/_mail' && req.method === 'GET') { json(res, 200, { ok: true, n: mailSent.length, last: mailSent[mailSent.length - 1] || null }); return true; }
+  if (p === '/api/team/task/shots' && req.method === 'GET') {
+    const id = str(ctx.query.get('id'), 40); const v = await ctx.get('team:shots:' + id);
+    json(res, 200, { ok: true, id, shots: Array.isArray(v) ? v : [] }); return true;
+  }
+  return false;
 }
 
 async function handleWork(p, req, res, ctx) {
   const json = ctx.json;
   const uid = ctx.user && ctx.user.id;
   const body = async () => { try { return JSON.parse(await ctx.readBody(req)) || {}; } catch (e) { return {}; } };
+
+  if (await handleStage4(p, req, res, ctx)) return true;
 
   if (p === '/api/team/tasks' && req.method === 'GET') {
     const [tl, ap] = await Promise.all([tasks(ctx), approvals(ctx)]);
@@ -916,7 +1358,8 @@ module.exports.kick = kick;
 module.exports.log = log;
 module.exports.bumpUsage = bumpUsage;
 module.exports.ctxFor = (uid) => (bootCtx ? bootCtx(uid) : null);
-module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops };
+module.exports._work = { tasks, approvals, parseStep, parsePlan, planSystem, stepSystem, TASK_STATES, setFakeDelay: (ms) => { fakeDelay = ms; }, loops,
+  tickBriefings, suggestions, suggestAct, briefingText, localParts, userTz, connectors, costOf, budget, mailSent, parseSuggest, sendEmail, toolsText, parseReply, SUGGEST_SYSTEM, PRICES };
 
 /* For J.A.R.V.I.S.'s own engine: the shared knowledge, as lines, and the
    model he is set to (if any). flow-extras reads these. */

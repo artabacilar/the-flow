@@ -139,6 +139,7 @@ async function whose(channel, externalId) { const v = await rawGet('__team:link:
 const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you would in the app. Also:\n' +
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
+  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now\n' +
   '"call me when it is ready" — he rings you (needs the phone channel)';
 
 const UNKNOWN = (channel) => 'This ' + (channel === 'sms' || channel === 'voice' ? 'number' : 'account') + ' is not linked to a Flow. In The Flow, open the command centre → Channels → ' + CHANNELS[channel].name + ' → "Link", and send the six-digit code here.';
@@ -183,8 +184,24 @@ async function inbound(channel, externalId, text, meta) {
       if (!item) return pending.length ? 'There are ' + pending.length + ' waiting; say /yes 1 to /yes ' + pending.length + '.' : 'Nothing is waiting for your yes.';
       const r = await team.decide(ctx, item.id, (c === 'yes' || c === 'approve') ? 'approve' : 'reject');
       if (r.error) return r.error;
-      return (c === 'yes' || c === 'approve') ? 'Approved: ' + item.summary + '. Nothing is connected to send it yet, so it has not gone; it will, once, when the connection exists.' : 'Declined: ' + item.summary + '.';
+      return (c === 'yes' || c === 'approve') ? (r.approval && r.approval.status === 'executed' ? 'Sent: ' + item.summary + '. ' + (r.approval.note || '') : r.approval && r.approval.status === 'send_failed' ? 'Approved, but it could not be sent: ' + (r.approval.error || '') + ' Nothing went out; /yes ' + n + ' again to retry.' : 'Approved: ' + item.summary + '. ' + ((r.approval && r.approval.note) || 'Nothing is connected to send it yet, so it has not gone; it will, once, when the connection exists.')) : 'Declined: ' + item.summary + '.';
     }
+    if (c === 'ideas' || c === 'suggest') {
+      const sg = await team._work.suggestions(ctx, { fresh: /more|fresh|other/i.test(rest) });
+      const open = (sg.items || []).filter((it) => it.status === 'open');
+      if (sg.error && !open.length) return sg.error;
+      return open.length ? 'What the team could take off your plate:\n' + open.map((it, i) => (i + 1) + '. ' + it.title + (it.why ? ' — ' + it.why : '')).join('\n') + '\n\n/start 1 to put them on it; /ideas more for others.' : 'Nothing worth suggesting from your record just now.';
+    }
+    if (c === 'start' && /^\d+$/.test(rest)) {
+      const sg = await team._work.suggestions(ctx, {});
+      const open = (sg.items || []).filter((it) => it.status === 'open');
+      const it = open[parseInt(rest, 10) - 1];
+      if (!it) return open.length ? 'Say /start 1 to /start ' + open.length + '.' : 'No suggestions are open; /ideas first.';
+      const r = await team._work.suggestAct(ctx, uid, it.id, 'start', 'en');
+      if (r.error) return r.error;
+      return 'Started: ' + it.title + (r.task ? ' (' + r.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + ')' : '') + '. I will message you here when it is ready.';
+    }
+    if (c === 'briefing' || c === 'brief') { const L = team._work.localParts(await team._work.userTz(ctx), new Date()); return await team._work.briefingText(ctx, L, 'en'); }
     if (c === 'answer') {
       const waiting = (await team.tasks(ctx)).filter((t) => t.status === 'awaiting_info');
       if (!waiting.length) return 'Nobody is waiting on an answer.';
@@ -270,7 +287,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
   const messages = hist.concat([{ role: 'user', content: text }]);
   const r = await team.complete({ model: which.model, system: J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot), messages, maxTokens: 1200, timeoutMs: 60000 });
   if (r.error) return r.error;
-  await team.bumpUsage(ctx, 'jarvis', r.usage);
+  await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
   let say = '', actions = [];
   const m = String(r.text || '').match(/\{[\s\S]*\}/);
   if (m) { try { const o = JSON.parse(m[0]); say = block(o.say, 3000); actions = Array.isArray(o.actions) ? o.actions.slice(0, 4) : []; } catch (e) {} }
@@ -515,19 +532,25 @@ async function handle(p, req, res, ctx) {
 }
 
 /* ---------- signed in: the Channels panel ---------------------------------- */
+/* Every channel's state for one account: the panel, and the connectors list. */
+async function statusList(uid, c) {
+  c = c || await ctxFor(uid);
+  const l = await links(c);
+  return ORDER.map((id) => {
+    const ch = CHANNELS[id]; const conf = configured(id); const lk = l[id] || null;
+    const status = !ch.built ? 'not_built' : !conf ? 'awaiting' : lk ? 'working' : 'ready';
+    return { id, name: ch.name, status, env: ch.env.filter((k) => !env(k)), how: ch.how.replace(/<origin>/g, ORIGIN()), linked: lk ? { id: lk.id, name: lk.name || '', agent: lk.agent || 'jarvis', at: lk.linkedAt } : null };
+  });
+}
+async function linkedCount(uid) { const c = await ctxFor(uid); const l = await links(c); return Object.keys(l).filter((k) => l[k] && l[k].id && k !== 'voice' && configured(k)).length; }
+
 async function handleUser(p, req, res, ctx) {
   if (p.indexOf('/api/channels/me') !== 0) return false;
   const json = ctx.json;
   const uid = ctx.user && ctx.user.id;
   const c = await ctxFor(uid);
   if (p === '/api/channels/me' && req.method === 'GET') {
-    const l = await links(c);
-    const out = ORDER.map((id) => {
-      const ch = CHANNELS[id]; const conf = configured(id); const lk = l[id] || null;
-      const status = !ch.built ? 'not_built' : !conf ? 'awaiting' : lk ? 'working' : 'ready';
-      return { id, name: ch.name, status, env: ch.env.filter((k) => !env(k)), how: ch.how.replace(/<origin>/g, ORIGIN()), linked: lk ? { id: lk.id, name: lk.name || '', agent: lk.agent || 'jarvis', at: lk.linkedAt } : null };
-    });
-    json(res, 200, { ok: true, channels: out, origin: ORIGIN() });
+    json(res, 200, { ok: true, channels: await statusList(uid, c), origin: ORIGIN() });
     return true;
   }
   if (p === '/api/channels/me/code' && req.method === 'POST') {
@@ -677,6 +700,7 @@ function start(deps) {
 
 function wsKeyFromReq(req) { return String(req.headers['sec-websocket-key'] || ''); }
 module.exports = {
+  statusList, linkedCount,
   start, handle, handleUser, notify, send, inbound,
   upgrade: (req, socket, head) => { socket._wsKey = wsKeyFromReq(req); return upgrade(req, socket, head); },
   configured, CHANNELS, ORDER,

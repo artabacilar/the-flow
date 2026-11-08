@@ -2321,6 +2321,7 @@ async function handleDo(p, req, res, ctx) {
       const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000 });
       if (r2.error) { ctx.json(res, r2.status === 429 ? 429 : 502, { error: r2.error }); return true; }
       answer = r2.text;
+      try { if (ctx.team && teamMod.bumpUsage) await teamMod.bumpUsage(ctx.team, 'jarvis', r2.usage, r2.model); } catch (e) {}
     } else {
       const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
         { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] }, 45000);
@@ -2329,6 +2330,7 @@ async function handleDo(p, req, res, ctx) {
       if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
       const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
       answer = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+      try { const u = r.body && r.body.usage; if (ctx.team && teamMod && teamMod.bumpUsage && u) await teamMod.bumpUsage(ctx.team, 'jarvis', { in: u.input_tokens || 0, out: u.output_tokens || 0 }, CHAT_MODEL); } catch (e) {}
     }
     const out = parseDo(answer, known);
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
