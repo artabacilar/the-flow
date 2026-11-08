@@ -127,6 +127,7 @@ const SUITES = [
   ['skills',   'test-skills.js',   { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['scripts',  'test-scripts.js',  { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['efficiency', 'test-efficiency.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
+  ['setup', 'test-setup.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1', PUBLIC_URL: 'http://localhost:4222', TELEGRAM_BOT_TOKEN: 'test-tg' }],
   ['audit',    'test-audit.js',    {}],
   ['links',    'test-links.js',    {}],
   ['training', 'test-training.js', {}],
