@@ -139,7 +139,7 @@ async function whose(channel, externalId) { const v = await rawGet('__team:link:
 const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you would in the app. Also:\n' +
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
-  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n' +
+  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n/discover <topic> — five questions, then a workflow spec · /interview <topic> — he keeps asking until you say done · /request <text> · /feedback <text>\n' +
   '"call me when it is ready" — he rings you (needs the phone channel)';
 
 const UNKNOWN = (channel) => 'This ' + (channel === 'sms' || channel === 'voice' ? 'number' : 'account') + ' is not linked to a Flow. In The Flow, open the command centre → Channels → ' + CHANNELS[channel].name + ' → "Link", and send the six-digit code here.';
@@ -220,6 +220,12 @@ async function inbound(channel, externalId, text, meta) {
       const run = await team.scripts.startRun(ctx, team.scriptDeps(), pick, { uid, trigger: 'channel ' + channel });
       return '"' + pick.name + '" v' + pick.version + ': ' + run.status + (run.error ? ' — ' + run.error : '') + (run.output ? '\n\n' + String(run.output).slice(0, 2500) : '') + (run.metrics ? '\n\n(' + run.metrics.items + ' items · ' + run.metrics.ms + ' ms · ' + run.metrics.modelCalls + ' model call' + (run.metrics.modelCalls === 1 ? '' : 's') + ')' : '');
     }
+    if ((c === 'discover' || c === 'interview' || c === 'askme') && team.context) {
+      const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'start', mode: c === 'interview' ? 'relentless' : 'ask', topic: rest, via: channel });
+      return r.error ? r.error : r.say;
+    }
+    if ((c === 'done' || c === 'writeup') && team.context) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'finish' }); return r.error ? r.error : r.say; }
+    if ((c === 'request' || c === 'feedback') && team.context) { if (!rest) return 'Say what you want after /' + c + '.'; const r = await team.context.addRequest(ctx, team.ctxDeps(), { text: rest, kind: c, via: channel }); return r.error ? r.error : (c === 'feedback' ? 'Noted — thank you. It is on the list in the command centre.' : 'Noted. It is on the request list in the command centre; I will say when it is done.'); }
     if (c === 'setup') {
       if (!team.setupText) return 'Setup is not available here.';
       if (/^first\b/i.test(rest)) { const which = (rest.split(/\s+/)[1] || 'today').toLowerCase(); const r = await team.setupAct(ctx, uid, { step: 'first', which, via: channel }); if (r.error) return r.error; return 'Started the first task: "' + r.task.title + '" — read-only; ' + ((list.find((a) => a.id === r.task.agent) || {}).name || 'an agent') + ' is on it and the result lands here.'; }
@@ -246,6 +252,10 @@ async function inbound(channel, externalId, text, meta) {
     const ag = active.find((a) => firstName(a) === c);
     if (ag) { mine.agent = ag.id; l[channel] = Object.assign({}, l[channel], mine); await ctx.set('team:channels', l); return rest ? await talk(ctx, uid, channel, ag, rest, meta) : 'You are talking to ' + ag.name + ' (' + ag.role + '). /jarvis to come back.'; }
     return 'I do not know /' + c + '. ' + HELP(names);
+  }
+  /* a discovery is running: this is the answer to its question */
+  if (team.context) {
+    try { const st = await team.context.discover(ctx, team.ctxDeps(), { op: 'status' }); if (st.discovery && st.discovery.status === 'active') { if (/turn (it|this|that) into a skill/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'answer', id: st.discovery.id, text, via: channel }); return r.error ? r.error : r.say; } if (st.discovery && st.discovery.status === 'done' && !st.discovery.skill && /turn (it|this|that) into a skill/i.test(text)) { const r = await team.context.discover(ctx, team.ctxDeps(), { op: 'skill', id: st.discovery.id }); return r.error ? r.error : r.say; } } catch (e) {}
   }
   /* "@sarah …" for one message */
   const at = text.match(/^@(\w+)[\s,:]+([\s\S]+)$/);
@@ -279,8 +289,8 @@ async function tasksText(ctx) {
    approve and decline — in words, from a text message. */
 async function talk(ctx, uid, channel, agent, text, meta) {
   if (agent.id !== 'jarvis') {
-    const r = await team.sayTo(ctx, agent.id, text, 'en');
-    return r.error ? r.error : r.say;
+    const r = await team.sayTo(ctx, agent.id, text, 'en', { via: channel });
+    return r.error ? r.error : r.say + (team.context ? team.context.footer(r.sources) : '');
   }
   return await jarvis(ctx, uid, channel, text, meta);
 }
@@ -340,9 +350,9 @@ async function jarvis(ctx, uid, channel, text, meta) {
     }
   }
   const reply = [say].concat(extra).filter(Boolean).join('\n\n') || 'Noted, sir.';
-  try { await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); } catch (e) {}
+  let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used)); } catch (e) {}
   await histSet(ctx, channel, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
-  return reply;
+  return reply + foot;
 }
 async function histGet(ctx, channel) { const v = await ctx.get('team:chan:hist:' + channel); return Array.isArray(v) ? v : []; }
 async function histSet(ctx, channel, h) { await ctx.set('team:chan:hist:' + channel, h.map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 2000) }))); }

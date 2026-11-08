@@ -112,7 +112,9 @@ async function record(ctx, p) {
     said: str(p.said, 600), reply: block(p.reply, 2500),
     knowledge: (p.knowledge || []).map((k) => k.id), history: (p.superseded || []).map((k) => k.id),
     instructions: p.instructions ? { len: String(p.instructions).length, hash: crypto.createHash('sha1').update(String(p.instructions)).digest('hex').slice(0, 10) } : null,
-    memory: (p.memory || []).map((m) => m.id), pages: (p.pages || []).slice(0, 6), snapshot: !!p.snapshot, thread: p.thread | 0
+    memory: (p.memory || []).map((m) => m.id), pages: (p.pages || []).slice(0, 6), snapshot: !!p.snapshot, thread: p.thread | 0,
+    /* the entries this reply actually drew on: a number in common, or two content words */
+    used: (p.knowledge || []).filter((k) => k && k.text && (function () { const ov = overlap(p.reply || '', k.text); return ov.nums.length > 0 || ov.words.length >= 2; })()).map((k) => k.id).slice(0, 12)
   };
   list.push(rec); await ctx.set('team:prov', list.slice(-PROV_MAX));
   return rec;

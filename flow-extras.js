@@ -2336,11 +2336,11 @@ async function handleDo(p, req, res, ctx) {
     const out = parseDo(answer, known);
     if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
     /* where this answer came from, for "where did that come from?" */
-    try { if (ctx.team && teamMod && teamMod.provenance) await teamMod.provenance(ctx.team, { agent: 'jarvis', via: onWatch ? 'watch' : 'app', model: team.model || CHAT_MODEL, said, reply: out.say, knowledge: team.shared, superseded: (team.superseded || []).map((id) => ({ id })), memory: known.memory, snapshot: !!snapshot, thread: past.length }); } catch (e) {}
+    let sources = []; try { if (ctx.team && teamMod && teamMod.provenance) { const rec = await teamMod.provenance(ctx.team, { agent: 'jarvis', via: onWatch ? 'watch' : 'app', model: team.model || CHAT_MODEL, said, reply: out.say, knowledge: team.shared, superseded: (team.superseded || []).map((id) => ({ id })), memory: known.memory, snapshot: !!snapshot, thread: past.length }); if (rec && teamMod.context) sources = teamMod.context.sourcesFor(team.shared || [], rec.used); } } catch (e) {}
     out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL });
+    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL, sources });
   } catch (e) {
     ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
   }

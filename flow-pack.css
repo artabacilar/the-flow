@@ -4210,3 +4210,6 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-sur.off{opacity:.55}
 #flow-hud .hud-sub.good{color:#6cf0b2}
 #flow-hud .hud-pre{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.45;margin:6px 0;color:#dbeaff;max-height:260px;overflow:auto}
+/* sources under a reply */
+.sy-b .sy-src{display:block;margin-top:4px;font-size:11px;letter-spacing:.04em;opacity:.65}
+#flow-hud .hud-row.hud-wrap{flex-wrap:wrap}

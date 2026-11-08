@@ -14088,6 +14088,21 @@ const Say = {
     try {
       /* "Where did that come from?" is answered from the record of the last
          reply, not by asking the model to guess about itself. */
+      /* Discovery mode: "Ask me questions" starts it; while it runs, what is
+         said is the answer to his question; "turn it into a skill" ends it. */
+      if (!Say.agent && (Team.isDiscoveryStart(text) || Team.discActive() || (Team.disc && Team.disc.status === 'done' && !Team.disc.skill && /turn (it|this|that) into a skill/i.test(text)))) {
+        const start = Team.isDiscoveryStart(text) && !Team.discActive();
+        const body = start ? { op: 'start', mode: /relentless|interview/i.test(text) ? 'relentless' : 'ask', topic: (text.match(/\babout (.+)$/i) || [])[1] || '' } : /turn (it|this|that) into a skill/i.test(text) ? { op: 'skill', id: Team.disc && Team.disc.id } : { op: 'answer', id: Team.disc && Team.disc.id, text };
+        const j = await Team.post('/api/team/discovery', body);
+        const say = (j && (j.say || j.error)) || 'That did not work.';
+        if (j && j.ok) { Team.disc = j.discovery || Team.disc; if (j.skill) { Team.skOpen = j.skill.id; Team.sk = null; } }
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: say });
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        try { Team.ctx = null; if (Hud.on) Hud.paint(); } catch (e) {}
+        await Say.speak(say.split('\n')[0]);
+        Say.follow(!!(j && j.ok && !j.done && !j.skill));
+        return;
+      }
       if (Team.isTraceQuestion(text)) {
         const t = await Team.traceLast(Say.agent || 'jarvis', text);
         Say.history.push({ role: 'user', text }, { role: 'assistant', text: t.say });
@@ -14127,7 +14142,7 @@ const Say = {
         try { Team.status(Say.agent, ''); } catch (e) {}
         if (!r0.ok) { Say.state(j0.error || 'That did not work. Try again.'); try { if (j0.paused) Team.paintRail(); } catch (e) {} return; }
         const reply0 = String(j0.say || '');
-        Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply0 });
+        Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply0, sources: Array.isArray(j0.sources) ? j0.sources.filter((s) => s.kind === 'import') : [] });
         Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
         try { Team.afterReply(Say.agent, j0); } catch (e) {}
         await Say.speak(reply0);
@@ -14140,7 +14155,7 @@ const Say = {
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
       const reply = String(j.say || '');
-      Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply });
+      Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply, sources: Array.isArray(j.sources) ? j.sources.filter((s) => s.kind === 'import') : [] });
       Say.plan = { say: reply, actions: Array.isArray(j.actions) ? j.actions : [] };
       const acts = Say.plan.actions;
       /* Going somewhere is not a change to anything; on its own it just goes. */
@@ -14286,7 +14301,7 @@ const Say = {
     const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
     /* While a plan is on screen its own lines say the last turn. */
     const turns = Say.plan && Say.plan.actions && Say.plan.actions.length ? Say.history.slice(0, -2) : Say.history;
-    box.innerHTML = turns.slice(-6).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) + '</div>').join('');
+    box.innerHTML = turns.slice(-6).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) + (t.sources && t.sources.length ? '<small class="sy-src">From: ' + esc(t.sources.map((s) => s.title).join(' · ')) + '</small>' : '') + '</div>').join('');
     box.hidden = !turns.length;
     box.scrollTop = box.scrollHeight;
   },
@@ -14487,7 +14502,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; Team.ctx = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14859,7 +14874,7 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.suPanel() + Team.approvalsPanel() + Team.suggestPanel() + Team.tasksPanel(null) +
+    return Team.suPanel() + Team.approvalsPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
@@ -15121,7 +15136,7 @@ const Team = {
     const list = Hud.panel('memlist', 'Sources · ' + ((M.counts || {}).current || 0) + ' current · ' + ((M.counts || {}).superseded || 0) + ' superseded', search + (Team.mem ? (items.length ? items.map(Team.memRow).join('') : '<p class="hud-none">Nothing matches.</p>') : '<p class="hud-sub">Looking…</p>') +
       '<p class="hud-sub">Facts and rules the team is shown; J.A.R.V.I.S.\'s memory of you; each agent\'s instructions; your preferences; and the platform rules (code — shown, never edited here). Your Flow record and the conversation are read, not listed.</p>');
     Hud.el.querySelector('.hud-left').innerHTML = list;
-    Hud.el.querySelector('.hud-right').innerHTML = Team.tracePanel() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M);
+    Hud.el.querySelector('.hud-right').innerHTML = Team.tracePanel() + Team.ctxPanels() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M);
     Team.paintRail();
   },
   tracePanel() {
@@ -15217,6 +15232,60 @@ const Team = {
   },
   /* ================= Efficiency: where effort is wasted, and proof a change helped ================= */
   ef: null, efLoading: false, efBusy: false, efOpen: null, efKind: 'all', efShowDismissed: false, efNewBaseline: false,
+  /* ---- Business context: import, source map, fresh-chat check, requests; discovery mode ---- */
+  async loadCtx(force) {
+    if (Team.ctx && !force) return Team.ctx;
+    try { const r = await fetch('/api/team/context', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.ctx = (r.ok && j && j.ok) ? j : (Team.ctx || { sources: [], requests: [], discovery: { active: null, recent: [] }, verifications: [], failed: true }); } catch (e) { Team.ctx = Team.ctx || { sources: [], requests: [], discovery: { active: null, recent: [] }, verifications: [], failed: true }; }
+    return Team.ctx;
+  },
+  ctxPanels() {
+    const C = Team.ctx;
+    if (!C && !Team.ctxLoading) { Team.ctxLoading = true; Team.loadCtx().then(() => { Team.ctxLoading = false; if (Hud.on && Team.sel === 'memory') Hud.paint(); }); }
+    const imp = Hud.panel('ctximport', 'Import business context', (Team.ctxImportOpen ? '<form data-team="ctximport" class="hud-skform"><input class="hud-sel" type="text" name="title" maxlength="120" placeholder="What is this? e.g. “Price list, Nov 2026”"><input class="hud-sel" type="url" name="url" placeholder="…or a public web page: https://"><textarea name="text" rows="6" placeholder="Paste the document, the policy, the FAQ, the notes. Each fact, rule and preference becomes an entry with the passage it came from. Secrets are refused."></textarea><div class="hud-row"><button type="submit" class="hud-btn"' + (Team.ctxBusy ? ' disabled' : '') + '>' + (Team.ctxBusy ? 'Importing…' : 'Import') + '</button><button type="button" class="hud-btn ghost" data-hud="ctximportx">Cancel</button></div><p class="hud-sub">Nothing is indexed or cached: every agent is shown the entries on its very next message. Re-importing a changed document supersedes what is no longer in it (kept as dated history).</p></form>' : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="ctximportx">Paste a document or a page</button></div>') +
+      (Team.ctxLast ? '<p class="hud-sub" data-i18n="off">' + esc(Team.ctxLast) + '</p>' : ''));
+    const S = (C && C.sources) || [];
+    const srcRow = (s) => { const open = Team.ctxOpen === s.id; return '<div class="hud-mi' + (open ? ' open' : '') + (!s.counts.current ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="ctxopen" data-id="' + esc(s.id) + '"><span data-i18n="off">' + esc(s.title) + '</span><small data-i18n="off">' + esc(s.kind === 'url' ? s.origin.replace(/^https?:\/\//, '').slice(0, 50) : s.kind) + ' · ' + esc(Team.when(s.updated || s.at)) + ' · ' + s.counts.current + ' current' + (s.counts.superseded ? ' · ' + s.counts.superseded + ' superseded' : '') + ' · used in ' + s.counts.usedInReplies + ' repl' + (s.counts.usedInReplies === 1 ? 'y' : 'ies') + '</small></button>' +
+      (open ? '<div class="hud-tr"><p class="hud-sub" data-i18n="off"><b>Read by:</b> ' + (s.readBy.length ? esc(s.readBy.join(', ')) + ' — every agent, on every message' : 'nobody (no current entries)') + '</p>' + s.entries.filter((e) => e.status !== 'superseded').slice(0, 40).map((e) => '<div class="hud-k"><span data-i18n="off">' + esc(e.text) + (e.quote && e.quote !== e.text ? '<br><small class="hud-sub">“' + esc(e.quote) + '”</small>' : '') + '</span><span class="hud-sub">' + esc(e.kind) + (e.used ? ' · used ' + e.used + '×' : '') + '</span></div>').join('') + (s.entries.filter((e) => e.status === 'superseded').length ? '<p class="hud-sub">' + s.entries.filter((e) => e.status === 'superseded').length + ' superseded entries kept as history.</p>' : '') +
+      '<div class="hud-row">' + (s.counts.current ? '<button type="button" class="hud-btn ghost" data-hud="ctxsrc" data-op="supersede" data-id="' + esc(s.id) + '">Mark outdated</button>' : '<button type="button" class="hud-btn ghost" data-hud="ctxsrc" data-op="restore" data-id="' + esc(s.id) + '">Restore</button>') + (s.hasText || s.kind === 'url' ? '<button type="button" class="hud-btn ghost" data-hud="ctxsrc" data-op="reimport" data-id="' + esc(s.id) + '">Re-import</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="ctxsrc" data-op="remove" data-id="' + esc(s.id) + '">Remove</button></div></div>' : '') + '</div>'; };
+    const map = Hud.panel('ctxmap', 'Source map · ' + S.length + ' source' + (S.length === 1 ? '' : 's'), (C ? (S.length ? S.map(srcRow).join('') : '<p class="hud-none">No imported sources yet. Everything the team knows so far came from you in conversation' + (C.other && (C.other.you || C.other.agents) ? ' (' + C.other.you + ' from you, ' + C.other.agents + ' remembered by agents)' : '') + '.</p>') : '<p class="hud-sub">Looking…</p>') + '<p class="hud-sub">Each answer names the sources it drew on, under the reply and in the chats (“— From: …”).</p>');
+    const ags = Team.agents().filter((a) => a.id !== 'jarvis');
+    const V = (C && C.verifications) || []; const v0 = Team.ctxVerify || V[0];
+    const chk = Hud.panel('ctxverify', 'Ask in a fresh chat', '<form data-team="ctxverify" class="hud-skform"><input class="hud-sel" type="text" name="question" maxlength="300" placeholder="A question the imported context should answer, e.g. “What is the refund window?”" required><input class="hud-sel" type="text" name="expect" maxlength="200" placeholder="Words or numbers the right answer contains (optional), e.g. “14 days”"><div class="hud-row"><select class="hud-sel" name="agent" aria-label="Who answers">' + ags.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>').join('') + '</select><button type="submit" class="hud-btn"' + (Team.ctxBusy ? ' disabled' : '') + '>Ask</button></div></form><p class="hud-sub">A new conversation with no history: the only way the answer can be right is from what the team is shown. Nothing is saved to the agent\'s thread.</p>' +
+      (v0 ? '<div class="hud-tr"><p class="hud-trq" data-i18n="off">“' + esc(v0.question) + '” → “' + esc(Team.cut(v0.answer, 400)) + '”</p><p class="hud-sub" data-i18n="off">' + esc(v0.agentName) + (v0.model ? ' · ' + esc(v0.model) : '') + ' · ' + (v0.pass === null ? 'answered' : v0.pass ? '<b class="hud-good">as expected</b> (' + (v0.hits.words.length + v0.hits.nums.length) + '/' + v0.hits.of + ')' : '<b class="hud-bad">not as expected</b> (' + (v0.hits.words.length + v0.hits.nums.length) + '/' + v0.hits.of + ')') + '</p>' + (v0.sources && v0.sources.length ? '<p class="hud-sub" data-i18n="off"><b>Drew on:</b> ' + v0.sources.map((s) => esc(s.title) + ' (' + s.entries.length + ')').join(' · ') + '</p>' : '<p class="hud-sub">No imported source matched the answer — it came from elsewhere in the prompt or from the model.</p>') + '</div>' : ''));
+    const R = (C && C.requests) || [];
+    const req = Hud.panel('ctxreq', 'Requests and feedback', '<form data-team="ctxrequest" class="hud-skform"><input class="hud-sel" type="text" name="text" maxlength="600" placeholder="What you want, or what went wrong" required><div class="hud-row hud-wrap"><select class="hud-sel" name="kind" aria-label="Kind" style="max-width:150px"><option value="request">Request</option><option value="feedback">Feedback</option></select><button type="submit" class="hud-btn">Note it</button></div></form>' +
+      (R.length ? R.slice(0, 12).map((r) => '<div class="hud-r hud-lg' + (r.status === 'done' ? ' old' : '') + '"><span data-i18n="off">' + esc(r.text) + '<small>' + esc(r.kind) + ' · ' + esc(Team.when(r.at)) + (r.via && r.via !== 'app' ? ' · ' + esc(r.via) : '') + (r.status === 'done' ? ' · done' : '') + '</small></span>' + (r.status === 'done' ? '<button type="button" class="hud-btn ghost" data-hud="ctxreq" data-op="reopen" data-id="' + esc(r.id) + '">Reopen</button>' : '<button type="button" class="hud-btn ghost" data-hud="ctxreq" data-op="done" data-id="' + esc(r.id) + '">Done</button>') + '</div>').join('') : '<p class="hud-none">Nothing noted yet. In a chat: /request … or /feedback …</p>'));
+    return imp + map + chk + req;
+  },
+  async ctxClick(a, b) {
+    if (a === 'ctximportx') { Team.ctxImportOpen = !Team.ctxImportOpen; Hud.paint(); return true; }
+    if (a === 'ctxopen') { const id = b.getAttribute('data-id'); Team.ctxOpen = Team.ctxOpen === id ? null : id; Hud.paint(); return true; }
+    if (a === 'ctxsrc') { const op = b.getAttribute('data-op'); if (op === 'remove' && !Team.ctxRemoveArmed) { Team.ctxRemoveArmed = b.getAttribute('data-id'); toast('Press Remove again to confirm — its entries go with it (Mark outdated keeps them as history).', null, 3000); setTimeout(() => { Team.ctxRemoveArmed = null; }, 4000); return true; } Team.ctxRemoveArmed = null; Team.ctxBusy = true; Hud.paint(); const j = await Team.post('/api/team/context/source', { op, id: b.getAttribute('data-id') }); Team.ctxBusy = false; if (j && j.error) toast(j.error, 'warn', 3600); else toast(op === 'supersede' ? j.superseded + ' entries marked outdated' : op === 'restore' ? j.restored + ' entries restored' : op === 'remove' ? 'Removed' : 'Re-imported: ' + j.added + ' new, ' + j.superseded + ' superseded', null, 2600); await Team.loadCtx(true); Team.mem = null; Hud.paint(); return true; }
+    if (a === 'ctxreq') { const j = await Team.post('/api/team/context/request', { op: b.getAttribute('data-op'), id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.loadCtx(true); Hud.paint(); } return true; }
+    if (a === 'discstart') { const mode = b.getAttribute('data-mode'); const topic = (Hud.el.querySelector('[data-team="discstart"] input[name="topic"]') || {}).value || ''; const j = await Team.post('/api/team/discovery', { op: 'start', mode, topic }); if (j && j.ok) { Team.disc = j.discovery; Say.history.push({ role: 'assistant', text: j.say }); Say.open(); Say.logPaint(); Say.state(''); await Say.speak(j.say); } else if (j && j.error) toast(j.error, 'warn', 3000); await Team.loadCtx(true); Hud.paint(); return true; }
+    if (a === 'discfinish' || a === 'discabandon' || a === 'discskill') { const j = await Team.post('/api/team/discovery', { op: a === 'discfinish' ? 'finish' : a === 'discabandon' ? 'abandon' : 'skill', id: b.getAttribute('data-id') }); if (j && j.error) toast(j.error, 'warn', 3600); else { Team.disc = j.discovery || null; if (j.say) { Say.history.push({ role: 'assistant', text: j.say }); Say.logPaint(); } if (a === 'discskill' && j.skill) { Team.skOpen = j.skill.id; Team.sk = null; toast(j.say, null, 3200); } } await Team.loadCtx(true); Hud.paint(); return true; }
+    return false;
+  },
+  async ctxSubmit(kind, f) {
+    if (kind === 'ctximport') { const text = f.text.value.trim(), url = f.url.value.trim(), title = f.title.value.trim(); if (!text && !url) { toast('Paste something or give a page.', 'warn', 2200); return true; } Team.ctxBusy = true; Hud.paint(); const j = await Team.post('/api/team/context/import', { text, url, title, kind: url && !text ? 'url' : 'paste' }); Team.ctxBusy = false; if (j && j.ok) { Team.ctxLast = '"' + j.source.title + '": ' + j.added + ' new entr' + (j.added === 1 ? 'y' : 'ies') + (j.superseded ? ', ' + j.superseded + ' superseded' : '') + (j.kept ? ', ' + j.kept + ' already known' : '') + '. Every agent sees them on its next message.'; Team.ctxImportOpen = false; Team.ctxOpen = j.source.id; Team.mem = null; toast(j.added + ' entries imported', null, 2400); } else if (j && j.error) toast(j.error, 'warn', 4200); await Team.loadCtx(true); Hud.paint(); return true; }
+    if (kind === 'ctxverify') { Team.ctxBusy = true; Hud.paint(); const j = await Team.post('/api/team/context/verify', { question: f.question.value.trim(), expect: f.expect.value.trim(), agent: f.agent ? f.agent.value : '' }); Team.ctxBusy = false; if (j && j.ok) Team.ctxVerify = j; else if (j && j.error) toast(j.error, 'warn', 3600); await Team.loadCtx(true); Hud.paint(); return true; }
+    if (kind === 'ctxrequest') { const text = f.text.value.trim(); if (!text) return true; const j = await Team.post('/api/team/context/request', { text, kind: f.kind.value }); if (j && j.ok) { f.text.value = ''; toast('Noted', null, 1400); await Team.loadCtx(true); Hud.paint(); } return true; }
+    return false;
+  },
+  /* On J.A.R.V.I.S.'s view: discovery mode. */
+  discoveryPanel() {
+    const C = Team.ctx; const D = (C && C.discovery) || { active: null, recent: [] }; const d = Team.disc && Team.disc.status === 'active' ? Team.disc : D.active;
+    let body;
+    if (d) body = '<p class="hud-sub" data-i18n="off"><b>' + esc(d.topic || 'A workflow') + '</b> · ' + (d.mode === 'relentless' ? 'interview' : 'five questions') + ' · ' + d.qa.filter((x) => x.a).length + ' answered</p>' + d.qa.slice(-3).map((x) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(x.q) + (x.a ? '<small>' + esc(Team.cut(x.a, 120)) + '</small>' : '<small>answer in the console below</small>') + '</span></div>').join('') + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="discfinish" data-id="' + esc(d.id) + '">Write it up now</button><button type="button" class="hud-btn ghost" data-hud="discabandon" data-id="' + esc(d.id) + '">Drop it</button></div>';
+    else {
+      const last = D.recent[0];
+      body = '<form data-team="discstart" class="hud-skform"><input class="hud-sel" type="text" name="topic" maxlength="160" placeholder="The workflow to work out, e.g. “answering refund emails”"><div class="hud-row hud-wrap"><button type="button" class="hud-btn" data-hud="discstart" data-mode="ask">Ask me questions</button><button type="button" class="hud-btn ghost" data-hud="discstart" data-mode="relentless">Interview me relentlessly</button></div></form><p class="hud-sub">One question at a time, in the console; five, or until you say “done”. It ends in a written spec — goal, trigger, inputs, steps, what needs your yes — that becomes a skill in one step.</p>' +
+        (last ? '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(last.topic || 'Workflow') + '<small>' + esc(last.status) + ' · ' + esc(Team.when(last.doneAt || last.at)) + (last.skill ? ' · skill made' : '') + '</small></span>' + (last.status === 'done' && !last.skill ? '<button type="button" class="hud-btn" data-hud="discskill" data-id="' + esc(last.id) + '">Turn into a skill</button>' : '') + '</div>' : '');
+    }
+    return Hud.panel('disc', 'Discovery', body);
+  },
+  isDiscoveryStart(text) { return /^\s*(ask me (some )?questions|interview me( relentlessly)?|let'?s (work out|design|figure out) a workflow)\b/i.test(String(text || '')); },
+  discActive() { return !!(Team.disc && Team.disc.status === 'active'); },
   /* ---- Guided setup: nine steps, each saved as it is done ---- */
   async loadSu(force) {
     if (Team.su && !force) return Team.su;
@@ -15787,6 +15856,7 @@ const Team = {
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
     if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
     if (await Team.suClick(a, b)) return;
+    if (await Team.ctxClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
     if (await Team.skClick(a, b)) return;
     if (await Team.scClick(a, b)) return;
@@ -15859,6 +15929,7 @@ const Team = {
     if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
+    if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
     if (kind === 'add') {
       const name = f.name.value.trim(); if (!name) return;
       const j = await Team.post('/api/team/agent', { name, template: f.template.value });

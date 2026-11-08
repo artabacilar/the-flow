@@ -54,6 +54,7 @@ const skills = require('./flow-skills');
 const scripts = require('./flow-scripts');
 const efficiency = require('./flow-efficiency');
 const setup = require('./flow-setup');
+const context = require('./flow-context');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -215,7 +216,8 @@ function fakePost(url, opts) {
       /* answers from the knowledge blocks exactly as a model should: current for now, superseded only for the past */
       const cur = (system.split('WHAT THE TEAM KNOWS (current facts')[1] || '').split(/RULES AND PROCEDURES|SUPERSEDED/)[0];
       const old = (system.split('SUPERSEDED (no longer true')[1] || '').split('\n\n')[0];
-      const pick = (blk) => (blk.split('\n').find((l) => /\$\s?\d/.test(l) && /onboarding|service|price|cost/i.test(l)) || '').replace(/^[^|]*\|\s*/, '').trim();
+      const qw = said.toLowerCase().split(/\W+/).filter((w) => w.length > 3); const sc = (l) => qw.filter((w) => l.toLowerCase().indexOf(w) >= 0).length;
+      const pick = (blk) => (blk.split('\n').filter((l) => /\$\s?\d/.test(l) && /onboarding|service|price|cost|plan/i.test(l)).sort((a, b) => sc(b) - sc(a))[0] || '').replace(/^[^|]*\|\s*/, '').trim();
       const past = /last year|before|used to|previously|old price|history/i.test(said);
       const line = past ? pick(old) : pick(cur);
       text = JSON.stringify({ say: b.model + (past ? ' on the past: ' : ' now: ') + (line || 'I have no figure for that.'), remember: [] });
@@ -416,6 +418,7 @@ async function handle(p, req, res, ctx) {
   if (await scripts.handle(p, req, res, ctx, scriptDeps())) return true;
   if (await efficiency.handle(p, req, res, ctx, effDeps())) return true;
   if (await setup.handle(p, req, res, ctx, setupDeps())) return true;
+  if (await context.handle(p, req, res, ctx, ctxDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -573,8 +576,9 @@ async function sayTo(ctx, agentId, said, lang, opts) {
     if (!out.say) out.say = 'I looked, but could not put an answer together. Could you say it another way?';
     const now = Date.now();
     const kb = memory.blocks(shared, a.id);
-    try { await memory.record(ctx, { agent: a.id, via: (opts && opts.via) || 'app', model: which.model, said, reply: out.say, knowledge: kb.facts.concat(kb.rules), superseded: kb.old, instructions: a.instructions, pages: pagesRead, thread: turns.length }); } catch (e) {}
-    if (opts && opts.dry) return { say: out.say, model: which.model, provider: which.provider, agent: a, read: pagesRead, dry: true };
+    let rec = null; try { rec = await memory.record(ctx, { agent: a.id, via: (opts && opts.via) || 'app', model: which.model, said, reply: out.say, knowledge: kb.facts.concat(kb.rules), superseded: kb.old, instructions: a.instructions, pages: pagesRead, thread: turns.length }); } catch (e) {}
+    const used = (rec && rec.used) || []; const srcs = context.sourcesFor(know, used);
+    if (opts && opts.dry) return { say: out.say, model: which.model, provider: which.provider, agent: a, read: pagesRead, dry: true, used, sources: srcs };
     hist.push({ role: 'user', text: said, at: now }, { role: 'assistant', text: out.say, at: now, model: which.model });
     await ctx.set('team:thread:' + a.id, hist.slice(-160));
     const remembered = [];
@@ -590,7 +594,7 @@ async function sayTo(ctx, agentId, said, lang, opts) {
     }
     await bumpUsage(ctx, a.id, r.usage, which.model);
     const use2 = await usage(ctx);
-    return { say: out.say, remembered, model: which.model, provider: which.provider, usage: use2[a.id], agent: a, read: pagesRead };
+    return { say: out.say, remembered, model: which.model, provider: which.provider, usage: use2[a.id], agent: a, read: pagesRead, used, sources: srcs };
   }
 }
 
@@ -1467,6 +1471,29 @@ function setupDeps() {
     connectors: (uid, ctx) => connectors(uid, ctx), tasks: (ctx) => tasks(ctx), newTask: (ctx, uid, f) => newTask(ctx, uid, f), log: (ctx, who, what) => log(ctx, who, what)
   };
 }
+/* ---------- business context: what the module needs from here ------------------ */
+async function modelJson(ctx, system, user, maxTokens) {
+  if (FAKE) return null;
+  const list = await agents(ctx); const j = list.find((x) => x.id === 'jarvis'); const which = j && await resolveModel(j.model); if (!which) return null;
+  const bud = await budget(ctx); if (bud.over) return null;
+  const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: maxTokens || 2500, timeoutMs: 60000 });
+  if (r.error) return null;
+  try { await bumpUsage(ctx, 'jarvis', r.usage, which.model); } catch (e) {}
+  const m = String(r.text || '').match(/[\[{][\s\S]*[\]}]/); if (!m) return null;
+  try { return JSON.parse(m[0]); } catch (e) { return null; }
+}
+function ctxDeps() {
+  return {
+    agents: (ctx) => agents(ctx), log: (ctx, who, what) => log(ctx, who, what), terms: memory.terms,
+    provenance: async (ctx) => { const v = await ctx.get('team:prov'); return Array.isArray(v) ? v : []; },
+    read: async (url) => { const B = browserLib(); if (!B) throw new Error('reader not available'); return await B.read(url); },
+    ask: (ctx, agentId, q) => sayTo(ctx, agentId, q, 'en', { dry: true, via: 'verify' }),
+    skillFromText: (ctx, text) => skills.create(ctx, skillDeps(), { text, force: true }),
+    extract: (ctx, text, title) => modelJson(ctx, 'You turn a business document into atomic knowledge entries for a team of assistants. Return ONLY a JSON array of up to 60 objects {"fact": one self-contained sentence an assistant could rely on, "kind": "fact"|"rule"|"preference"|"procedure", "quote": the exact passage it comes from}. Keep numbers, names, dates and conditions exact. Skip greetings, filler, anything secret (keys, passwords).', 'Document: ' + (title || '') + '\n\n' + String(text).slice(0, 40000), 4000),
+    question: (ctx, d) => modelJson(ctx, 'You are J.A.R.V.I.S., interviewing the person about a workflow they want their team to run. Ask ONE next question that fills the biggest gap, in one or two sentences, plain and specific, never repeating a question already asked. Return ONLY {"question": "..."}.', 'Topic: ' + (d.topic || '(not named)') + '\nMode: ' + d.mode + '\n' + d.qa.map((x, i) => 'Q' + (i + 1) + ': ' + x.q + '\nA' + (i + 1) + ': ' + (x.a || '(no answer yet)')).join('\n'), 400).then((j) => j && j.question),
+    spec: (ctx, d, draft) => modelJson(ctx, 'Write up a workflow spec from an interview. Return ONLY a JSON object with keys goal, trigger, inputs, steps, guardrails, people, cadence, pitfalls, success, notes — each a short plain-text paragraph (or empty string), using only what the person said; invent nothing.', 'Topic: ' + (d.topic || '') + '\n' + d.qa.map((x, i) => 'Q' + (i + 1) + ': ' + x.q + '\nA' + (i + 1) + ': ' + x.a).join('\n') + '\n\nDraft: ' + JSON.stringify(draft), 1800)
+  };
+}
 /* ---------- automations: what the module needs from here ------------------ */
 function scriptDeps() {
   return {
@@ -1645,6 +1672,8 @@ module.exports.skills = skills;
 module.exports.scripts = scripts;
 module.exports.efficiency = efficiency;
 module.exports.setup = setup;
+module.exports.context = context;
+module.exports.ctxDeps = ctxDeps;
 module.exports.setupDeps = setupDeps;
 module.exports.setupPong = (ctx, channel) => setup.pong(ctx, channel);
 module.exports.setupText = (ctx, uid) => setup.text(ctx, setupDeps(), uid);
@@ -1661,7 +1690,7 @@ async function forJarvis(ctx) {
     const list = await ctx.get('team:agents'); const know = await ctx.get('team:knowledge');
     const j = Array.isArray(list) ? list.find((a) => a.id === 'jarvis') : null;
     const kb = memory.blocks(Array.isArray(know) ? know : [], 'jarvis');
-    const shared = kb.facts.concat(kb.rules).slice(-80).map((k) => ({ id: k.id, text: k.text + (k.kind === 'rule' || k.kind === 'procedure' ? ' [rule]' : '') }));
+    const shared = kb.facts.concat(kb.rules).slice(-80).map((k) => ({ id: k.id, text: k.text + (k.kind === 'rule' || k.kind === 'procedure' ? ' [rule]' : ''), source: k.source, origin: k.origin || null }));
     const history = kb.historyText;
     const paused = (await ctx.get('team:paused')) === true;
     return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused };
