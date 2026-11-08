@@ -4217,3 +4217,53 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-say .sy-sub{font-size:12px;line-height:1.4;opacity:.7;margin:-2px 0 8px}
 #flow-say .sy-names{flex-wrap:wrap}
 #flow-say .sy-names input{width:100%;min-width:0}
+
+/* ---- Advanced: the command centre is the app ----
+   A rail on the left (J.A.R.V.I.S., the team's rooms, the pages of your
+   life); the strip of assistants where it was; the orb in the middle at
+   all times — a room or a page takes a side column, never the centre. */
+#flow-hud.hud-merge{grid-template-columns:172px minmax(220px,300px) 1fr minmax(220px,300px);grid-template-rows:auto auto 1fr;
+  grid-template-areas:"rail top top top" "rail team team team" "rail left core right"}
+#flow-hud.hud-merge .hud-top{grid-area:top}
+#flow-hud.hud-merge .hud-team{grid-area:team}
+#flow-hud.hud-merge .hud-left{grid-area:left}
+#flow-hud.hud-merge .hud-core{grid-area:core}
+#flow-hud.hud-merge .hud-right{grid-area:right}
+#flow-hud.hud-merge .hud-x{display:none}
+#flow-hud .hud-rail{display:none}
+#flow-hud .hud-pagecol{display:none}
+#flow-hud.hud-merge .hud-rail{grid-area:rail;display:flex;flex-direction:column;gap:2px;position:relative;z-index:1;min-height:0;overflow:auto;scrollbar-width:none;padding-right:12px;border-right:1px solid rgba(110,170,255,.14)}
+#flow-hud .hud-rail::-webkit-scrollbar{display:none}
+#flow-hud .hud-rh{font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:rgba(170,200,255,.5);margin:10px 0 2px 10px}
+#flow-hud .hud-ri{appearance:none;display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:6px 10px;border-radius:12px;border:1px solid transparent;background:transparent;color:#dbeaff;font:inherit;cursor:pointer}
+#flow-hud .hud-ri:hover{background:rgba(40,120,255,.12)}
+#flow-hud .hud-ri.sel{border-color:rgba(127,216,255,.45);background:rgba(40,120,255,.18);box-shadow:inset 0 0 0 1px rgba(127,216,255,.2)}
+#flow-hud .hud-ri span{display:flex;flex-direction:column;min-width:0;font-size:13px;font-weight:700;line-height:1.2}
+#flow-hud .hud-ri span,#flow-hud .hud-ri small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#flow-hud .hud-ri small{font-size:10.5px;font-weight:500;color:rgba(170,200,255,.6);margin-top:2px}
+#flow-hud .hud-rii{width:18px;height:18px;flex:none;fill:none;stroke:#7fd8ff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#flow-hud .hud-rorb{flex:none;width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#bfe9ff,#3a8dff 60%,rgba(58,141,255,.2) 75%);box-shadow:0 0 12px rgba(80,190,255,.7)}
+/* a page open: it takes the left column, as wide as the right, so the orb stays in the middle */
+#flow-hud.hud-merge.hud-pagemode{grid-template-columns:172px minmax(340px,1.25fr) minmax(260px,1fr) minmax(340px,1.25fr)}
+#flow-hud.hud-merge.hud-pagemode .hud-left{display:none}
+#flow-hud.hud-merge.hud-pagemode .hud-pagecol{grid-area:left;display:flex;flex-direction:column;gap:0}
+#flow-hud .hud-pgh{display:flex;flex-direction:column;gap:6px;padding:2px 2px 8px;border-bottom:1px solid rgba(110,170,255,.14);margin-bottom:10px;position:sticky;top:0;z-index:2;background:linear-gradient(180deg,#050b1c 70%,rgba(5,11,28,0))}
+#flow-hud .hud-pgl{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#7fd8ff}
+#flow-hud .hud-pgt{display:flex;gap:4px;flex-wrap:wrap}
+#flow-hud .hud-pgr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#flow-hud .hud-pgx{font-size:20px}
+#flow-hud .hud-page{min-width:0;color:var(--text,#e8f4ff)}
+#flow-hud .hud-page .section,#flow-hud .hud-page .flow-section{display:block!important;padding:0!important;margin:0!important;max-width:none!important;width:auto!important}
+/* a room (Memory, Skills…) in Advanced: two wide columns round the orb, never instead of it */
+#flow-hud.hud-merge.hud-memview{grid-template-columns:172px minmax(320px,1.2fr) minmax(240px,.9fr) minmax(320px,1.2fr)}
+#flow-hud.hud-merge.hud-memview .hud-core{display:flex}
+@media (max-width:900px){
+  #flow-hud.hud-merge.on{display:flex}
+  #flow-hud.hud-merge .hud-rail{flex:none;order:0;flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid rgba(110,170,255,.14);padding:0 0 8px;gap:4px}
+  #flow-hud.hud-merge .hud-rh{display:none}
+  #flow-hud.hud-merge .hud-ri{width:auto;flex:none;padding:6px 10px}
+  #flow-hud.hud-merge .hud-ri small{display:none}
+  #flow-hud.hud-merge.hud-memview .hud-core{display:flex}
+  #flow-hud.hud-merge .hud-pagecol{order:2;flex:none;width:100%}
+  #flow-hud.hud-merge.hud-pagemode .hud-pagecol{display:flex}
+}

@@ -9549,6 +9549,7 @@ const TodayLook = {
     } catch (e) {}
     if (on) { try { TodayLook.paint(); } catch (e) {} }
     try { TodayBeta.paint(); } catch (e) {}
+    try { if (window.FlowHud) Hud.sync(); } catch (e) {}
   },
   async setSimple(v) {
     v = !!v;
@@ -13955,7 +13956,9 @@ const Say = {
     return (tr ? 'Dinliyorum' + (c ? ', ' + c : '') + '…' : 'Yes' + (c ? ', ' + c : '') + '? Go ahead — I\'m listening.') + end;
   },
   open(opts) {
-    if (!TodayLook.on()) return;
+    /* Simple's console — and, in Advanced, the command centre's: the
+       console is docked under the orb there. */
+    if (!TodayLook.on() && !Hud.merged()) return;
     Say.build();
     Speech.unlock();
     Say.plan = null; Say.spoken = false; Say.typed = false; Say.busy = false; Say.confirming = false;
@@ -14007,6 +14010,9 @@ const Say = {
     Say.waiting = false; Say.confirming = false; Say.openTok++;
     try { Wake.mine = false; Wake.reset(); } catch (e) {}
     Say.mode('idle');
+    /* In Advanced the console is part of the command centre: it settles, it
+       does not go away. */
+    if (Hud.on && Hud.merged()) { Say.state(''); return; }
     Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
     try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
@@ -14493,13 +14499,21 @@ window.FlowSay = Say;
  * Esc or × closes it. Simple only, like Talk. */
 const Hud = {
   on: false, el: null, raf: 0, energy: 0, mic: 0, t0: 0, pts: null, tick: 0, analyser: null, buf: null,
+  /* Advanced is the command centre: the orb in the middle at all times, the
+     team's strip under the clock as it was, and everything else — the team's
+     rooms and the pages of the person's own life — down a rail on the left.
+     Simple keeps the command centre as a room one steps into and out of. */
+  merged() { try { return !TodayLook.on() && !window.__flowNoMerge; } catch (e) { return false; } },
   open() {
-    if (!TodayLook.on()) return;
+    if (!TodayLook.on() && !Hud.merged()) return;   /* Advanced with the merge switched off: the page suites */
     Hud.build();
+    const merged = Hud.merged();
+    Hud.el.classList.toggle('hud-merge', merged);
+    if (!merged) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); }
     Hud.on = true;
     document.documentElement.classList.add('hud-on');
     Hud.el.classList.add('on');
-    Hud.paint();
+    Hud.paint(); Hud.paintNav();
     try { Say.open({ idle: true }); } catch (e) {}
     try { Speech.unlock(); } catch (e) {}
     Hud.t0 = performance.now();
@@ -14509,8 +14523,12 @@ const Hud = {
     try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; Team.ctx = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
-  close(fromSay) {
+  close(fromSay, force) {
     if (!Hud.on) return;
+    /* In Advanced the command centre is the app: × and Esc go back to
+       J.A.R.V.I.S., they do not close anything. */
+    if (Hud.merged() && !force) { Hud.home(); return; }
+    Hud.unmount(); Hud.page = null; if (Hud.el) Hud.el.classList.remove('hud-pagemode');
     Hud.on = false;
     document.documentElement.classList.remove('hud-on');
     if (Hud.el) Hud.el.classList.remove('on');
@@ -14529,19 +14547,24 @@ const Hud = {
         '<div class="hud-clock"><b class="hud-time">--:--:--</b><span class="hud-date"></span></div>' +
         '<button type="button" class="hud-x" data-hud="close" aria-label="Close the command centre">×</button></header>' +
       '<nav class="hud-team" aria-label="The team" data-i18n="off"></nav>' +
+      '<nav class="hud-rail" aria-label="Rooms and pages"></nav>' +
       '<aside class="hud-col hud-left"></aside>' +
+      '<aside class="hud-col hud-pagecol"></aside>' +
       '<div class="hud-core"><canvas class="hud-orb" aria-hidden="true"></canvas><div class="hud-status" aria-live="polite"></div></div>' +
       '<aside class="hud-col hud-right"></aside>';
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-hud]'); if (!b) return;
       const a = b.getAttribute('data-hud');
       if (a === 'close') Hud.close();
-      else if (a === 'go') { const t = b.getAttribute('data-to'); Hud.close(); try { Nav.go(t); } catch (x) {} }
+      else if (a === 'home' || a === 'pageclose') Hud.home();
+      else if (a === 'page') Hud.openPage(b.getAttribute('data-page'));
+      else if (a === 'pagetab') Hud.openPage(b.getAttribute('data-group'), b.getAttribute('data-tab'));
+      else if (a === 'go') { const t = b.getAttribute('data-to'); if (Hud.merged()) Hud.openPage(Hud.pageGroup(t), t); else { Hud.close(); try { Nav.go(t); } catch (x) {} } }
       else { try { Team.click(a, b, e); } catch (x) { console.warn('[Flow] team', x); } }
     });
     el.addEventListener('change', (e) => { try { Team.change(e); } catch (x) { console.warn('[Flow] team', x); } });
     el.addEventListener('submit', (e) => { const f = e.target.closest('form[data-team]'); if (!f) return; e.preventDefault(); f.__submitter = e.submitter || null; try { Team.submit(f); } catch (x) { console.warn('[Flow] team', x); } });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && !(Say.el && Say.el.classList.contains('on'))) Hud.close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && (Hud.merged() || !(Say.el && Say.el.classList.contains('on')))) { if (Hud.merged() && !Hud.page && (!Team.sel || Team.sel === 'jarvis')) return; Hud.close(); } });
     document.body.appendChild(el);
     Hud.el = el;
     /* His microphone's level (the Mac app reports it) moves the orb. */
@@ -14690,11 +14713,87 @@ const Hud = {
     const ear = (() => { try { return Wake.mine && Wake.phase === 'idle'; } catch (e) { return false; } })();
     el.textContent = ({ idle: ear ? (tr ? '“Hey J.A.R.V.I.S.” deyin — bitince “over”' : 'Say “Hey J.A.R.V.I.S.” — end with “over”') : tr ? 'Hazır — konuşmak için Konuş\'a dokun' : 'Standing by — tap Talk to speak', listening: tr ? 'Dinliyorum' : 'Listening', thinking: tr ? 'Düşünüyorum' : 'Thinking', speaking: '' })[st] || '';
   },
+  /* ---- Advanced: the rail, and the pages of the person's life ---- */
+  page: null, pageHome: null, pageLast: {},
+  PAGES: { today: ['today'], focus: ['northstar', 'quad', 'compass', 'abko', 'dtc'], body: ['training', 'sleep', 'habits'], record: ['journal', 'finance', 'ask'], settings: ['settings'] },
+  PAGE_LABEL: { today: 'Today', focus: 'Plan', body: 'Body', record: 'Record', settings: 'Settings' },
+  VIEWS: ['setup', 'memory', 'skills', 'scripts', 'efficiency'],
+  pageGroup(tab) { for (const g of Object.keys(Hud.PAGES)) if (Hud.PAGES[g].indexOf(tab) >= 0) return g; return null; },
+  /* Back to J.A.R.V.I.S.: the day round the orb, no page, no room. */
+  home() {
+    Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); Team.openId = null;
+    if (Say.agent) { Team.select(null).then(() => Hud.paintNav()).catch(() => {}); } else { Team.sel = null; Team.adding = false; Team.editing = null; Team.paintRail(); Hud.paint(); }
+    Hud.paintNav();
+  },
+  /* A page of the app opens down the left; the orb stays where it is. The
+     page is the app's own section, moved whole — same ids, same listeners,
+     so everything in it keeps working — and moved back when it is left. */
+  openPage(group, tab) {
+    if (!Hud.merged()) { Hud.close(); try { Nav.go(tab || group); } catch (e) {} return; }
+    if (!Hud.PAGES[group]) group = Hud.pageGroup(group) || Hud.pageGroup(tab);
+    if (!group) return;
+    tab = tab && Hud.PAGES[group].indexOf(tab) >= 0 ? tab : (Hud.pageLast[group] || Hud.PAGES[group][0]);
+    Hud.pageLast[group] = tab;
+    if (Team.sel) { Team.sel = null; Say.agent = null; Team.adding = false; Team.editing = null; try { Say.history = []; Say.logPaint(); const k = Say.el && Say.el.querySelector('.sy-k'); if (k) k.textContent = Say.title(); } catch (e) {} }
+    Hud.page = { group, tab };
+    Hud.el.classList.add('hud-pagemode');
+    Hud.mount(group, tab);
+    Team.paintRail(); Hud.paint(); Hud.paintNav();
+    try { Track.hit('hud_page_' + tab); } catch (e) {}
+  },
+  mount(group, tab) {
+    Hud.unmount();
+    Hud.mounting = true;
+    try { const p = Nav.pill(tab); if (p) p.click(); } catch (e) {}
+    Hud.mounting = false;
+    const sec = document.getElementById('tab-' + tab);
+    const col = Hud.el.querySelector('.hud-pagecol'); if (!col) return;
+    const tabs = Hud.PAGES[group];
+    col.innerHTML = '<div class="hud-pgh"><div class="hud-pgr"><span class="hud-pgl">' + esc(Hud.PAGE_LABEL[group] || group) + (tabs.length === 1 ? '' : ' · ' + esc(Nav.label(tab))) + '</span>' +
+      '<button type="button" class="hud-ic hud-pgx" data-hud="pageclose" aria-label="Back to the command centre">×</button></div>' +
+      (tabs.length > 1 ? '<div class="hud-pgt">' + tabs.map((t) => '<button type="button" class="hud-tab' + (t === tab ? ' on' : '') + '" data-hud="pagetab" data-group="' + group + '" data-tab="' + t + '" data-i18n="off">' + esc(Nav.label(t)) + '</button>').join('') + '</div>' : '') + '</div>' +
+      '<div class="hud-page"></div>';
+    if (!sec) { col.querySelector('.hud-page').innerHTML = '<p class="hud-none">This page is not here.</p>'; return; }
+    Hud.pageHome = { el: sec, parent: sec.parentNode, next: sec.nextSibling };
+    col.querySelector('.hud-page').appendChild(sec);
+    sec.classList.add('active');
+    try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+  },
+  unmount() {
+    const h = Hud.pageHome; if (h) {
+      Hud.pageHome = null;
+      try { if (h.next && h.next.parentNode === h.parent) h.parent.insertBefore(h.el, h.next); else h.parent.appendChild(h.el); } catch (e) {}
+    }
+    const col = Hud.el && Hud.el.querySelector('.hud-pagecol'); if (col) col.innerHTML = '';
+  },
+  paintNav() {
+    const nav = Hud.el && Hud.el.querySelector('.hud-rail'); if (!nav) return;
+    if (!Hud.merged()) { nav.innerHTML = ''; return; }
+    const sel = Hud.page ? 'page:' + Hud.page.group : Hud.VIEWS.indexOf(Team.sel) >= 0 ? Team.sel : (!Team.sel || Team.sel === 'jarvis') && !Say.agent ? 'home' : '';
+    const it = (k, icon, label, sub, attrs) => '<button type="button" class="hud-ri' + (sel === k ? ' sel' : '') + '" ' + attrs + ' aria-label="' + esc(label) + '">' + (icon === 'orb' ? '<i class="hud-rorb" aria-hidden="true"></i>' : Nav.svg(icon, 'hud-rii')) + '<span data-i18n="off">' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></button>';
+    const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
+    nav.innerHTML = it('home', 'orb', nm, 'Command centre', 'data-hud="home"') +
+      '<div class="hud-rh">The team</div>' +
+      it('setup', 'check', 'Setup', Team.toolSub('setup'), 'data-hud="setup"') +
+      it('memory', 'note', 'Memory', Team.toolSub('memory'), 'data-hud="memory"') +
+      it('skills', 'star', 'Skills', Team.toolSub('skills'), 'data-hud="skills"') +
+      it('scripts', 'rocket', 'Automations', Team.toolSub('scripts'), 'data-hud="scripts"') +
+      it('efficiency', 'target', 'Efficiency', Team.toolSub('efficiency'), 'data-hud="efficiency"') +
+      '<div class="hud-rh">Your life</div>' +
+      [['today', 'today'], ['focus', 'compass'], ['body', 'dumbbell'], ['record', 'note'], ['settings', 'gear']].map(([g, ic]) => it('page:' + g, ic, Hud.PAGE_LABEL[g], '', 'data-hud="page" data-page="' + g + '"')).join('');
+  },
+  /* The look changed (or the app has just started): Advanced lives in the
+     command centre, Simple does not. */
+  sync() {
+    if (Hud.merged()) { if (!(Auth.user)) return; if (!Hud.on) Hud.open(); else { Hud.el.classList.add('hud-merge'); Hud.paintNav(); Team.paintRail(); Hud.paint(); } }
+    else if (Hud.on && Hud.el && Hud.el.classList.contains('hud-merge')) Hud.close(false, true);
+  },
   boot() {
     document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'j' || e.key === 'J')) { if (!TodayLook.on()) return; e.preventDefault(); if (Hud.on) Hud.close(); else Hud.open(); }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'j' || e.key === 'J')) { if (Hud.merged()) return; e.preventDefault(); if (Hud.on) Hud.close(); else Hud.open(); }
     });
     try { if (/[?&]jarvis=1\b/.test(location.search)) setTimeout(() => Hud.open(), 1400); } catch (e) {}
+    setTimeout(() => { try { Hud.sync(); } catch (e) { console.warn('[Flow] hud', e); } }, 900);
   }
 };
 window.FlowHud = Hud;
@@ -14756,19 +14855,30 @@ const Team = {
         '<i class="hud-av" aria-hidden="true">' + esc(a.avatar || a.name.charAt(0)) + '</i>' +
         '<span class="hud-agn">' + esc(a.name) + '</span><small>' + esc(a.role) + ' · ' + esc(ok ? Team.short(a.model) : 'no model') + '</small>' +
         '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
-    }).join('') +
+    }).join('') + (Hud.merged() ? '' :
       '<button type="button" class="hud-ag hud-mem' + (sel === 'setup' ? ' sel' : '') + '" data-hud="setup" aria-label="Setup: from nothing to the first piece of work"><i class="hud-av">✓</i><span class="hud-agn">Setup</span><small>' + (Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.progress.done + ' of ' + Team.su.progress.total) : 'guided, resumable') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'skills' ? ' sel' : '') + '" data-hud="skills" aria-label="Skills: what the team has been taught to do"><i class="hud-av">S</i><span class="hud-agn">Skills</span><small>' + (Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'scripts' ? ' sel' : '') + '" data-hud="scripts" aria-label="Automations: routine work done by scripts, not a model"><i class="hud-av">A</i><span class="hud-agn">Automations</span><small>' + (Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' + (Team.sc.counts.running ? ' · ' + Team.sc.counts.running + ' running' : '') : 'scripts, schedules') + '</small></button>' +
-      '<button type="button" class="hud-ag hud-mem' + (sel === 'efficiency' ? ' sel' : '') + '" data-hud="efficiency" aria-label="Efficiency: where the team wastes effort and what to change"><i class="hud-av">E</i><span class="hud-agn">Efficiency</span><small>' + (Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure') + '</small></button>' +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'efficiency' ? ' sel' : '') + '" data-hud="efficiency" aria-label="Efficiency: where the team wastes effort and what to change"><i class="hud-av">E</i><span class="hud-agn">Efficiency</span><small>' + (Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure') + '</small></button>') +
       '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
       '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
+  },
+  /* The small line under a room's name, on the strip (Simple) or the rail (Advanced). */
+  toolSub(id) {
+    try {
+      if (id === 'setup') return Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.steps.filter((x) => x.status === 'done').length + ' of ' + Team.su.steps.length) : 'start here';
+      if (id === 'memory') return 'sources · corrections';
+      if (id === 'skills') return Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done';
+      if (id === 'scripts') return Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' : 'routine, no model';
+      if (id === 'efficiency') return Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure';
+    } catch (e) {}
+    return '';
   },
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup') { Team.sel = id; Team.adding = false; Team.editing = null; if (!quiet) { Team.paintRail(); Hud.paint(); } return; }
+    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup') { Team.sel = id; Team.adding = false; Team.editing = null; if (Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); } if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -14789,7 +14899,8 @@ const Team = {
       Team.markSeen(next);
     } else { Say.history = []; }
     try { Say.logPaint(); } catch (e) {}
-    if (!quiet) { Team.paintRail(); Hud.paint(); }
+    if (next && Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); }
+    if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); }
   },
   afterReply(id, j) {
     if (Team.data) {
@@ -15888,7 +15999,7 @@ const Team = {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
-    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup') { await Team.select(a, true); Team.paintRail(); Hud.paint(); return; }
+    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
     if (await Team.suClick(a, b)) return;
     if (await Team.ctxClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
@@ -16025,7 +16136,7 @@ window.FlowTeam = Team;
 const Wake = {
   phase: 'off', mine: false, buf: '', partial: '', follow: false, until: 0, lastWords: 0, overT: 0, blockedUntil: 0, wasFree: true,
   on() {
-    try { return TodayLook.on() && Speech.pref('asstWake') === true && !!(window.FlowVoice && FlowVoice.available) && !Say.own(); } catch (e) { return false; }
+    try { return (TodayLook.on() || Hud.merged()) && Speech.pref('asstWake') === true && !!(window.FlowVoice && FlowVoice.available) && !Say.own(); } catch (e) { return false; }
   },
   names() {
     let n = ''; try { n = String(Say.name() || '').replace(/\./g, '').trim().toLowerCase(); } catch (e) {}
@@ -17311,6 +17422,8 @@ const Nav = {
        for the Compass lands there; false tells a caller that came to fill in
        the Compass's own form that it is not on screen. */
     if (tab === 'compass' && Nav.compassHidden()) { Nav.weekView(); return false; }
+    /* In Advanced the command centre is the app: a page opens down its left. */
+    try { if (window.FlowHud && Hud.on && Hud.merged() && !Hud.mounting && Hud.pageGroup(tab)) { Hud.openPage(Hud.pageGroup(tab), tab); return true; } } catch (e) {}
     const p = Nav.pill(tab);
     if (!p) return false;
     p.click();
