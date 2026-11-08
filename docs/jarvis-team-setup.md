@@ -94,9 +94,21 @@ from list prices per million tokens (said so on screen; the providers'
 invoices are the truth). A monthly limit in dollars stops every agent when
 reached, with the message saying how to carry on.
 
-## 7. Tests
+## 7. Memory: sources, corrections, verification
 
-`node tests/run.js team team2 team3 channels` runs the team with a stand-in
+Command centre → **Memory** (in the team strip).
+
+- **Sources.** Everything that can shape an answer, listed with its kind (fact · rule · preference · procedure), scope, status (current · superseded), dates and version count: team knowledge, J.A.R.V.I.S.'s memory of you, each agent's instructions, your preferences, and the platform rules (code — shown as *Protected*, never edited here). Your Flow record and the conversation are read into prompts but not listed as entries.
+- **Where did that come from?** Every reply records what it was built from. Ask it in the console ("Where did that come from?") or in the panel: confirmed sources are passages that were in the prompt *and* match the answer; the rest of the prompt is listed as present-but-unmatched; the model's own training is named as not inspectable. Nothing is claimed that was not in the prompt.
+- **Correct something.** State what is true now. Every conflicting copy appears in a table (Source · Conflicting content · Why · Proposed correction), with protected rules and read-only places (your record) labelled. Apply marks old entries superseded (dated, pointing at the new one), rewrites the ticked instruction and memory passages in place with history, adds the new current entry, logs before/after, and then **verifies from the prompts themselves**: the corrected fact is in every agent's current block, the old one only under SUPERSEDED with its dates, instructions and memory clean, history kept, model-independent, permissions untouched. Prove it with a fresh question through the real retrieval path (not saved to the thread).
+- **Audit an instruction.** The same table for an instruction that keeps coming back, across every source; permission levels and platform rules are shown but stay as they are — a correction never widens what an agent may do.
+- **Changes.** Every correction and edit with before/after and **Restore**.
+
+Prompts are rebuilt from the store on every request, so there is no cache to refresh and no model that holds a copy: the next question, from any agent on any model, uses the current entries; superseded ones are shown only as dated history.
+
+## 8. Tests
+
+`node tests/run.js team team2 team3 channels memory` runs the team with a stand-in
 for every provider and channel (`FLOW_TEAM_FAKE=1`, never set on the real
 server). The browser tests run where Chromium exists and say so when it
 does not.
