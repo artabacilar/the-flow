@@ -184,9 +184,196 @@ page takes a side column, never the centre.
   themselves opt out with `window.__flowNoMerge` (the replica sets it unless
   `FLOW_MERGE=1`).
 
+## 12b. Groups, topics, members, modes, diagnostics (Telegram)
+
+Add the bot to a Telegram group and send your six-digit link code there
+(command centre → Channels → Telegram → Link) — or `/attach`, once your own
+Telegram is linked. The group is attached to your Flow, **mention-only**. In
+a forum group every **topic** is a workspace of its own: its own
+conversation with J.A.R.V.I.S., its own sticky specialist (`/sarah` in one
+topic leaves the others alone), its own mode, and work started there
+reports back into that topic (`task.origin`), nowhere else.
+
+- **Members by numeric id**: only you give instructions until you authorise
+  someone — `/allow <id> [name]`, `/deny <id>`, `/members`; anyone finds their
+  id with `/whoami`. A stranger addressing him is told once an hour, with their
+  id, that the owner can `/allow` them; their asides are ignored and counted.
+- **Modes**: `/mode mention` (the default — he answers commands, @mentions,
+  replies to him, or his name at the start) · `/mode all` (everything from
+  authorised members). Per group and per topic. The app's **Groups & members**
+  panel (J.A.R.V.I.S.'s view) flips modes, detaches a group, authorises or
+  removes members by id, and shows the webhook, the bot's name, uptime and the
+  inbox/outbox queues.
+- **Diagnostics**: `/diag` (or `/status`) in any chat — server uptime and
+  build, webhook state and bot name, this chat (group/topic, mode, who
+  answers), who you are and whether you are authorised, counts (answered /
+  not addressed / unauthorised), work from here and for the account, the
+  inbox/outbox queues, the last delivery error, and what a restart keeps.
+  `GET /api/channels/me/groups` returns the same for the app.
+- **Restarts**: workspaces, members and modes live in the store; tasks resume
+  as before; an inbound update is written down (`__team:inbox`) before it is
+  acknowledged and replayed at the next start if the process died mid-reply;
+  a reply that could not be delivered waits in `__team:outbox` and is retried
+  every minute for a day; the webhook is re-registered at boot and its state
+  recorded. Nothing is claimed delivered that was not.
+
+## 12c. Voice notes in and out, voices per channel, live voice
+
+- **In**: a Telegram voice note is transcribed (ElevenLabs Scribe or OpenAI
+  Whisper — whichever key is in Render; `FLOW_STT=elevenlabs|openai` picks
+  when both are) and handled exactly like the same words typed; the text
+  reply quotes what was heard. Turkish is transcribed as Turkish when the
+  app's language is Turkish.
+- **Out**: the reply can come back as a voice note (Telegram `sendVoice`,
+  OGG/Opus). `/voice` shows the voice for this chat and the choices:
+  presets `british-male` (Daniel — the default), `british-female` (Lily),
+  `american-male` (Brian), `american-female` (Sarah), `openai-male` (Onyx),
+  `openai-female` (Nova); `/voice id <ElevenLabs voice id>` for a cloned or
+  chosen voice; `/voice replies text|voice|both` (text is the default — a
+  voice note still gets a voice note back); `/voice length 30|60|120`
+  (short/medium/long: the model is told the limit — about 75/150/300 words —
+  and the text is trimmed at a sentence if it overruns); `/voice test`;
+  `/voice reset`. Settings live at three levels — account default, channel,
+  group/topic (a topic inherits its group) — in `team:voice`. Only the owner
+  changes them. A command's answer (lists such as /tasks, /diag) stays text.
+- **Keys**: `ELEVENLABS_API_KEY` / `OPENAI_API_KEY` in Render only. Nothing
+  stores, logs or shows a key; a voice id is not a secret. Without a key the
+  status says *awaiting* and names the variable.
+- **The app**: the **Voice notes** panel on J.A.R.V.I.S.'s view (status in/out,
+  preset or custom id, replies, length, *Send a test voice note*);
+  `GET/POST /api/channels/me/voice`.
+- **Live voice** in the console: the **Live** button beside Talk — he listens
+  at once and again after every answer, regardless of the hands-free
+  setting, until it is switched off or the console closes.
+
+## 12d. Routing, the email review workflow, the ads-analysis example
+
+**Which way a request goes** is ranked, with reasons (`POST /api/team/rank
+{text}`; every delegated task keeps its `ranking`, shown as *Why this route*
+in the task view): a taught skill, an automation (no model), a specialist by
+role, the email review, the ads analysis, or J.A.R.V.I.S. planning it.
+
+**The email review** (`flow-mail.js`; panel **Email review** on J.A.R.V.I.S.'s
+view; chat `/review` · `/send` · `/revise <what to change>` · `/skip`):
+actionable emails (a person asking something — not newsletters, receipts or
+no-reply mail) are drafted by the specialist and reviewed **one at a time**:
+sender, subject, the whole thread, the exact reply, and three choices — **Send
+this exact reply** · **Revise** · **Don't send**. The yes is bound to the
+draft's version and hash: a draft revised after the yes is not the draft that
+was approved and is refused (409). States: `draft → awaiting → (revised →
+awaiting)* → skipped | submitting → accepted → delivered | bounced | failed`.
+**Accepted** is the provider taking the message; **delivered** and **bounced**
+come only from Resend's own events (`POST /api/mail/events`, Svix-signed with
+`RESEND_WEBHOOK_SECRET`). Before a send: stale dates (already past),
+placeholders and links not in the thread are flagged and block it until
+revised (or "send anyway"). The draft offers meeting times from what the Flow
+knows of the week (rocks with times are busy). A tone correction given with a
+revision ("more formal", "shorter", "never start with Dear", "daha resmi") is
+kept as the skill **Email tone and style** — one line per correction, no
+invented source URLs — and followed by every draft after. A screenshot sent in
+an email's topic is kept as feedback on that draft. `/inbox here` in a Telegram
+group makes it the inbox: **one topic per actionable email**, the review
+inside, `/send` there sends that email. Intake: `POST /api/team/mail
+{op:'intake', mail}`, fixtures (`op:'fixtures'`, demo emails), and inbound
+provider mail when it is connected; the same email twice is one item.
+**Persistence and recovery**: items live in `team:mail`; a send in flight at a
+restart (`submitting`) is finished at boot with the same idempotency key —
+once, never twice. **Auto-send policy** (`/autosend on <sender or domain> <n a
+day> [<days>]`, `/autosend off`, or the panel): bounded by sender, daily
+count and expiry; only clean drafts (no flags, nothing unconfirmed); every
+auto-sent reply logged with its text; revoked at once. Schedules in this
+module are examples only — nothing sends on a timer.
+
+**The ads-analysis example** (`POST /api/team/scripts {op:'example',
+which:'ads'}` → "Weekly ads analysis (demo)"): Meta Ads campaign spend joined
+with RevenueCat subscriptions per product ($12 premium, $14 pro, $10 starter)
+→ CAC, ROAS and a verdict (scale ≥ 1.5 · hold 1–1.5 · cut < 1). The sources
+are **fixtures** (`demo.metaads`, `demo.revenuecat`): every line says DEMO
+DATA, the connectors are listed as *Not built yet*, and no schedule is set.
+
+### Coverage
+
+| Requirement | Where | Test |
+|---|---|---|
+| Groups/topics as parallel workspaces | flow-groups.js `workspace()`, `team:workspaces`, `task.origin` | test-groups 37 |
+| Members by numeric id, mention-only vs conversational | `/allow /deny /members /whoami`, `/mode`, Groups & members panel | test-groups |
+| Diagnostics, restart keeps jobs | `/diag`, inbox/outbox, replay at boot | test-groups |
+| Voice notes in/out, presets 30/60 s, British male, custom ElevenLabs ids per channel/topic, keys in env | flow-speech.js, `/voice`, Voice notes panel | test-voicenotes 29 |
+| Live voice mode | console **Live** button (`Say.live`) | test-voicenotes |
+| Ranking with reasons | `rank()`, `/api/team/rank`, task `ranking` | test-mail |
+| Ads example with Meta Ads + RevenueCat fixtures | `demo.*`, `ads.join`, example `ads` | test-mail |
+| One at a time: sender, subject, thread, exact reply, three choices | `view().current`, `reviewText`, panel | test-mail |
+| Approval bound to the exact draft version | `approve(id, hash)` → 409 on mismatch | test-mail |
+| Nine states; accepted ≠ delivered | `STATES`, `submit`, `providerEvent` | test-mail |
+| Stale dates, placeholders, invented links blocked | `checkDraft` | test-mail |
+| Calendar in drafts | `freeTimes` | test-mail (shape) |
+| Tone corrections → skill, no invented URLs | `rememberTone` | test-mail |
+| Screenshot feedback | photo in the email's topic → `attachFeedback` | code path; manual |
+| One topic per actionable email, automatic intake | `/inbox here`, `mailNew`, `intake` | test-mail |
+| Persistence / recovery | `recover()` at boot, same key | test-mail |
+| Bounded, revocable auto-send | `setPolicy`, `policyAllows`, `/autosend` | test-mail |
+| Schedules as examples only | example has no schedule | test-mail |
+
+### Acceptance (what the owner can check)
+
+1. Send a voice note to the bot → the reply quotes what was heard and comes back as a voice note in Daniel's voice; `/voice british-female` changes it; `/voice id …` uses your own.
+2. Add the bot to a group, send the link code there → mention-only; a friend writing in the group gets nothing until `/allow <their id>`; `/mode all` answers everyone allowed; `/diag` reports it all.
+3. Command centre → Email review → *Try it with three demo emails* → one email at a time; **Revise** with "more formal" → version 2 and the skill *Email tone and style*; **Send this exact reply** → *accepted*; the provider's event later → *delivered*.
+4. `/autosend on <your partner's domain> 1 7` → the next clean email from them goes without a yes, the second waits; `/autosend off`.
+5. Automations → *Weekly ads analysis (demo)* → Run → the three products with ROAS verdicts, marked DEMO DATA.
+
+## 12e. J.A.R.V.I.S. on the Apple Watch
+
+The watch app (FlowWatch) has a **J.A.R.V.I.S. & the team** screen (Today →
+the blue button): what needs your yes (Approve / Decline, each bound to the
+approval's server id), the email waiting (Send v*n* bound to the draft's hash
+— a draft with flags cannot be sent from the wrist; Don't send), work in
+flight (a question is answered by dictation), what just finished, the
+morning briefing in a few lines, and **Ask the team** — dictation that goes to
+J.A.R.V.I.S. exactly as a chat message would (he answers; he can start work).
+Server: `GET/POST /api/watch/team` with the watch's bearer; ops `approve`,
+`decline`, `mailsend {id, hash}`, `mailskip`, `answer {id, text}`, `say
+{text}`. Swift: `TeamView` in `ios-app/native/Watch/FlowWatchApp.swift`,
+`WatchAPI.team()/teamAct()` in `WatchStore.swift`. Build and install through
+Xcode on the Mac (no App Review needed for a TestFlight build; the owner is
+asked before any review submission). Actionable notifications on the watch
+itself would need iOS notification categories — not done; the phone's pushes
+are mirrored as they are.
+
+## 12f. Plugins — MCP servers the team can use
+
+The "thousand plugins" answer: any server that speaks the **Model Context
+Protocol** (Streamable HTTP) is a plugin. Command centre → **Plugins** (on
+J.A.R.V.I.S.'s view) → *Connect an MCP server*: a name, the `https://`
+address, and — if the server needs a token — the **name** of the Render
+variable that holds it (never the token itself; a pasted token is refused).
+The Flow runs `initialize` → `tools/list`, shows the tools and marks each as
+*reads* or *acts* by its name and words. Two modes per plugin: **every call
+needs my yes** (default) or **reading tools run at once; actions need my
+yes**. A plugin can be limited to some agents.
+
+In a task an agent asks for a tool with `"tool": { "plugin": "<id>", "name":
+"<tool>", "args": {} }`: a reading tool on a "read" plugin runs during the
+step and the result goes back to the agent; anything else is written up as a
+proposal of kind `tool` and runs — once — when the owner approves it (the
+approval card, `/yes n`, or the watch). A tool the server never listed is
+refused with the real list. Every call is logged with who asked.
+
+The **catalogue** counts honestly: *connected* (working, with its tool count),
+*awaiting* (a variable missing — named — or a server that refused us),
+*directory* (well-known MCP servers to connect: Notion, Stripe, GitHub,
+Linear, HubSpot, Shopify dev, Cloudflare docs, Context7 — "available", never
+"working"), and *platforms* (Composio — awaiting `COMPOSIO_API_KEY`; once set,
+the apps connected there appear here). Connections now shows Notion, GitHub,
+Shopify, HubSpot and Stripe as **Available — connect** instead of *Not built*.
+`GET/POST /api/team/plugins` (ops add · check · mode · agents · remove · call).
+OAuth-only servers (Notion, Linear, HubSpot) need the sign-in step that MCP
+authorisation defines; until it is built they are listed as such and connect
+once a token variable can be given.
+
 ## 13. Tests
 
-`node tests/run.js team team2 team3 channels memory skills scripts efficiency setup context` runs the team with a stand-in
+`node tests/run.js team team2 team3 channels memory skills scripts efficiency setup context groups voicenotes mail plugins` runs the team with a stand-in
 for every provider and channel (`FLOW_TEAM_FAKE=1`, never set on the real
 server). The browser tests run where Chromium exists and say so when it
 does not.
