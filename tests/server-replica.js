@@ -61,7 +61,7 @@ const MEETING_DEPS=()=>({
 let teamMod=null; try{ teamMod=require('../flow-team'); }catch(e){ teamMod=null; }
 let channelsMod=null; try{ channelsMod=require('../flow-channels'); }catch(e){ channelsMod=null; }
 if(channelsMod&&channelsMod.start){ try{ channelsMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, usersKey:flowAuth.USERS_KEY, log:()=>{} }); }catch(e){} }
-if(teamMod&&teamMod.start){ try{ teamMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, sendToUser:push?push.sendToUser:null, channels:channelsMod?channelsMod.notify:null, log:()=>{} }); }catch(e){} }
+if(teamMod&&teamMod.start){ try{ teamMod.start({ raw:rawStore, users:MEETING_DEPS().users, nsPrefix:flowAuth.nsPrefix, usersKey:flowAuth.USERS_KEY, sendToUser:push?push.sendToUser:null, channels:channelsMod?channelsMod.notify:null, log:()=>{} }); }catch(e){} }
 function readBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>r(b));});}
 function json(res,code,obj){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
 const server=http.createServer(async(req,res)=>{
@@ -151,6 +151,11 @@ const server=http.createServer(async(req,res)=>{
         path:p, uid:req.__flowUid||null, raw:rawStore, json, readBody
       });
       if(done) return;
+    }
+    if(process.env.FLOW_TEAM_FAKE==='1'&&p.indexOf('/_page/')===0){                 // EDIT 4a: pages for the team's web reader and browser
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
+      if(p==='/_page/login') return res.end('<!doctype html><title>Members area</title><h1>Members area</h1><form><label>Email <input type="email" name="e"></label><label>Password <input type="password" name="p"></label><button>Sign in</button></form>');
+      return res.end('<!doctype html><title>Venue prices</title><h1>Venue prices</h1><script>document.title="Venue prices"</script><style>h1{color:red}</style><p>Hall A costs 500 EUR a day. Hall B costs 800 EUR.</p><a href="/_page/login">Members area</a>');
     }
     res.writeHead(404);res.end('Not found');
   }catch(e){ json(res,500,{error:String(e&&e.message||e)}); }

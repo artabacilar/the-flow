@@ -34,7 +34,7 @@ window.__say = function (text, isFinal) {
   const sys = T.agentSystem(sarah, 'Artur', [{ id: 'k1', text: 'ABKO sells audio gear' }], [{ id: 'k2', text: 'Refunds within 14 days' }], 'en', ['Bobby (advertising)']);
   ok('an agent knows who it is, who runs the team, and who it answers to', /You are Sarah, the customer support on Artur's team/.test(sys) && /run by J\.A\.R\.V\.I\.S\./.test(sys) && /Bobby \(advertising\)/.test(sys));
   ok('it carries the shared knowledge and its own notes, with ids', /k1 \| ABKO sells audio gear/.test(sys) && /k2 \| Refunds within 14 days/.test(sys));
-  ok('it is told, in words, that it has no tools and must never claim to have done something', /TOOLS: none are connected yet/.test(sys) && /Never claim something was sent/.test(sys));
+  ok('it is told, in words, exactly which tools it has (web reading; email only after a yes) and must never claim to have done something', /TOOLS YOU HAVE/.test(sys) && /read public web pages/.test(sys) && /Never claim something was sent/.test(sys) && /no inbox, no calendar, no accounts/.test(sys));
   const pr = T.parseReply('```json\n{"say":"Drafted it.","remember":[{"scope":"shared","fact":"Office is in Şişli"},{"scope":"mine","fact":"card 4111 1111 1111 1111"},{"scope":"x","fact":"Likes brief replies"}]}\n```');
   ok('a reply keeps its words and its memory; a card number never gets kept; a bad scope becomes its own', pr.say === 'Drafted it.' && pr.remember.length === 2 && pr.remember[0].scope === 'shared' && pr.remember[1].scope === 'mine' && pr.remember[1].fact === 'Likes brief replies', pr);
   ok('a model that forgot the shape is still heard', T.parseReply('Just plain words.').say === 'Just plain words.');
@@ -74,7 +74,7 @@ window.__say = function (text, isFinal) {
     panels: [...document.querySelectorAll('#flow-hud .hud-p')].map((x) => x.getAttribute('data-k')), tools: (document.querySelector('#flow-hud [data-k="tools"]') || {}).textContent || '', sel: document.querySelector('#flow-hud .hud-ag.sel').getAttribute('data-ag') }));
   ok('choosing Sarah makes the room hers and the console her conversation', ws.brand === 'Sarah' && ws.role === 'Customer support' && ws.k === 'Sarah' && ws.agent === 'sarah' && ws.sel === 'sarah', ws);
   ok('her workspace: agent, instructions, tools, memory, what the team knows, activity', ['agent', 'instr', 'tools', 'memory', 'know', 'activity'].every((k) => ws.panels.indexOf(k) >= 0), ws.panels);
-  ok('tools are honestly "no tools yet — awaiting setup"', /No tools yet/.test(ws.tools) && /Awaiting setup/.test(ws.tools), ws.tools);
+  ok('tools are listed truthfully: web reading works, email goes only after a yes, each with its status', /read public web pages/.test(ws.tools) && /approve/.test(ws.tools) && /Web reader/.test(ws.tools) && /Working/.test(ws.tools), ws.tools);
   await p.fill('#flow-say #sy-text', 'Remember that the team answers support within one business day.');
   await p.click('#flow-say [data-say="send"]'); await p.waitForTimeout(1500);
   const t1 = await p.evaluate(() => ({ log: [...document.querySelectorAll('#flow-say .sy-log .sy-b')].map((x) => x.textContent), know: [...document.querySelectorAll('#flow-hud [data-k="know"] .hud-k > span:first-child')].map((x) => x.textContent), dos: 0 }));

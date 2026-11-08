@@ -97,9 +97,9 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   await wait(800); s1 = await sentNow();
   ok('when it is ready, the result itself arrives on Telegram — with the approval numbered and how to say yes', !!done && /needs your yes/.test(s1.last.body.text) && /\[1\] Email to the customer/.test(s1.last.body.text) && /\/yes 1/.test(s1.last.body.text), s1.last && s1.last.body.text.slice(0, 200));
   await tg(777, '/yes 1'); await wait(800); s1 = await sentNow();
-  ok('"/yes 1" approves it and says plainly it has not gone anywhere', /Approved: Email to the customer/.test(s1.last.body.text) && /has not gone/.test(s1.last.body.text), s1.last.body.text);
+  ok('"/yes 1" approves it and says what happened: sent, once, to whom (email is connected in this build)', /Sent: Email to the customer/.test(s1.last.body.text) && /customer@example\.com/.test(s1.last.body.text), s1.last.body.text);
   const ap = (await api('/api/team/tasks')).j.approvals[0];
-  ok('on the server it is approved, awaiting a connection — never sent', ap.status === 'awaiting_tool');
+  ok('on the server it is executed — once, with the send recorded', ap.status === 'executed' && !!ap.executedAt);
   await tg(777, '/tasks'); await wait(600); s1 = await sentNow();
   ok('/tasks shows what happened', /Recent:/.test(s1.last.body.text) && /done/.test(s1.last.body.text), s1.last.body.text);
 

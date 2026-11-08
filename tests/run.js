@@ -122,6 +122,7 @@ const SUITES = [
     TELEGRAM_BOT_TOKEN: 'test-tg', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: '1', WHATSAPP_VERIFY_TOKEN: 'verify-me', WHATSAPP_APP_SECRET: 'wa-secret',
     SLACK_BOT_TOKEN: 'xoxb-test', SLACK_SIGNING_SECRET: 'slack-secret', DISCORD_PUBLIC_KEY: 'ab', DISCORD_BOT_TOKEN: 'd', DISCORD_APP_ID: '1',
     TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 'twilio-secret', TWILIO_NUMBER: '+15550001111', IMESSAGE_RELAY_SECRET: 'relay-secret' }],
+  ['team3',    'test-team3.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1', PUBLIC_URL: 'http://localhost:4222', TELEGRAM_BOT_TOKEN: 'test-tg' }],
   ['audit',    'test-audit.js',    {}],
   ['links',    'test-links.js',    {}],
   ['training', 'test-training.js', {}],
