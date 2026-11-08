@@ -136,7 +136,7 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   ok('and the code cannot be used twice', again === 404, again);
   const auth = { Authorization: 'Bearer ' + got.token, 'X-Flow-Device': 'watchOS' };
   await p.evaluate(async () => { const t = (new Date().getDay() + 6) % 7, w = weekId(new Date()); cData.rocks[w] = [{ id: 'w1', title: 'From the wrist', day: t, prio: 'med', done: false }]; cSave(); await new Promise((r) => setTimeout(r, 1500)); });
-  const day = await (await watch.request.get(H + '/api/watch?tz=Europe/Istanbul', { headers: auth })).json();
+  let day = null; for (let i = 0; i < 12; i++) { day = await (await watch.request.get(H + '/api/watch?tz=Europe/Istanbul', { headers: auth })).json(); if (day.rocks && day.rocks.some((r) => r.id === 'w1')) break; await new Promise((r) => setTimeout(r, 700)); }
   ok('with it, the watch reads the day', day.rocks && day.rocks.some((r) => r.id === 'w1') && day.headline, day.headline);
   const after = await (await watch.request.post(H + '/api/watch', { headers: auth, data: { action: 'rock', id: 'w1', done: true } })).json();
   ok('and a tick comes back as the new day in one round trip', after.rocks.find((r) => r.id === 'w1').done === true);
@@ -147,6 +147,15 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   ok('with it, the question reaches the assistant (off on this test server, so it says so)', ask.status() === 503 && /assistant/i.test(askB.error || ''), { s: ask.status(), b: askB });
   const spk = await watch.request.post(H + '/api/watch/speak', { headers: auth, data: { text: 'Very good, sir.' } });
   ok('and the premium voice is asked the same way — falling back when it is not set up', spk.status() === 503 && (await spk.json()).fallback === true);
+  const tmNo = await watch.request.get(H + '/api/watch/team');
+  const tm = await watch.request.get(H + '/api/watch/team?lang=en', { headers: auth });
+  const tmB = await tm.json().catch(() => ({}));
+  ok('J.A.R.V.I.S. and the team on the wrist need the same token; with it: what needs a yes, the email waiting, work in flight, the briefing — each list bound to server ids', tmNo.status() === 401 && tm.status() === 200 && tmB.ok && tmB.assistant && Array.isArray(tmB.approvals) && Array.isArray(tmB.tasks) && Array.isArray(tmB.brief) && 'mail' in tmB && tmB.counts && typeof tmB.counts.approvals === 'number', { s: tm.status(), keys: Object.keys(tmB) });
+  const bad = await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'approve', id: 'nothing' } });
+  ok('approving an id the server never made is refused', bad.status() === 400 && /No such approval/.test((await bad.json()).error));
+  const say = await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'say', text: '/team', lang: 'en' } });
+  const sayB = await say.json().catch(() => ({}));
+  ok('a dictated message goes to J.A.R.V.I.S. like a chat message and the team comes back with his reply', say.status() === 200 && /J\.A\.R\.V\.I\.S\./.test(sayB.said || '') && Array.isArray(sayB.approvals), { s: say.status(), said: (sayB.said || '').slice(0, 80) });
   const Q = await pair('watchos', 'Series 9');
   await p.evaluate(async (code) => fetch('/api/flow/watch/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }), Q.code);
   const got2 = await (await poll(Q.id)).json();
