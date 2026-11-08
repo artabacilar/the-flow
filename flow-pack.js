@@ -14291,6 +14291,7 @@ const Say = {
     if (a.type === 'remember') return '<div class="sy-card">' + head('Remember', '') + '<input class="flow-in" data-sy-edit="fact" data-i="' + i + '" value="' + esc(a.fact) + '"></div>';
     if (a.type === 'ride') return '<div class="sy-card">' + head('Uber · you confirm in Uber', '') + '<input class="flow-in" data-sy-edit="to" data-i="' + i + '" value="' + esc(a.to) + '" aria-label="Where to">' + (a.from ? '<div class="sy-note" data-i18n="off">From ' + esc(a.from) + '</div>' : '') + '</div>';
     if (a.type === 'style') return '<div class="sy-card">' + head('Manner', a.style === 'loose' ? 'Loose' : 'Butler') + '</div>';
+    if (a.type === 'delegate') return '<div class="sy-card">' + head('To the team', a.title || '') + '<textarea class="flow-in" rows="3" data-sy-edit="brief" data-i="' + i + '">' + esc(a.brief) + '</textarea><div class="sy-note">J.A.R.V.I.S. picks who does it; they work in the background and come back to you.</div></div>';
     if (a.type === 'forget') { const m = Say.memory().find((x) => x.id === a.memory); return '<div class="sy-card">' + head('Forget', m ? m.text : '') + '</div>'; }
     return '';
   },
@@ -14318,7 +14319,7 @@ const Say = {
     Say.plan.actions.filter((a) => a.type === 'ride' && a.to).forEach((a) => { Say.openRide(a); rode++; });
     const { c, hb, S } = Say.host();
     const roles = (c && Array.isArray(c.roles)) ? c.roles : [];
-    let open = null, did = 0, journal = false;
+    let open = null, did = 0, journal = false, handed = '';
     Say.busy = true;
     try {
       for (const a of Say.plan.actions) {
@@ -14354,6 +14355,7 @@ const Say = {
           else if (a.type === 'forget') { await Say.forget(a.memory); did++; }
           else if (a.type === 'style') { await Settings.set('asstStyle', a.style); did++; }
           else if (a.type === 'ride') { did++; }
+          else if (a.type === 'delegate') { const j = await Team.delegate(a.brief, a.title); if (j && j.ok) { did++; handed = j.say || handed; } }
         } catch (e) { console.warn('[Flow] say', a.type, e); }
       }
       if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
@@ -14364,7 +14366,7 @@ const Say = {
        the sheet goes and a toast says it. */
     if (Say.spoken && !open && Say.el.classList.contains('on')) {
       const hands = Say.handsFree();
-      const line = did ? Say.doneLine(did, hands) : (Say.lang() === 'tr' ? 'Yapılacak bir şey kalmadı.' : 'Nothing there needed doing.');
+      const line = handed ? handed : did ? Say.doneLine(did, hands) : (Say.lang() === 'tr' ? 'Yapılacak bir şey kalmadı.' : 'Nothing there needed doing.');
       Say.plan = null; Say.confirming = false;
       Say.history.push({ role: 'assistant', text: line });
       Say.el.querySelector('.sy-plan').hidden = true; Say.el.querySelector('.sy-ask').hidden = false;
@@ -14376,6 +14378,7 @@ const Say = {
       return;
     }
     Say.close();
+    if (handed) { toast(handed, null, 3200); Speech.say(handed, Say.lang()); if (open) Nav.go(open); return; }
     if (did) toast(did === 1 ? 'Done ✓' : did + ' things done ✓', null, 1800);
     if (did || open) Speech.say(Say.doneLine(Math.max(did, 1), false), Say.lang());
     if (open) Nav.go(open);
@@ -14453,7 +14456,7 @@ const Hud = {
     cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
-    try { Team.load().then(() => { Team.paintRail(); Hud.paint(); }); } catch (e) {}
+    try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); } catch (e) {}
     try { Track.hit('hud_open'); } catch (e) {}
   },
   close(fromSay) {
@@ -14462,7 +14465,7 @@ const Hud = {
     document.documentElement.classList.remove('hud-on');
     if (Hud.el) Hud.el.classList.remove('on');
     cancelAnimationFrame(Hud.raf); clearInterval(Hud.timer);
-    try { Team.select(null, true); } catch (e) {}
+    try { Team.select(null, true); clearTimeout(Team.watchT); Team.openId = null; } catch (e) {}
     if (!fromSay) { try { Say.close(); } catch (e) {} }
   },
   build() {
@@ -14521,7 +14524,8 @@ const Hud = {
     let hab = null; try { hab = TodayPlus.habits(); } catch (e) {}
     const hn = hab && (hab.total != null ? hab.total : (hab.list || []).length), hd = hab && (hab.done != null ? hab.done : 0);
     const habits = Hud.panel('habits', 'Habits', hab && hn ? '<div class="hud-big">' + hd + '<small> / ' + hn + '</small></div><i class="hud-bar"><b style="width:' + Math.round(100 * hd / Math.max(1, hn)) + '%"></b></i>' : '<p class="hud-none">No habits yet.</p>', 'habits');
-    Hud.el.querySelector('.hud-left').innerHTML = today + train + habits;
+    let tv = ''; try { tv = Team.openId ? Team.taskPanel(Team.openId) : ''; } catch (e) {}
+    Hud.el.querySelector('.hud-left').innerHTML = tv + today + train + habits;
     let ev = [];
     try { const iso = RockActions.iso(new Date()); const now = new Date().toTimeString().slice(0, 5); ev = Ahead.items().filter((x) => x.date === iso && x.kind !== 'rock' && (x.allDay || !x.time || x.time >= now)); } catch (e) {}
     const cal = Hud.panel('cal', 'Next up', ev.length ? ev.slice(0, 4).map((x) => Hud.row(x.title, x.allDay ? 'all day' : (x.time || ''))).join('') : '<p class="hud-none">Nothing else in the calendar today.</p>');
@@ -14531,7 +14535,8 @@ const Hud = {
     let sp = null; try { sp = TodayPlus.spend(); } catch (e) {}
     const money = Hud.panel('money', 'Spend', sp ? '<div class="hud-big">' + esc(TodayPlus.money(sp.today)) + '</div><p class="hud-sub">' + esc(TodayPlus.money(sp.mtd)) + ' this month' + (sp.budget ? ' · ' + esc(TodayPlus.money(Math.max(0, sp.budget - sp.mtd))) + ' left' : '') + '</p>' : '<p class="hud-none">Nothing logged.</p>', 'finance');
     let team = ''; try { team = Team.jarvisPanels(); } catch (e) {}
-    Hud.el.querySelector('.hud-right').innerHTML = cal + body + money + team;
+    Hud.el.querySelector('.hud-right').innerHTML = team + cal + body + money;
+    try { Team.watch(); } catch (e) {}
   },
   clock() {
     if (!Hud.el) return;
@@ -14648,7 +14653,18 @@ const Team = {
   markSeen(id) { try { const s = Team.seen(); s[id] = (Team.data && Team.data.counts && Team.data.counts[id]) || 0; localStorage.setItem('flow:team:seen', JSON.stringify(s)); } catch (e) {} },
   unread(id) { const c = (Team.data && Team.data.counts && Team.data.counts[id]) || 0, s = Team.seen()[id] || 0; return Math.max(0, c - s); },
   status(id, st) { Team.st[id] = st || ''; Team.paintRail(); },
-  stateOf(a) { if (Team.paused()) return 'paused'; if (Team.st[a.id] === 'working') return 'working'; return 'available'; },
+  stateOf(a) {
+    if (Team.paused()) return 'paused';
+    if (Team.st[a.id] === 'working') return 'working';
+    const tl = (Team.data && Team.data.tasks) || [];
+    if (tl.some((t) => (t.status === 'running' || t.status === 'queued') && (t.agent === a.id || (t.steps || []).some((st) => st.agent === a.id && st.status === 'running')))) return 'working';
+    return 'available';
+  },
+  attention(id) {
+    const d = Team.data; if (!d) return 0;
+    if (id === 'jarvis') return ((d.attention && d.attention.approvals) || 0) + ((d.tasks || []).filter((t) => !t.seen && /^(done|awaiting_approval|awaiting_info|failed)$/.test(t.status)).length);
+    return (d.tasks || []).filter((t) => !t.seen && t.agent === id && /^(done|awaiting_info|failed)$/.test(t.status)).length;
+  },
   modelOk(a) { const P = (Team.data && Team.data.providers) || []; return P.some((p) => p.configured && (p.id === a.provider || p.models.indexOf(a.model) >= 0)); },
   short(m) { return String(m || '').replace(/^claude-/, '').replace(/-\d{8}$/, ''); },
   /* ---- the strip ---- */
@@ -14657,7 +14673,7 @@ const Team = {
     if (!Team.data) { nav.innerHTML = '<span class="hud-tm-wait">Team…</span>'; return; }
     const sel = Team.sel || 'jarvis';
     nav.innerHTML = Team.agents().map((a) => {
-      const st = Team.stateOf(a), un = Team.unread(a.id), ok = Team.modelOk(a);
+      const st = Team.stateOf(a), un = Team.unread(a.id) + Team.attention(a.id), ok = Team.modelOk(a);
       return '<button type="button" class="hud-ag' + (a.id === sel ? ' sel' : '') + '" data-hud="agent" data-ag="' + esc(a.id) + '" aria-label="' + esc(a.name) + ', ' + esc(a.role) + '">' +
         '<i class="hud-av" aria-hidden="true">' + esc(a.avatar || a.name.charAt(0)) + '</i>' +
         '<span class="hud-agn">' + esc(a.name) + '</span><small>' + esc(a.role) + ' · ' + esc(ok ? Team.short(a.model) : 'no model') + '</small>' +
@@ -14670,7 +14686,7 @@ const Team = {
   async select(id, quiet) {
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
-    Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null;
+    Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
     try {
       if (Say.el) {
         Say.plan = null; Say.askView(); Say.state('');
@@ -14758,21 +14774,94 @@ const Team = {
       '<p class="hud-sub">Today: ' + use.calls + ' message' + (use.calls === 1 ? '' : 's') + (use.in || use.out ? ' · ' + (use.in + use.out).toLocaleString('en-GB') + ' tokens' : '') + (a.dailyCap ? ' · limit ' + a.dailyCap : '') + '</p>' +
       (a.id !== 'jarvis' ? '<button type="button" class="hud-btn ghost" data-hud="archive" data-ag="' + esc(a.id) + '">Archive ' + esc(a.name) + '</button>' : ''));
     const instr = Hud.panel('instr', 'Instructions', '<form data-team="instr" data-ag="' + esc(a.id) + '"><textarea name="instructions" rows="6" maxlength="4000" aria-label="Instructions">' + esc(a.instructions || '') + '</textarea><div class="hud-row"><input type="text" name="name" value="' + esc(a.name) + '" maxlength="40" aria-label="Name" placeholder="Name"><input type="text" name="role" value="' + esc(a.role) + '" maxlength="60" aria-label="Role" placeholder="Role"><button type="submit" class="hud-btn">Save</button></div></form>');
-    Hud.el.querySelector('.hud-left').innerHTML = who + instr;
+    const tv = Team.openId ? Team.taskPanel(Team.openId) : '';
+    Hud.el.querySelector('.hud-left').innerHTML = tv + who + instr;
     const mem = Hud.panel('memory', a.name + ' remembers', Team.knowList('agent:' + a.id, Team.know('agent:' + a.id), a.name));
     const sh = Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
     const lg = (Team.data.log || []).filter((l) => l.agent === a.id).slice(-6).reverse();
     const act = Hud.panel('activity', 'Activity', lg.length ? lg.map((l) => '<div class="hud-r"><span data-i18n="off">' + esc(l.what) + '</span><b>' + esc(Team.when(l.at)) + '</b></div>').join('') : '<p class="hud-none">Nothing yet.</p>');
-    Hud.el.querySelector('.hud-right').innerHTML = Team.toolsPanel(a) + mem + sh + act;
+    Hud.el.querySelector('.hud-right').innerHTML = Team.assignPanel(a) + Team.tasksPanel(a.id) + Team.toolsPanel(a) + mem + sh + act;
     Team.paintRail();
+    Team.watch();
   },
   /* On his own view: his model, and the shared knowledge, under the day. */
   jarvisPanels() {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
+    return Team.approvalsPanel() + Team.tasksPanel(null) +
+      Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
+  },
+  /* ---- work ---- */
+  STATUS: { queued: 'Queued', running: 'Working', awaiting_info: 'Needs an answer', awaiting_approval: 'Needs your yes', done: 'Done', failed: 'Did not finish', cancelled: 'Cancelled' },
+  taskRow(t) {
+    const a = Team.agent(t.agent); const who = t.by === 'jarvis' ? 'J.A.R.V.I.S. → ' + (t.steps || []).map((st) => (Team.agent(st.agent) || {}).name || st.agent).filter((v, i, arr) => arr.indexOf(v) === i).join(', ') : (a ? a.name : t.agent);
+    return '<button type="button" class="hud-task' + (t.seen ? '' : ' new') + '" data-hud="task" data-id="' + esc(t.id) + '"><span class="hud-tt" data-i18n="off">' + esc(t.title) + '</span><small data-i18n="off">' + esc(who) + ' · ' + esc(Team.when(t.updatedAt || t.createdAt)) + '</small><em class="hud-tst" data-st="' + esc(t.status) + '">' + esc(Team.STATUS[t.status] || t.status) + '</em></button>';
+  },
+  tasksPanel(agentId) {
+    const all = (Team.data && Team.data.tasks) || [];
+    const list = agentId ? all.filter((t) => t.agent === agentId || (t.steps || []).some((st) => st.agent === agentId)) : all;
+    const open = list.filter((t) => !/^(done|failed|cancelled)$/.test(t.status)), rest = list.filter((t) => /^(done|failed|cancelled)$/.test(t.status));
+    const body = (list.length ? open.concat(rest).slice(0, 8).map(Team.taskRow).join('') : '<p class="hud-none">' + (agentId ? 'Nothing assigned yet. Give ' + esc((Team.agent(agentId) || {}).name || 'them') + ' some work below.' : 'No work in flight. Ask J.A.R.V.I.S. — “have Sarah draft a reply…” — or open an agent and assign something.') + '</p>') +
+      (list.length > 8 ? '<div class="hud-more">+ ' + (list.length - 8) + ' more</div>' : '');
+    const n = open.length;
+    return Hud.panel('work', 'Work' + (n ? ' · ' + n + ' in flight' : ''), body);
+  },
+  approvalsPanel() {
+    const ap = ((Team.data && Team.data.approvals) || []).filter((x) => x.status === 'pending');
+    if (!ap.length) return '';
+    return Hud.panel('approvals', 'Needs your yes · ' + ap.length, ap.slice(0, 5).map((x) => {
+      const a = Team.agent(x.agent) || { name: 'An agent' }; const d = x.detail || {};
+      return '<div class="hud-ap" data-id="' + esc(x.id) + '"><div class="hud-aph"><b data-i18n="off">' + esc(a.name) + '</b> wants to send ' + esc(x.kind === 'email' ? 'an email' : x.kind === 'message' ? 'a message' : x.kind === 'spend' ? 'money' : x.kind === 'post' ? 'a post' : x.kind === 'change' ? 'a change' : 'something') + '</div>' +
+        '<div class="hud-apm" data-i18n="off">' + esc(x.summary) + '</div>' +
+        (d.to ? '<div class="hud-apl" data-i18n="off"><span>To</span>' + esc(d.to) + '</div>' : '') + (d.subject ? '<div class="hud-apl" data-i18n="off"><span>Subject</span>' + esc(d.subject) + '</div>' : '') +
+        (d.body ? '<textarea class="hud-apb" data-ap-body="' + esc(x.id) + '" rows="5" aria-label="What would be sent" data-i18n="off">' + esc(d.body) + '</textarea>' : '') +
+        '<p class="hud-sub">Nothing is connected to send this yet: approving marks it to go once, exactly as shown, when the connection exists.</p>' +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="approve" data-id="' + esc(x.id) + '">Approve</button><button type="button" class="hud-btn ghost" data-hud="reject" data-id="' + esc(x.id) + '">Decline</button></div></div>';
+    }).join(''));
+  },
+  taskPanel(id) {
+    const t = ((Team.data && Team.data.tasks) || []).find((x) => x.id === id); if (!t) return '';
+    const steps = (t.steps || []).map((st) => '<div class="hud-step" data-st="' + esc(st.status) + '"><b data-i18n="off">' + esc((Team.agent(st.agent) || {}).name || st.agent) + '</b><span data-i18n="off">' + esc(st.title) + '</span><em>' + esc(Team.STATUS[st.status] || st.status) + '</em></div>').join('');
+    const q = t.status === 'awaiting_info' ? '<div class="hud-q"><b data-i18n="off">' + esc((Team.agent(t.asker) || {}).name || 'They') + ' asks:</b> <span data-i18n="off">' + esc(t.question) + '</span><form data-team="answer" data-id="' + esc(t.id) + '"><input type="text" name="answer" maxlength="2000" placeholder="Your answer…" aria-label="Your answer" required><button type="submit" class="hud-btn">Answer</button></form></div>' : '';
+    const res = t.result ? '<pre class="hud-res" data-i18n="off">' + esc(t.result) + '</pre>' : (t.status === 'running' || t.status === 'queued' ? '<p class="hud-sub">Working on it — this carries on even if you close The Flow.</p>' : '');
+    const err = t.error ? '<p class="hud-alert" data-i18n="off">' + esc(t.error) + '</p>' : '';
+    const btns = '<div class="hud-row">' + (t.status === 'failed' ? '<button type="button" class="hud-btn" data-hud="retry" data-id="' + esc(t.id) + '">Try again</button>' : '') + (!/^(done|failed|cancelled)$/.test(t.status) ? '<button type="button" class="hud-btn ghost" data-hud="cancel" data-id="' + esc(t.id) + '">Cancel</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="taskclose">Close</button></div>';
+    return Hud.panel('taskv', esc(t.title), '<div class="hud-tmeta"><em class="hud-tst" data-st="' + esc(t.status) + '">' + esc(Team.STATUS[t.status] || t.status) + '</em><small data-i18n="off">' + esc(t.brief || '').slice(0, 300) + '</small></div>' + steps + q + err + res + btns);
+  },
+  assignPanel(a) {
+    return Hud.panel('assign', 'Give ' + a.name + ' some work', '<form data-team="assign" data-ag="' + esc(a.id) + '"><input class="hud-sel" type="text" name="title" maxlength="120" placeholder="Title (optional)" aria-label="Title"><textarea name="brief" rows="3" maxlength="4000" placeholder="What to do, with the details…" aria-label="What to do" required></textarea><div class="hud-row"><button type="submit" class="hud-btn">Assign</button></div><p class="hud-sub">They work in the background and you are told when it is ready. Anything that would go out to the world waits for your yes.</p></form>');
+  },
+  async delegate(brief, title) {
+    const j = await Team.post('/api/team/delegate', { text: brief, title, lang: Say.lang() });
+    if (j && j.ok) { await Team.load(true); Team.paintRail(); if (Hud.on) Hud.paint(); Team.watch(); }
+    return j;
+  },
+  openId: null,
+  async openTask(id) {
+    Team.openId = id;
+    const t = ((Team.data && Team.data.tasks) || []).find((x) => x.id === id);
+    if (t && !t.seen) { t.seen = true; Team.post('/api/team/task/seen', { id }); }
+    const owner = t && t.agent !== 'jarvis' ? t.agent : 'jarvis';
+    if ((Team.sel || 'jarvis') !== owner) await Team.select(owner, true);
+    Team.paintRail(); Hud.paint();
+  },
+  /* while work is in flight, the room keeps up (every few seconds; not
+     while a form here has the keyboard) */
+  watchT: 0,
+  watch() {
+    clearTimeout(Team.watchT);
+    const busy = Team.data && Team.data.attention && Team.data.attention.running > 0;
+    if (!busy || !Hud.on) return;
+    Team.watchT = setTimeout(async () => {
+      const before = JSON.stringify(((Team.data || {}).tasks || []).map((t) => t.id + t.status + (t.steps || []).map((s) => s.status).join('')));
+      await Team.load(true);
+      const after = JSON.stringify(((Team.data || {}).tasks || []).map((t) => t.id + t.status + (t.steps || []).map((s) => s.status).join('')));
+      const typing = document.activeElement && Hud.el && Hud.el.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+      if (after !== before) { Team.paintRail(); if (!typing) Hud.paint(); }
+      Team.watch();
+    }, 3500);
   },
   addPanel() {
     const T = (Team.data && Team.data.templates) || [];
@@ -14790,6 +14879,18 @@ const Team = {
     if (a === 'kedit') { Team.editing = b.getAttribute('data-id'); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="kedit"] input'); if (i) { i.focus(); i.select(); } }, 60); return; }
     if (a === 'kcancel') { Team.editing = null; Hud.paint(); return; }
     if (a === 'kdrop') { const j = await Team.post('/api/team/knowledge', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.data.knowledge = j.knowledge; Hud.paint(); toast('Removed', null, 1200); } return; }
+    if (a === 'task') { Team.openTask(b.getAttribute('data-id')); return; }
+    if (a === 'taskclose') { Team.openId = null; Hud.paint(); return; }
+    if (a === 'cancel') { const j = await Team.post('/api/team/task/cancel', { id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.load(true); Hud.paint(); toast('Cancelled', null, 1200); } return; }
+    if (a === 'retry') { const j = await Team.post('/api/team/task/retry', { id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.load(true); Hud.paint(); Team.watch(); } return; }
+    if (a === 'approve' || a === 'reject') {
+      const id = b.getAttribute('data-id'); const ta = Hud.el.querySelector('[data-ap-body="' + id + '"]');
+      const item = ((Team.data && Team.data.approvals) || []).find((x) => x.id === id) || {};
+      const detail = ta && item.detail && ta.value !== item.detail.body ? Object.assign({}, item.detail, { body: ta.value }) : undefined;
+      const j = await Team.post('/api/team/approve', { id, decision: a, detail });
+      if (j && j.ok) { await Team.load(true); Hud.paint(); toast(a === 'approve' ? 'Approved — it goes once the connection exists' : 'Declined', null, 2600); }
+      return;
+    }
     if (a === 'archive') { const id = b.getAttribute('data-ag'); const ag = Team.agent(id); if (!ag || !confirm('Archive ' + ag.name + '? The conversation and memory are kept; it can be restored later.')) return; const j = await Team.post('/api/team/agent/update', { id, archived: true }); if (j && j.ok) { await Team.load(true); Team.select('jarvis'); } return; }
   },
   async change(e) {
@@ -14820,6 +14921,17 @@ const Team = {
       const id = f.getAttribute('data-ag');
       const j = await Team.post('/api/team/agent/update', { id, instructions: f.instructions.value, name: f.name.value, role: f.role.value });
       if (j && j.ok) { Object.assign(Team.agent(id), j.agent); toast('Saved', null, 1200); Hud.paint(); try { Say.el && (Say.el.querySelector('.sy-k').textContent = Say.title()); } catch (e) {} }
+      return;
+    }
+    if (kind === 'assign') {
+      const brief = f.brief.value.trim(); if (!brief) return;
+      const j = await Team.post('/api/team/task', { agent: f.getAttribute('data-ag'), title: f.title.value.trim(), brief, lang: Say.lang() });
+      if (j && j.ok) { await Team.load(true); Team.openId = j.task.id; Hud.paint(); Team.watch(); toast('On it', null, 1400); }
+      return;
+    }
+    if (kind === 'answer') {
+      const j = await Team.post('/api/team/task/answer', { id: f.getAttribute('data-id'), answer: f.answer.value.trim() });
+      if (j && j.ok) { await Team.load(true); Hud.paint(); Team.watch(); }
       return;
     }
     if (kind === 'kadd') {

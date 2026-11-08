@@ -1131,6 +1131,25 @@ PACK_V = packVersion();
    there is no signed-in request to scope it to — this is the one thing in the
    server that acts for everybody rather than for a caller. */
 if (push && push.init) push.init(rawStore);
+/* The team's background work: tasks that carry on with the laptop closed,
+   resumed here after a restart, with a push when something is ready. */
+let teamMod = null;
+try { teamMod = require('./flow-team'); } catch (e) { teamMod = null; }
+if (teamMod && teamMod.start) {
+  try {
+    teamMod.start({
+      raw: rawStore,
+      users: async () => {
+        const v = await rawStore.get(flowAuth.USERS_KEY);
+        const users = (typeof v === 'string' ? JSON.parse(v || '{}') : v) || {};
+        return Object.values(users).map((u) => u && u.id).filter(Boolean);
+      },
+      nsPrefix: flowAuth.nsPrefix,
+      sendToUser: push ? push.sendToUser : null,
+      log: (m) => console.error(m)
+    });
+  } catch (e) { console.error('[team] start', e && e.message ? e.message : e); }
+}
 /* Everything the meeting tick needs; built once the store and auth exist. */
 const MEETING_DEPS = () => ({
   raw: rawStore,

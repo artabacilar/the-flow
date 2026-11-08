@@ -2045,7 +2045,7 @@ const DO_FREE_WEEKLY = 15;
 const doCountKey = () => 'don:' + new Date().toISOString().slice(0, 10);
 let doPost = (...a) => postJSON(...a);
 const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
-const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style'];
+const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style', 'delegate'];
 
 const DO_SYSTEM = [
   'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
@@ -2066,7 +2066,8 @@ const DO_SYSTEM = [
   '    { "type": "remember", "fact": "Is vegetarian" },',
   '    { "type": "forget",  "memory": "<memory id from the list>" },',
   '    { "type": "ride",    "to": "where they want to go — a full address if WHAT YOU KNOW gives one", "from": "" },',
-  '    { "type": "style",   "style": "loose or butler" }',
+  '    { "type": "style",   "style": "loose or butler" },',
+  '    { "type": "delegate", "title": "Reply to the refund question", "brief": "everything the team needs to do it, in full" }',
   '  ]',
   '}',
   '',
@@ -2082,6 +2083,7 @@ const DO_SYSTEM = [
   '· forget: they ask you to forget something you know; pick its memory id.',
   '· ride: they want a taxi, a car or an Uber ("get me a car to the studio", "Uber home"). "to" is the place, resolved from WHAT YOU KNOW when you can ("home", "the studio" → its address); "from" stays empty unless they name a pickup other than where they are. The app opens Uber with the route filled in and they confirm the ride there — "say" says so ("Uber is ready to take you to the studio — just confirm."), never that a car is booked.',
   '· style: they ask you to change how you talk — looser, swear, hype, "talk normal", "be proper", "butler mode". "loose" or "butler". Saved at once; "say" answers in the new style.',
+  '· delegate: work for YOUR TEAM rather than a change to the planner — drafting, replying, analysing, researching, checking, preparing ("have Sarah draft a reply", "ask Bobby to check the ads", "get the team to prepare the candidate summaries", "write me a proposal for…"). "brief" carries every detail they gave; "title" is short. The app hands it to the team, who work in the background and come back; "say" says who is on it or that the team will take it. Never for tasks on their own list (that is rock) or things only they can do.',
   '· When the only actions are remember/forget, they are saved at once: "say" confirms it as done ("Noted, sir — I shall remember that."). Do not repeat back sensitive details.',
   '· WHAT YOU KNOW ABOUT THEM (below) is what they told you before. Use it naturally where it helps — never recite it, and never contradict it without asking.',
   '',
@@ -2228,6 +2230,8 @@ function parseDo(text, known, max) {
       const to = str(a.to, 200); if (to) out.push({ type: 'ride', to, from: str(a.from, 200) });
     } else if (a.type === 'style') {
       if (a.style === 'loose' || a.style === 'butler') out.push({ type: 'style', style: a.style });
+    } else if (a.type === 'delegate') {
+      const brief = String(a.brief == null ? '' : a.brief).trim().slice(0, 4000); if (brief) out.push({ type: 'delegate', title: str(a.title, 120) || str(brief, 80), brief });
     }
   }
   return { say: str(j.say, 900), actions: out, end: j.end === true };
