@@ -14046,7 +14046,7 @@ const Say = {
     if (Say.live) Say.toggleLive(false);
     /* In Advanced the console is part of the command centre: it settles, it
        does not go away. */
-    if (Hud.on && Hud.merged()) { Say.state(''); return; }
+    if (Hud.on && Hud.merged()) { Say.state(''); Say.settle(); return; }
     Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on', 'hud-dock');
     try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
@@ -14064,13 +14064,59 @@ const Say = {
     root.classList.toggle('hud-dock', on);
     const kb = Say.el.querySelector('.sy-kb'); if (kb) { kb.setAttribute('aria-pressed', String(!on)); kb.title = on ? 'Type' : 'Hide'; const sp = kb.querySelector('span'); if (sp) sp.textContent = on ? 'Type' : 'Hide'; }
   },
+  /* Back to how it first looks: the one-row dock, nothing open, no keyboard. */
+  settle() {
+    Say.kbOpen = false;
+    try { Say.chatsToggle(false); } catch (e) {}
+    try { const a = document.activeElement; if (a && Say.el && Say.el.contains(a) && a.blur) a.blur(); } catch (e) {}
+    Say.dockSync();
+  },
+  /* On a phone the open sheet is pulled down to put it away, like any iOS
+     sheet: it follows the finger, and past a short distance (or a quick
+     flick) it settles into the dock; short of that it springs back. A drag
+     that starts inside a list scrolled down scrolls the list instead. */
+  swipeWire() {
+    const sh = Say.el && Say.el.querySelector('.fn-sheet'); if (!sh || sh.__swipe) return; sh.__swipe = true;
+    let y0 = 0, t0 = 0, dy = 0, on = false, armed = false;
+    const open = () => Say.dockable() && !document.documentElement.classList.contains('hud-dock');
+    sh.addEventListener('touchstart', (e) => {
+      armed = false; on = false; dy = 0;
+      if (!open() || e.touches.length !== 1) return;
+      const sc = e.target.closest('.sy-log, .sy-chats, textarea, .sy-plan, select');
+      if ((sc && sc.scrollTop > 0) || sh.scrollTop > 0) return;
+      y0 = e.touches[0].clientY; t0 = Date.now(); armed = true;
+    }, { passive: true });
+    sh.addEventListener('touchmove', (e) => {
+      if (!armed) return;
+      dy = e.touches[0].clientY - y0;
+      if (!on) { if (dy > 10) { on = true; sh.style.transition = 'none'; } else if (dy < -6) { armed = false; return; } else return; }
+      if (e.cancelable) e.preventDefault();
+      sh.style.transform = 'translateY(' + Math.max(0, dy) + 'px)';
+    }, { passive: false });
+    const end = () => {
+      if (!armed) return; armed = false;
+      if (!on) return; on = false;
+      const fast = dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.5;
+      sh.style.transition = 'transform .22s ease';
+      if (dy > 90 || fast) {
+        sh.style.transform = 'translateY(100%)';
+        setTimeout(() => { sh.style.transition = 'none'; sh.style.transform = ''; Say.settle(); requestAnimationFrame(() => { sh.style.transition = ''; }); }, 200);
+      } else {
+        sh.style.transform = '';
+        setTimeout(() => { sh.style.transition = ''; }, 240);
+      }
+    };
+    sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
+  },
   kb(open) {
     Say.kbOpen = open == null ? !Say.kbOpen : !!open;
+    try { Say.swipeWire(); } catch (e) {}
     Say.dockSync();
     if (Say.kbOpen) { const ta = Say.el && Say.el.querySelector('#sy-text'); try { ta.focus({ preventScroll: true }); } catch (e) {} const sh = Say.el && Say.el.querySelector('.fn-sheet'); try { sh.scrollTop = 0; } catch (e) {} }
   },
   dockWatch() {
     if (Say.dockWatched || !Say.el) return; Say.dockWatched = true;
+    try { Say.swipeWire(); } catch (e) {}
     try { new MutationObserver(() => Say.dockSync()).observe(Say.el.querySelector('.sy-plan'), { attributes: true, attributeFilter: ['hidden'] }); } catch (e) {}
     let t = 0; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(Say.dockSync, 120); });
   },
