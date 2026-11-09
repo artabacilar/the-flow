@@ -2326,7 +2326,8 @@ document.querySelectorAll('.tab').forEach(t=>{
     t.classList.add('active');
     document.getElementById('tab-'+t.dataset.tab).classList.add('active');
     if(t.dataset.tab==='today') renderToday();
-    if(t.dataset.tab==='sleep'){ renderSleepChart(); syncWhoop(); syncHealth(true); renderMood(); renderMoodChart(); }
+    /* The tab shows first; the charts and the syncs draw on the next frame, so the tap is answered at once. */
+    if(t.dataset.tab==='sleep'){ requestAnimationFrame(()=>{ renderSleepChart(); syncWhoop(); syncHealth(true); renderMood(); renderMoodChart(); }); }
     if(t.dataset.tab==='time') renderTime();
     if(t.dataset.tab==='compass') renderCompass();
     if(t.dataset.tab==='habits') renderHabits();
