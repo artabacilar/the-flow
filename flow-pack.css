@@ -4400,3 +4400,40 @@ html.hud-on #flow-say .fn-sheet{will-change:transform;contain:layout paint}
 .sy-b.streaming::after, #flow-hud .hud-cap-a.streaming::after { content: '▍'; margin-left: 1px; opacity: .55; animation: syCaret 1s steps(2, start) infinite; }
 @keyframes syCaret { to { visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) { .sy-b.streaming::after, #flow-hud .hud-cap-a.streaming::after { animation: none; } }
+
+/* ── A page in the command centre, laid out for the room (9 Nov) ─────────
+   Today's cards arrived in the old Flow look — charcoal gradient, a 20 px
+   corner, edge to edge against the column so the left border was lost. In
+   the room they are the same glass as every other panel, inset from the
+   column's edges, and the column runs the full height beside the console. */
+#flow-hud .hud-page{padding:0 6px 28px;box-sizing:border-box}
+#flow-hud .hud-pgh{background:#050b1c;padding:6px 6px 10px;margin:0 0 12px}
+#flow-hud .hud-page :is(.td-rocks,.td-group,.td-plan,.flow-td-sec,#td-cal){
+  background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66))!important;
+  border:1px solid rgba(110,170,255,.22)!important;border-radius:14px!important;
+  box-shadow:inset 0 0 24px rgba(40,110,255,.06)!important;
+  box-sizing:border-box;max-width:100%;padding:14px 16px 6px!important;margin:0 0 14px!important;color:#dbeaff}
+#flow-hud .hud-page .td-rocks-head{margin-bottom:8px}
+#flow-hud .hud-page :is(.td-rocks-head .lbl,.td-group-head .g-lbl,.td-plan-head .lbl){font-size:10.5px!important;font-weight:800!important;letter-spacing:.2em!important;color:#7fd8ff!important}
+#flow-hud .hud-page .td-rocks-head .cnt{font-size:13px;color:#7fd8ff}
+#flow-hud .hud-page .td-rock{gap:10px;padding:11px 0;border-color:rgba(110,170,255,.12)!important;align-items:flex-start}
+#flow-hud .hud-page .td-rock .dot{margin-top:7px}
+#flow-hud .hud-page .td-rock .rk-title{font-size:14.5px;line-height:1.35;font-weight:600;color:#e8f4ff;min-width:0;overflow-wrap:anywhere}
+#flow-hud .hud-page .td-rock .rk-title a{color:#7fd8ff;text-decoration:none}
+#flow-hud .hud-page .td-rock .rk-title a:hover{text-decoration:underline}
+#flow-hud .hud-page .td-rk-note{font-size:12.5px;line-height:1.45;color:rgba(170,200,255,.66)!important;margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#flow-hud .hud-page .td-rock .rk-meta{font-size:12px;color:rgba(170,200,255,.7);white-space:nowrap;padding-top:2px}
+#flow-hud .hud-page .td-rock :is(.rk-more,.td-more,button.rk-menu,[data-rk="more"]){width:30px;height:30px;border-radius:9px}
+#flow-hud .hud-page .td-check{border-color:rgba(110,170,255,.4)}
+#flow-hud .hud-page .td-row{border-color:rgba(110,170,255,.12)!important}
+#flow-hud .hud-page .td-wk{background:rgba(22,46,94,.34);border-color:rgba(110,170,255,.22);color:#7fd8ff}
+@media (min-width:901px){
+  /* the side columns run down beside the console instead of stopping above it */
+  #flow-hud.hud-merge :is(.hud-pagecol,.hud-left,.hud-right){margin-bottom:calc(-1 * (min(40vh,330px) + 8px))}
+  html.hud-on.hud-axis.hud-axis-narrow #flow-say .fn-sheet{width:min(420px,calc(var(--hud-cw,420px) + 16px))}
+}
+@media (max-width:900px){
+  /* a page open on a phone: the orb steps back so the page is what you read */
+  #flow-hud.hud-merge.hud-pagemode .hud-core{height:min(24vh,190px)}
+}
+#flow-hud .hud-pgh{margin-left:6px;margin-right:6px}

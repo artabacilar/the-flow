@@ -14960,6 +14960,8 @@ const Hud = {
     Hud.el.classList.add('hud-pagemode');
     Hud.mount(group, tab);
     Team.paintRail(); Hud.paint(); Hud.paintNav();
+    /* on a phone the page sits under the orb: bring its top into view */
+    if (window.innerWidth <= 900) { try { requestAnimationFrame(() => { const c = Hud.el.querySelector('.hud-pagecol'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); }); } catch (e) {} }
     try { Track.hit('hud_page_' + tab); } catch (e) {}
   },
   mount(group, tab) {
