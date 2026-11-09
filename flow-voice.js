@@ -325,6 +325,42 @@
     };
   })();
 
+  /* --- a recording of the turn, alongside the recogniser ---------------
+   * The browser's recogniser listens in one language, so Turkish and English
+   * mixed in one sentence come out half wrong. When asked (opts.record), the
+   * same turn is also recorded, and the app sends the recording to the
+   * server, which transcribes it with the language detected as it goes. The
+   * live words on screen still come from the recogniser; the words that are
+   * sent come from the recording. Only where the browser can do both at
+   * once (the web backend); the phone apps keep their own recogniser. */
+  var Rec = {
+    mr: null, tok: 0, wait: null,
+    ok: function () { try { return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); } catch (e) { return false; } },
+    begin: function () {
+      if (!Rec.ok()) return;
+      Rec.drop(); Voice.lastAudio = null;
+      var my = ++Rec.tok;
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(function (st) {
+        if (my !== Rec.tok || !Voice.listening) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+        var mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].filter(function (m) { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } })[0] || '';
+        var mr; try { mr = new MediaRecorder(st, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined); } catch (e) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+        var chunks = [], t0 = Date.now();
+        mr.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+        mr.onstop = function () {
+          st.getTracks().forEach(function (t) { t.stop(); });
+          var blob = new Blob(chunks, { type: mr.mimeType || mime || 'audio/webm' });
+          if (my === Rec.tok && blob.size > 1500) Voice.lastAudio = { blob: blob, mime: blob.type, at: Date.now(), ms: Date.now() - t0 };
+          if (Rec.mr === mr) Rec.mr = null;
+          if (Rec.wait) { var w = Rec.wait; Rec.wait = null; w(); }
+        };
+        Rec.mr = mr;
+        try { mr.start(1000); } catch (e) { Rec.mr = null; st.getTracks().forEach(function (t) { t.stop(); }); }
+      }).catch(function () {});
+    },
+    finish: function () { if (Rec.mr && Rec.mr.state !== 'inactive') { try { Rec.mr.stop(); } catch (e) {} } },
+    drop: function () { Rec.tok++; if (Rec.mr && Rec.mr.state !== 'inactive') { try { Rec.mr.stop(); } catch (e) {} } Rec.mr = null; }
+  };
+
   function backend() {
     if (Native.capable()) return Native;
     if (Web.capable()) return Web;
@@ -568,6 +604,7 @@
          for no information at all. It appears when there are words. */
       say('');
       Voice.emit('listening');
+      if (opts.record && b.name === 'web' && !sink) Rec.begin(); else Voice.lastAudio = null;
 
       var manual = !!opts.manual || !!sink, userStop = false, failed = false, since = Date.now();
       var limit = sink ? Infinity : 600000;
@@ -627,6 +664,7 @@
             try { Voice.field.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
           }
           Voice.field = null;
+          Rec.finish();
           Voice.emit('idle');
           if (!ui.field) detach();
         }
@@ -648,7 +686,19 @@
       if (ui.mic) ui.mic.classList.remove('live');
       say('');
       if (b) b.cancel();
+      Rec.drop(); Voice.lastAudio = null;
       Voice.emit('idle');
+    },
+
+    /* The recording of the last turn, once it has finished writing (or
+       null: none was made, or it is not ready within the wait). */
+    lastAudio: null,
+    audio: function (waitMs) {
+      return new Promise(function (done) {
+        if (!Rec.mr) { done(Voice.lastAudio); return; }
+        var t = setTimeout(function () { Rec.wait = null; done(Voice.lastAudio); }, waitMs || 1500);
+        Rec.wait = function () { clearTimeout(t); done(Voice.lastAudio); };
+      });
     },
 
     /* The Mac app's microphone choice (null elsewhere). */

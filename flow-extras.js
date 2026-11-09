@@ -2742,6 +2742,81 @@ async function handleChats(p, req, res, ctx) {
   return true;
 }
 
+
+/* ==========================================================================
+ * Hearing him right — Turkish, English, or both in one sentence
+ * --------------------------------------------------------------------------
+ * GET  /api/flow/hear  → { ears, polish }   what this server can do
+ * POST /api/flow/hear {audio?, mime?, text?, names?, lang?}
+ *                      → { text, raw, provider, ms }
+ *
+ * A phone's or browser's recogniser listens in ONE language, so a sentence
+ * that switches between Turkish and English comes out half nonsense. When
+ * the app has a recording of the turn, it is transcribed here by a model
+ * that detects the language as it goes (ElevenLabs Scribe, or Whisper),
+ * with no language forced. Then it is cleaned the way Wispr Flow cleans
+ * dictation: fillers and false starts out, his own corrections applied,
+ * punctuation in, names spelled the way he spells them — in the languages
+ * he spoke, never translated, never answered. Without a recording (the
+ * phone apps), the device's words are cleaned the same way. Nothing is kept.
+ * ======================================================================== */
+let speechMod = null; try { speechMod = require('./flow-speech'); } catch (e) { speechMod = null; }
+let hearPost = (...a) => postJSON(...a);
+const HEAR_MODEL = process.env.FLOW_POLISH_MODEL || 'claude-haiku-4-5';
+const HEAR_DAILY_CAP = +process.env.FLOW_HEAR_CAP || 600;
+const HEAR_SYSTEM = [
+  'You clean up dictation, the way Wispr Flow does. The text is what a person just SAID to their personal assistant, written down by speech recognition.',
+  'They speak Turkish, English, or both in one sentence. Keep every part in the language they spoke it. Never translate, never answer, never add anything, never summarise: it is their message to the assistant, not to you.',
+  'Do: remove fillers and hesitations (um, uh, like, you know; ee, şey, yani, hani, işte when they are only filler), stutters, repeated words and false starts. Apply their own corrections ("at three, no, four" → "at four"; "yarın, pardon, cuma" → "cuma"). Add punctuation and capitals, split run-ons into sentences, and fix words the recogniser plainly misheard when the context makes the right word obvious — especially Turkish words written as English-sounding nonsense and the other way round. Spell people, places and companies exactly as in NAMES when one is meant.',
+  'If a second transcript (DEVICE) is given, it heard the same words with a single-language recogniser: use it only to settle a word the main transcript got wrong.',
+  'Keep their meaning, their order and their tone. Lists they say stay lists in a sentence ("call the venue, book the flights and send the deck").',
+  'Return ONLY the cleaned text, nothing else. If there is nothing intelligible, return an empty string.'
+].join('\n');
+function hearClean(s) { return String(s || '').replace(/^["“”']+|["“”']+$/g, '').replace(/\s+\n/g, '\n').trim(); }
+async function hearPolish(raw, device, names) {
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  if (!key || !raw) return { text: raw, polished: false };
+  const user = 'NAMES: ' + (names.length ? names.join(', ') : '(none)') + '\n' + (device && device !== raw ? 'DEVICE: ' + device + '\n' : '') + 'TRANSCRIPT: ' + raw;
+  try {
+    const r = await hearPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      { model: HEAR_MODEL, max_tokens: 1200, temperature: 0, system: HEAR_SYSTEM, messages: [{ role: 'user', content: user }] }, 9000);
+    if (r.status < 200 || r.status >= 300) return { text: raw, polished: false };
+    const t = hearClean(((r.body && r.body.content) || []).filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'));
+    /* a reply that is not a cleaning (an answer, a refusal, a different length entirely) is not used */
+    if (!t || t.length > raw.length * 1.6 + 40) return { text: raw, polished: false };
+    return { text: t, polished: true };
+  } catch (e) { return { text: raw, polished: false }; }
+}
+async function handleHear(p, req, res, ctx) {
+  if (p !== '/api/flow/hear') return false;
+  const ears = !!(speechMod && speechMod.sttProvider && speechMod.sttProvider());
+  const polish = !!process.env.ANTHROPIC_API_KEY;
+  if (req.method === 'GET') { ctx.json(res, 200, { ok: true, ears, polish, provider: ears ? speechMod.sttProvider() : '' }); return true; }
+  if (req.method !== 'POST') { ctx.json(res, 405, { error: 'GET or POST.' }); return true; }
+  const started = Date.now();
+  let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const device = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+  const names = (Array.isArray(b.names) ? b.names : []).map((n) => String(n || '').trim().slice(0, 40)).filter(Boolean).slice(0, 80);
+  const day = 'hear:' + new Date().toISOString().slice(0, 10);
+  const used = (await ctx.counter.get(day)) || 0;
+  if (HEAR_DAILY_CAP > 0 && used >= HEAR_DAILY_CAP) { ctx.json(res, 200, { ok: true, text: device, raw: device, provider: 'device', capped: true }); return true; }
+  let raw = '', provider = 'device';
+  if (b.audio && ears) {
+    let buf = null; try { buf = Buffer.from(String(b.audio), 'base64'); } catch (e) {}
+    if (buf && buf.length > 1500 && buf.length < 8 * 1024 * 1024) {
+      const mime = /^audio\/[\w.+-]+(;\s*codecs=[\w.,-]+)?$/i.test(String(b.mime || '')) ? String(b.mime) : 'audio/webm';
+      const t = await speechMod.transcribe({ buffer: buf, mime, fake: b.fake }, null);
+      if (t && !t.error && t.text) { raw = String(t.text).trim(); provider = t.provider || provider; }
+    }
+  }
+  if (!raw) raw = device;
+  if (!raw) { ctx.json(res, 200, { ok: true, text: '', raw: '', provider }); return true; }
+  const out = await hearPolish(raw, provider === 'device' ? '' : device, names);
+  await ctx.counter.set(day, used + 1);
+  ctx.json(res, 200, { ok: true, text: out.text, raw, polished: out.polished, provider, ms: Date.now() - started });
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -2757,6 +2832,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleMeal(p, req, res, ctx)) return true;
   if (await handleDo(p, req, res, ctx)) return true;
   if (await handleChats(p, req, res, ctx)) return true;
+  if (await handleHear(p, req, res, ctx)) return true;
   if (await handleDocument(p, req, res, ctx)) return true;
   if (await handleSpeak(p, req, res, ctx)) return true;
   return false;
@@ -2779,6 +2855,7 @@ module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
 module.exports._internals.postStream = postStream;
 module.exports._internals.sseFrames = sseFrames;
 module.exports._internals.sayPrefix = sayPrefix;
+module.exports._internals.hear = { handle: handleHear, polish: hearPolish, SYSTEM: HEAR_SYSTEM, setPoster(fn) { hearPost = fn || ((...a) => postJSON(...a)); } };
 module.exports._internals.chats = { handle: handleChats, title: chatTitle, clean: chatClean };
 module.exports._internals.systemBlocks = systemBlocks;
 module.exports._internals.statement = {

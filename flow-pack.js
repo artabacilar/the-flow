@@ -14182,7 +14182,7 @@ const Say = {
     Say.waiting = true;
     /* Hands-free: 1.6 s of quiet after words ends the turn. Otherwise the
        person ends it — Talk again sends — and a pause ends nothing. */
-    try { FlowVoice.start(ta, Say.handsFree() ? { pauseEnd: 1600 } : { manual: true }); } catch (e) { Say.waiting = false; }
+    try { Say.hearInit(); FlowVoice.start(ta, Say.handsFree() ? { pauseEnd: 1600, record: Say.ears !== false } : { manual: true, record: Say.ears !== false }); } catch (e) { Say.waiting = false; }
     Say.paintMic();
   },
   again() {
@@ -14218,6 +14218,19 @@ const Say = {
     try { const box = Say.el.querySelector('.sy-log'); if (box && !Say.agent) { const lv = box.querySelector('.sy-b.u.live'); if (lv) lv.remove(); box.insertAdjacentHTML('beforeend', '<div class="sy-b u pending" data-i18n="off">' + esc(text) + '</div>'); box.hidden = false; box.scrollTop = box.scrollHeight; } } catch (e) {}
     try { Say.chatsToggle(false); } catch (e) {}
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
+    /* Spoken (not typed, not dictated by Wispr Flow): what he said is written
+       down properly first — the recording transcribed with Turkish and
+       English as they came, then cleaned the way Wispr Flow does — and that
+       is what goes in the chat and to him. */
+    let dictated = false; try { dictated = Say.own(); } catch (e) {}
+    if (Say.spoken && !dictated) {
+      const clean = await Say.polish(text);
+      if (clean && clean !== text) {
+        text = clean; Say.said = text; ta.value = text;
+        try { const pb = Say.el.querySelector('.sy-log .sy-b.u.pending'); if (pb) pb.textContent = text; Hud.caption('u', text); } catch (e) {}
+      }
+      Say.state('Working it out…');
+    }
     try {
       /* "Where did that come from?" is answered from the record of the last
          reply, not by asking the model to guess about itself. */
@@ -14326,6 +14339,39 @@ const Say = {
       Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
     finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); try { const ca = Hud.el && Hud.el.querySelector('.hud-cap-a.thinking'); if (ca) ca.classList.remove('thinking'); } catch (e) {} }
+  },
+  /* ---- hearing him right: Turkish, English, or both at once ----
+     The device's recogniser hears one language; the server transcribes the
+     turn's recording with the language detected as it goes and cleans it
+     like Wispr Flow (fillers out, his corrections applied, punctuation,
+     names as he spells them). Without a recording (the phone apps), the
+     device's words are cleaned. Any failure keeps the words as heard. */
+  ears: null, hearOk: null, hearAsked: false,
+  hearInit() {
+    if (Say.hearAsked) return; Say.hearAsked = true;
+    fetch('/api/flow/hear', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((j) => {
+      if (!j) { Say.ears = false; Say.hearOk = false; return; }
+      Say.ears = !!j.ears; Say.hearOk = !!(j.ears || j.polish);
+    }).catch(() => { Say.ears = false; Say.hearOk = false; });
+  },
+  async polish(text) {
+    if (Say.hearOk === false) return text;
+    let audio = null;
+    try { const a = await FlowVoice.audio(1500); if (a && a.blob && Date.now() - a.at < 30000) audio = a; FlowVoice.lastAudio = null; } catch (e) {}
+    let names = []; try { names = Team.lexicon().slice(0, 80); } catch (e) {}
+    const body = { text, names, lang: Say.lang() };
+    if (audio && Say.ears) {
+      try { body.audio = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = no; fr.readAsDataURL(audio.blob); }); body.mime = audio.mime; } catch (e) {}
+    }
+    Say.state(Say.lang() === 'tr' ? 'Söylediğinizi yazıya geçiriyorum…' : 'Writing down what you said…');
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
+      const r = await fetch('/api/flow/hear', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
+      clearTimeout(t);
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && typeof j.text === 'string' && j.text.trim()) return j.text.trim();
+    } catch (e) {}
+    return text;
   },
   /* ---- the conversation, kept (like ChatGPT's and Claude's) ----
      Every turn is written to the server as it lands (logPaint calls
