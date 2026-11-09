@@ -13784,6 +13784,8 @@ const Say = {
         '<div class="fn-grab" data-say="close"></div>' +
         '<button type="button" class="fn-capture-close" data-say="close" aria-label="Close">×</button>' +
         '<div class="sy-k">Assistant</div>' +
+        '<div class="sy-chatbar"><button type="button" class="sy-cb" data-say="chats" aria-expanded="false">' + Nav.svg('chat') + '<span>Chats</span></button><button type="button" class="sy-cb" data-say="newchat">＋<span>New chat</span></button></div>' +
+        '<div class="sy-chats" hidden></div>' +
         '<div class="sy-orb" aria-hidden="true"><i></i><i></i><i></i></div>' +
         '<div class="sy-hello" data-i18n="off"></div>' +
         '<div class="sy-log" aria-live="polite"></div>' +
@@ -13836,6 +13838,11 @@ const Say = {
       if (a === 'kb') return Say.kb();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
+      if (a === 'undo') return Say.undo();
+      if (a === 'newchat') return Say.chatNew();
+      if (a === 'chats') return Say.chatsToggle();
+      if (a === 'chatopen') return Say.chatOpen(b.getAttribute('data-id'));
+      if (a === 'chatdel') return Say.chatDelete(b.getAttribute('data-id'));
       if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
       if (a === 'memadd') { const i = Say.el.querySelector('#sy-mem-in'); const v = i.value; i.value = ''; Say.remember(v).then((ok) => { if (ok) Speech.say(Say.lang() === 'tr' ? 'Not aldım.' : 'Noted' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }); return; }
       if (a === 'drop') { const i = +b.getAttribute('data-i'); if (Say.plan) { Say.plan.actions.splice(i, 1); Say.paintPlan(); } return; }
@@ -13887,7 +13894,7 @@ const Say = {
       if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
         if (state === 'level') { Say.meter(extra); return; }
-        if (state === 'partial') { Say.overCheck((extra && extra.text) || ''); if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } try { Hud.caption('live', (extra && extra.text) || ''); } catch (x) {} return; }
+        if (state === 'partial') { Say.overCheck((extra && extra.text) || ''); if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } try { Hud.caption('live', (extra && extra.text) || ''); } catch (x) {} Say.liveBubble((extra && extra.text) || ''); return; }
         if (state === 'listening') { const lv0 = Say.el.querySelector('.sy-live'); if (lv0) { lv0.textContent = ''; lv0.hidden = true; }
           /* The Mac app listening for 12 s and not one word: say which
              microphone it is listening to, and offer the others. */
@@ -13987,7 +13994,7 @@ const Say = {
     Say.build();
     Speech.unlock();
     Say.plan = null; Say.spoken = false; Say.typed = false; Say.busy = false; Say.confirming = false;
-    Say.history = []; Say.logPaint();
+    Say.history = []; Say.logPaint(); Say.chatResume();
     Say.prefsPaint();
     const ta = Say.el.querySelector('#sy-text'); ta.value = (opts && opts.text) || '';
     Say.el.querySelector('.sy-ask').hidden = false;
@@ -14161,6 +14168,9 @@ const Say = {
     /* Answered at once, the way a chat answers: what was said is under the orb
        the moment it is sent, with his thinking pulse, before any reply. */
     try { Hud.caption('u', text); Hud.caption('think'); } catch (e) {}
+    /* and in the chat, as his message, at once */
+    try { const box = Say.el.querySelector('.sy-log'); if (box && !Say.agent) { const lv = box.querySelector('.sy-b.u.live'); if (lv) lv.remove(); box.insertAdjacentHTML('beforeend', '<div class="sy-b u pending" data-i18n="off">' + esc(text) + '</div>'); box.hidden = false; box.scrollTop = box.scrollHeight; } } catch (e) {}
+    try { Say.chatsToggle(false); } catch (e) {}
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       /* "Where did that come from?" is answered from the record of the last
@@ -14249,20 +14259,200 @@ const Say = {
         return;
       }
       if (j.end) { Say.plan = null; Say.askView(); Say.logPaint(); Say.state(''); await Say.speak(reply); Say.close(); return; }
+      /* He acts, the way a chief of staff does: what was understood is done
+         at once, listed under his answer, with Undo — no "Do it" step. */
       if (acts.length) {
-        Say.paintPlan();
+        const r = await Say.run(acts);
+        const last = Say.history[Say.history.length - 1];
+        if (last && last.role === 'assistant') { last.did = r.did; last.undo = r.undo; }
+        Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
+        if (r.did.length) toast(r.did.length === 1 ? 'Done ✓' : r.did.length + ' things done ✓', null, 1600);
         await Say.speak(reply);
-        Say.follow(true);
+        if (r.open) { try { Nav.go(r.open); } catch (e) {} }
+        Say.follow(false);
         return;
       }
-      /* An answer: it stays a conversation — the answer in the log, the box
-         empty for whatever comes next. */
+      /* An answer (or his question back): it stays a conversation — the
+         answer in the log, the box empty for whatever comes next. */
       Say.plan = null; Say.askView(); Say.state('');
       Say.logPaint();
       await Say.speak(reply);
       Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
     finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); try { const ca = Hud.el && Hud.el.querySelector('.hud-cap-a.thinking'); if (ca) ca.classList.remove('thinking'); } catch (e) {} }
+  },
+  /* ---- the conversation, kept (like ChatGPT's and Claude's) ----
+     Every turn is written to the server as it lands (logPaint calls
+     chatPersist), so nothing said goes away: not on a reload, not on another
+     device. Opening the console carries on the current chat if it was in
+     the last few hours, otherwise it starts a new one; older ones are under
+     Chats. A specialist's room keeps its own thread on the team side. */
+  chatId: null, chatAt: 0, chatQ: Promise.resolve(), chatTok: 0,
+  chatStore(id) { try { if (id) localStorage.setItem('flowChatId', id); else localStorage.removeItem('flowChatId'); } catch (e) {} },
+  chatPersist() {
+    if (Say.agent) return;
+    const fresh = Say.history.filter((m) => m && !m._k && m.text && !m.local);
+    if (!fresh.length) return;
+    fresh.forEach((m) => { m._k = 1; if (!m.at) m.at = Date.now(); });
+    const tok = Say.chatTok;
+    Say.chatQ = Say.chatQ.then(async () => {
+      if (tok !== Say.chatTok) return;
+      const r = await fetch('/api/flow/chats', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'append', id: Say.chatId || undefined, messages: fresh.map((m) => ({ role: m.role, text: m.text, did: m.did, at: m.at })) }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.id) { if (tok === Say.chatTok) { Say.chatId = j.id; Say.chatAt = Date.now(); Say.chatStore(j.id); } Say.chatList = null; }
+      else fresh.forEach((m) => { m._k = 0; });
+    }).catch(() => { fresh.forEach((m) => { m._k = 0; }); });
+  },
+  async chatLoad(id) {
+    const r = await fetch('/api/flow/chats?id=' + encodeURIComponent(id), { credentials: 'same-origin', cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && j.chat ? j.chat : null;
+  },
+  async chatResume() {
+    if (Say.agent || Say.history.length) return;
+    let id = Say.chatId; if (!id) { try { id = localStorage.getItem('flowChatId'); } catch (e) {} }
+    if (!id) return;
+    const tok = ++Say.chatTok;
+    const c = await Say.chatLoad(id).catch(() => null);
+    if (tok !== Say.chatTok || Say.agent || Say.history.length) return;
+    /* a chat left hours ago stays in Chats; this is a fresh one */
+    if (!c || Date.now() - (c.at || 0) > 3 * 3600e3) { Say.chatId = null; Say.chatStore(null); return; }
+    Say.chatId = c.id; Say.chatAt = c.at;
+    Say.history = (c.messages || []).map((m) => ({ role: m.role, text: m.text, did: m.did, at: m.at, _k: 1 }));
+    Say.capLen = Say.history.length;
+    Say.logPaint();
+  },
+  chatNew() {
+    Say.chatTok++; Say.chatId = null; Say.chatStore(null);
+    Say.history = []; Say.plan = null; Say.undoFn = null;
+    try { Say.askView(); Say.state(''); } catch (e) {}
+    Say.logPaint(); try { Hud.caption('clear'); } catch (e) {}
+    Say.chatsToggle(false);
+    const hi = Say.el && Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
+  },
+  async chatOpen(id) {
+    if (!id) return;
+    const tok = ++Say.chatTok;
+    const c = await Say.chatLoad(id).catch(() => null);
+    if (!c || tok !== Say.chatTok) { Say.state('That chat could not be opened.'); return; }
+    if (Say.agent) { try { await Team.select(null, true); } catch (e) {} }
+    Say.chatId = c.id; Say.chatAt = c.at; Say.chatStore(c.id); Say.undoFn = null;
+    Say.history = (c.messages || []).map((m) => ({ role: m.role, text: m.text, did: m.did, at: m.at, _k: 1 }));
+    Say.capLen = Say.history.length; Say.plan = null;
+    try { Say.askView(); Say.state(''); } catch (e) {}
+    Say.chatsToggle(false); Say.logPaint();
+    try { if (Say.dockable()) Say.kb(true); } catch (e) {}
+  },
+  async chatDelete(id) {
+    if (!id) return;
+    await fetch('/api/flow/chats', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'delete', id }) }).catch(() => {});
+    if (id === Say.chatId) Say.chatNew();
+    Say.chatList = null; Say.chatsToggle(true);
+  },
+  chatList: null,
+  async chatsToggle(open) {
+    const box = Say.el && Say.el.querySelector('.sy-chats'); if (!box) return;
+    const btn = Say.el.querySelector('[data-say="chats"]');
+    const want = open == null ? box.hidden : !!open;
+    box.hidden = !want; if (btn) btn.setAttribute('aria-expanded', String(want));
+    if (!want) return;
+    try { if (Say.dockable()) Say.kb(true); } catch (e) {}
+    box.innerHTML = '<div class="sy-chk">Chats</div><p class="sy-chnone">Loading…</p>';
+    if (!Say.chatList) {
+      const r = await fetch('/api/flow/chats', { credentials: 'same-origin', cache: 'no-store' }).catch(() => null);
+      const j = r ? await r.json().catch(() => ({})) : {};
+      Say.chatList = Array.isArray(j.chats) ? j.chats : [];
+    }
+    if (box.hidden) return;
+    const when = (t) => { const d = new Date(t), now = new Date(); const same = d.toDateString() === now.toDateString(); return same ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short' }); };
+    box.innerHTML = '<div class="sy-chk">Chats</div>' + (Say.chatList.length ? '<ul class="sy-chl">' + Say.chatList.map((c) =>
+      '<li class="' + (c.id === Say.chatId ? 'on' : '') + '"><button type="button" class="sy-cho" data-say="chatopen" data-id="' + esc(c.id) + '"><b data-i18n="off">' + esc(c.title || 'Chat') + '</b><small>' + esc(when(c.at)) + ' · ' + (c.n || 0) + '</small></button>' +
+      '<button type="button" class="sy-chx" data-say="chatdel" data-id="' + esc(c.id) + '" aria-label="Delete this chat">×</button></li>').join('') + '</ul>' : '<p class="sy-chnone">No chats yet. What you say to him is kept here.</p>');
+  },
+  /* What is being said, as it is said: his message in the chat, growing. */
+  liveBubble(text) {
+    const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
+    let b = box.querySelector('.sy-b.u.live');
+    if (!text) { if (b) b.remove(); box.hidden = !box.querySelector('.sy-b'); return; }
+    if (!b) { box.insertAdjacentHTML('beforeend', '<div class="sy-b u live" data-i18n="off"></div>'); b = box.querySelector('.sy-b.u.live'); }
+    b.textContent = text; box.hidden = false; box.scrollTop = box.scrollHeight;
+  },
+  /* ---- doing it ----
+     The same changes "Do it" made, made at once. Before anything changes,
+     the planner's own state is copied, so Undo puts it back exactly. Each
+     change becomes a line under his answer. */
+  undoFn: null,
+  async run(actions) {
+    const { c, hb, S } = Say.host();
+    const roles = (c && Array.isArray(c.roles)) ? c.roles : [];
+    const snap = { rocks: c && c.rocks ? JSON.stringify(c.rocks) : null, habits: hb ? JSON.stringify(hb) : null, jIds: (typeof Journal !== 'undefined' && Journal.entries) ? Journal.entries.map((e) => e.id) : null };
+    const did = []; let open = null, journal = false, planner = false;
+    const tr = Say.lang() === 'tr';
+    const dayName = (d) => { try { return Say.label(Say.iso(d)); } catch (e) { return ''; } };
+    for (const a of actions) {
+      try {
+        if (a.type === 'rock') {
+          const d = Say.day(a.date) || new Date(); const title = String(a.title || '').trim(); if (!title || typeof addRock !== 'function') continue;
+          addRock(title.slice(0, 200), roles[0] || '', (d.getDay() + 6) % 7, a.time || '', weekId(d), { note: a.note || '', prio: 'med' });
+          did.push((tr ? 'Eklendi: ' : 'Added: ') + title + ' — ' + dayName(d) + (a.time ? ' ' + a.time : '')); planner = true;
+        } else if (a.type === 'habit') {
+          const name = String(a.name || '').trim(); if (!name || !hb || !S) continue;
+          hb.habits = hb.habits || [];
+          if (hb.habits.some((h) => h && String(h.name).toLowerCase() === name.toLowerCase())) continue;
+          hb.habits.push({ id: Date.now().toString() + did.length, name });
+          try { if (typeof J === 'function') J('habits', '➕ New habit: ' + name); } catch (e) {}
+          S.set('habits', hb); try { if (typeof renderHabits === 'function') renderHabits(); } catch (e) {}
+          did.push((tr ? 'Yeni alışkanlık: ' : 'New habit: ') + name); planner = true;
+        } else if (a.type === 'tick') {
+          if (!hb || !S) continue;
+          if (a.date === Say.plusDays(0)) HabitDo.tick(a.habit);
+          else { hb.completions = hb.completions || {}; (hb.completions[a.habit] = hb.completions[a.habit] || {})[a.date] = true; S.set('habits', hb); }
+          did.push((tr ? 'İşaretlendi: ' : 'Ticked: ') + Say.habitName(a.habit)); planner = true;
+        } else if (a.type === 'journal') {
+          const body = String(a.text || '').trim(); if (!body) continue;
+          const now = new Date().toISOString();
+          Journal.entries.push({ id: uid('j'), created: now, updated: now, date: today(), title: String(a.title || ''), body, tags: ['voice'], prompts: {}, mood: null, energy: null });
+          journal = true; did.push((tr ? 'Günlüğe yazıldı: ' : 'In the journal: ') + (a.title || body.slice(0, 60))); planner = true;
+        } else if (a.type === 'move') {
+          const d = Say.day(a.date); const r = Say.findRock(a.rock); if (d) { TodayFix.move(a.rock, d); did.push((tr ? 'Taşındı: ' : 'Moved: ') + (r ? r.title : '') + ' → ' + dayName(d)); planner = true; }
+        } else if (a.type === 'done') {
+          const r = Say.findRock(a.rock); TodayFix.done(a.rock); did.push((tr ? 'Bitti: ' : 'Done: ') + (r ? r.title : '')); planner = true;
+        } else if (a.type === 'open') { open = a.page; }
+        else if (a.type === 'remember') { if (await Say.remember(a.fact)) did.push((tr ? 'Hatırlayacağım: ' : 'Remembered: ') + a.fact); }
+        else if (a.type === 'forget') { await Say.forget(a.memory); did.push(tr ? 'Unutuldu' : 'Forgotten'); }
+        else if (a.type === 'style') { await Settings.set('asstStyle', a.style); Say.prefsPaint(); did.push(a.style === 'loose' ? 'Loose mode' : 'Butler mode'); }
+        else if (a.type === 'ride') { Say.openRide(a); did.push((tr ? 'Uber hazır: ' : 'Uber ready to confirm: ') + a.to); }
+        else if (a.type === 'delegate') { const j = await Team.delegate(a.brief, a.title); if (j && j.ok) did.push((tr ? 'Ekibe verildi: ' : 'With the team: ') + (a.title || a.brief.slice(0, 60))); }
+      } catch (e) { console.warn('[Flow] say', a.type, e); }
+    }
+    if (journal) { try { await Journal.save(); Journal.rerender(); } catch (e) {} }
+    try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+    try { TodayLook.paint(); } catch (e) {}
+    try { if (Hud.on) Hud.paint(); } catch (e) {}
+    let undo = 0;
+    if (planner) {
+      undo = Date.now();
+      Say.undoFn = { key: undo, fn: async () => {
+        const h = Say.host();
+        if (snap.rocks != null && h.c) { h.c.rocks = JSON.parse(snap.rocks); try { cSave(); } catch (e) {} }
+        if (snap.habits != null && h.S) { h.S.set('habits', JSON.parse(snap.habits)); try { if (typeof hbData !== 'undefined') Object.assign(hbData, JSON.parse(snap.habits)); } catch (e) {} try { if (typeof renderHabits === 'function') renderHabits(); } catch (e) {} }
+        if (snap.jIds && typeof Journal !== 'undefined') { const keep = new Set(snap.jIds); const before = Journal.entries.length; Journal.entries = Journal.entries.filter((e) => keep.has(e.id)); if (Journal.entries.length !== before) { try { await Journal.save(); Journal.rerender(); } catch (e) {} } }
+        try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
+        try { TodayLook.paint(); } catch (e) {}
+        try { if (Hud.on) Hud.paint(); } catch (e) {}
+      } };
+    }
+    return { did, open, undo };
+  },
+  async undo() {
+    const u = Say.undoFn; if (!u) return;
+    Say.undoFn = null;
+    try { await u.fn(); } catch (e) { console.warn('[Flow] undo', e); }
+    const t = Say.history.find((m) => m.undo === u.key); if (t) t.undo = 0;
+    const line = Say.lang() === 'tr' ? 'Geri aldım — hepsi eskisi gibi.' : 'Undone — everything is as it was.';
+    Say.history.push({ role: 'assistant', text: line });
+    Say.logPaint(); toast(Say.lang() === 'tr' ? 'Geri alındı' : 'Undone', null, 1400);
   },
   /* Asks /api/flow/do and, when the server streams, shows the spoken
      sentence as it is written — under the orb and in the log — the way a
@@ -14307,7 +14497,8 @@ const Say = {
     const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
     let b = box.querySelector('.sy-b.streaming');
     if (!b) {
-      box.insertAdjacentHTML('beforeend', '<div class="sy-b u" data-i18n="off">' + esc(heard || '') + '</div><div class="sy-b a streaming" data-i18n="off"></div>');
+      const lv = box.querySelector('.sy-b.u.live'); if (lv) lv.remove();
+      box.insertAdjacentHTML('beforeend', (box.querySelector('.sy-b.u.pending') ? '' : '<div class="sy-b u" data-i18n="off">' + esc(heard || '') + '</div>') + '<div class="sy-b a streaming" data-i18n="off"></div>');
       b = box.querySelector('.sy-b.streaming'); box.hidden = false;
     }
     b.textContent = text;
@@ -14315,7 +14506,7 @@ const Say = {
   },
   streamDrop() {
     const box = Say.el && Say.el.querySelector('.sy-log');
-    if (box) { const b = box.querySelector('.sy-b.streaming'); if (b) { const u = b.previousElementSibling; b.remove(); if (u && u.classList.contains('u')) u.remove(); } }
+    if (box) { const b = box.querySelector('.sy-b.streaming'); if (b) { const u = b.previousElementSibling; b.remove(); if (u && u.classList.contains('u') && !u.classList.contains('pending')) u.remove(); } }
     try { Hud.caption('a', ''); Hud.capA = ''; } catch (e) {}
   },
   /* ---- from a document: a PDF, a photo of a page, or a text ----
@@ -14431,9 +14622,13 @@ const Say = {
     const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
     /* While a plan is on screen its own lines say the last turn. */
     const turns = Say.plan && Say.plan.actions && Say.plan.actions.length ? Say.history.slice(0, -2) : Say.history;
-    box.innerHTML = turns.slice(-6).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) + (t.sources && t.sources.length ? '<small class="sy-src">From: ' + esc(t.sources.map((s) => s.title).join(' · ')) + '</small>' : '') + '</div>').join('');
+    const lastUndo = (() => { for (let i = turns.length - 1; i >= 0; i--) if (turns[i].undo) return turns[i]; return null; })();
+    box.innerHTML = turns.slice(-80).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) +
+      (t.did && t.did.length ? '<ul class="sy-did">' + t.did.map((d) => '<li>' + esc(d) + '</li>').join('') + '</ul>' + (t === lastUndo && Say.undoFn && Say.undoFn.key === t.undo ? '<button type="button" class="sy-undo" data-say="undo">Undo</button>' : '') : '') +
+      (t.sources && t.sources.length ? '<small class="sy-src">From: ' + esc(t.sources.map((s) => s.title).join(' · ')) + '</small>' : '') + '</div>').join('');
     box.hidden = !turns.length;
     box.scrollTop = box.scrollHeight;
+    Say.chatPersist();
     try {
       const all = Say.history;
       let u = null, an = null; for (let i = all.length - 1; i >= 0; i--) { if (!an && all[i].role === 'assistant') an = all[i]; if (!u && all[i].role === 'user') u = all[i]; }
@@ -14955,7 +15150,7 @@ const Hud = {
     if (!group) return;
     tab = tab && Hud.PAGES[group].indexOf(tab) >= 0 ? tab : (Hud.pageLast[group] || Hud.PAGES[group][0]);
     Hud.pageLast[group] = tab;
-    if (Team.sel) { Team.sel = null; Say.agent = null; Team.adding = false; Team.editing = null; try { Say.history = []; Say.logPaint(); const k = Say.el && Say.el.querySelector('.sy-k'); if (k) k.textContent = Say.title(); } catch (e) {} }
+    if (Team.sel) { Team.sel = null; Say.agent = null; Team.adding = false; Team.editing = null; try { Say.history = []; Say.logPaint(); Say.chatResume(); const k = Say.el && Say.el.querySelector('.sy-k'); if (k) k.textContent = Say.title(); } catch (e) {} }
     Hud.page = { group, tab };
     Hud.el.classList.add('hud-pagemode');
     Hud.mount(group, tab);
@@ -15120,7 +15315,7 @@ const Team = {
         if (r.ok && Say.agent === next) Say.history = (j.messages || []).slice(-12).map((m) => ({ role: m.role, text: m.text }));
       } catch (e) {}
       Team.markSeen(next);
-    } else { Say.history = []; }
+    } else { Say.history = []; Say.chatResume(); }
     try { Say.logPaint(); } catch (e) {}
     if (next && Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); }
     if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); }

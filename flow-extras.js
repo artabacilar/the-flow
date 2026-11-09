@@ -2051,12 +2051,13 @@ const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'r
 
 const DO_SYSTEM = [
   'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
-  'Turn it into actions for the app, and a short reply. You never act yourself: the app shows your actions for them to confirm.',
+  'Work out what they want and turn it into actions for the app, and a short reply. The app carries your actions out at once — there is no confirmation step, and the person can undo — so act on what they clearly mean, the way a capable chief of staff would.',
   '',
   'Return ONLY a JSON object, no prose around it:',
   '{',
   '  "say": "what you say back, spoken aloud, in their language",',
   '  "end": false,',
+  '  "ask": false,',
   '  "actions": [',
   '    { "type": "rock",    "title": "Call the venue", "date": "YYYY-MM-DD", "time": "10:00", "note": "" },',
   '    { "type": "habit",   "name": "Read 20 minutes" },',
@@ -2089,6 +2090,17 @@ const DO_SYSTEM = [
   '· When the only actions are remember/forget, they are saved at once: "say" confirms it as done ("Noted, sir — I shall remember that."). Do not repeat back sensitive details.',
   '· WHAT YOU KNOW ABOUT THEM (below) is what they told you before. Use it naturally where it helps — never recite it, and never contradict it without asking.',
   '',
+  'Understanding them — connect the dots:',
+  '· They rarely say "add". Telling you what they have to do, need to do, are waiting for or must organise ("for the rest of the day I have to…", "tomorrow I need to call…", "I am waiting for X to send…") IS the request: put it on their list. No day said: today. A time they gave goes in "time".',
+  '· Group what belongs together. Two things to raise with the same person in one call are ONE Priority with both topics ("Call Dad — selling the iPhone, and Revelle AI as a reseller"), not two calls. Separate people, separate errands, separate Priorities.',
+  '· Waiting on someone is a follow-up Priority in their name ("Chase Burak for the legal documents and the pricing list"), with the reason in "note". Organising a meeting is a Priority to set it up, listing who it is with and what it is for in "note" ("Set up a meeting with Dad and Burak — the Revelle AI reseller details, once the documents are in").',
+  '· Link what depends on what: when one thing waits for another (the meeting needs Burak\'s documents first), say so in the later one\'s note, and put it on a day after or leave it today if they did not say.',
+  '· People they name and who they are (Dad, Burak from legal, Oğuz) are worth a "remember" when it is new and lasting ("Burak sends legal documents and pricing for Revelle AI"); do not repeat what WHAT YOU KNOW already says.',
+  '· Use the conversation so far: "those", "that one", "the same for Friday", "and also…" refer to what was just said.',
+  '· Check the Priorities list before adding: something already there is not added twice — a new day is a move, finished is done; say so in "say".',
+  '· Work someone on the team should do (drafting, research, a reply, preparing a document) is delegate; their own calls, errands and meetings are rocks.',
+  '· Ask only when it matters. If you truly cannot tell what they want, or a detail is missing that you would otherwise have to guess wrongly (which of two Priorities, "Thursday or Friday"), ask ONE short question in "say", return no actions and set "ask": true. Never ask about what you can sensibly assume.',
+  '',
   'Rules:',
   '· One request can hold several actions; keep their order. At most 12.',
   '· Never invent ids. If they mention a Priority or habit that is not in the list, use rock/habit to create it instead, and say so.',
@@ -2099,7 +2111,7 @@ const DO_SYSTEM = [
   '· "end": true only when they are closing the conversation ("thanks, that is all", "goodbye", "nothing else") — then a brief sign-off in "say" and no actions.',
   '· If a writing habit is in the list and they are recording their day before bed, also tick that habit.',
   '· Titles are short and start with a capital; keep the language they spoke in.',
-  '· "say" confirms what you understood ("Two Priorities and a note.") — never claims it is done; the person still confirms.',
+  '· "say" says briefly what you did, in the past tense, naming the things ("Done — a call to your father about the iPhone and Revelle, a chase for Burak\'s documents, and the meeting to set up."). A ride is ready to confirm in Uber, not booked; delegated work is with the team, not finished.',
   '· If you could not understand anything useful, return no actions and say so briefly.'
 ].join('\n');
 
@@ -2181,7 +2193,7 @@ function doPersona(body) {
 
 /* The last few turns, so "and tomorrow?" follows on. Plain text only. */
 function doHistory(body) {
-  const h = Array.isArray(body && body.history) ? body.history.slice(-8) : [];
+  const h = Array.isArray(body && body.history) ? body.history.slice(-16) : [];
   return h.map((t) => t && { who: t.role === 'assistant' ? 'You' : 'They', text: String(t.text || '').replace(/\s+/g, ' ').trim().slice(0, 600) })
     .filter((t) => t && t.text);
 }
@@ -2272,7 +2284,7 @@ function parseDo(text, known, max) {
       const brief = String(a.brief == null ? '' : a.brief).trim().slice(0, 4000); if (brief) out.push({ type: 'delegate', title: str(a.title, 120) || str(brief, 80), brief });
     }
   }
-  return { say: str(j.say, 900), actions: out, end: j.end === true };
+  return { say: str(j.say, 900), actions: out, end: j.end === true, ask: j.ask === true && !out.length };
 }
 
 function doContext(body) {
@@ -2421,7 +2433,7 @@ async function handleDo(p, req, res, ctx) {
     out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    return finish(200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL, sources });
+    return finish(200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, ask: out.ask, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL, sources });
   } catch (e) {
     return finish(502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
   }
@@ -2654,6 +2666,82 @@ async function handleSpeak(p, req, res, ctx) {
   return true;
 }
 
+
+/* ==========================================================================
+ * Conversations with J.A.R.V.I.S. — kept, like ChatGPT's and Claude's
+ * --------------------------------------------------------------------------
+ * GET  /api/flow/chats            → { chats: [{id, title, at, n}] } newest first
+ * GET  /api/flow/chats?id=…       → { chat: {id, title, at, messages} }
+ * POST /api/flow/chats {op:'append', id?, messages:[{role, text, did?}]}
+ *                                  → { id, title }   (a new chat when no id)
+ * POST {op:'rename', id, title} · {op:'delete', id}
+ *
+ * Every turn is written as it happens, so nothing said is lost to a reload,
+ * a closed sheet or another device. Kept outside the account namespace the
+ * browser hydrates from (ctx.chats), so history never slows the app's start.
+ * ======================================================================== */
+const CHAT_KEEP = 400, CHATS_KEEP = 300;
+const chatId = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const chatTitle = (msgs) => {
+  const u = msgs.find((m) => m.role === 'user' && m.text);
+  const t = u ? u.text.replace(/\s+/g, ' ').trim() : 'New chat';
+  return t.length > 60 ? t.slice(0, 57).replace(/\s+\S*$/, '') + '…' : t;
+};
+function chatClean(m) {
+  if (!m || typeof m !== 'object') return null;
+  const role = m.role === 'assistant' ? 'assistant' : m.role === 'user' ? 'user' : '';
+  const text = String(m.text == null ? '' : m.text).replace(/\r/g, '').trim().slice(0, 6000);
+  if (!role || !text) return null;
+  const out = { role, text, at: Number.isFinite(+m.at) && +m.at > 0 ? +m.at : Date.now() };
+  if (Array.isArray(m.did)) out.did = m.did.map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 12);
+  return out;
+}
+async function handleChats(p, req, res, ctx) {
+  if (p !== '/api/flow/chats') return false;
+  const st = ctx.chats;
+  if (!st) { ctx.json(res, 503, { error: 'Chat history is not available here.' }); return true; }
+  const index = async () => { const v = await st.get('index'); return Array.isArray(v) ? v : []; };
+  if (req.method === 'GET') {
+    let id = ''; try { id = new URL(req.url, 'http://x').searchParams.get('id') || ''; } catch (e) {}
+    if (!id) { ctx.json(res, 200, { ok: true, chats: await index() }); return true; }
+    const c = await st.get('c:' + id);
+    if (!c) { ctx.json(res, 404, { error: 'No such chat.' }); return true; }
+    ctx.json(res, 200, { ok: true, chat: c }); return true;
+  }
+  if (req.method !== 'POST') { ctx.json(res, 405, { error: 'GET or POST.' }); return true; }
+  let b = {}; try { b = JSON.parse(await ctx.readBody(req)) || {}; } catch (e) {}
+  const id0 = /^c[a-z0-9]{6,24}$/.test(String(b.id || '')) ? String(b.id) : '';
+  let list = await index();
+  if (b.op === 'delete') {
+    if (!id0) { ctx.json(res, 400, { error: 'Which chat?' }); return true; }
+    await st.set('c:' + id0, null);
+    await st.set('index', list.filter((x) => x.id !== id0));
+    ctx.json(res, 200, { ok: true }); return true;
+  }
+  if (b.op === 'rename') {
+    const c = id0 && await st.get('c:' + id0);
+    if (!c) { ctx.json(res, 404, { error: 'No such chat.' }); return true; }
+    c.title = String(b.title || '').replace(/\s+/g, ' ').trim().slice(0, 80) || c.title; c.named = true;
+    await st.set('c:' + id0, c);
+    await st.set('index', list.map((x) => x.id === id0 ? Object.assign({}, x, { title: c.title }) : x));
+    ctx.json(res, 200, { ok: true, id: id0, title: c.title }); return true;
+  }
+  if (b.op !== 'append') { ctx.json(res, 400, { error: 'append, rename or delete.' }); return true; }
+  const msgs = (Array.isArray(b.messages) ? b.messages : []).slice(0, 40).map(chatClean).filter(Boolean);
+  if (!msgs.length) { ctx.json(res, 400, { error: 'Nothing to keep.' }); return true; }
+  let c = id0 ? await st.get('c:' + id0) : null;
+  if (!c) c = { id: id0 || chatId(), title: '', at: Date.now(), created: Date.now(), messages: [] };
+  c.messages = c.messages.concat(msgs).slice(-CHAT_KEEP);
+  c.at = Date.now();
+  if (!c.named) c.title = chatTitle(c.messages);
+  await st.set('c:' + c.id, c);
+  list = [{ id: c.id, title: c.title, at: c.at, n: c.messages.length }].concat(list.filter((x) => x.id !== c.id));
+  for (const gone of list.slice(CHATS_KEEP)) { try { await st.set('c:' + gone.id, null); } catch (e) {} }
+  await st.set('index', list.slice(0, CHATS_KEEP));
+  ctx.json(res, 200, { ok: true, id: c.id, title: c.title, n: c.messages.length });
+  return true;
+}
+
 /* Chain the handlers. */
 const _prices = module.exports.handle;
 module.exports.handle = async function (p, req, res, ctx) {
@@ -2668,6 +2756,7 @@ module.exports.handle = async function (p, req, res, ctx) {
   if (await handleAhead(p, req, res, ctx)) return true;
   if (await handleMeal(p, req, res, ctx)) return true;
   if (await handleDo(p, req, res, ctx)) return true;
+  if (await handleChats(p, req, res, ctx)) return true;
   if (await handleDocument(p, req, res, ctx)) return true;
   if (await handleSpeak(p, req, res, ctx)) return true;
   return false;
@@ -2690,6 +2779,7 @@ module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
 module.exports._internals.postStream = postStream;
 module.exports._internals.sseFrames = sseFrames;
 module.exports._internals.sayPrefix = sayPrefix;
+module.exports._internals.chats = { handle: handleChats, title: chatTitle, clean: chatClean };
 module.exports._internals.systemBlocks = systemBlocks;
 module.exports._internals.statement = {
   prepareStatement, xlsxToText, htmlTableToText, parseStatementReply, maskNumbers, decodeText,

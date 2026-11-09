@@ -4437,3 +4437,32 @@ html.hud-on #flow-say .fn-sheet{will-change:transform;contain:layout paint}
   #flow-hud.hud-merge.hud-pagemode .hud-core{height:min(24vh,190px)}
 }
 #flow-hud .hud-pgh{margin-left:6px;margin-right:6px}
+
+/* ── The conversation, kept: Chats · New chat, what he did, Undo (9 Nov) ── */
+#flow-say .sy-chatbar{display:flex;justify-content:center;gap:6px;margin:0 0 8px}
+#flow-say .sy-cb{display:inline-flex;align-items:center;gap:5px;font:inherit;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--lk-line,rgba(255,255,255,.14));background:transparent;color:var(--lk-ink,#F4F4F2);cursor:pointer}
+#flow-say .sy-cb svg{width:14px;height:14px}
+#flow-say .sy-cb[aria-expanded="true"]{border-color:currentColor}
+#flow-say .sy-chats{border:1px solid var(--lk-line,rgba(255,255,255,.12));border-radius:14px;padding:10px;margin:0 0 10px;max-height:44vh;overflow-y:auto}
+#flow-say .sy-chats[hidden]{display:none}
+#flow-say .sy-chk{font-size:10.5px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.7;margin:0 0 6px}
+#flow-say .sy-chl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+#flow-say .sy-chl li{display:flex;align-items:center;gap:4px;border-radius:10px}
+#flow-say .sy-chl li.on{background:rgba(127,216,255,.1)}
+#flow-say .sy-cho{flex:1;min-width:0;text-align:left;font:inherit;background:transparent;border:0;color:inherit;padding:7px 8px;cursor:pointer;border-radius:10px}
+#flow-say .sy-cho:hover{background:rgba(127,216,255,.08)}
+#flow-say .sy-cho b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#flow-say .sy-cho small{display:block;font-size:11px;opacity:.6;margin-top:1px}
+#flow-say .sy-chx{flex:none;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:inherit;opacity:.5;font-size:16px;cursor:pointer}
+#flow-say .sy-chx:hover{opacity:1}
+#flow-say .sy-chnone{font-size:13px;opacity:.65;margin:4px 0}
+#flow-say .sy-did{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--lk-line,rgba(255,255,255,.12));font-size:13px;line-height:1.4;white-space:normal}
+#flow-say .sy-did li{padding:2px 0 2px 18px;position:relative;opacity:.85}
+#flow-say .sy-did li::before{content:'✓';position:absolute;left:0;color:#3ddc97}
+#flow-say .sy-undo{margin-top:6px;font:inherit;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;opacity:.8}
+#flow-say .sy-b.u.live{opacity:.72;border:1px dashed rgba(127,216,255,.5)}
+html.hud-on #flow-say .sy-cb{border-color:rgba(110,170,255,.3);color:#cfe6ff}
+html.hud-on #flow-say .sy-chats{border-color:rgba(110,170,255,.22);background:rgba(6,14,32,.6)}
+html.hud-on #flow-say .sy-did{border-color:rgba(110,170,255,.18)}
+html.hud-on #flow-say .sy-did li::before{color:#7fd8ff}
+html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rgba(110,170,255,.28);color:#e8f4ff}

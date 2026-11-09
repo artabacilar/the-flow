@@ -1762,6 +1762,12 @@ async function gate(req, res) {
         json, readBody, user: me, mine: mineFor(me.id), plan,
         /* his team: shared knowledge and the model he is set to */
         team: team ? { get: (k) => getJSON(preT + k, null), set: (k, v) => setJSON(preT + k, v) } : null,
+        /* his conversations with J.A.R.V.I.S.: outside the namespace /api/all
+           hands the browser, so a long history never slows the app's start */
+        chats: {
+          get: (k) => getJSON('__chat:' + me.id + ':' + k, null),
+          set: (k, v) => setJSON('__chat:' + me.id + ':' + k, v)
+        },
         counter: {
           get: (k) => getJSON('__auth:ctr:' + me.id + ':' + k, 0),
           set: (k, v) => setJSON('__auth:ctr:' + me.id + ':' + k, v)
