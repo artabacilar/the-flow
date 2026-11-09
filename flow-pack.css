@@ -4033,6 +4033,10 @@ html.hud-on #flow-say .fn-sheet{pointer-events:auto;position:fixed;left:50%;righ
   width:min(720px,calc(100% - 32px));min-height:0!important;max-height:min(40vh,330px);overflow:auto;border-radius:18px;
   background:linear-gradient(180deg,rgba(10,26,58,.92),rgba(5,12,30,.94))!important;border:1px solid rgba(110,180,255,.35);box-shadow:0 0 40px rgba(40,120,255,.18);color:#dbeaff;margin:0;animation:none}
 html.hud-on #flow-say .sy-k{color:#7fd8ff;letter-spacing:.2em}
+/* Desktop: the console stands on the orb's axis, as wide as its column allows */
+@media (min-width:901px){
+  html.hud-on.hud-axis #flow-say .fn-sheet{left:var(--hud-cx,50%);width:min(720px,max(480px,calc(var(--hud-cw,720px) - 16px)),calc(100vw - 32px))}
+}
 html.hud-on #flow-say textarea#sy-text{min-height:46px;background:rgba(3,8,20,.7);border-color:rgba(110,170,255,.3);color:#e8f4ff}
 @media (max-width:900px){
   #flow-hud.on{display:flex;flex-direction:column;gap:12px;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(min(46vh,360px) + 24px)}
@@ -4313,3 +4317,67 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-mth pre,#flow-hud .hud-mdraft pre{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.45;margin:4px 0;color:#dbeaff;max-height:260px;overflow:auto}
 #flow-hud .hud-mdraft{margin-top:8px;padding-top:8px;border-top:1px solid rgba(110,170,255,.14)}
 #flow-hud .hud-why{margin:4px 0}
+
+/* ── The command centre's own skin for everything it shows ─────────────────
+   A page opened in J.A.R.V.I.S. (Settings, Today, Plan, Body, Record) used to
+   arrive in the old Flow look — grey cards, white pills, an orange Go. Inside
+   the command centre it now speaks the room's language: deep-blue glass
+   panels with a cyan hairline, small spaced capitals for labels, outlined
+   cyan controls. The pages themselves are untouched outside it. */
+#flow-hud .hud-page,#flow-hud .hud-page .flow-x{
+  --bg:rgba(3,8,20,.72); --card:rgba(10,24,54,.62); --card2:rgba(22,46,94,.34); --border:rgba(110,170,255,.22);
+  --text:#e8f4ff; --text2:rgba(205,228,255,.85); --muted:rgba(170,200,255,.62); --muted2:rgba(170,200,255,.45);
+  --accent:#2fa8ff; --accentOn:#7fd8ff; --rail:transparent; --teal:#7fd8ff;
+  --f-surface:rgba(10,24,54,.62); --f-surface-2:rgba(22,46,94,.34); --f-plane:rgba(3,8,20,.72);
+  --f-ink:#e8f4ff; --f-ink-2:rgba(205,228,255,.85); --f-muted:rgba(170,200,255,.62);
+  --f-line:rgba(110,170,255,.2); --f-grid:rgba(110,170,255,.1);
+  --f-accent:#2fa8ff; --f-accent-soft:rgba(47,168,255,.16);
+  --f-radius:14px; --f-radius-sm:10px;
+  color:#dbeaff;
+}
+/* panels: the same glass as the room's own */
+#flow-hud .hud-page :is(.flow-card,.panel,.flow-stat,.stat,.td-plan,.wp-card,.fold-card,.dir-card,.ns-hero){
+  background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66))!important;
+  border:1px solid rgba(110,170,255,.22)!important;border-radius:14px!important;
+  box-shadow:inset 0 0 24px rgba(40,110,255,.06)!important;color:#dbeaff}
+/* things inside a panel: one step lighter, never grey */
+#flow-hud .hud-page :is(.conn-row,.theme-swatch,.day,.flow-td-tile,.ah-tabs,code,.mcp-inline,.bar,.td-prog){
+  background:rgba(22,46,94,.34)!important;border-color:rgba(110,170,255,.18)!important;color:#dbeaff}
+#flow-hud .hud-page :is(.theme-swatch.on,.day.today,.flow-td-tile.on){border-color:#7fd8ff!important;box-shadow:0 0 0 1px rgba(127,216,255,.35),0 0 18px rgba(47,168,255,.18)!important}
+/* type: the page title reads like the room's headings, labels like its kickers */
+#flow-hud .hud-page :is(.flow-hero,.td-title,.section-header){font-size:22px!important;font-weight:800!important;letter-spacing:.14em!important;text-transform:uppercase;line-height:1.15!important;color:#e8f4ff}
+#flow-hud .hud-page :is(.flow-label,.fn-grouplbl,.lk-k,.fr-k,.plus-k,.ra-k){font-size:10.5px!important;font-weight:800!important;letter-spacing:.2em!important;text-transform:uppercase;color:#7fd8ff!important}
+#flow-hud .hud-page :is(h2,h3,h4){color:#e8f4ff;letter-spacing:.01em}
+#flow-hud .hud-page :is(p,small,.muted,.flow-empty,.fn-sub,.flow-sub){color:rgba(185,210,245,.72)!important}
+#flow-hud .hud-page .num{text-shadow:0 0 18px rgba(80,160,255,.3)}
+/* controls: outlined cyan, like Start / Not this */
+#flow-hud .hud-page :is(button.flow-btn,.flow-btn,.btn,.set-chips button,.lk-act,.flow-today-primary,.donebtn,.ra-more,.lk-day){
+  background:rgba(40,120,255,.12)!important;border:1px solid rgba(110,170,255,.35)!important;color:#bfe9ff!important;
+  border-radius:10px!important;box-shadow:none!important;font-weight:700;letter-spacing:.03em}
+#flow-hud .hud-page :is(button.flow-btn,.flow-btn,.btn,.set-chips button,.lk-act,.donebtn,.ra-more,.lk-day):hover{background:rgba(40,120,255,.28)!important;border-color:#7fd8ff!important}
+#flow-hud .hud-page :is(.flow-btn.primary,.btn-primary,.flow-today-primary,.set-chips button.on,.lk-day.on){background:rgba(40,120,255,.3)!important;border-color:#7fd8ff!important;color:#e8f6ff!important;box-shadow:0 0 14px rgba(47,168,255,.22)!important}
+#flow-hud .hud-page :is(.flow-btn.ghost,.btn-ghost){background:transparent!important;color:rgba(170,200,255,.85)!important}
+#flow-hud .hud-page .flow-btn.danger{border-color:rgba(255,110,130,.5)!important;color:#ffb3bf!important;background:rgba(255,60,90,.08)!important}
+#flow-hud .hud-page :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.flow-in){
+  background:rgba(3,8,20,.7)!important;border:1px solid rgba(110,170,255,.3)!important;color:#e8f4ff!important;border-radius:10px!important}
+#flow-hud .hud-page :is(input,select,textarea):focus{outline:none;border-color:#7fd8ff!important;box-shadow:0 0 0 3px rgba(47,168,255,.2)!important}
+#flow-hud .hud-page input[type=checkbox],#flow-hud .hud-page input[type=radio]{accent-color:#2fa8ff}
+#flow-hud .hud-page a{color:#7fd8ff}
+#flow-hud .hud-page hr,#flow-hud .hud-page :is(.flow-card,.panel) > * + *{border-color:rgba(110,170,255,.14)}
+
+/* the console: the same controls — outlined cyan, Go a lit cyan key */
+html.hud-on #flow-say :is(.sy-doc,.sy-kb,.sy-golive,.sy-mic){background:rgba(40,120,255,.12)!important;border:1px solid rgba(110,170,255,.35)!important;color:#bfe9ff!important;box-shadow:none!important;border-radius:12px!important}
+html.hud-on #flow-say :is(.sy-doc,.sy-kb,.sy-golive,.sy-mic):hover{background:rgba(40,120,255,.28)!important;border-color:#7fd8ff!important}
+html.hud-on #flow-say :is(.sy-mic.on,.sy-golive.on,.sy-kb[aria-pressed="true"]){background:#2fa8ff!important;border-color:#7fd8ff!important;color:#021022!important;box-shadow:0 0 18px rgba(47,168,255,.45)!important}
+html.hud-on #flow-say [data-say="send"]{background:linear-gradient(180deg,#5cc8ff,#2a8cff)!important;border:1px solid #9fe4ff!important;color:#021022!important;border-radius:12px!important;box-shadow:0 0 18px rgba(47,168,255,.4)!important;font-weight:800;letter-spacing:.06em}
+html.hud-on #flow-say textarea#sy-text{font-family:inherit!important;border-radius:12px}
+html.hud-on #flow-say .sy-set summary,html.hud-on #flow-say .sy-own{color:rgba(170,200,255,.75)}
+html.hud-on #flow-say input[type=checkbox]{accent-color:#2fa8ff}
+
+/* one row on the orb's axis: Go stays beside Talk; a narrow column shows icons */
+@media (min-width:901px){
+  html.hud-on.hud-axis #flow-say .ra-row.ra-end{flex-wrap:nowrap;gap:8px}
+  html.hud-on.hud-axis #flow-say .ra-row.ra-end .flow-btn{padding-left:14px;padding-right:14px;white-space:nowrap}
+  html.hud-on.hud-axis.hud-axis-narrow #flow-say :is(.sy-doc,.sy-kb,.sy-golive) span{display:none}
+  html.hud-on.hud-axis.hud-axis-narrow #flow-say .fn-sheet{width:min(420px,calc(var(--hud-cw,420px) + 40px))}
+}

@@ -14585,6 +14585,7 @@ const Hud = {
     document.documentElement.classList.add('hud-on');
     Hud.el.classList.add('on');
     Hud.paint(); Hud.paintNav();
+    try { Hud.alignWatch(); Hud.align(); } catch (e) {}
     try { Say.open({ idle: true }); } catch (e) {}
     try { Speech.unlock(); } catch (e) {}
     Hud.t0 = performance.now();
@@ -14601,7 +14602,7 @@ const Hud = {
     if (Hud.merged() && !force) { Hud.home(); return; }
     Hud.unmount(); Hud.page = null; if (Hud.el) Hud.el.classList.remove('hud-pagemode');
     Hud.on = false;
-    document.documentElement.classList.remove('hud-on');
+    document.documentElement.classList.remove('hud-on', 'hud-axis', 'hud-axis-narrow');
     if (Hud.el) Hud.el.classList.remove('on');
     cancelAnimationFrame(Hud.raf); Hud.raf = 0; clearTimeout(Hud.nap); Hud.nap = 0; clearInterval(Hud.timer);
     try { Team.select(null, true); clearTimeout(Team.watchT); Team.openId = null; } catch (e) {}
@@ -14818,6 +14819,27 @@ const Hud = {
     if (st === 'speaking' || st === 'listening') {
       for (let k = 0; k < 3; k++) { const ph = ((t * 0.8 + k / 3) % 1); g.strokeStyle = 'rgba(' + hue + ',' + (0.3 * (1 - ph) * (0.4 + e)).toFixed(3) + ')'; g.beginPath(); g.arc(cx, cy, R * (1.05 + ph * 0.6), 0, Math.PI * 2); g.stroke(); }
     }
+  },
+  /* One axis. The orb's column is the centre of the room; the console is
+     placed on the same line, at its width, so the two always stack exactly —
+     with the rail on the left, a page or a room open, at any window size. */
+  align() {
+    const root = document.documentElement;
+    const c = Hud.on && Hud.el && Hud.el.querySelector('.hud-core');
+    const r = c && c.offsetParent !== null ? c.getBoundingClientRect() : null;
+    if (!r || !r.width || window.innerWidth <= 900) { root.classList.remove('hud-axis', 'hud-axis-narrow'); return; }
+    const cx = Math.round(r.left + r.width / 2), cw = Math.round(r.width);
+    if (Hud.axis !== cx + ':' + cw) { Hud.axis = cx + ':' + cw; root.style.setProperty('--hud-cx', cx + 'px'); root.style.setProperty('--hud-cw', cw + 'px'); }
+    root.classList.add('hud-axis');
+    root.classList.toggle('hud-axis-narrow', cw < 520);
+  },
+  alignWatch() {
+    if (Hud.aligned) return; Hud.aligned = true;
+    const go = () => { if (Hud.alignRaf) return; Hud.alignRaf = requestAnimationFrame(() => { Hud.alignRaf = 0; Hud.align(); }); };
+    try { const ro = new ResizeObserver(go); ro.observe(Hud.el); const c = Hud.el.querySelector('.hud-core'); if (c) ro.observe(c); Hud.ro = ro; } catch (e) {}
+    window.addEventListener('resize', go);
+    try { new MutationObserver(go).observe(Hud.el, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    go();
   },
   /* The words under the orb: what was said to him (live, while it is
      being said), and what he said back. Tap them to open the whole log. */
