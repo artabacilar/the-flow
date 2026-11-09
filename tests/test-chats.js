@@ -61,6 +61,25 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('a question comes back as a question; one with actions is not a question', q.ask === true && q2.ask === false && q2.actions.length === 1, { q, q2 });
   ok('the conversation he sees is twice as long as before', X.say.doHistory({ history: Array.from({ length: 30 }, (_, i) => ({ role: 'user', text: 't' + i })) }).length === 16);
 
+  console.log('\n— hearing him right: Turkish and English —');
+  const HE = X.hear;
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  let polishSent = null;
+  HE.setPoster(async (url, h, payload) => { polishSent = payload; return { status: 200, body: { content: [{ type: 'text', text: 'Babamı ara, iPhone satışını konuş. Then send the deck to Oğuz.' }] } }; });
+  const hcall = async (method, body) => { const out = {}; const ctx = { json: (r, s, b) => { out.s = s; out.b = b; }, readBody: async () => JSON.stringify(body || {}), counter: { m: {}, get(k) { return this.m[k] || 0; }, set(k, v) { this.m[k] = v; } } }; await HE.handle('/api/flow/hear', { method }, {}, ctx); return out; };
+  let h = await hcall('GET');
+  ok('the server says what it can do: clean always, transcribe when it has a speech key', h.b.polish === true && typeof h.b.ears === 'boolean', h.b);
+  h = await hcall('POST', { text: 'ee babamı ara şey iphone satışını konuş then uh send the deck to oz', names: ['Oğuz', 'Revelle'] });
+  ok('the words come back cleaned, both languages kept as spoken', h.b.text === 'Babamı ara, iPhone satışını konuş. Then send the deck to Oğuz.' && h.b.raw.indexOf('babamı') >= 0, h.b);
+  ok('the cleaner is told never to translate or answer, and gets his names', /Never translate, never answer/.test(polishSent.system) && /NAMES: Oğuz, Revelle/.test(polishSent.messages[0].content) && polishSent.temperature === 0, polishSent && polishSent.messages);
+  HE.setPoster(async () => ({ status: 200, body: { content: [{ type: 'text', text: 'Sure! Here is a long answer about what you could do today. '.repeat(10) }] } }));
+  h = await hcall('POST', { text: 'call dad' });
+  ok('a reply that answers instead of cleaning is not used — the words stay as heard', h.b.text === 'call dad' && h.b.polished === false, h.b);
+  HE.setPoster(async () => ({ status: 529, body: {} }));
+  h = await hcall('POST', { text: 'yarın saat onda' });
+  ok('if the cleaner is unavailable, nothing is lost', h.b.text === 'yarın saat onda', h.b);
+  HE.setPoster(null);
+
   console.log('\n— in the app —');
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
@@ -102,6 +121,14 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('the chat shows his message, the answer, and what was done', done.log.length === 2 && done.log[0] === 'u' && done.did.length === 4, done);
   await p.waitForTimeout(800);
   const listed = await p.evaluate(async () => (await (await fetch('/api/flow/chats', { credentials: 'same-origin' })).json()).chats);
+  /* spoken: written down properly before it goes */
+  await p.route('**/api/flow/hear', (rt) => rt.request().method() === 'GET' ? rt.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"ears":true,"polish":true}' }) : rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, text: 'Babamı ara — iPhone satışı and Revelle AI as a reseller.' }) }));
+  await p.evaluate(() => { FlowSay.hearAsked = false; FlowSay.hearInit(); }); await p.waitForTimeout(300);
+  await p.evaluate(() => { document.getElementById('sy-text').value = 'ee babami ara iphone satisi and uh revelle as a reseller'; FlowSay.typed = false; FlowSay.spoken = true; FlowSay.send(); });
+  await p.waitForTimeout(1500);
+  const heard = await p.evaluate(() => ({ user: (FlowSay.history.filter((m) => m.role === 'user').pop() || {}).text }));
+  ok('spoken, it is written down cleanly first — that is what is in the chat and what he gets', heard.user === 'Babamı ara — iPhone satışı and Revelle AI as a reseller.' && sent && sent.text === heard.user, { heard, sentText: sent && sent.text });
+  await p.unroute('**/api/flow/hear');
   ok('the turn is on the server at once, titled from what he said', listed.length === 1 && /call my father/.test(listed[0].title) && listed[0].n === 2, listed);
 
   console.log('\n— it does not go away —');
@@ -110,7 +137,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.evaluate(() => { try { localStorage.setItem('flowChatId', arguments[0]); } catch (e) {} });
   await p.evaluate((id) => { localStorage.setItem('flowChatId', id); FlowSay.chatId = null; FlowSay.open({ idle: true }); }, listed[0].id); await p.waitForTimeout(1200);
   const back = await p.evaluate(() => ({ n: FlowSay.history.length, log: document.querySelectorAll('#flow-say .sy-log .sy-b').length, first: (FlowSay.history[0] || {}).text, did: (FlowSay.history[1] || {}).did }));
-  ok('after a reload the conversation is still there', back.n === 2 && back.log === 2 && /call my father/.test(back.first) && back.did && back.did.length === 4, back);
+  ok('after a reload the conversation is still there', back.n === 4 && back.log === 4 && /call my father/.test(back.first) && back.did && back.did.length === 4, back);
   await p.click('#flow-say [data-say="newchat"]'); await p.waitForTimeout(300);
   ok('New chat starts empty', await p.evaluate(() => FlowSay.history.length === 0 && !FlowSay.chatId && !document.querySelectorAll('#flow-say .sy-log .sy-b').length));
   await p.unroute('**/api/flow/do');
@@ -124,7 +151,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('an older chat opens where it was left', /call my father/.test(opened.first) && opened.hidden, opened);
   ok('and carries on from there: the next request goes with that conversation', await (async () => { await p.fill('#sy-text', 'and remind me tomorrow too'); await p.keyboard.press('Enter'); await p.waitForTimeout(1200); return true; })());
   const sent2 = await p.evaluate(async () => (await (await fetch('/api/flow/chats?id=' + FlowSay.chatId, { credentials: 'same-origin' })).json()).chat.messages.length);
-  ok('the new turn joined that chat', sent2 === 4, sent2);
+  ok('the new turn joined that chat', sent2 === 6, sent2);
 
   console.log('\n— on a phone: pull the chat down to put it away —');
   const ph = p, pc = { newCDPSession: (x) => ctx.newCDPSession(x), close: async () => {} };
