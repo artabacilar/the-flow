@@ -61,7 +61,7 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   ok('each one says how to set it up, with this server\'s address filled in', me.j.channels.every((c) => c.how.length > 40) && /localhost:4222\/api\/channels\/whatsapp/.test(me.j.channels.find((c) => c.id === 'whatsapp').how));
   await p.evaluate(() => FlowHud.open()); await p.waitForTimeout(1500);
   const panel = await p.evaluate(() => ({ there: !!document.querySelector('#flow-hud [data-k="channels"]'), rows: [...document.querySelectorAll('#flow-hud .hud-chh')].map((x) => x.textContent) }));
-  ok('his room lists the channels with their status', panel.there && panel.rows.length === 8 && panel.rows.some((r) => /Telegram.*Ready to link/.test(r)) && panel.rows.some((r) => /Teams.*Not built/.test(r)), panel);
+  ok('his room lists the channels with their status', panel.there && panel.rows.length === 9 && panel.rows.some((r) => /Telegram.*Ready to link/.test(r)) && panel.rows.some((r) => /Teams.*Not built/.test(r)), panel);
   await p.click('#flow-hud .hud-chh[data-ch="telegram"]'); await p.waitForTimeout(300);
   await p.click('#flow-hud [data-hud="chcode"][data-ch="telegram"]'); await p.waitForTimeout(700);
   const code = await p.evaluate(() => (document.querySelector('#flow-hud .hud-code') || {}).textContent);
@@ -141,6 +141,32 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   ok('SMS links and answers in TwiML', sms.status === 200 && /<Response><Message>Linked to Artur/.test(twiml), twiml.slice(0, 120));
   const me2 = await api('/api/channels/me');
   ok('four channels now show as working, each with its sender', me2.j.channels.filter((c) => c.status === 'working').map((c) => c.id).sort().join(',') === 'slack,sms,telegram,whatsapp' && me2.j.channels.find((c) => c.id === 'sms').linked.id === '+905551112233', me2.j.channels.map((c) => c.id + ':' + c.status));
+
+  console.log('\n— WhatsApp through Wati —');
+  const watiCh = me2.j.channels.find((c) => c.id === 'wati');
+  ok('Wati is listed, ready to link, with its webhook address filled in', watiCh && watiCh.status === 'ready' && /localhost:4222\/api\/channels\/wati\?key=/.test(watiCh.how), watiCh);
+  const codeW = (await api('/api/channels/me/code', {})).j.code;
+  const wMsg = (o) => Object.assign({ id: 'w' + Math.random(), whatsappMessageId: 'wamid.' + Math.random(), eventType: 'message', type: 'text', waId: '905557778899', senderName: 'Artur', owner: false }, o);
+  let before = (await sentNow()).n;
+  const wBad = await post('/api/channels/wati?key=wrong', wMsg({ text: codeW }));
+  const wNone = await post('/api/channels/wati', wMsg({ text: codeW }));
+  ok('a request without the webhook key is refused, and nothing is sent', wBad.status === 403 && wNone.status === 403 && (await sentNow()).n === before);
+  const firstW = wMsg({ text: codeW });
+  await post('/api/channels/wati?key=wati-key-123', firstW); await wait(800);
+  s1 = await sentNow();
+  ok('Wati links with its code and replies through Wati\'s session message', /Linked to Artur/.test(decodeURIComponent(s1.last.url)) && /live-mt-server\.wati\.io\/12345\/api\/v1\/sendSessionMessage\/905557778899\?messageText=/.test(s1.last.url), s1.last);
+  before = s1.n;
+  await post('/api/channels/wati?key=wati-key-123', firstW); await wait(600);
+  ok('the same message retried by Wati is answered once', (await sentNow()).n === before);
+  await post('/api/channels/wati?key=wati-key-123', wMsg({ text: 'what is left today', owner: true })); await wait(600);
+  await post('/api/channels/wati?key=wati-key-123', wMsg({ type: 'image', text: '' })); await wait(400);
+  await post('/api/channels/wati?key=wati-key-123', wMsg({ eventType: 'sentMessageDELIVERED', text: 'x' })); await wait(400);
+  ok('his operators\' own messages, images and delivery receipts get no reply', (await sentNow()).n === before);
+  const meW = await api('/api/channels/me');
+  ok('Wati now shows as working, linked to his number', meW.j.channels.find((c) => c.id === 'wati').status === 'working' && meW.j.channels.find((c) => c.id === 'wati').linked.id === '905557778899');
+  await post('/api/channels/wati?key=wati-key-123', wMsg({ waId: '447000000001', text: 'hello who is this' })); await wait(700);
+  s1 = await sentNow();
+  ok('anyone else writing to the (shared business) number gets no reply at all', s1.n === before, s1.n - before);
 
   console.log('\n— a phone call —');
   const vUrl = 'http://localhost:4222/api/channels/twilio/voice';

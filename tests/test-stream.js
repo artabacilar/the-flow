@@ -178,6 +178,31 @@ const D = (o) => 'data: ' + JSON.stringify(o) + '\n\n';
   ok('an empty request is refused before the stream opens', s1.o.head === null && s1.o.json && s1.o.json.s === 400);
   S.setStreamer(null); S.setPoster(null);
 
+  console.log('\n— a model chosen in the command centre streams too —');
+  const T = require('../flow-team.js');
+  const realFetch = global.fetch; const seen = [];
+  const sseResp = (lines) => new Response(new ReadableStream({ start(c) { const e = new TextEncoder(); for (const l of lines) c.enqueue(e.encode(l)); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  global.fetch = async (url, init) => {
+    const b = init && init.body ? JSON.parse(init.body) : {}; seen.push({ url, stream: b.stream, so: b.stream_options });
+    if (/\/models$/.test(url)) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    if (/messages$/.test(url)) return sseResp(['event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":7}}}\n\n',
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"{\\"say\\":\\"Hel"}}\n', '\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"lo there.\\"}"}}\n\n',
+      'data: {"type":"message_delta","usage":{"output_tokens":5}}\n\n']);
+    if (/chat\/completions$/.test(url)) return sseResp(['data: {"choices":[{"delta":{"content":"{\\"say\\":\\"Gro"}}]}\n\n', 'data: {"choices":[{"delta":{"content":"k here.\\"}"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":4}}\n\ndata: [DONE]\n\n']);
+    return new Response('{}', { status: 404 });
+  };
+  process.env.ANTHROPIC_API_KEY = 'k'; process.env.OPENAI_API_KEY = 'k';
+  let pieces = [];
+  let rc = await T.complete({ model: 'claude-opus-5-5', system: 's', messages: [{ role: 'user', content: 'hi' }], onText: (x) => pieces.push(x) });
+  ok('Anthropic: asked to stream, pieces arrive as written, whole text and usage at the end', seen.some((x) => /messages$/.test(x.url) && x.stream === true) && pieces.length === 2 && rc.text === '{"say":"Hello there."}' && rc.usage.in === 7 && rc.usage.out === 5, { pieces, rc });
+  pieces = [];
+  rc = await T.complete({ model: 'gpt-5', system: 's', messages: [{ role: 'user', content: 'hi' }], onText: (x) => pieces.push(x) });
+  ok('OpenAI-style: the same, with usage asked for and read from the last chunk', seen.some((x) => /completions$/.test(x.url) && x.stream === true && x.so && x.so.include_usage) && pieces.join('') === '{"say":"Grok here."}' && rc.usage.out === 4, { pieces, rc });
+  global.fetch = async () => new Response(JSON.stringify({ error: { message: 'bad key' } }), { status: 401 });
+  rc = await T.complete({ model: 'claude-opus-5-5', system: 's', messages: [{ role: 'user', content: 'hi' }], onText: () => {} });
+  ok('a refused key while streaming is the same error as before', rc.status === 401 && /refused/.test(rc.error), rc);
+  global.fetch = realFetch;
+
   console.log('\n' + (fail ? '✗ ' + fail + ' failed' : '✓ all ' + pass + ' passed') + ' (' + (pass + fail) + ' checks)');
   process.exit(fail ? 1 : 0);
 })();
