@@ -170,6 +170,8 @@ struct TodayView: View {
     @State private var askUnlink = false
     /// An overdue Priority tapped: Done, Today or Tomorrow.
     @State private var late: WatchDay.Rock?
+    /// J.A.R.V.I.S. and the team: approvals, the email waiting, work, the briefing.
+    @State private var teamOpen = false
     /// A habit with a door: written by voice, or timed.
     @State private var writing: WatchDay.Habit?
     @State private var timing: WatchDay.Habit?
@@ -202,6 +204,10 @@ struct TodayView: View {
                             Label(Words.t("Add by voice", "Sesle ekle"), systemImage: "mic.fill").frame(maxWidth: .infinity)
                         }
                         .tint(.green)
+                        Button { teamOpen = true } label: {
+                            Label((day.assistant?.isEmpty == false ? day.assistant! : "J.A.R.V.I.S.") + Words.t(" & the team", " ve ekip"), systemImage: "person.3.fill").frame(maxWidth: .infinity)
+                        }
+                        .tint(.blue)
                         Button(role: .destructive) { askUnlink = true } label: {
                             Text(Words.t("Unlink this watch", "Bu saatin bağlantısını kaldır")).font(.footnote).frame(maxWidth: .infinity)
                         }
@@ -242,6 +248,7 @@ struct TodayView: View {
                 }
             }
             .sheet(isPresented: $adding) { AddView { d in day = d } }
+            .sheet(isPresented: $teamOpen) { TeamView(onUnlinked: { onUnlinked() }) }
             /* Dictation opens from Today, not from over a sheet: "Again"
                lets the sheet go all the way down, then listens again. */
             .sheet(item: $heard, onDismiss: {
@@ -524,6 +531,161 @@ struct HeardView: View {
 
 /// The question, then the answer — read aloud in the premium voice when the
 /// account has one, in the watch's own British voice when not.
+/// J.A.R.V.I.S. on the wrist. Each Approve/Decline is bound to the approval's
+/// id; Send is bound to the draft's hash — what is shown is what goes, or
+/// nothing does. "Ask the team" dictates to J.A.R.V.I.S. exactly as a chat
+/// message would; he can start work from it.
+struct TeamView: View {
+    let onUnlinked: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var team: WatchAPI.Team?
+    @State private var note: String?
+    @State private var busy = Set<String>()
+    @State private var said: String?
+    @StateObject private var voice = WatchVoice()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                if let t = team {
+                    Text(t.assistant.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                    if let note = note { Text(note).font(.footnote).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                    if let s = said, !s.isEmpty {
+                        Text(s).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                            .padding(8).background(Color.white.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    if !t.approvals.isEmpty {
+                        label(Words.t("Needs your yes", "Onayınız gerekiyor"))
+                        ForEach(t.approvals) { a in approvalRow(a) }
+                    }
+                    if let m = t.mail {
+                        label(Words.t("Email to review", "İncelenecek e-posta") + (t.mailQueue > 1 ? " · \(t.mailQueue)" : ""))
+                        mailCard(m)
+                    }
+                    if !t.tasks.isEmpty {
+                        label(Words.t("Work", "İşler"))
+                        ForEach(t.tasks) { w in taskRow(w) }
+                    }
+                    if !t.recent.isEmpty {
+                        label(Words.t("Just finished", "Yeni bitenler"))
+                        ForEach(t.recent) { r in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.title).font(.footnote.weight(.semibold))
+                                if let res = r.result, !res.isEmpty { Text(res).font(.caption2).foregroundStyle(.secondary).lineLimit(4) }
+                            }.padding(.vertical, 2)
+                        }
+                    }
+                    if !t.brief.isEmpty {
+                        label(Words.t("This morning", "Bu sabah"))
+                        ForEach(Array(t.brief.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if t.approvals.isEmpty && t.mail == nil && t.tasks.isEmpty {
+                        Text(Words.t("Nothing needs you. The team is quiet.", "Sizi bekleyen bir şey yok. Ekip sakin.")).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Button { askTeam() } label: {
+                        Label(Words.t("Ask the team", "Ekibe sor"), systemImage: "waveform").frame(maxWidth: .infinity)
+                    }
+                    .tint(.orange)
+                    .padding(.top, 6)
+                    .disabled(busy.contains("say"))
+                } else {
+                    HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 20)
+                    if let note = note { Text(note).font(.footnote) }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .navigationTitle(Words.t("Team", "Ekip"))
+        .task { await load() }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 6)
+    }
+    private func approvalRow(_ a: WatchAPI.Team.Approval) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(a.summary).font(.footnote.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            if let to = a.to, !to.isEmpty { Text("→ " + to).font(.caption2).foregroundStyle(.secondary) }
+            if let ex = a.excerpt, !ex.isEmpty { Text(ex).font(.caption2).foregroundStyle(.secondary).lineLimit(5) }
+            HStack {
+                Button { Task { await act(["op": "approve", "id": a.id], key: a.id) } } label: { Text(Words.t("Approve", "Onayla")).frame(maxWidth: .infinity) }
+                    .tint(.green).disabled(busy.contains(a.id))
+                Button { Task { await act(["op": "decline", "id": a.id], key: a.id) } } label: { Text(Words.t("Decline", "Reddet")).frame(maxWidth: .infinity) }
+                    .tint(.red).disabled(busy.contains(a.id))
+            }
+            Text(a.agent).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(8).background(Color.white.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+    private func mailCard(_ m: WatchAPI.Team.Mail) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(m.subject).font(.footnote.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(Words.t("From ", "Kimden: ") + m.from).font(.caption2).foregroundStyle(.secondary)
+            if let s = m.summary, !s.isEmpty { Text(s).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            Text(m.reply).font(.caption2).lineLimit(10).fixedSize(horizontal: false, vertical: true)
+            ForEach(Array((m.flags ?? []).enumerated()), id: \.offset) { _, f in Text("⚠ " + f).font(.caption2).foregroundStyle(.orange) }
+            HStack {
+                Button { Task { await act(["op": "mailsend", "id": m.id, "hash": m.hash], key: m.id) } } label: { Text(Words.t("Send v\(m.version)", "Gönder v\(m.version)")).frame(maxWidth: .infinity) }
+                    .tint(.green).disabled(busy.contains(m.id) || !(m.flags ?? []).isEmpty)
+                Button { Task { await act(["op": "mailskip", "id": m.id], key: m.id) } } label: { Text(Words.t("Don't send", "Gönderme")).frame(maxWidth: .infinity) }
+                    .tint(.red).disabled(busy.contains(m.id))
+            }
+            Text(Words.t("Revise from the app or a chat.", "Düzeltme uygulamadan veya sohbetten.")).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(8).background(Color.white.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+    private func taskRow(_ w: WatchAPI.Team.Task) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack { Text(w.title).font(.footnote.weight(.semibold)).lineLimit(2); Spacer(); Text(status(w.status)).font(.caption2).foregroundStyle(w.status == "awaiting_info" ? .orange : .secondary) }
+            if let q = w.question, !q.isEmpty {
+                Text(q).font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Button { answer(w) } label: { Label(Words.t("Answer by voice", "Sesle cevapla"), systemImage: "mic.fill").frame(maxWidth: .infinity) }
+                    .tint(.orange).disabled(busy.contains(w.id))
+            }
+            Text(w.agent).font(.caption2).foregroundStyle(.tertiary)
+        }.padding(.vertical, 2)
+    }
+    private func status(_ s: String) -> String {
+        switch s {
+        case "queued": return Words.t("queued", "sırada")
+        case "running": return Words.t("working", "çalışıyor")
+        case "awaiting_info": return Words.t("asks you", "size soruyor")
+        case "awaiting_approval": return Words.t("needs your yes", "onay bekliyor")
+        default: return s
+        }
+    }
+    private func load() async {
+        do { team = try await WatchAPI.team(); note = nil }
+        catch WatchAPI.Failure.unlinked { onUnlinked(); dismiss() }
+        catch { note = error.localizedDescription }
+    }
+    private func act(_ body: [String: Any], key: String) async {
+        busy.insert(key); defer { busy.remove(key) }
+        do {
+            let t = try await WatchAPI.teamAct(body)
+            team = t; note = nil
+            if let s = t.said, !s.isEmpty { said = s; await voice.say(s) }
+        } catch WatchAPI.Failure.unlinked { onUnlinked(); dismiss() }
+        catch { note = error.localizedDescription; await load() }
+    }
+    /// Dictate to J.A.R.V.I.S.; he answers, and can start work for the team.
+    private func askTeam() {
+        let opened = Dictate.ask { text in
+            guard let text = text else { return }
+            Task { await act(["op": "say", "text": text], key: "say") }
+        }
+        if !opened { note = Words.t("Dictation is not available here.", "Burada dikte açılamıyor.") }
+    }
+    private func answer(_ w: WatchAPI.Team.Task) {
+        _ = Dictate.ask { text in
+            guard let text = text else { return }
+            Task { await act(["op": "answer", "id": w.id, "text": text], key: w.id) }
+        }
+    }
+}
+
 struct AskView: View {
     let question: String
     let name: String?

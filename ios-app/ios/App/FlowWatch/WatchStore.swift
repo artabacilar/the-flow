@@ -152,7 +152,9 @@ enum WatchAPI {
     }
 
     private static func call(_ path: String, method: String = "GET", body: [String: Any]? = nil, auth: Bool = true) async throws -> Data {
-        var comps = URLComponents(url: WatchStore.origin.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
+        var comps = URLComponents(url: WatchStore.origin.appendingPathComponent(parts[0]), resolvingAgainstBaseURL: false)!
+        if parts.count > 1 { comps.percentEncodedQuery = parts[1] }
         if path == "api/watch" { comps.queryItems = [URLQueryItem(name: "tz", value: TimeZone.current.identifier), URLQueryItem(name: "lang", value: Words.lang)] }
         var req = URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         req.httpMethod = method
@@ -214,6 +216,36 @@ enum WatchAPI {
     static func voice(_ text: String) async -> Data? {
         guard let d = try? await call("api/watch/speak", method: "POST", body: ["text": text]), d.count > 512 else { return nil }
         return d
+    }
+
+    /// J.A.R.V.I.S. and the team on the wrist: what needs a yes (each bound to
+    /// an id the server made), the email waiting (bound to its draft's hash),
+    /// work in flight, the briefing in a few lines. `said` is the reply to the
+    /// last action, when there was one.
+    struct Team: Decodable {
+        struct Approval: Decodable, Identifiable { let id: String; let n: Int; let summary: String; let to: String?; let agent: String; let kind: String?; let excerpt: String? }
+        struct Mail: Decodable { let id: String; let from: String; let subject: String; let summary: String?; let reply: String; let version: Int; let hash: String; let flags: [String]? }
+        struct Task: Decodable, Identifiable { let id: String; let title: String; let status: String; let agent: String; let question: String? }
+        struct Done: Decodable, Identifiable { let id: String; let title: String; let agent: String; let result: String? }
+        struct Counts: Decodable { let approvals: Int; let inFlight: Int; let asking: Int }
+        let assistant: String
+        let approvals: [Approval]
+        let mail: Mail?
+        let mailQueue: Int
+        let tasks: [Task]
+        let recent: [Done]
+        let brief: [String]
+        let counts: Counts
+        let said: String?
+    }
+    static func team() async throws -> Team {
+        try JSONDecoder().decode(Team.self, from: try await call("api/watch/team?lang=" + Words.lang))
+    }
+    /// One action, then the team as it now is. The approve / decline / send /
+    /// skip bodies carry the id (and the hash) of exactly what was shown.
+    static func teamAct(_ body: [String: Any]) async throws -> Team {
+        var b = body; b["lang"] = Words.lang
+        return try JSONDecoder().decode(Team.self, from: try await call("api/watch/team", method: "POST", body: b))
     }
 
     struct PairStart: Decodable { let id: String; let code: String; let expiresIn: Int; let poll: Int? }
