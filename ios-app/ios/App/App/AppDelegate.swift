@@ -1,6 +1,7 @@
 import UIKit
 import AppIntents
 import UserNotifications
+import WebKit
 
 /// No storyboard, no framework, no dependency graph. The shell exists to put a
 /// web view on screen and to carry one token across a process boundary — and a
@@ -22,6 +23,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         /* Set before launch finishes, or a reminder tapped while the app was
            closed is delivered to nobody. */
         UNUserNotificationCenter.current().delegate = FlowNotificationDelegate.shared
+        /* "Needs your yes" arrives with Approve and Decline on it — on the
+           lock screen, and on the Apple Watch, which mirrors the phone's
+           notification and hands the button back to this app. */
+        FlowNotificationDelegate.registerCategories()
         return true
     }
 
@@ -102,14 +107,85 @@ enum FlowRoute {
 final class FlowNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = FlowNotificationDelegate()
 
+    static let approvalCategory = "FLOW_APPROVAL"
+    static let approveAction = "FLOW_APPROVE"
+    static let declineAction = "FLOW_DECLINE"
+
+    static func registerCategories() {
+        let tr = (Locale.preferredLanguages.first ?? "").hasPrefix("tr")
+        /* Approving sends something into the world, so it asks for the phone
+           to be unlocked (a watch on the wrist counts). Declining never sends
+           anything, so it does not. */
+        let yes = UNNotificationAction(identifier: approveAction, title: tr ? "Onayla" : "Approve",
+                                       options: [.authenticationRequired])
+        let no = UNNotificationAction(identifier: declineAction, title: tr ? "Reddet" : "Decline",
+                                      options: [.destructive])
+        let cat = UNNotificationCategory(identifier: approvalCategory, actions: [yes, no],
+                                         intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([cat])
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler done: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
-        if let flow = info["flow"] as? [String: Any], let id = flow["rock"] as? String {
+        let flow = info["flow"] as? [String: Any]
+        let action = response.actionIdentifier
+        if action == Self.approveAction || action == Self.declineAction,
+           let id = flow?["approval"] as? String, !id.isEmpty {
+            decide(id: id, approve: action == Self.approveAction, done: done)
+            return
+        }
+        if let id = flow?["rock"] as? String {
             DispatchQueue.main.async { FlowRoute.rock(id) }
         }
         done()
+    }
+
+    /// The same request the command centre makes, with the web view's own
+    /// session cookie (URLSession does not share the web view's jar — see
+    /// FlowPush). The server decides only what is still pending, once; a
+    /// second tap is answered "already" and changes nothing. The result is
+    /// said in a quiet local notification, so a yes on the watch is not a
+    /// tap into silence.
+    private func decide(id: String, approve: Bool, done: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { all in
+                let host = FlowStore.origin.host ?? "theflow.today"
+                let ours = all.filter { c in
+                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == d || host.hasSuffix("." + d)
+                }
+                var r = URLRequest(url: FlowStore.origin.appendingPathComponent("api/team/approve"))
+                r.httpMethod = "POST"
+                r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                for (k, v) in HTTPCookie.requestHeaderFields(with: ours) { r.setValue(v, forHTTPHeaderField: k) }
+                r.httpShouldHandleCookies = false
+                r.httpBody = try? JSONSerialization.data(withJSONObject: [
+                    "id": id, "decision": approve ? "approve" : "reject", "via": "notification"
+                ])
+                URLSession.shared.dataTask(with: r) { data, resp, _ in
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    var note = ""
+                    if let data, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let ap = j["approval"] as? [String: Any] {
+                        note = (ap["note"] as? String) ?? ""
+                    }
+                    let tr = (Locale.preferredLanguages.first ?? "").hasPrefix("tr")
+                    let c = UNMutableNotificationContent()
+                    c.threadIdentifier = "team"
+                    if code == 200 {
+                        c.title = approve ? (tr ? "Onaylandı" : "Approved") : (tr ? "Reddedildi" : "Declined")
+                        c.body = note.isEmpty ? (approve ? (tr ? "Ekip devam ediyor." : "The team carries on.") : (tr ? "Hiçbir şey gönderilmedi." : "Nothing was sent.")) : note
+                    } else {
+                        c.title = tr ? "Olmadı" : "That did not go through"
+                        c.body = tr ? "Komuta merkezinden tekrar dene." : "Open the command centre and try again."
+                    }
+                    let req = UNNotificationRequest(identifier: "flow-decided-" + id, content: c, trigger: nil)
+                    UNUserNotificationCenter.current().add(req) { _ in done() }
+                }.resume()
+            }
+        }
     }
 
     /// A reminder that arrives while the app is open still shows, as a banner.
