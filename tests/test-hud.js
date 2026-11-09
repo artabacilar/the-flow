@@ -133,6 +133,21 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await q.click('#flow-hud .hud-cap'); await q.waitForTimeout(300);
   ok('tapping the words under the orb opens the whole conversation', await q.evaluate(() => !document.documentElement.classList.contains('hud-dock') && FlowSay.kbOpen));
   await q.evaluate(() => FlowSay.kb(false));
+  /* Sending feels like a chat: instant echo, a pulse, then the answer flows in. */
+  await q.route('**/api/flow/do', async (rt) => { await new Promise((r) => setTimeout(r, 900)); rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, say: 'Done, sir. The venue call is on tomorrow at ten and reading is a daily habit now.', actions: [] }) }); });
+  await q.evaluate(async () => { await Flow.Settings.set('asstVoice', 'off'); });
+  await q.evaluate(() => { document.getElementById('sy-text').value = 'call the venue tomorrow at ten'; FlowSay.typed = true; FlowSay.send(); });
+  await q.waitForTimeout(150);
+  const echo = await q.evaluate(() => ({ u: document.querySelector('#flow-hud .hud-cap-u').textContent, thinking: document.querySelector('#flow-hud .hud-cap-a').classList.contains('thinking') }));
+  ok('the moment it is sent, what was said is under the orb with his thinking pulse — before the answer comes back', echo.u === 'call the venue tomorrow at ten' && echo.thinking, echo);
+  await q.waitForTimeout(1000);
+  const half = await q.evaluate(() => document.querySelector('#flow-hud .hud-cap-a').textContent.length);
+  await q.waitForTimeout(1500);
+  const full = await q.evaluate(() => ({ t: document.querySelector('#flow-hud .hud-cap-a').textContent, thinking: document.querySelector('#flow-hud .hud-cap-a').classList.contains('thinking') }));
+  ok('the answer flows in a few words at a time, then stands whole, and the pulse is gone', half > 0 && half < full.t.length + 1 && /reading is a daily habit now\.$/.test(full.t) && !full.thinking, { half, full });
+  await q.unroute('**/api/flow/do');
+  const px = await q.evaluate(() => { const cv = document.querySelector('#flow-hud .hud-orb'); return { square: Math.abs(cv.clientWidth - cv.clientHeight) <= 1, px: cv.width * cv.height, layer: getComputedStyle(cv).willChange }; });
+  ok('the orb\'s canvas is square, within its pixel budget, and on its own layer', px.square && px.px <= 520000 * 1.05 && /transform/.test(px.layer), px);
   /* The columns are rewritten only when they change; the orb's clock is one chain and rests when hidden. */
   const wr = await q.evaluate(() => { const l = document.querySelector('#flow-hud .hud-left'); const before = l.firstChild; FlowHud.paintNow(); FlowHud.paintNow(); const same = l.firstChild === before; const raf = FlowHud.raf; return { same, oneChain: typeof raf === 'number', idleRate: FlowHud.FRAME_IDLE >= 40, points: FlowHud.pts ? FlowHud.pts.length : 0 }; });
   ok('a repaint that changes nothing leaves the DOM alone; the orb turns on one chain, at 20 frames a second when idle, with 420 points on a phone', wr.same && wr.oneChain && wr.idleRate && wr.points === 420, wr);
