@@ -805,8 +805,8 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
     display:grid;grid-template-columns:repeat(5,1fr);align-items:end;
     position:fixed;left:0;right:0;bottom:0;z-index:940;
     padding:7px 6px calc(7px + env(safe-area-inset-bottom));
-    background:rgba(14,16,20,.93);
-    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    background:rgba(14,16,20,.96);
+    /* no backdrop blur: a fixed, blurred bar re-blurs the page under it on every scrolled frame — the lag on an iPhone */
     border-top:1px solid var(--border);
   }
   #flow-tabbar button{
@@ -2801,7 +2801,7 @@ html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-row.done .b
   /* The bar sits on the bottom edge, like Advanced's: a floating pill left a
      strip of the page readable underneath it and rows sliding out below the
      +. Rounded on top, blurred, and the page keeps room above it. */
-  html[data-flow-theme][data-flow-look="new"] #flow-tabbar{left:0;right:0;bottom:0;padding:8px 8px calc(10px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid var(--lk-line);border-bottom:0;background:var(--lk-bar);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 -10px 40px var(--lk-shade);align-items:center}
+  html[data-flow-theme][data-flow-look="new"] #flow-tabbar{left:0;right:0;bottom:0;padding:8px 8px calc(10px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid var(--lk-line);border-bottom:0;background:var(--lk-bar);box-shadow:0 -10px 40px var(--lk-shade);align-items:center}
   html[data-flow-theme][data-flow-look="new"] body{padding-bottom:calc(var(--fn-bar-h) + env(safe-area-inset-bottom) + 72px) !important}
   html[data-flow-theme][data-flow-look="new"] #flow-tabbar button{color:var(--lk-dim);min-height:52px;justify-content:center}
   html[data-flow-theme][data-flow-look="new"] #flow-tabbar button.on{color:var(--lk-ink)}
@@ -3903,8 +3903,18 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud .hud-x:hover{border-color:#7fd8ff}
 #flow-hud .hud-col{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;overflow:auto;position:relative;z-index:1;scrollbar-width:none}
 #flow-hud .hud-core{position:relative;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-#flow-hud .hud-orb{width:100%;height:100%;min-height:240px;display:block}
+#flow-hud .hud-orb{width:100%;height:auto;flex:1 1 0;min-height:160px;display:block}
 #flow-hud .hud-status{position:absolute;bottom:4%;left:0;right:0;text-align:center;font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:rgba(150,215,255,.8)}
+/* The words, on the dashboard: what was said to him and what he said back,
+   under the orb — the conversation lives with the orb, not in a box. */
+#flow-hud .hud-cap{flex:none;order:1;width:min(560px,92%);margin:0 auto 10px;text-align:center;line-height:1.35;cursor:pointer}
+#flow-hud .hud-cap:empty{display:none}
+#flow-hud .hud-cap-u{font-size:13px;color:rgba(170,205,255,.75);font-style:italic;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#flow-hud .hud-cap-u.live::after{content:"…"}
+#flow-hud .hud-cap-a{margin-top:4px;font-size:15px;font-weight:600;color:#e8f4ff;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 0 18px rgba(80,160,255,.35)}
+#flow-hud .hud-cap-u:empty,#flow-hud .hud-cap-a:empty{display:none}
+#flow-hud .hud-cap:not(:empty) ~ .hud-status{position:static;margin:4px 0 6px}
+#flow-say .sy-kb{display:none}
 #flow-hud .hud-p{border:1px solid rgba(110,170,255,.22);background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66));border-radius:14px;padding:12px 14px;box-shadow:inset 0 0 24px rgba(40,110,255,.06)}
 #flow-hud .hud-ph{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#7fd8ff;margin-bottom:8px}
 #flow-hud .hud-go{appearance:none;border:0;background:transparent;color:#7fd8ff;font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
@@ -4032,6 +4042,20 @@ html.hud-on #flow-say textarea#sy-text{min-height:46px;background:rgba(3,8,20,.7
   #flow-hud .hud-core{order:1}#flow-hud .hud-left{order:2}#flow-hud .hud-right{order:3}
   html.hud-on #flow-say .fn-sheet{max-height:min(46vh,360px)}
   html.hud-on #flow-say textarea#sy-text{height:52px}
+  /* Phone: the console is a dock — one row at the bottom, the words go to
+     the orb. It grows into the sheet only to type or to review a plan. */
+  html.hud-on #flow-say .sy-kb{display:inline-flex;align-items:center;gap:6px}
+  html.hud-on.hud-dock #flow-hud.on{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+  html.hud-on.hud-dock #flow-say .fn-sheet{left:0;right:0;bottom:0;width:100%;transform:none;border-radius:18px 18px 0 0;max-height:none;overflow:visible;padding:8px 10px calc(8px + env(safe-area-inset-bottom));border-left:0;border-right:0;border-bottom:0}
+  html.hud-on.hud-dock #flow-say .fn-sheet > :not(.sy-ask){display:none!important}
+  html.hud-on.hud-dock #flow-say .sy-ask > :not(.ra-row){display:none!important}
+  html.hud-on.hud-dock #flow-say .ra-row.ra-end{margin:0;gap:8px;flex-wrap:nowrap}
+  html.hud-on.hud-dock #flow-say .ra-row.ra-end .flow-btn{padding-left:12px;padding-right:12px}
+  html.hud-on.hud-dock #flow-say .sy-doc span,html.hud-on.hud-dock #flow-say .sy-kb span{display:none}
+  html.hud-on.hud-dock #flow-say .sy-golive{font-size:13px}
+  html.hud-on.hud-dock #flow-say .sy-mic{flex:1}
+  html.hud-on.hud-dock #flow-say .sy-doc{margin-right:0}
+  html.hud-on.hud-dock #flow-say [data-say="send"]{display:none}
 }
 @media (max-width:560px){
   #flow-hud .hud-time{font-size:20px}

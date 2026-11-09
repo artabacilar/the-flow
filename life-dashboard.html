@@ -4742,10 +4742,24 @@ function renderDiet(){
 const J_COLORS={planning:'#b18cff',training:'#4f8cff',diet:'#3ddc84',sleep:'#3ddcdc',habits:'#68d391',mood:'#ff6bb5',money:'#ffb04f',time:'#f5e642'};
 const J_ICONS={planning:'🧭',training:'🏋️',diet:'🥗',sleep:'😴',habits:'✅',mood:'🧠',money:'💰',time:'⏱️'};
 
-function renderJournal(){
+/* Dates are formatted with formatters made once: toLocaleDateString builds
+   a new one on every call, and a log of five hundred lines paid for a
+   thousand of them each time the tab opened. And the tab opening again with
+   nothing new in the log is not a reason to draw it again. */
+const JN_FMT={
+  day:new Intl.DateTimeFormat('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}),
+  head:new Intl.DateTimeFormat('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}),
+  time:new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit'})
+};
+let jnDrawn='';
+function renderJournal(force){
   const view=document.getElementById('jnView').value;
   const f=document.getElementById('jnFilter').value;
   const list=document.getElementById('jnList'), empty=document.getElementById('jnEmpty');
+  const last=jData.length?jData[jData.length-1]:null;
+  const key=view+'|'+f+'|'+jData.length+'|'+(last?last.t+':'+(last.txt||'').length:'')+'|'+todayStr;
+  if(!force&&key===jnDrawn&&list.firstChild) return;
+  jnDrawn=key;
   const filtered=jData.filter(e=>f==='all'||e.cat===f);
 
   document.getElementById('jnCount').textContent=jData.length;
@@ -4770,7 +4784,7 @@ function renderJournal(){
       const dt=new Date(d+'T12:00:00');
       return `<div class="panel" style="margin-bottom:10px;">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <b style="font-size:14px;">${dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</b>
+          <b style="font-size:14px;">${JN_FMT.day.format(dt)}</b>
           <span style="color:var(--muted);font-size:12px;">${es.length} entr${es.length===1?'y':'ies'}</span>
           ${chips}
         </div>${highlights}</div>`;
@@ -4786,8 +4800,8 @@ function renderJournal(){
     const dISO=localISO(dt);
     const c=J_COLORS[e.cat]||'#9aa3b2';
     let head='';
-    if(dISO!==lastDay){ lastDay=dISO; head=`<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px;">${dt.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>`; }
-    return head+`<div class="jrow"><span class="j-time">${dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span><span class="j-cat" style="background:${c}22;color:${c}">${e.cat}</span><span class="j-txt">${e.txt}</span></div>`;
+    if(dISO!==lastDay){ lastDay=dISO; head=`<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px;">${JN_FMT.head.format(dt)}</div>`; }
+    return head+`<div class="jrow"><span class="j-time">${JN_FMT.time.format(dt)}</span><span class="j-cat" style="background:${c}22;color:${c}">${e.cat}</span><span class="j-txt">${e.txt}</span></div>`;
   }).join('');
   if(filtered.length>500) list.innerHTML+=`<div style="color:var(--muted);font-size:12px;padding:8px 0;">Showing the latest 500 of ${filtered.length} entries — everything is kept; use Export for the full history.</div>`;
 }

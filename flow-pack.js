@@ -995,21 +995,37 @@ const TimeChips = {
     $$('.flow-time-chip').forEach(chip => TimeChips.paint(chip, Schedule.get(chip.getAttribute('data-flow-key'))));
   },
 
+  /* The command centre, the console and the sheets are the pack's own
+     furniture: nothing in them is a legacy checkbox wanting a 🕘 chip or a
+     card wanting a new chart. A mutation inside them is not a reason to walk
+     the whole document — on a long day that walk is thousands of nodes. */
+  OWN: '#flow-hud,#flow-say,.flow-x,[data-flow-no-chip],.fn-sheetwrap',
   watch() {
+    /* Only the parts of the page that changed are looked at; the whole
+       document only when a change was too wide to pin down. */
+    let roots = new Set(), wide = false;
     const rescan = debounce(() => {
       if (TimeChips.busy) return;
-      TimeChips.scan(document);
-      try { Visuals.upgradeAll(); } catch (e) { /* never let a repaint break the app */ }
+      const list = wide || roots.size > 12 ? [document] : [...roots].filter((r) => r.isConnected);
+      roots = new Set(); wide = false;
+      for (const r of list) {
+        TimeChips.scan(r);
+        try { Visuals.upgradeAll(r === document ? null : r); } catch (e) { /* never let a repaint break the app */ }
+      }
     }, 300);
     TimeChips.observer = new MutationObserver((muts) => {
       if (TimeChips.busy) return;
+      let any = false;
       for (const m of muts) {
         if (m.type === 'childList' && m.addedNodes.length) {
+          const tg = m.target && m.target.nodeType === 1 ? m.target : null;
+          if (tg && tg.closest(TimeChips.OWN)) continue;
           for (const n of m.addedNodes) {
-            if (n.nodeType === 1 && !n.classList.contains('flow-time-chip') && !n.closest('.flow-x')) { rescan(); return; }
+            if (n.nodeType === 1 && !n.classList.contains('flow-time-chip') && !n.closest('.flow-x')) { any = true; if (tg && tg !== document.body && tg !== document.documentElement) roots.add(tg); else wide = true; break; }
           }
         }
       }
+      if (any) rescan();
     });
     TimeChips.observer.observe(document.body, { childList: true, subtree: true });
   }
@@ -4897,13 +4913,20 @@ const Visuals = {
   upgraded: 0,
 
   /** Leaf elements whose entire text is a breakdown-ish heading. */
-  findHeadings() {
-    return $$('h1,h2,h3,h4,h5,h6,div,span,p,b,strong,label').filter(el => {
-      if (el.closest('.flow-x')) return false;
-      if (el.children.length) return false;
-      const t = norm(el.textContent);
-      return t.length < 40 && BREAKDOWN_RE.test(t);
-    });
+  findHeadings(root) {
+    /* Thousands of candidates on a full day, so the cheap tests go first and
+       the ancestor walk (closest) runs only for the few that read like a
+       heading. This used to be the slowest thing in a tab switch. */
+    const out = [], list = (root && root.querySelectorAll ? root : document).querySelectorAll('h1,h2,h3,h4,h5,h6,div,span,p,b,strong,label');
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i];
+      if (el.firstElementChild) continue;
+      const raw = el.textContent; if (!raw || raw.length > 60) continue;
+      const t = norm(raw); if (t.length >= 40 || !BREAKDOWN_RE.test(t)) continue;
+      if (el.closest('.flow-x')) continue;
+      out.push(el);
+    }
+    return out;
   },
 
   /** The card that owns a heading: nearest ancestor that also holds a chart. */
@@ -5044,10 +5067,10 @@ const Visuals = {
     return true;
   },
 
-  upgradeAll() {
+  upgradeAll(root) {
     if (Settings.get('upgradeVisuals') === false) return 0;
     let n = 0;
-    Visuals.findHeadings().forEach(head => {
+    Visuals.findHeadings(root).forEach(head => {
       const card = Visuals.cardFor(head);
       if (card && Visuals.upgradeCard(card, head)) n++;
     });
@@ -13791,7 +13814,7 @@ const Say = {
             '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
             '<div class="sy-ex sy-premium"></div>' +
           '</details>' +
-          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-golive" data-say="live" aria-pressed="false" title="Live voice: he listens after every answer until you stop it">' + Nav.svg('mic') + '<span>Live</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-kb" data-say="kb" aria-pressed="false" title="Type">' + Nav.svg('chat') + '<span>Type</span></button><button type="button" class="flow-btn sy-golive" data-say="live" aria-pressed="false" title="Live voice: he listens after every answer until you stop it">' + Nav.svg('mic') + '<span>Live</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
       '</div>';
@@ -13810,6 +13833,7 @@ const Say = {
       if (a === 'send') return Say.send();
       if (a === 'doc') return Say.pickFile();
       if (a === 'live') return Say.toggleLive();
+      if (a === 'kb') return Say.kb();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
       if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
@@ -13863,7 +13887,7 @@ const Say = {
       if (window.FlowVoice) FlowVoice.on((state, extra) => {
         if (!Say.waiting) return;
         if (state === 'level') { Say.meter(extra); return; }
-        if (state === 'partial') { Say.overCheck((extra && extra.text) || ''); if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } return; }
+        if (state === 'partial') { Say.overCheck((extra && extra.text) || ''); if (Say.noWords && extra && extra.text) { clearTimeout(Say.noWords); Say.noWords = 0; } const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = (extra && extra.text) || ''; lv.hidden = !lv.textContent; } try { Hud.caption('live', (extra && extra.text) || ''); } catch (x) {} return; }
         if (state === 'listening') { const lv0 = Say.el.querySelector('.sy-live'); if (lv0) { lv0.textContent = ''; lv0.hidden = true; }
           /* The Mac app listening for 12 s and not one word: say which
              microphone it is listening to, and offer the others. */
@@ -13876,7 +13900,7 @@ const Say = {
             const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics();
           }, 12000);
           Say.mode('listening'); Say.state(Say.confirming ? (Say.lang() === 'tr' ? 'Dinliyorum — "evet" ya da "hayır".' : 'Listening — "yes" to do it, or "no".') : Say.listeningLine()); Say.paintMic(); return; }
-        if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); if (extra && extra.text) Say.state(extra.text); if (extra && extra.code === 'no-input') { const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics(); } return; }
+        if (state === 'error') { Say.waiting = false; Say.paintMic(); Say.mode('idle'); if (extra && extra.text) { Say.state(extra.text); try { if (document.documentElement.classList.contains('hud-dock')) Say.kb(true); } catch (x) {} } if (extra && extra.code === 'no-input') { const d = Say.el.querySelector('.sy-set'); if (d) d.open = true; Say.mics(); } return; }
         if (state === 'idle' || state === 'error') { clearTimeout(Say.noWords); Say.noWords = 0; }
         if (state === 'idle') {
           { const lv = Say.el.querySelector('.sy-live'); if (lv) { lv.textContent = ''; lv.hidden = true; } const mt = Say.el.querySelector('.sy-meter'); if (mt) mt.hidden = true; }
@@ -13972,6 +13996,7 @@ const Say = {
     const hi = Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
     Say.mode('idle'); Say.memPaint(); Say.mics().catch(() => {});
     Say.el.classList.add('on'); document.documentElement.classList.add('say-on');
+    Say.kbOpen = false; Say.dockWatch(); Say.dockSync(); try { Hud.caption('clear'); } catch (e) {}
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
     if (opts && opts.text) { Say.send(); return; }
@@ -14015,8 +14040,32 @@ const Say = {
     /* In Advanced the console is part of the command centre: it settles, it
        does not go away. */
     if (Hud.on && Hud.merged()) { Say.state(''); return; }
-    Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on');
+    Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on', 'hud-dock');
     try { if (Hud.on) Hud.close(true); } catch (e) {}
+  },
+  /* On a phone the command centre's console is a dock: one row of buttons
+     at the foot of the screen, nothing over the dashboard. The words go to
+     the orb (Hud.caption). It opens into the full sheet to type, to read the
+     whole log, to review a plan, or when he has something to show. */
+  kbOpen: false,
+  dockable() { try { return !!Hud.on && window.innerWidth <= 900; } catch (e) { return false; } },
+  dockSync() {
+    const root = document.documentElement;
+    if (!Say.el || !Say.dockable()) { root.classList.remove('hud-dock'); return; }
+    const plan = Say.el.querySelector('.sy-plan'), showing = plan && !plan.hidden;
+    const on = !Say.kbOpen && !showing;
+    root.classList.toggle('hud-dock', on);
+    const kb = Say.el.querySelector('.sy-kb'); if (kb) { kb.setAttribute('aria-pressed', String(!on)); kb.title = on ? 'Type' : 'Hide'; const sp = kb.querySelector('span'); if (sp) sp.textContent = on ? 'Type' : 'Hide'; }
+  },
+  kb(open) {
+    Say.kbOpen = open == null ? !Say.kbOpen : !!open;
+    Say.dockSync();
+    if (Say.kbOpen) { const ta = Say.el && Say.el.querySelector('#sy-text'); try { ta.focus({ preventScroll: true }); } catch (e) {} const sh = Say.el && Say.el.querySelector('.fn-sheet'); try { sh.scrollTop = 0; } catch (e) {} }
+  },
+  dockWatch() {
+    if (Say.dockWatched || !Say.el) return; Say.dockWatched = true;
+    try { new MutationObserver(() => Say.dockSync()).observe(Say.el.querySelector('.sy-plan'), { attributes: true, attributeFilter: ['hidden'] }); } catch (e) {}
+    let t = 0; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(Say.dockSync, 120); });
   },
   handsFree() { try { return Say.live || (Speech.pref('asstHandsFree') === true && !Wake.on()); } catch (e) { return false; } },
   /* Live voice: a conversation, not a turn. He listens as soon as it is on
@@ -14329,6 +14378,13 @@ const Say = {
     box.innerHTML = turns.slice(-6).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) + (t.sources && t.sources.length ? '<small class="sy-src">From: ' + esc(t.sources.map((s) => s.title).join(' · ')) + '</small>' : '') + '</div>').join('');
     box.hidden = !turns.length;
     box.scrollTop = box.scrollHeight;
+    try {
+      const all = Say.history;
+      let u = null, an = null; for (let i = all.length - 1; i >= 0; i--) { if (!an && all[i].role === 'assistant') an = all[i]; if (!u && all[i].role === 'user') u = all[i]; }
+      Hud.caption('u', u ? u.text : ''); Hud.caption('a', an ? an.text : '');
+      /* A new answer: the phone settles back to the dock; the answer is under the orb. */
+      if (all.length !== Say.capLen) { Say.capLen = all.length; if (an && all[all.length - 1] === an && Say.kbOpen) { Say.kbOpen = false; Say.dockSync(); } }
+    } catch (e) {}
   },
   prefsPaint() {
     const el = Say.el; if (!el) return;
@@ -14532,7 +14588,7 @@ const Hud = {
     try { Say.open({ idle: true }); } catch (e) {}
     try { Speech.unlock(); } catch (e) {}
     Hud.t0 = performance.now();
-    cancelAnimationFrame(Hud.raf); Hud.raf = requestAnimationFrame(Hud.frame);
+    cancelAnimationFrame(Hud.raf); clearTimeout(Hud.nap); Hud.nap = 0; Hud.seen = true; Hud.raf = requestAnimationFrame(Hud.frame);
     clearInterval(Hud.timer); Hud.timer = setInterval(() => { Hud.clock(); if (++Hud.tick % 30 === 0) Hud.paint(); }, 1000);
     Hud.clock();
     try { Team.load(true).then(() => { Team.paintRail(); Hud.paint(); }); Team.loadChannels(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadConnectors(true).then(() => { if (Hud.on) Hud.paint(); }); Team.loadUsage(true); Team.mem = null; Team.sk = null; Team.sc = null; Team.ef = null; Team.su = null; Team.ctx = null; Team.grp = null; Team.ml = null; Team.pl = null; if (Team.sug && Team.sug.date !== new Date().toISOString().slice(0, 10)) Team.sug = null; } catch (e) {}
@@ -14547,7 +14603,7 @@ const Hud = {
     Hud.on = false;
     document.documentElement.classList.remove('hud-on');
     if (Hud.el) Hud.el.classList.remove('on');
-    cancelAnimationFrame(Hud.raf); clearInterval(Hud.timer);
+    cancelAnimationFrame(Hud.raf); Hud.raf = 0; clearTimeout(Hud.nap); Hud.nap = 0; clearInterval(Hud.timer);
     try { Team.select(null, true); clearTimeout(Team.watchT); Team.openId = null; } catch (e) {}
     if (!fromSay) { try { Say.close(); } catch (e) {} }
   },
@@ -14565,9 +14621,10 @@ const Hud = {
       '<nav class="hud-rail" aria-label="Rooms and pages"></nav>' +
       '<aside class="hud-col hud-left"></aside>' +
       '<aside class="hud-col hud-pagecol"></aside>' +
-      '<div class="hud-core"><canvas class="hud-orb" aria-hidden="true"></canvas><div class="hud-status" aria-live="polite"></div></div>' +
+      '<div class="hud-core"><canvas class="hud-orb" aria-hidden="true"></canvas><div class="hud-cap" data-i18n="off" aria-live="polite"></div><div class="hud-status" aria-live="polite"></div></div>' +
       '<aside class="hud-col hud-right"></aside>';
     el.addEventListener('click', (e) => {
+      if (e.target.closest('.hud-cap')) { try { Say.kb(true); } catch (x) {} return; }
       const b = e.target.closest('[data-hud]'); if (!b) return;
       const a = b.getAttribute('data-hud');
       if (a === 'close') Hud.close();
@@ -14587,12 +14644,35 @@ const Hud = {
     return el;
   },
   /* ---- the day, round the orb ---- */
+  /* One write per change. The columns are rebuilt from state after every
+     load and every thirty seconds; when the HTML comes out the same, the
+     DOM is left alone — no mutation storm, no re-translation, no re-layout,
+     and whatever the person had open or typed in a panel stays. */
+  set(sel, html) { const el = Hud.el && Hud.el.querySelector(sel); return Hud.setEl(el, html); },
+  setEl(el, html) {
+    if (!el) return false;
+    if (el.__html === html && (html === '' ? !el.firstChild : !!el.firstChild)) return false;
+    el.__html = html; el.innerHTML = html; return true;
+  },
   panel(k, title, body, to) {
     return '<section class="hud-p" data-k="' + k + '"' + '><div class="hud-ph"><span>' + esc(title) + '</span>' +
       (to ? '<button type="button" class="hud-go" data-hud="go" data-to="' + to + '" aria-label="Open ' + esc(title) + '">›</button>' : '') + '</div>' + body + '</section>';
   },
   row(l, r, cls) { return '<div class="hud-r' + (cls ? ' ' + cls : '') + '"><span data-i18n="off">' + esc(l) + '</span><b>' + esc(r) + '</b></div>'; },
+  /* Paint now — unless a paint just ran: then one more, on the next frame,
+     stands for the whole burst. Boot fires thirty-odd of these as the loads
+     come back; the room is drawn once or twice instead. A caller that reads
+     the DOM straight after is outside any burst, so for it this is still
+     synchronous. */
   paint() {
+    if (!Hud.el || Hud.painting) return;
+    const now = performance.now();
+    if (now - (Hud.paintedAt || 0) < 8) { if (!Hud.paintQ) Hud.paintQ = requestAnimationFrame(() => { Hud.paintQ = 0; Hud.paintedAt = 0; Hud.paint(); }); return; }
+    if (Hud.paintQ) { cancelAnimationFrame(Hud.paintQ); Hud.paintQ = 0; }
+    Hud.paintedAt = now; Hud.painting = true;
+    try { Hud.paintNow(); } finally { Hud.painting = false; }
+  },
+  paintNow() {
     if (!Hud.el) return;
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     /* One of the team selected: their workspace, not the day. */
@@ -14619,7 +14699,7 @@ const Hud = {
     const hn = hab && (hab.total != null ? hab.total : (hab.list || []).length), hd = hab && (hab.done != null ? hab.done : 0);
     const habits = Hud.panel('habits', 'Habits', hab && hn ? '<div class="hud-big">' + hd + '<small> / ' + hn + '</small></div><i class="hud-bar"><b style="width:' + Math.round(100 * hd / Math.max(1, hn)) + '%"></b></i>' : '<p class="hud-none">No habits yet.</p>', 'habits');
     let tv = ''; try { tv = Team.openId ? Team.taskPanel(Team.openId) : ''; } catch (e) {}
-    Hud.el.querySelector('.hud-left').innerHTML = tv + today + train + habits;
+    Hud.set('.hud-left', tv + today + train + habits);
     let ev = [];
     try { const iso = RockActions.iso(new Date()); const now = new Date().toTimeString().slice(0, 5); ev = Ahead.items().filter((x) => x.date === iso && x.kind !== 'rock' && (x.allDay || !x.time || x.time >= now)); } catch (e) {}
     const cal = Hud.panel('cal', 'Next up', ev.length ? ev.slice(0, 4).map((x) => Hud.row(x.title, x.allDay ? 'all day' : (x.time || ''))).join('') : '<p class="hud-none">Nothing else in the calendar today.</p>');
@@ -14629,7 +14709,7 @@ const Hud = {
     let sp = null; try { sp = TodayPlus.spend(); } catch (e) {}
     const money = Hud.panel('money', 'Spend', sp ? '<div class="hud-big">' + esc(TodayPlus.money(sp.today)) + '</div><p class="hud-sub">' + esc(TodayPlus.money(sp.mtd)) + ' this month' + (sp.budget ? ' · ' + esc(TodayPlus.money(Math.max(0, sp.budget - sp.mtd))) + ' left' : '') + '</p>' : '<p class="hud-none">Nothing logged.</p>', 'finance');
     let team = ''; try { team = Team.jarvisPanels(); } catch (e) {}
-    Hud.el.querySelector('.hud-right').innerHTML = team + cal + body + money;
+    Hud.set('.hud-right', team + cal + body + money);
     try { Team.watch(); } catch (e) {}
   },
   clock() {
@@ -14641,7 +14721,12 @@ const Hud = {
   /* What the orb is doing, from what he is doing. */
   state() {
     const sy = Say.el ? Say.el.getAttribute('data-sy') : 'idle';
-    if (Speech.speaking()) return 'speaking';
+    if (sy === 'speaking') return 'speaking';
+    /* speechSynthesis.speaking is a trip to the platform on every read;
+       asked five times a second, not on every frame. */
+    const now = performance.now();
+    if (now - (Hud.spokeAt || 0) > 200) { Hud.spokeAt = now; Hud.spoke = Speech.speaking(); }
+    if (Hud.spoke) return 'speaking';
     if (window.FlowVoice && FlowVoice.listening && !(FlowVoice.sink && Wake.phase !== 'cmd')) return 'listening';
     if (sy === 'thinking' || Say.busy) return 'thinking';
     return 'idle';
@@ -14657,17 +14742,29 @@ const Hud = {
       return Math.min(1, Math.sqrt(sum / Hud.buf.length) * 4);
     } catch (e) { return 0; }
   },
+  /* The orb's clock. One chain. Hidden, scrolled away or on another page
+     it sleeps and looks again every 300 ms instead of asking for frames it
+     will not draw. Idle it turns at 20 frames a second — a slow turn needs
+     no more — and busy at 60 at most, on a 120 Hz screen too. The wake ear,
+     the microphone and the rest of the page share this CPU. */
+  wake() { clearTimeout(Hud.nap); Hud.nap = 0; if (Hud.on && !Hud.raf) Hud.raf = requestAnimationFrame(Hud.frame); },
+  watchOrb(cv) {
+    try { if (Hud.io) Hud.io.disconnect(); } catch (e) {}
+    Hud.io = null; Hud.seen = true;
+    if (!cv || typeof IntersectionObserver !== 'function') return;
+    try { Hud.io = new IntersectionObserver((es) => { for (const e of es) Hud.seen = e.isIntersecting; if (Hud.seen) Hud.wake(); }); Hud.io.observe(cv); } catch (e) { Hud.seen = true; }
+  },
+  FRAME_IDLE: 48, FRAME_BUSY: 15, seen: true,
   frame(now) {
     if (!Hud.on) return;
+    Hud.raf = 0;
+    if (document.hidden || !Hud.seen) { clearTimeout(Hud.nap); Hud.nap = setTimeout(Hud.wake, 300); return; }
     Hud.raf = requestAnimationFrame(Hud.frame);
-    /* Nothing to see: don't draw. Idle: half rate is plenty — the wake ear
-       and the microphone share this CPU, on a phone or a Mac web view. */
-    if (document.hidden) return;
     const st = Hud.state();
     const idle = st === 'idle';
-    if (idle && now - (Hud.lastDraw || 0) < 31) return;
+    if (now - (Hud.lastDraw || 0) < (idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY)) return;
     Hud.lastDraw = now;
-    let cv = Hud.cv; if (!cv || !cv.isConnected) { cv = Hud.cv = Hud.el.querySelector('.hud-orb'); Hud.g = null; } if (!cv) return;
+    let cv = Hud.cv; if (!cv || !cv.isConnected) { cv = Hud.cv = Hud.el.querySelector('.hud-orb'); Hud.g = null; Hud.watchOrb(cv); } if (!cv) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); Hud.g = null; }
@@ -14681,7 +14778,7 @@ const Hud = {
     const hue = st === 'listening' ? '120,240,255' : st === 'thinking' ? '150,170,255' : st === 'speaking' ? '110,220,255' : '90,170,255';
     /* the sphere: points on a Fibonacci lattice, turning. Fewer on a small
        screen; drawn in six depth bands, one fill each, instead of 900. */
-    const n = Math.min(w, h) < 260 ? 420 : 720;
+    const n = Math.min(w, h) < 260 || window.innerWidth <= 900 ? 420 : 720;
     if (!Hud.pts || Hud.pts.length !== n) { const out = []; for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * 2.399963; out.push([Math.cos(th) * r, y, Math.sin(th) * r]); } Hud.pts = out; }
     const rot = t * (st === 'thinking' ? 0.9 : 0.25), cr = Math.cos(rot), sr = Math.sin(rot), tilt = 0.35, ct = Math.cos(tilt), stl = Math.sin(tilt);
     const NB = 6; const bands = Hud.bands || (Hud.bands = Array.from({ length: NB }, () => []));
@@ -14721,6 +14818,17 @@ const Hud = {
     if (st === 'speaking' || st === 'listening') {
       for (let k = 0; k < 3; k++) { const ph = ((t * 0.8 + k / 3) % 1); g.strokeStyle = 'rgba(' + hue + ',' + (0.3 * (1 - ph) * (0.4 + e)).toFixed(3) + ')'; g.beginPath(); g.arc(cx, cy, R * (1.05 + ph * 0.6), 0, Math.PI * 2); g.stroke(); }
     }
+  },
+  /* The words under the orb: what was said to him (live, while it is
+     being said), and what he said back. Tap them to open the whole log. */
+  caption(kind, text) {
+    const box = Hud.el && Hud.el.querySelector('.hud-cap'); if (!box) return;
+    if (kind === 'clear') { box.innerHTML = ''; return; }
+    let u = box.querySelector('.hud-cap-u'), a = box.querySelector('.hud-cap-a');
+    if (!u) { box.innerHTML = '<div class="hud-cap-u"></div><div class="hud-cap-a"></div>'; u = box.firstChild; a = box.lastChild; }
+    if (kind === 'live') { u.textContent = text || ''; u.classList.toggle('live', !!text); return; }
+    if (kind === 'u') { u.textContent = text || ''; u.classList.remove('live'); return; }
+    if (kind === 'a') { a.textContent = text || ''; return; }
   },
   status(st) {
     const el = Hud.el && Hud.el.querySelector('.hud-status'); if (!el) return;
@@ -14783,11 +14891,11 @@ const Hud = {
   },
   paintNav() {
     const nav = Hud.el && Hud.el.querySelector('.hud-rail'); if (!nav) return;
-    if (!Hud.merged()) { nav.innerHTML = ''; return; }
+    if (!Hud.merged()) { Hud.setEl(nav, ''); return; }
     const sel = Hud.page ? 'page:' + Hud.page.group : Hud.VIEWS.indexOf(Team.sel) >= 0 ? Team.sel : (!Team.sel || Team.sel === 'jarvis') && !Say.agent ? 'home' : '';
     const it = (k, icon, label, sub, attrs) => '<button type="button" class="hud-ri' + (sel === k ? ' sel' : '') + '" ' + attrs + ' aria-label="' + esc(label) + '">' + (icon === 'orb' ? '<i class="hud-rorb" aria-hidden="true"></i>' : Nav.svg(icon, 'hud-rii')) + '<span data-i18n="off">' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></button>';
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
-    nav.innerHTML = it('home', 'orb', nm, 'Command centre', 'data-hud="home"') +
+    Hud.setEl(nav, it('home', 'orb', nm, 'Command centre', 'data-hud="home"') +
       '<div class="hud-rh">The team</div>' +
       it('setup', 'check', 'Setup', Team.toolSub('setup'), 'data-hud="setup"') +
       it('memory', 'note', 'Memory', Team.toolSub('memory'), 'data-hud="memory"') +
@@ -14795,7 +14903,7 @@ const Hud = {
       it('scripts', 'rocket', 'Automations', Team.toolSub('scripts'), 'data-hud="scripts"') +
       it('efficiency', 'target', 'Efficiency', Team.toolSub('efficiency'), 'data-hud="efficiency"') +
       '<div class="hud-rh">Your life</div>' +
-      [['today', 'today'], ['focus', 'compass'], ['body', 'dumbbell'], ['record', 'note'], ['settings', 'gear']].map(([g, ic]) => it('page:' + g, ic, Hud.PAGE_LABEL[g], '', 'data-hud="page" data-page="' + g + '"')).join('');
+      [['today', 'today'], ['focus', 'compass'], ['body', 'dumbbell'], ['record', 'note'], ['settings', 'gear']].map(([g, ic]) => it('page:' + g, ic, Hud.PAGE_LABEL[g], '', 'data-hud="page" data-page="' + g + '"')).join(''));
   },
   /* The look changed (or the app has just started): Advanced lives in the
      command centre, Simple does not. */
@@ -14862,9 +14970,9 @@ const Team = {
   /* ---- the strip ---- */
   paintRail() {
     const nav = Hud.el && Hud.el.querySelector('.hud-team'); if (!nav) return;
-    if (!Team.data) { nav.innerHTML = '<span class="hud-tm-wait">Team…</span>'; return; }
+    if (!Team.data) { Hud.setEl(nav, '<span class="hud-tm-wait">Team…</span>'); return; }
     const sel = Team.sel || 'jarvis';
-    nav.innerHTML = Team.agents().map((a) => {
+    Hud.setEl(nav, Team.agents().map((a) => {
       const st = Team.stateOf(a), un = Team.unread(a.id) + Team.attention(a.id), ok = Team.modelOk(a);
       return '<button type="button" class="hud-ag' + (a.id === sel ? ' sel' : '') + '" data-hud="agent" data-ag="' + esc(a.id) + '" aria-label="' + esc(a.name) + ', ' + esc(a.role) + '">' +
         '<i class="hud-av" aria-hidden="true">' + esc(a.avatar || a.name.charAt(0)) + '</i>' +
@@ -14877,7 +14985,7 @@ const Team = {
       '<button type="button" class="hud-ag hud-mem' + (sel === 'scripts' ? ' sel' : '') + '" data-hud="scripts" aria-label="Automations: routine work done by scripts, not a model"><i class="hud-av">A</i><span class="hud-agn">Automations</span><small>' + (Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' + (Team.sc.counts.running ? ' · ' + Team.sc.counts.running + ' running' : '') : 'scripts, schedules') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'efficiency' ? ' sel' : '') + '" data-hud="efficiency" aria-label="Efficiency: where the team wastes effort and what to change"><i class="hud-av">E</i><span class="hud-agn">Efficiency</span><small>' + (Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure') + '</small></button>') +
       '<button type="button" class="hud-ag hud-add" data-hud="add" aria-label="Add an agent"><i class="hud-av">+</i><span class="hud-agn">Add agent</span><small>name it, pick a role</small></button>' +
-      '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>';
+      '<button type="button" class="hud-ag hud-pause' + (Team.paused() ? ' on' : '') + '" data-hud="pause" aria-label="' + (Team.paused() ? 'Resume the team' : 'Pause every agent') + '"><i class="hud-av">' + (Team.paused() ? '▶' : '❚❚') + '</i><span class="hud-agn">' + (Team.paused() ? 'Paused' : 'Pause all') + '</span><small>' + (Team.paused() ? 'nothing answers until resumed' : 'the emergency stop') + '</small></button>');
   },
   /* The small line under a room's name, on the strip (Simple) or the rail (Advanced). */
   toolSub(id) {
@@ -14990,12 +15098,12 @@ const Team = {
       (a.id !== 'jarvis' ? '<button type="button" class="hud-btn ghost" data-hud="archive" data-ag="' + esc(a.id) + '">Archive ' + esc(a.name) + '</button>' : ''));
     const instr = Hud.panel('instr', 'Instructions', '<form data-team="instr" data-ag="' + esc(a.id) + '"><textarea name="instructions" rows="6" maxlength="4000" aria-label="Instructions">' + esc(a.instructions || '') + '</textarea><div class="hud-row"><input type="text" name="name" value="' + esc(a.name) + '" maxlength="40" aria-label="Name" placeholder="Name"><input type="text" name="role" value="' + esc(a.role) + '" maxlength="60" aria-label="Role" placeholder="Role"><button type="submit" class="hud-btn">Save</button></div></form>');
     const tv = Team.openId ? Team.taskPanel(Team.openId) : '';
-    Hud.el.querySelector('.hud-left').innerHTML = tv + who + instr;
+    Hud.set('.hud-left', tv + who + instr);
     const mem = Hud.panel('memory', a.name + ' remembers', Team.knowList('agent:' + a.id, Team.know('agent:' + a.id), a.name));
     const sh = Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
     const lg = (Team.data.log || []).filter((l) => l.agent === a.id).slice(-6).reverse();
     const act = Hud.panel('activity', 'Activity', lg.length ? lg.map((l) => '<div class="hud-r"><span data-i18n="off">' + esc(l.what) + '</span><b>' + esc(Team.when(l.at)) + '</b></div>').join('') : '<p class="hud-none">Nothing yet.</p>');
-    Hud.el.querySelector('.hud-right').innerHTML = Team.assignPanel(a) + Team.tasksPanel(a.id) + Team.toolsPanel(a) + mem + sh + act;
+    Hud.set('.hud-right', Team.assignPanel(a) + Team.tasksPanel(a.id) + Team.toolsPanel(a) + mem + sh + act);
     Team.paintRail();
     Team.watch();
   },
@@ -15355,8 +15463,8 @@ const Team = {
       '<div class="hud-tabs">' + [['current', 'Current'], ['rules', 'Rules'], ['superseded', 'Superseded'], ['all', 'Everything']].map((t) => '<button type="button" class="hud-tab' + ((Team.memFilter || 'current') === t[0] ? ' on' : '') + '" data-hud="memfilter" data-f="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
     const list = Hud.panel('memlist', 'Sources · ' + ((M.counts || {}).current || 0) + ' current · ' + ((M.counts || {}).superseded || 0) + ' superseded', search + (Team.mem ? (items.length ? items.map(Team.memRow).join('') : '<p class="hud-none">Nothing matches.</p>') : '<p class="hud-sub">Looking…</p>') +
       '<p class="hud-sub">Facts and rules the team is shown; J.A.R.V.I.S.\'s memory of you; each agent\'s instructions; your preferences; and the platform rules (code — shown, never edited here). Your Flow record and the conversation are read, not listed.</p>');
-    Hud.el.querySelector('.hud-left').innerHTML = list;
-    Hud.el.querySelector('.hud-right').innerHTML = Team.tracePanel() + Team.ctxPanels() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M);
+    Hud.set('.hud-left', list);
+    Hud.set('.hud-right', Team.tracePanel() + Team.ctxPanels() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M));
     Team.paintRail();
   },
   tracePanel() {
@@ -15555,13 +15663,13 @@ const Team = {
     Hud.el.querySelector('.hud-brand b').textContent = 'Setup';
     Hud.el.querySelector('.hud-brand span').textContent = 'From nothing to the first piece of work the team did for you';
     const V = Team.su;
-    if (!V || !V.steps.length) { Hud.el.querySelector('.hud-left').innerHTML = Hud.panel('susteps', 'Steps', '<p class="hud-sub">Looking…</p>'); Hud.el.querySelector('.hud-right').innerHTML = ''; Team.paintRail(); return; }
+    if (!V || !V.steps.length) { Hud.set('.hud-left', Hud.panel('susteps', 'Steps', '<p class="hud-sub">Looking…</p>')); Hud.set('.hud-right', ''); Team.paintRail(); return; }
     if (!Team.suStep || !V.steps.some((s) => s.id === Team.suStep)) Team.suStep = V.current;
     const badge = (s) => s.status === 'done' ? '<em class="hud-badge" data-st="working">done</em>' : s.status === 'skipped' ? '<em class="hud-badge" data-st="not_built">skipped</em>' : s.status === 'attention' ? '<em class="hud-badge" data-st="paused">needs attention</em>' : s.status === 'running' ? '<em class="hud-badge" data-st="awaiting">running</em>' : s.optional ? '<em class="hud-badge" data-st="not_built">optional</em>' : '';
     const list = V.steps.map((s, i) => '<div class="hud-mi' + (Team.suStep === s.id ? ' open' : '') + (s.status === 'done' || s.status === 'skipped' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="sustep" data-id="' + esc(s.id) + '"><span data-i18n="off"><b class="hud-sun">' + (i + 1) + '</b> ' + esc(s.title) + '</span><small data-i18n="off">' + esc(Team.cut(s.note, 90)) + '</small>' + badge(s) + '</button></div>').join('');
     const prog = '<div class="hud-big">' + V.progress.done + '<small> / ' + V.progress.total + '</small></div><i class="hud-bar"><b style="width:' + Math.round(100 * V.progress.done / V.progress.total) + '%"></b></i><p class="hud-sub">' + (V.completedAt ? 'Set up on ' + esc(new Date(V.completedAt).toLocaleDateString()) + '. Everything here can be changed later.' : 'Leave any time; it continues where it was.') + '</p>';
-    Hud.el.querySelector('.hud-left').innerHTML = Hud.panel('suprog', 'Progress', prog) + Hud.panel('susteps', 'Steps', list);
-    Hud.el.querySelector('.hud-right').innerHTML = Team.suStepPanel(V, Team.suStep);
+    Hud.set('.hud-left', Hud.panel('suprog', 'Progress', prog) + Hud.panel('susteps', 'Steps', list));
+    Hud.set('.hud-right', Team.suStepPanel(V, Team.suStep));
     Team.paintRail(); Team.suWatch();
   },
   suStepPanel(V, id) {
@@ -15687,8 +15795,8 @@ const Team = {
       '<p class="hud-sub">A scheduled review runs the same analysis and sends the top findings to your channels as a fixed message — no model. Nothing is applied without you.</p>');
     const ap = (E && E.applied || []);
     const appliedPanel = Hud.panel('efapplied', 'Applied changes', ap.length ? ap.map((r) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(r.note || r.title) + '<small>' + esc(Team.when(r.at)) + ' · ' + esc(Team.EFK[r.kind] || r.kind) + (r.reverted ? ' · reverted ' + esc(Team.when(r.reverted)) : '') + '</small></span>' + (!r.reverted && r.revert ? '<button type="button" class="hud-btn ghost" data-hud="efrevert" data-id="' + esc(r.id) + '">Revert</button>' : '') + '</div>').join('') : '<p class="hud-none">Nothing applied yet. Recommended and applied are kept apart: a finding changes nothing until you press Apply.</p>');
-    Hud.el.querySelector('.hud-left').innerHTML = Hud.panel('efnums', 'The numbers', nums + (ag ? '<p class="hud-sub"><b>Per agent</b></p>' + ag : '')) + Hud.panel('efwf', 'Workflows by usage and failures', wf) + setPanel + appliedPanel;
-    Hud.el.querySelector('.hud-right').innerHTML = Team.efFindingsPanel(E) + Team.efBaselinePanel(E);
+    Hud.set('.hud-left', Hud.panel('efnums', 'The numbers', nums + (ag ? '<p class="hud-sub"><b>Per agent</b></p>' + ag : '')) + Hud.panel('efwf', 'Workflows by usage and failures', wf) + setPanel + appliedPanel);
+    Hud.set('.hud-right', Team.efFindingsPanel(E) + Team.efBaselinePanel(E));
     Team.paintRail();
   },
   efFindingsPanel(E) {
@@ -15778,14 +15886,14 @@ const Team = {
       '<div class="hud-row"><button type="button" class="hud-btn' + (Team.scNew ? ' ghost' : '') + '" data-hud="scnew">' + (Team.scNew ? 'Cancel' : 'Build an automation') + '</button></div>' +
       '<p class="hud-sub">An automation is a pipeline of vetted steps — read your rocks, expenses, habits, the team\'s tasks or a public page; filter, sort, count, format; report, notify with a fixed message, update rocks by rule, or send templated emails after your yes. No code is written or run; the steps apply the same rules every time. A model is used only where you put a “hand exceptions to an agent” step. Time zone: ' + esc(S.tz || '') + '.</p>');
     const runsPanel = Team.scRunsPanel(S);
-    Hud.el.querySelector('.hud-left').innerHTML = list + runsPanel;
+    Hud.set('.hud-left', list + runsPanel);
     let right = '';
     if (Team.scNew) right = Team.scEditorPanel(null);
     const open = Team.scOpen && Team.script(Team.scOpen);
     if (open) right += Team.scEdit === open.id ? Team.scEditorPanel(open) : Team.scDetailPanel(open);
     if (open && Team.scEdit !== open.id) right += Team.scVersionsPanel(open);
     if (!right) right = Hud.panel('schint', 'Pick an automation', '<p class="hud-sub">Open one on the left to read what it does, which inputs and services it needs, what it affects, when it stops and what is left to judgment — then run a test (nothing sent, nothing changed), run it for real, schedule it, or pause it. Every run keeps its trigger, version, inputs, per-step counts and timings, model calls and a cost line.</p>');
-    Hud.el.querySelector('.hud-right').innerHTML = right;
+    Hud.set('.hud-right', right);
     Team.paintRail();
   },
   scRunsPanel(S) {
@@ -15950,14 +16058,14 @@ const Team = {
     const list = Hud.panel('sklist', 'Skills · ' + (c.active || 0) + ' active' + (c.disabled ? ' · ' + c.disabled + ' disabled' : '') + (c.archived ? ' · ' + c.archived + ' archived' : ''), search + (Team.sk ? (items.length ? items.map(Team.skRow).join('') : '<p class="hud-none">' + (Team.skFilter === 'active' || !Team.skFilter ? 'No skills yet. Teach one on the right, or say “turn that into a skill” after a task.' : 'Nothing here.') + '</p>') : '<p class="hud-sub">Looking…</p>') +
       '<div class="hud-row"><button type="button" class="hud-btn' + (Team.skNew ? ' ghost' : '') + '" data-hud="sknew">' + (Team.skNew ? 'Cancel' : 'Teach a new skill') + '</button></div>' +
       '<p class="hud-sub">A skill is an instruction document you can read and edit: purpose, when to use it, inputs, the steps and decision points, the tools and sources it relies on, what good looks like, exceptions and what needs your yes. Facts stay in Memory; skills point at them. A skill never widens what an agent may do.</p>');
-    Hud.el.querySelector('.hud-left').innerHTML = list;
+    Hud.set('.hud-left', list);
     let right = '';
     if (Team.skNew) right = Team.skTeachPanel();
     const open = Team.skOpen && Team.skill(Team.skOpen);
     if (open) right += Team.skEdit === open.id ? Team.skEditorPanel(open) : Team.skDetailPanel(open);
     if (open) right += Team.skTestPanel(open) + Team.skFeedbackPanel(open, (S.proposals || []).filter((p) => p.skill === open.id)) + Team.skVersionsPanel(open);
     if (!right) right = Hud.panel('skhint', 'Pick a skill', '<p class="hud-sub">Open one on the left to read it, test it on an example, give feedback that becomes a proposed change (shown as a diff), compare versions, assign it to agents, or disable and archive it.</p>' + ((S.proposals || []).some((p) => p.status === 'proposed') ? '<p class="hud-alert">' + (S.proposals || []).filter((p) => p.status === 'proposed').length + ' proposed change' + ((S.proposals || []).filter((p) => p.status === 'proposed').length === 1 ? '' : 's') + ' waiting: ' + esc((S.proposals || []).filter((p) => p.status === 'proposed').map((p) => p.skillName).filter((v, i, a) => a.indexOf(v) === i).join(', ')) + '</p>' : ''));
-    Hud.el.querySelector('.hud-right').innerHTML = right;
+    Hud.set('.hud-right', right);
     Team.paintRail();
   },
   skTeachPanel() {
@@ -17653,12 +17761,18 @@ const Nav = {
     if (!g || g.tabs.length < 2 || !host) { seg.style.display = 'none'; return; }
 
     const tabs = g.tabs.filter(t => Nav.pill(t));
-    seg.innerHTML = tabs.map(t =>
-      '<button type="button" data-fn-seg="' + t + '" class="' + (t === cur ? 'on' : '') + '">' +
-      esc(Nav.label(t)) + '</button>').join('');
-    seg.querySelectorAll('[data-fn-seg]').forEach(b => {
-      b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-seg')));
-    });
+    /* The same row for the same tab is not drawn twice: sync() runs three
+       times on one tap, and each rewrite here cost a full layout of the page. */
+    const key = tabs.join(',') + '|' + cur + '|' + (document.documentElement.getAttribute('lang') || '') + '|' + tabs.map((t) => Nav.label(t)).join(',');
+    if (seg.__key !== key) {
+      seg.__key = key;
+      seg.innerHTML = tabs.map(t =>
+        '<button type="button" data-fn-seg="' + t + '" class="' + (t === cur ? 'on' : '') + '">' +
+        esc(Nav.label(t)) + '</button>').join('');
+      seg.querySelectorAll('[data-fn-seg]').forEach(b => {
+        b.addEventListener('click', () => Nav.go(b.getAttribute('data-fn-seg')));
+      });
+    }
 
     /* Above the pane rather than inside it: a section that repaints itself
        by rewriting its own innerHTML — North Star does, every time the
@@ -17671,9 +17785,14 @@ const Nav = {
        the right — the row read as broken rather than scrollable. Center the
        active pill, and only paint the edge fade when there is actually more
        to scroll to. */
-    const on = seg.querySelector('button.on');
-    if (on) seg.scrollLeft = Math.max(0, on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2);
-    seg.classList.toggle('fn-overflow', seg.scrollWidth > seg.clientWidth + 4);
+    /* Measured on the next frame, after the browser has laid the new page
+       out anyway — reading offsets here forced that layout three times over. */
+    if (!Nav.segRaf) Nav.segRaf = requestAnimationFrame(() => {
+      Nav.segRaf = 0;
+      const on = seg.querySelector('button.on');
+      if (on) seg.scrollLeft = Math.max(0, on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2);
+      seg.classList.toggle('fn-overflow', seg.scrollWidth > seg.clientWidth + 4);
+    });
   },
 
   /* ---- header tools: search and the avatar ------------------------------ */
