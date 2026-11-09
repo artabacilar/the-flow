@@ -1040,7 +1040,15 @@ async function notify(uid, ctx, t0, what) {
   const list = await agents(ctx); const a = list.find((x) => x.id === t.agent) || { name: 'The team' };
   const title = what === 'done' ? a.name + ' is done: ' + t.title : what === 'approval' ? t.title + ' — needs your yes' : what === 'question' ? a.name + ' has a question' : t.title + ' did not finish';
   const body = what === 'question' ? String(t.question || '').slice(0, 160) : what === 'failed' ? String(t.error || '').slice(0, 160) : 'Open the command centre to see it.';
-  if (pushTo) { try { await pushTo(uid, { title, body, thread: 'team', data: { team: 'task', id: t.id } }); } catch (e) {} }
+  /* One thing waiting for his yes: the notification carries Approve and
+     Decline (on the phone and the watch). Several at once go to the command
+     centre, where he can see which is which. */
+  let pending = [];
+  if (what === 'approval') { try { pending = (await approvals(ctx)).filter((x) => x.task === t.id && x.status === 'pending'); } catch (e) {} }
+  const one = pending.length === 1 ? pending[0] : null;
+  const note = { title, body: one ? str(one.summary || body, 160) : body, thread: 'team', data: one ? { team: 'approval', id: t.id, approval: one.id } : { team: 'task', id: t.id } };
+  if (one) note.category = 'FLOW_APPROVAL';
+  if (pushTo) { try { await pushTo(uid, note); } catch (e) {} }
   /* The channels he is linked on get the result itself, not a pointer. */
   if (channelsTo) {
     let text = title + '\n\n';
@@ -1599,7 +1607,7 @@ function scriptDeps() {
       const item = { id: 'p' + newId(), task: '', step: '', run: run.id, agent: 'script', script: sc.id, kind: 'batch', summary: 'Send ' + aw.count + ' email' + (aw.count === 1 ? '' : 's') + ' from "' + sc.name + '": ' + str(aw.subject, 80), detail: { to: aw.count + ' recipient' + (aw.count === 1 ? '' : 's') + ': ' + aw.recipients.slice(0, 8).join(', ') + (aw.recipients.length > 8 ? ' … +' + (aw.recipients.length - 8) : ''), subject: aw.subject, body: 'Sample (' + aw.sample.to + '):\n' + aw.sample.body + '\n\nTemplate: ' + (aw.template && aw.template.body || ''), run: run.id, count: aw.count, recipients: aw.recipients }, status: 'pending', key: 'k' + newId(), at: Date.now() };
       ap.push(item); await saveApprovals(ctx, ap);
       await log(ctx, 'team', 'The automation "' + sc.name + '" is waiting for your yes: ' + item.summary);
-      if (pushTo) { try { await pushTo(uid, { title: item.summary, body: 'Review the recipients and content in the command centre.', thread: 'team', data: { team: 'approval' } }); } catch (e) {} }
+      if (pushTo) { try { await pushTo(uid, { title: item.summary, body: item.detail.to, thread: 'team', category: 'FLOW_APPROVAL', data: { team: 'approval', approval: item.id } }); } catch (e) {} }
       if (channelsTo) { try { await channelsTo(uid, item.summary + '\n\n' + item.detail.to + '\n\nSubject: ' + item.detail.subject + '\n\nReply "/yes 1" to send them once, or "/no 1".', { what: 'approval' }); } catch (e) {} }
       return item;
     },

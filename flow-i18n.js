@@ -175,9 +175,12 @@
         if (bk && bk !== key && bv && !exact.has(bk)) { exact.set(bk, bv); if (!reverse.has(bv)) reverse.set(bv, bk); }
         return;
       }
-      var rule = { key: key, val: val, rx: toRegex(key), n: (key.match(/\{\}/g) || []).length,
-                   marks: marksOf(key), cap: capOf(key) };
-      var head = key.slice(0, key.indexOf('{}'));
+      /* matched against the normalised text (straight quotes), so the
+         pattern is normalised the same way — "(“@{} …”)" must still match. */
+      var nk = norm(key);
+      var rule = { key: key, val: val, rx: toRegex(nk), n: (key.match(/\{\}/g) || []).length,
+                   marks: marksOf(nk), cap: capOf(key) };
+      var head = nk.slice(0, nk.indexOf('{}'));
       if (head.length >= 3) {
         var b = head.slice(0, 3);
         if (!buckets.has(b)) buckets.set(b, []);

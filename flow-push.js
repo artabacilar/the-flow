@@ -294,6 +294,8 @@ async function sendToUser(raw, uid, note) {
       'thread-id': note.thread || 'flow'
     }
   };
+  /* Buttons on the notification (the app registers what each category means). */
+  if (note.category && /^[A-Z_]{3,40}$/.test(note.category)) payload.aps.category = note.category;
   if (note.data && typeof note.data === 'object') Object.assign(payload, { flow: note.data });
 
   let jwt;
