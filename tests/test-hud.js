@@ -112,6 +112,30 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const m = await q.evaluate(() => ({ on: !!(window.FlowHud && FlowHud.on), wide: document.getElementById('flow-hud') ? document.getElementById('flow-hud').scrollWidth : 0, vw: innerWidth,
     orbFirst: (() => { const c = document.querySelector('#flow-hud .hud-core'), t = document.querySelector('#flow-hud [data-k="today"]'); return !!c && !!t && c.getBoundingClientRect().top < t.getBoundingClientRect().top; })() }));
   ok('/?jarvis=1 opens it (what a wall screen points at); on a phone it fits the width, orb first', m.on && m.wide <= m.vw && m.orbFirst, m);
+  /* The console on a phone: a dock, not a sheet over the day. */
+  const dk = await q.evaluate(() => { const sh = document.querySelector('#flow-say .fn-sheet').getBoundingClientRect(); const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; };
+    return { dock: document.documentElement.classList.contains('hud-dock'), h: sh.height, bottom: Math.round(innerHeight - sh.bottom), text: vis('#flow-say #sy-text'), log: vis('#flow-say .sy-log'), talk: vis('#flow-say .sy-mic'), live: vis('#flow-say .sy-golive'), kb: vis('#flow-say .sy-kb'), go: vis('#flow-say [data-say="send"]'), pad: parseInt(getComputedStyle(document.getElementById('flow-hud')).paddingBottom, 10) }; });
+  ok('on a phone the console is a dock at the foot of the screen — one row (Document, Type, Live, Talk), under 90 px, nothing over the dashboard; the text box, the log and Go are put away, and the room leaves it space', dk.dock && dk.h < 90 && dk.bottom <= 1 && !dk.text && !dk.log && dk.talk && dk.live && dk.kb && !dk.go && dk.pad >= dk.h, dk);
+  await q.evaluate(() => { FlowSay.history = [{ role: 'user', text: 'Tomorrow at ten call the venue' }, { role: 'assistant', text: 'Done, sir. The venue call is on tomorrow at 10:00.' }]; FlowSay.logPaint(); });
+  const cp = await q.evaluate(() => { const c = document.querySelector('#flow-hud .hud-cap'), o = document.querySelector('#flow-hud .hud-orb').getBoundingClientRect(), r = c.getBoundingClientRect(); return { u: c.querySelector('.hud-cap-u').textContent, a: c.querySelector('.hud-cap-a').textContent, underOrb: r.top >= o.bottom - 2, shown: r.height > 0, dock: document.documentElement.classList.contains('hud-dock') }; });
+  ok('the words live with the orb: what was said and what he answered appear under it, on the dashboard, while the dock stays a dock', cp.u === 'Tomorrow at ten call the venue' && /Done, sir/.test(cp.a) && cp.underOrb && cp.shown && cp.dock, cp);
+  await q.evaluate(() => { try { window.FlowVoice && window.__flowVoiceEvent && 0; } catch (e) {} FlowSay.waiting = true; FlowHud.caption('live', 'start reading twenty'); });
+  ok('while he is being spoken to, the live words show under the orb as they come', await q.evaluate(() => { const u = document.querySelector('#flow-hud .hud-cap-u'); return u.classList.contains('live') && u.textContent === 'start reading twenty'; }));
+  await q.click('#flow-say .sy-kb'); await q.waitForTimeout(400);
+  const op = await q.evaluate(() => { const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; }; return { dock: document.documentElement.classList.contains('hud-dock'), text: vis('#flow-say #sy-text'), log: vis('#flow-say .sy-log'), label: document.querySelector('#flow-say .sy-kb span').textContent, focused: document.activeElement && document.activeElement.id === 'sy-text' }; });
+  ok('Type opens the dock into the sheet — the text box and the log — with the cursor in the box, and the button now says Hide', !op.dock && op.text && op.log && op.label === 'Hide' && op.focused, op);
+  await q.click('#flow-say .sy-kb'); await q.waitForTimeout(300);
+  ok('Hide puts it away again', await q.evaluate(() => document.documentElement.classList.contains('hud-dock')));
+  await q.evaluate(() => { document.querySelector('#flow-say .sy-plan').hidden = false; }); await q.waitForTimeout(300);
+  const pl = await q.evaluate(() => document.documentElement.classList.contains('hud-dock'));
+  await q.evaluate(() => { document.querySelector('#flow-say .sy-plan').hidden = true; }); await q.waitForTimeout(300);
+  ok('a plan to review opens the sheet by itself and it settles back to the dock when the plan is gone', !pl && await q.evaluate(() => document.documentElement.classList.contains('hud-dock')), pl);
+  await q.click('#flow-hud .hud-cap'); await q.waitForTimeout(300);
+  ok('tapping the words under the orb opens the whole conversation', await q.evaluate(() => !document.documentElement.classList.contains('hud-dock') && FlowSay.kbOpen));
+  await q.evaluate(() => FlowSay.kb(false));
+  /* The columns are rewritten only when they change; the orb's clock is one chain and rests when hidden. */
+  const wr = await q.evaluate(() => { const l = document.querySelector('#flow-hud .hud-left'); const before = l.firstChild; FlowHud.paintNow(); FlowHud.paintNow(); const same = l.firstChild === before; const raf = FlowHud.raf; return { same, oneChain: typeof raf === 'number', idleRate: FlowHud.FRAME_IDLE >= 40, points: FlowHud.pts ? FlowHud.pts.length : 0 }; });
+  ok('a repaint that changes nothing leaves the DOM alone; the orb turns on one chain, at 20 frames a second when idle, with 420 points on a phone', wr.same && wr.oneChain && wr.idleRate && wr.points === 420, wr);
   await q.close();
   await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); FlowTodayLook.applyLook(); });
   await p.waitForTimeout(1500);
