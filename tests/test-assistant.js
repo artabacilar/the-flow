@@ -170,19 +170,13 @@ function wav() {
   doReply = { ok: true, say: 'A Priority for tomorrow: call the venue. Shall I?', actions: [{ type: 'rock', title: 'Call the venue', date: await p.evaluate(() => FlowSay.plusDays(1)) }] };
   await ask('and remind me to call the venue tomorrow', true);
   ok('a follow-up goes with the conversation so far', dos[1] && dos[1].history.length === 2 && /how did I sleep/.test(dos[1].history[0].text), dos[1] && dos[1].history);
-  const pl = await p.evaluate(() => ({ cards: document.querySelectorAll('#flow-say .sy-card').length, confirming: FlowSay.confirming, hint: /Say “yes”/.test(document.querySelector('#flow-say .sy-plan').textContent) }));
-  ok('a plan waits for a spoken yes, and says so', pl.cards === 1 && pl.confirming && pl.hint, pl);
-  speak.length = 0;
-  await p.evaluate(async () => { FlowSay.confirmBy('yes please'); await new Promise((r) => setTimeout(r, 900)); });
-  const y = await p.evaluate(() => { const w = cData.rocks; let hit = null; Object.keys(w).forEach((k) => (w[k] || []).forEach((r) => { if (r.title === 'Call the venue') hit = r; })); return { hit: !!hit, open: document.querySelector('#flow-say').classList.contains('on'), last: FlowSay.history[FlowSay.history.length - 1].text }; });
-  ok('"yes" does exactly the plan on screen', y.hit, y);
-  ok('and it answers in kind, by name, and carries on', y.open && /(Done|done|taken care of|in hand), Artur\. Anything else\?/.test(y.last) && speak.length === 1 && speak[0] === y.last, { y, speak });
-
-  doReply = { ok: true, say: 'Shall I mark the insurance done?', actions: [{ type: 'habit', name: 'Floss' }] };
-  await ask('add flossing', true);
-  await p.evaluate(async () => { FlowSay.confirmBy('no, leave it'); await new Promise((r) => setTimeout(r, 700)); });
-  const no = await p.evaluate(() => ({ floss: (hbData.habits || []).some((h) => h.name === 'Floss'), last: FlowSay.history[FlowSay.history.length - 1].text }));
-  ok('"no" changes nothing, and says so', !no.floss && /Very well, Artur\. Nothing has been changed\./.test(no.last), no);
+  const y = await p.evaluate(() => { const w = cData.rocks; let hit = null; Object.keys(w).forEach((k) => (w[k] || []).forEach((r) => { if (r.title === 'Call the venue') hit = r; })); return { hit: !!hit, cards: document.querySelectorAll('#flow-say .sy-card').length, confirming: FlowSay.confirming, open: document.querySelector('#flow-say').classList.contains('on'), did: [...document.querySelectorAll('#flow-say .sy-did li')].map((x) => x.textContent) }; });
+  ok('what he understood is done at once — no plan to confirm', y.hit && y.cards === 0 && !y.confirming, y);
+  ok('and it is listed under his answer, the conversation carrying on', y.open && y.did.some((d) => /Call the venue/.test(d)), y);
+  doReply = { ok: true, say: 'Which day — Thursday or Friday?', ask: true, actions: [] };
+  await ask('put the dentist on thursday or friday', true);
+  const q = await p.evaluate(() => ({ last: FlowSay.history[FlowSay.history.length - 1].text, cards: document.querySelectorAll('#flow-say .sy-card').length, open: document.querySelector('#flow-say').classList.contains('on') }));
+  ok('when it is unclear he asks, and nothing changes', /Thursday or Friday/.test(q.last) && q.cards === 0 && q.open, q);
 
   doReply = { ok: true, say: 'Flossing, daily. Shall I?', actions: [{ type: 'habit', name: 'Floss' }] };
   await ask('add flossing', true);
@@ -253,10 +247,8 @@ function wav() {
   ok('and removed with ×', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).length === 0));
   doReply = { ok: true, say: 'One Priority and a fact to keep.', actions: [{ type: 'rock', title: 'Book dinner for Elif', date: new Date().toISOString().slice(0, 10) }, { type: 'remember', fact: 'Anniversary is 12 June' }] };
   await ask('book dinner for Elif, our anniversary is 12 June', true);
-  const mix = await p.evaluate(() => ({ kinds: [...document.querySelectorAll('#flow-say .sy-card .sy-kind')].map((x) => x.textContent), saved: (Flow.Settings.get('asstMemory') || []).length }));
-  ok('mixed with other things, "Remember" waits on the card with the rest', mix.kinds.indexOf('Remember') >= 0 && mix.saved === 0, mix);
-  await p.click('#flow-say [data-say="do"]'); await p.waitForTimeout(700);
-  ok('and is kept on "Do it"', await p.evaluate(() => (Flow.Settings.get('asstMemory') || []).some((m) => m.text === 'Anniversary is 12 June')));
+  const mix = await p.evaluate(() => ({ cards: document.querySelectorAll('#flow-say .sy-card').length, saved: (Flow.Settings.get('asstMemory') || []).some((m) => m.text === 'Anniversary is 12 June') }));
+  ok('mixed with other things, "Remember" is kept at once with the rest', mix.cards === 0 && mix.saved, mix);
 
   console.log('\n— the presence —');
   const pres = await p.evaluate(async () => {

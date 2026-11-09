@@ -98,12 +98,9 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.evaluate(async () => { document.getElementById('sy-text').value = 'get me a car to the studio'; await FlowSay.send(); });
   await p.waitForTimeout(500);
   ok('now it is sent as loose', sent && sent.persona === 'loose', sent && sent.persona);
-  const card = await p.evaluate(() => ({ kind: (document.querySelector('#flow-say .sy-card .sy-kind') || {}).textContent, to: (document.querySelector('#flow-say .sy-card input[data-sy-edit="to"]') || {}).value }));
-  ok('a ride is a card to confirm, with the destination editable', /Uber/.test(card.kind) && card.to === 'Bomonti Studio, Şişli', card);
-  await p.fill('#flow-say .sy-card input[data-sy-edit="to"]', 'Bomonti Studio, Şişli, İstanbul');
-  await p.click('#flow-say [data-say="do"]'); await p.waitForTimeout(400);
   const url = await p.evaluate(() => window.__opened[window.__opened.length - 1] || '');
-  ok('Do it opens Uber with the route filled in, from where you are', url.indexOf('https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=') === 0 && decodeURIComponent(url).indexOf('Bomonti Studio, Şişli, İstanbul') > 0, url);
+  const rideLine = await p.evaluate(() => [...document.querySelectorAll('#flow-say .sy-did li')].map((x) => x.textContent).join(' | '));
+  ok('a ride opens Uber at once with the route filled in, from where you are — he books nothing himself', url.indexOf('https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=') === 0 && decodeURIComponent(url).indexOf('Bomonti Studio, Şişli') > 0 && /Uber ready to confirm/.test(rideLine), { url, rideLine });
   await p.evaluate(() => FlowHud.close()); await p.waitForTimeout(200);
 
   console.log('\n— a phone, and Advanced —');

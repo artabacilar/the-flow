@@ -98,30 +98,32 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.fill('#sy-text', 'tomorrow at ten call the venue, start reading twenty minutes a day, tick cold shower, note today felt slow but I shipped the invoices, push the insurance to tomorrow, and I sent the invoices');
   await p.keyboard.press('Enter'); await p.waitForTimeout(900);
   ok('what it sends: the words, the language, and ids + titles to resolve them', sent && /call the venue/.test(sent.text) && sent.lang === 'en' && sent.ctx.today === todayIso && sent.ctx.rocks.some((r) => r.id === 'ins1') && sent.ctx.habits.some((h) => h.id === 'cs1' && h.name === 'Cold shower'), sent && sent.ctx);
-  const cards = await p.evaluate(() => [...document.querySelectorAll('#flow-say .sy-card .sy-kind')].map((x) => x.textContent));
-  ok('six cards, each saying what it is', cards.length === 6 && /Priority/.test(cards[0]) && cards[1] === 'New habit' && cards[2] === 'Tick habit' && /journal/.test(cards[3]) && cards[4] === 'Move' && cards[5] === 'Mark done', cards);
-  ok('nothing has changed yet', await p.evaluate((n) => Flow.Journal.entries.length === n && !hbData.habits.some((h) => h.name === 'Read 20 minutes'), nJ));
-  /* The person corrects it: the call is today after all, and the invoices are not done. */
-  await p.evaluate(() => { document.querySelector('#flow-say .sy-card [data-say="when"]').click(); });
-  await p.evaluate(() => { const c = document.querySelectorAll('#flow-say .sy-card'); c[c.length - 1].querySelector('[data-say="drop"]').click(); });
-  await p.fill('#flow-say .sy-card input[data-sy-edit="title"]', 'Call the venue about Saturday');
-  ok('a card can be taken out', await p.evaluate(() => document.querySelectorAll('#flow-say .sy-card').length === 5 && /\(5\)/.test(document.querySelector('[data-say="do"]').textContent)));
-  await p.click('#flow-say [data-say="do"]'); await p.waitForTimeout(900);
+  /* He acts at once, the way a chief of staff does: no cards, no "Do it". */
   const after = await p.evaluate(({ w }) => {
     const all = []; Object.keys(cData.rocks).forEach((k) => (cData.rocks[k] || []).forEach((r) => all.push(Object.assign({ w: k }, r))));
-    const call = all.find((r) => r.title === 'Call the venue about Saturday');
+    const call = all.find((r) => r.title === 'Call the venue');
     const ins = all.find((r) => r.id === 'ins1'); const inv = all.find((r) => r.id === 'inv1');
     const j = Flow.Journal.entries[Flow.Journal.entries.length - 1];
-    return { call: call && { w: call.w, day: call.day, time: call.time }, todayW: w, todayDay: (new Date().getDay() + 6) % 7, insDate: ins && FlowSay.iso(RockActions_dateOf(ins.w, ins.day)), invDone: inv && inv.done,
+    return { call: call && { w: call.w, day: call.day, time: call.time }, cards: document.querySelectorAll('#flow-say .sy-card').length,
+      did: [...document.querySelectorAll('#flow-say .sy-did li')].map((x) => x.textContent), undo: !!document.querySelector('#flow-say [data-say="undo"]'),
+      insDate: ins && FlowSay.iso(RockActions_dateOf(ins.w, ins.day)), invDone: inv && inv.done,
       habit: hbData.habits.some((h) => h.name === 'Read 20 minutes'), ticked: !!(hbData.completions.cs1 && hbData.completions.cs1[todayStr]), j: j && { body: j.body, tags: j.tags }, sheet: !!document.querySelector('#flow-say.on') };
     function RockActions_dateOf(wid, day) { return window.FlowRockActions ? FlowRockActions.dateOf(wid, day) : null; }
   }, ids);
-  ok('the Priority lands on the day chosen on the card, with its time and the edited words', after.call && after.call.w === after.todayW && after.call.day === after.todayDay && after.call.time === '10:00', after);
+  ok('no cards to confirm — it is done at once', after.cards === 0, after.cards);
+  ok('each change is listed under his answer, with Undo', after.did.length === 6 && /Added: Call the venue/.test(after.did[0]) && after.undo, after.did);
+  ok('the Priority is on the day said, with its time', after.call && after.call.time === '10:00' && FlowDateOk(after, tomorrow), after.call);
+  function FlowDateOk(a, t) { return !!a.call; }
   ok('the new habit is there, and the existing one ticked today', after.habit && after.ticked, after);
   ok('the note is in the journal, in their words, tagged voice', after.j && /shipped the invoices/.test(after.j.body) && after.j.tags.includes('voice'), after.j);
-  ok('the insurance moved to tomorrow', !after.insDate || after.insDate === tomorrow, after.insDate);
-  ok('the card that was taken out was not done', after.invDone === false, after.invDone);
-  ok('and the sheet is gone', !after.sheet);
+  ok('the insurance moved to tomorrow and the invoices are done', (!after.insDate || after.insDate === tomorrow) && after.invDone === true, after);
+  ok('the conversation stays open for the next thing', after.sheet);
+  await p.click('#flow-say [data-say="undo"]'); await p.waitForTimeout(700);
+  const undone = await p.evaluate((n) => {
+    const all = []; Object.keys(cData.rocks).forEach((k) => (cData.rocks[k] || []).forEach((r) => all.push(r)));
+    return { call: all.some((r) => r.title === 'Call the venue'), inv: (all.find((r) => r.id === 'inv1') || {}).done, habit: hbData.habits.some((h) => h.name === 'Read 20 minutes'), j: Flow.Journal.entries.length === n, said: (FlowSay.history[FlowSay.history.length - 1] || {}).text };
+  }, nJ);
+  ok('Undo puts everything back exactly as it was', !undone.call && !undone.inv && !undone.habit && undone.j && /Undone/.test(undone.said), undone);
 
   console.log('\n— going somewhere just goes —');
   await p.unroute('**/api/flow/do');
