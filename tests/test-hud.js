@@ -146,6 +146,24 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const full = await q.evaluate(() => ({ t: document.querySelector('#flow-hud .hud-cap-a').textContent, thinking: document.querySelector('#flow-hud .hud-cap-a').classList.contains('thinking') }));
   ok('the answer flows in a few words at a time, then stands whole, and the pulse is gone', half > 0 && half < full.t.length + 1 && /reading is a daily habit now\.$/.test(full.t) && !full.thinking, { half, full });
   await q.unroute('**/api/flow/do');
+  /* Streamed: the app asks for it, shows each piece as it is written, and ends on the same answer. */
+  let askedStream = null;
+  const sseBody = ['open', 'Right, ', 'the venue ', 'is on ', 'tomorrow.'].map((v, i) => 'data: ' + JSON.stringify(i ? { t: 'd', v } : { t: 'open' }) + '\n\n').join('') +
+    'data: ' + JSON.stringify({ t: 'done', status: 200, body: { ok: true, say: 'Right, the venue is on tomorrow.', actions: [] } }) + '\n\n';
+  await q.route('**/api/flow/do', (rt) => { askedStream = JSON.parse(rt.request().postData() || '{}').stream; rt.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: sseBody }); });
+  await q.evaluate(() => { window.__st = []; const H = window.FlowHud; H.__cap = H.caption; H.caption = function (k, t) { if (k === 'stream') window.__st.push(t); return H.__cap.apply(this, arguments); }; });
+  await q.evaluate(() => { document.getElementById('sy-text').value = 'when is the venue'; FlowSay.typed = true; FlowSay.send(); });
+  await q.waitForTimeout(900);
+  const st = await q.evaluate(() => ({ seen: window.__st.slice(), cap: document.querySelector('#flow-hud .hud-cap-a').textContent, streaming: !!document.querySelector('#flow-hud .hud-cap-a.streaming, #flow-say .sy-b.streaming'), last: (FlowSay.history[FlowSay.history.length - 1] || {}).text }));
+  ok('the app asks for a streamed reply, shows it as it is written, and ends with the whole answer in the log', askedStream === true && st.seen.length >= 1 && st.seen[st.seen.length - 1] === 'Right, the venue is on tomorrow.' && st.cap === 'Right, the venue is on tomorrow.' && !st.streaming && st.last === 'Right, the venue is on tomorrow.', st);
+  await q.unroute('**/api/flow/do');
+  await q.route('**/api/flow/do', (rt) => rt.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: 'data: {"t":"open"}\n\ndata: {"t":"d","v":"Half an ans"}\n\n' }));
+  await q.evaluate(() => { document.getElementById('sy-text').value = 'cut me off'; FlowSay.typed = true; FlowSay.send(); });
+  await q.waitForTimeout(700);
+  const cut = await q.evaluate(() => ({ state: (document.querySelector('#flow-say .sy-state') || {}).textContent || '', bubble: !!document.querySelector('#flow-say .sy-b.streaming'), last: (FlowSay.history[FlowSay.history.length - 1] || {}).text }));
+  ok('a stream cut off half way says so and leaves no half answer behind', /cut off/.test(cut.state) && !cut.bubble && cut.last === 'Right, the venue is on tomorrow.', cut);
+  await q.unroute('**/api/flow/do');
+  await q.evaluate(() => { const H = window.FlowHud; H.caption = H.__cap; delete H.__cap; });
   const px = await q.evaluate(() => { const cv = document.querySelector('#flow-hud .hud-orb'); return { square: Math.abs(cv.clientWidth - cv.clientHeight) <= 1, px: cv.width * cv.height, layer: getComputedStyle(cv).willChange }; });
   ok('the orb\'s canvas is square, within its pixel budget, and on its own layer', px.square && px.px <= 520000 * 1.05 && /transform/.test(px.layer), px);
   /* The columns are rewritten only when they change; the orb's clock is one chain and rests when hidden. */

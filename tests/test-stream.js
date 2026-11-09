@@ -103,6 +103,81 @@ const D = (o) => 'data: ' + JSON.stringify(o) + '\n\n';
   ok('a stream that produced nothing is not charged to the day',
      /if \(any\)/.test(block));
 
+  console.log('\n— the spoken sentence, read out of a half-written answer —');
+  const P = I.sayPrefix;
+  ok('nothing before the say field', P('{"act').text === '' && !P('{"act').closed);
+  ok('a partial sentence comes out as far as it goes', P('{"say":"Three DJ se').text === 'Three DJ se');
+  ok('closed once its quote arrives', P('{"say":"Done.","actions":[]}').closed && P('{"say":"Done.","actions":[]}').text === 'Done.');
+  ok('escapes are decoded', P('{"say":"He said \\"go\\"\\nnow"').text === 'He said "go"\nnow');
+  ok('a half escape is held back', P('{"say":"a\\').text === 'a' && P('{"say":"a\\u00').text === 'a');
+  ok('unicode escapes are decoded', P('{"say":"Merhaba \\u00e7"').text === 'Merhaba ç');
+  ok('spaces around the colon are fine', P('{ "say" : "x').text === 'x');
+  const full = '{"say":"Added \\"Call the venue\\" for tomorrow.","actions":[{"type":"rock","title":"Call the venue","date":"2026-10-31"}]}';
+  let prev = '', mono = true;
+  for (let i = 0; i <= full.length; i++) { const t = P(full.slice(0, i)).text; if (t.indexOf(prev) !== 0) mono = false; prev = t; }
+  ok('it only ever grows as the answer arrives', mono && prev === 'Added "Call the venue" for tomorrow.', prev);
+
+  console.log('\n— Say streams when asked —');
+  const S = I.say;
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  const parts = full.match(/[\s\S]{1,7}/g);
+  S.setStreamer(async (url, h, payload, onEvent) => {
+    if (!payload.stream) return { status: 500 };
+    onEvent({ type: 'message_start', message: { usage: { input_tokens: 10 } } });
+    for (const t of parts) onEvent({ type: 'content_block_delta', delta: { type: 'text_delta', text: t } });
+    onEvent({ type: 'message_delta', usage: { output_tokens: 30 } });
+    return { status: 200 };
+  });
+  let plainCalls = 0;
+  S.setPoster(async () => { plainCalls++; return { status: 200, body: { content: [{ type: 'text', text: full }] } }; });
+  const mkS = (body) => {
+    const o = { frames: [], head: null, ended: false, json: null };
+    const res = { writeHead: (s, hh) => { o.head = { s, hh }; }, write: (b) => { o.frames.push(...I.sseFrames(b).events); }, end: () => { o.ended = true; } };
+    const ctx = { json: (r, s, b) => { o.json = { s, b }; }, readBody: async () => JSON.stringify(body), plan: { tier: 'plus' }, counter: { m: {}, get(k) { return this.m[k] || 0; }, set(k, v) { this.m[k] = v; } } };
+    return { o, res, ctx };
+  };
+  const ctxBody = { text: 'tomorrow call the venue', lang: 'en', stream: true, ctx: { today: '2026-10-30', rocks: [], habits: [] } };
+  let s1 = mkS(ctxBody);
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  const ds = s1.o.frames.filter((f) => f.t === 'd').map((f) => f.v).join('');
+  const done = s1.o.frames.find((f) => f.t === 'done');
+  ok('it opens as an event stream', s1.o.head && /event-stream/.test(s1.o.head.hh['Content-Type']) && s1.o.frames[0] && s1.o.frames[0].t === 'open', s1.o);
+  ok('the deltas add up to exactly the spoken sentence', ds === 'Added "Call the venue" for tomorrow.', ds);
+  ok('more than one delta (it really streams)', s1.o.frames.filter((f) => f.t === 'd').length > 3);
+  ok('it ends with done: the same body a plain reply has', done && done.status === 200 && done.body.say === ds && done.body.actions.length === 1 && s1.o.ended, done);
+  ok('nothing went out as plain JSON as well', s1.o.json === null && plainCalls === 0);
+
+  s1 = mkS(Object.assign({}, ctxBody, { watch: true }));
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  ok('the watch never streams (plain JSON, as before)', s1.o.head === null && s1.o.json && s1.o.json.s === 200 && plainCalls === 1, s1.o);
+
+  s1 = mkS(Object.assign({}, ctxBody, { stream: false }));
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  ok('an older app that does not ask gets plain JSON', s1.o.head === null && s1.o.json && s1.o.json.b.say === 'Added "Call the venue" for tomorrow.', s1.o);
+
+  S.setStreamer(async () => ({ status: 429 }));
+  s1 = mkS(ctxBody);
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  const d429 = s1.o.frames.find((f) => f.t === 'done');
+  ok('an upstream refusal after the stream opened arrives as a done frame', d429 && d429.status === 429 && d429.body.error, s1.o.frames);
+
+  S.setStreamer(async (u, h, p, on) => { on({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'not json at all' } }); return { status: 200 }; });
+  s1 = mkS(ctxBody);
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  const dbad = s1.o.frames.find((f) => f.t === 'done');
+  ok('an unreadable answer ends the stream with an error, not silence', dbad && dbad.status === 502 && s1.o.ended, s1.o.frames);
+
+  S.setStreamer(async () => { throw new Error('socket hang up'); });
+  s1 = mkS(ctxBody);
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  const dthrow = s1.o.frames.find((f) => f.t === 'done');
+  ok('a dropped connection still ends the stream', dthrow && dthrow.status === 502 && s1.o.ended, s1.o.frames);
+
+  s1 = mkS(Object.assign({}, ctxBody, { text: '  ' }));
+  await S.handle('/api/flow/do', { method: 'POST' }, s1.res, s1.ctx);
+  ok('an empty request is refused before the stream opens', s1.o.head === null && s1.o.json && s1.o.json.s === 400);
+  S.setStreamer(null); S.setPoster(null);
+
   console.log('\n' + (fail ? '✗ ' + fail + ' failed' : '✓ all ' + pass + ' passed') + ' (' + (pass + fail) + ' checks)');
   process.exit(fail ? 1 : 0);
 })();
