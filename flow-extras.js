@@ -2375,7 +2375,13 @@ async function handleDo(p, req, res, ctx) {
     if (team.model && teamMod) {
       /* Set to another model in the command centre: the same brief, the
          same data, through the team's adapters (any provider with a key). */
-      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000 });
+      let soFar = '', sent2 = '';
+      const onText = sse ? (piece) => {
+        soFar += piece;
+        const now = sayPrefix(soFar).text;
+        if (now.length > sent2.length && now.indexOf(sent2) === 0) { sse({ t: 'd', v: now.slice(sent2.length) }); sent2 = now; }
+      } : undefined;
+      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000, onText });
       if (r2.error) return finish(r2.status === 429 ? 429 : 502, { error: r2.error });
       answer = r2.text;
       try { if (ctx.team && teamMod.bumpUsage) await teamMod.bumpUsage(ctx.team, 'jarvis', r2.usage, r2.model); } catch (e) {}

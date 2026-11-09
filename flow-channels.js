@@ -64,6 +64,8 @@ const CHANNELS = {
     how: 'In Telegram, talk to @BotFather → /newbot → copy the token → add it in Render as TELEGRAM_BOT_TOKEN. The Flow registers the webhook itself. Then open the bot and send it your link code.' },
   whatsapp: { name: 'WhatsApp', env: ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_ID', 'WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET'], built: true,
     how: 'Meta for Developers → your app → WhatsApp → API setup: the phone-number ID and a permanent access token; the app secret is under App settings → Basic. Webhook: <origin>/api/channels/whatsapp with the verify token you choose; subscribe to "messages". Then message the number with your link code.' },
+  wati: { name: 'WhatsApp (Wati)', env: ['WATI_API_ENDPOINT', 'WATI_API_TOKEN', 'WATI_WEBHOOK_KEY'], built: true,
+    how: 'Wati → API Docs (left menu): copy the API Endpoint (https://live-mt-server.wati.io/<your id>) into WATI_API_ENDPOINT and the access token into WATI_API_TOKEN. Choose any long random string for WATI_WEBHOOK_KEY. Then Wati → Webhooks → Add: URL <origin>/api/channels/wati?key=<that string>, event "Message Received". WhatsApp only lets a business message you inside 24 hours of your last message, so results reach you there while the conversation is open. Then WhatsApp your Wati number your link code. Everyone else who writes to that number is ignored, so a business inbox keeps working as before.' },
   slack: { name: 'Slack', env: ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET'], built: true,
     how: 'api.slack.com → create an app → Bot token scopes chat:write, im:history, im:read, im:write → install → copy the bot token and the signing secret. Event Subscriptions → <origin>/api/channels/slack → subscribe to message.im. Then DM the app your link code.' },
   discord: { name: 'Discord', env: ['DISCORD_PUBLIC_KEY', 'DISCORD_BOT_TOKEN', 'DISCORD_APP_ID'], built: true,
@@ -77,7 +79,7 @@ const CHANNELS = {
   teams: { name: 'Microsoft Teams', env: [], built: false,
     how: 'Not built yet: Teams bots need an Azure Bot registration and the Bot Framework. It is on the list.' }
 };
-const ORDER = ['telegram', 'whatsapp', 'imessage', 'sms', 'voice', 'slack', 'discord', 'teams'];
+const ORDER = ['telegram', 'whatsapp', 'wati', 'imessage', 'sms', 'voice', 'slack', 'discord', 'teams'];
 function configured(id) { const c = CHANNELS[id]; return !!(c && c.built && c.env.length && c.env.every((k) => env(k))); }
 
 /* ---------- deps, set by start() ------------------------------------------ */
@@ -460,6 +462,13 @@ async function send(channel, to, text, ctx) {
     for (const part of chunks(text, 3900)) { const r = await post('https://api.telegram.org/bot' + env('TELEGRAM_BOT_TOKEN') + '/sendMessage', {}, Object.assign({}, body0, { text: part })); if (r.status >= 300) throw new Error('telegram ' + r.status + (r.body && r.body.description ? ' ' + str(r.body.description, 100) : '')); }
   } else if (channel === 'whatsapp') {
     for (const part of chunks(text, 3900)) { const r = await post('https://graph.facebook.com/v21.0/' + env('WHATSAPP_PHONE_ID') + '/messages', { Authorization: 'Bearer ' + env('WHATSAPP_TOKEN') }, { messaging_product: 'whatsapp', to, type: 'text', text: { body: part } }); if (r.status >= 300) throw new Error('whatsapp ' + r.status + (r.body && r.body.error ? ' ' + str(r.body.error.message, 120) : '')); }
+  } else if (channel === 'wati') {
+    /* Wati's session message: the text rides in the query string; a 200 is "accepted", and ok:false in the body is a refusal (most often the 24-hour window has closed). */
+    const base = env('WATI_API_ENDPOINT').replace(/\/+$/, '');
+    for (const part of chunks(text, 4000)) {
+      const r = await post(base + '/api/v1/sendSessionMessage/' + encodeURIComponent(String(to).replace(/[^\d]/g, '')) + '?messageText=' + encodeURIComponent(part), { Authorization: 'Bearer ' + env('WATI_API_TOKEN').replace(/^Bearer\s+/i, '') }, {});
+      if (r.status >= 300 || (r.body && (r.body.result === false || r.body.ok === false))) throw new Error('wati ' + r.status + (r.body && (r.body.info || r.body.message) ? ' ' + str(r.body.info || r.body.message, 120) : ''));
+    }
   } else if (channel === 'slack') {
     for (const part of chunks(text, 3900)) { const r = await post('https://slack.com/api/chat.postMessage', { Authorization: 'Bearer ' + env('SLACK_BOT_TOKEN') }, { channel: to, text: part }); if (r.status >= 300 || (r.body && r.body.ok === false)) throw new Error('slack ' + (r.body && r.body.error || r.status)); }
   } else if (channel === 'discord') {
@@ -668,6 +677,7 @@ async function mailNew(ctx, item) {
 }
 
 /* ---------- the webhooks (no session) ------------------------------------- */
+const watiSeen = new Set();
 async function handle(p, req, res, ctx) {
   if (p.indexOf('/api/channels/') !== 0) return false;
   const headers = {}; for (const k in req.headers) headers[k.toLowerCase()] = String(req.headers[k]);
@@ -721,6 +731,31 @@ async function handle(p, req, res, ctx) {
   }
 
   /* Slack Events API */
+  /* WhatsApp through Wati. Wati does not sign its webhooks, so the URL carries
+     a secret only this server and his Wati workspace know. Only a contact's
+     own text messages are answered — not what his operators or the API
+     send (owner), and each message once, however often Wati retries it. */
+  if (p === '/api/channels/wati' && req.method === 'POST') {
+    if (!configured('wati')) return text(503, 'not configured');
+    if (!safeEq(ctx.query && ctx.query.get('key'), env('WATI_WEBHOOK_KEY'))) return text(403, 'no');
+    const raw = await ctx.readBody(req); let m = {}; try { m = JSON.parse(raw); } catch (e) {}
+    json(200, { ok: true });
+    try {
+      const kind = String(m.eventType || m.event || 'message');
+      if (kind !== 'message' || m.owner === true || String(m.type || 'text') !== 'text' || typeof m.text !== 'string' || !m.waId) return true;
+      const mid = String(m.whatsappMessageId || m.id || '');
+      if (mid) { if (watiSeen.has(mid)) return true; watiSeen.add(mid); if (watiSeen.size > 500) watiSeen.delete(watiSeen.values().next().value); }
+      const from = String(m.waId).replace(/[^\d]/g, '');
+      /* A Wati number is usually a business's shared inbox: its customers
+         write to it too. Only his own linked number — or a link code — is
+         answered; everyone else is left to his team, untouched. */
+      if (!(await whose('wati', from)) && !/^\s*(?:\/?link\s*)?\d{6}\s*$/i.test(m.text)) return true;
+      const reply = await inbound('wati', from, m.text, { name: str(m.senderName, 60) });
+      if (reply) await send('wati', from, reply);
+    } catch (e) { logLine('wati: ' + (e && e.message)); }
+    return true;
+  }
+
   if (p === '/api/channels/slack' && req.method === 'POST') {
     if (!configured('slack')) return text(503, 'not configured');
     const raw = await ctx.readBody(req);

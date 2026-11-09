@@ -105,6 +105,29 @@ function fetchJSON(url, opts, timeoutMs) {
     .finally(() => clearTimeout(t));
 }
 
+/* A streamed call: each "data:" line of the provider's event stream is
+   handed to onData as it arrives. A refusal (non-2xx) comes back whole, as
+   fetchJSON would return it, so the callers' error handling is the same. */
+function fetchStream(url, opts, timeoutMs, onData) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs || 60000);
+  return fetch(url, Object.assign({}, opts, { signal: ac.signal }))
+    .then(async (r) => {
+      if (r.status < 200 || r.status >= 300 || !r.body) { let body = null; try { body = await r.json(); } catch (e) {} return { status: r.status, body }; }
+      const dec = new TextDecoder(); let buf = '';
+      const line = (l) => { if (l.indexOf('data:') !== 0) return; const d = l.slice(5).trim(); if (!d || d === '[DONE]') return; let ev = null; try { ev = JSON.parse(d); } catch (e) { return; } try { onData(ev); } catch (e) {} };
+      for await (const chunk of r.body) {
+        buf += dec.decode(chunk, { stream: true });
+        let i; while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i).replace(/\r$/, '')); buf = buf.slice(i + 1); }
+      }
+      if (buf) line(buf);
+      return { status: r.status, body: null };
+    })
+    .finally(() => clearTimeout(t));
+}
+/* For tests and stand-ins: a whole answer handed out a few characters at a time. */
+function drip(text, onText) { const s = String(text || ''); for (let i = 0; i < s.length; i += 6) { try { onText(s.slice(i, i + 6)); } catch (e) {} } }
+
 async function listModels(pid) {
   const P = PROVIDERS[pid]; const key = keyOf(pid);
   if (!P || !key) return [];
@@ -234,7 +257,40 @@ async function complete(opts) {
   if (!which) return { error: 'That model is not available here.', status: 0 };
   const P = PROVIDERS[which.provider], key = keyOf(which.provider);
   const maxTokens = Math.max(200, Math.min(4000, opts.maxTokens || 1200));
+  /* Streamed, when the caller wants the words as they are written (Say in
+     the app). Only against the real providers; a stand-in or a test's
+     poster answers whole, and the answer is then dripped out the same way. */
+  const live = typeof opts.onText === 'function' && post === fetchJSON;
   try {
+    if (live && P.kind === 'anthropic') {
+      let text = '', inT = 0, outT = 0;
+      const r = await fetchStream(P.base + '/messages', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: which.model, max_tokens: maxTokens, system: opts.system, messages: opts.messages, stream: true })
+      }, opts.timeoutMs || 60000, (ev) => {
+        if (ev.type === 'message_start' && ev.message && ev.message.usage) inT = ev.message.usage.input_tokens || 0;
+        else if (ev.type === 'message_delta' && ev.usage) outT = ev.usage.output_tokens || outT;
+        else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; opts.onText(ev.delta.text); }
+      });
+      if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
+      return { text, usage: { in: inT, out: outT }, provider: which.provider, model: which.model };
+    }
+    if (live) {
+      const msgs0 = [{ role: 'system', content: opts.system }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
+      const pl = { model: which.model, messages: msgs0, stream: true };
+      if (which.provider === 'openai') pl.stream_options = { include_usage: true };
+      if (which.provider === 'openai' && /^(gpt-5|o[1-9])/.test(which.model)) pl.max_completion_tokens = maxTokens; else pl.max_tokens = maxTokens;
+      let text = '', inT = 0, outT = 0;
+      const r = await fetchStream(P.base + '/chat/completions', {
+        method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + key }, body: JSON.stringify(pl)
+      }, opts.timeoutMs || 60000, (ev) => {
+        const d = ev.choices && ev.choices[0] && ev.choices[0].delta;
+        if (d && typeof d.content === 'string' && d.content) { text += d.content; opts.onText(d.content); }
+        if (ev.usage) { inT = ev.usage.prompt_tokens || inT; outT = ev.usage.completion_tokens || outT; }
+      });
+      if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
+      return { text, usage: { in: inT, out: outT }, provider: which.provider, model: which.model };
+    }
     if (P.kind === 'anthropic') {
       const r = await post(P.base + '/messages', {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
@@ -243,7 +299,9 @@ async function complete(opts) {
       if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
       const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
       const u = (r.body && r.body.usage) || {};
-      return { text: parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n'), usage: { in: u.input_tokens || 0, out: u.output_tokens || 0 }, provider: which.provider, model: which.model };
+      const whole = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+      if (typeof opts.onText === 'function') drip(whole, opts.onText);
+      return { text: whole, usage: { in: u.input_tokens || 0, out: u.output_tokens || 0 }, provider: which.provider, model: which.model };
     }
     const msgs = [{ role: 'system', content: opts.system }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
     const payload = { model: which.model, messages: msgs };
@@ -255,6 +313,7 @@ async function complete(opts) {
     if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
     const ch = r.body && Array.isArray(r.body.choices) ? r.body.choices[0] : null;
     const text = ch && ch.message ? String(ch.message.content || '') : '';
+    if (typeof opts.onText === 'function') drip(text, opts.onText);
     const u = (r.body && r.body.usage) || {};
     return { text, usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 }, provider: which.provider, model: which.model };
   } catch (e) {
