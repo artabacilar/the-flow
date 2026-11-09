@@ -228,6 +228,13 @@ const bearer = (tok, opts = {}) => rq('/api/widget',
      /configurationForConnecting/.test(swiftFiles[0]) &&
      /delegateClass = SceneDelegate\.self/.test(strip(swiftFiles[0])) &&
      /"Default Configuration"/.test(swiftFiles[0]));
+  ok('"needs your yes" notifications carry Approve and Decline, registered at launch and answered with the session cookie',
+     /FlowNotificationDelegate\.registerCategories\(\)/.test(strip(swiftFiles[0])) &&
+     /identifier: approvalCategory, actions: \[yes, no\]/.test(swiftFiles[0]) &&
+     /\.authenticationRequired/.test(swiftFiles[0]) &&
+     /api\/team\/approve/.test(swiftFiles[0]) && /"decision": approve \? "approve" : "reject"/.test(swiftFiles[0]) &&
+     /requestHeaderFields\(with: ours\)/.test(swiftFiles[0]) &&
+     fs.readFileSync(path.join(__dirname, '..', 'ios-app', 'ios', 'App', 'App', 'AppDelegate.swift'), 'utf8') === swiftFiles[0]);
   ok('push registration stays with the app, not the window',
      /FlowPush\.refreshIfAlreadyAllowed\(\)/.test(strip(swiftFiles[0])) &&
      /didRegisterForRemoteNotificationsWithDeviceToken/.test(swiftFiles[0]) &&

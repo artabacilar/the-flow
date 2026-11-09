@@ -208,6 +208,11 @@ const TOKEN_B = 'b'.repeat(64);
   await push2.sendToUser(raw, 'u1', { title: 'Again', body: 'x' });
   const after = String(seen[seen.length - 1].headers.authorization || '').replace(/^bearer /, '');
   ok('a second send presents the same token', after === before);
+  await push2.sendToUser(raw, 'u1', { title: 'Send 3 emails', body: '3 recipients', category: 'FLOW_APPROVAL', data: { team: 'approval', approval: 'p1' } });
+  const cat = seen[seen.length - 1].payload;
+  ok('a "needs your yes" carries its category and the approval, so the phone and the watch show Approve / Decline', cat.aps.category === 'FLOW_APPROVAL' && cat.flow.approval === 'p1', cat);
+  await push2.sendToUser(raw, 'u1', { title: 'x', body: 'y', category: 'bad category"}' });
+  ok('a malformed category is not passed on', !seen[seen.length - 1].payload.aps.category);
 
   console.log('\n— a key that is there but broken —');
   /* The case configured() alone cannot see: three non-empty variables, and a
