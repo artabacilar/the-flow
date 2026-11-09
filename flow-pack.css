@@ -4396,3 +4396,7 @@ html.hud-on #flow-say .fn-sheet{will-change:transform;contain:layout paint}
   background:radial-gradient(circle,#7fd8ff 45%,transparent 50%) 0 50%/14px 8px repeat-x;animation:hudThink 1s steps(3) infinite;opacity:.85}
 @keyframes hudThink{0%{clip-path:inset(0 66% 0 0)}50%{clip-path:inset(0 33% 0 0)}100%{clip-path:inset(0 0 0 0)}}
 @media (prefers-reduced-motion:reduce){#flow-hud .hud-cap-a.thinking::before{animation:none}}
+/* A reply being written: a soft cursor at the end until it is whole. */
+.sy-b.streaming::after, #flow-hud .hud-cap-a.streaming::after { content: '▍'; margin-left: 1px; opacity: .55; animation: syCaret 1s steps(2, start) infinite; }
+@keyframes syCaret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .sy-b.streaming::after, #flow-hud .hud-cap-a.streaming::after { animation: none; } }

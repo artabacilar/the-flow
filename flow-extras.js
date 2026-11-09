@@ -2044,6 +2044,8 @@ const DO_DAILY_CAP = (() => {
 const DO_FREE_WEEKLY = 15;
 const doCountKey = () => 'don:' + new Date().toISOString().slice(0, 10);
 let doPost = (...a) => postJSON(...a);
+/* The streamed twin, swappable the same way so the tests never call out. */
+let doStream = (...a) => postStream(...a);
 const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
 const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style', 'delegate'];
 
@@ -2184,6 +2186,42 @@ function doHistory(body) {
     .filter((t) => t && t.text);
 }
 
+/** The "say" sentence out of a reply that is still being written.
+ *
+ *  The model answers with one JSON object whose first field is "say". While
+ *  it streams, the object is unfinished and cannot be parsed, but the say
+ *  string can be read as far as it goes: from its opening quote up to the
+ *  last character that is complete. A backslash escape cut in half by a
+ *  chunk boundary is held back until the next chunk completes it, so the
+ *  person never sees a stray "\" or half of a \u escape.
+ *  Returns { text, closed } — closed once the string's own quote has come.
+ */
+const SAY_ESC = { n: '\n', t: '\t', r: '', b: '', f: '', '"': '"', '\\': '\\', '/': '/' };
+function sayPrefix(buf) {
+  const s = String(buf || '');
+  const m = /"say"\s*:\s*"/.exec(s);
+  if (!m) return { text: '', closed: false };
+  let out = '';
+  for (let i = m.index + m[0].length; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') return { text: out, closed: true };
+    if (c !== '\\') { out += c; continue; }
+    const n = s[i + 1];
+    if (n === undefined) break;                       /* escape not finished yet */
+    if (n === 'u') {
+      const hex = s.slice(i + 2, i + 6);
+      if (hex.length < 4) break;
+      const code = parseInt(hex, 16);
+      if (!Number.isFinite(code)) break;
+      out += String.fromCharCode(code); i += 5; continue;
+    }
+    const esc = SAY_ESC[n];
+    out += esc != null ? esc : n;
+    i += 1;
+  }
+  return { text: out, closed: false };
+}
+
 function parseDo(text, known, max) {
   const s = String(text || '');
   const m = s.match(/\{[\s\S]*\}/);
@@ -2314,35 +2352,72 @@ async function handleDo(p, req, res, ctx) {
     if (data.text.length >= CACHE_MIN_CHARS) data.cache_control = { type: 'ephemeral' };
     system.push(data);
   }
+  /* Streamed when the app asks for it: the reply's spoken sentence goes out
+     word by word as the model writes it, and the actions follow once the
+     answer is whole. Everything that can refuse has been decided above, so
+     once the stream opens it only ever ends with a 'done' frame — carrying
+     the same status and body the plain reply would have had. The watch and
+     older apps ask for nothing and get the plain JSON, as before. */
+  const wantStream = body.stream === true && !onWatch;
+  let sse = null;
+  const finish = (code, obj) => {
+    if (sse) { sse({ t: 'done', status: code, body: obj }); try { res.end(); } catch (e) {} }
+    else ctx.json(res, code, obj);
+    return true;
+  };
+  if (wantStream) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+    sse = (obj) => { try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch (e) {} };
+    sse({ t: 'open' });
+  }
   try {
     let answer = '';
     if (team.model && teamMod) {
       /* Set to another model in the command centre: the same brief, the
          same data, through the team's adapters (any provider with a key). */
       const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000 });
-      if (r2.error) { ctx.json(res, r2.status === 429 ? 429 : 502, { error: r2.error }); return true; }
+      if (r2.error) return finish(r2.status === 429 ? 429 : 502, { error: r2.error });
       answer = r2.text;
       try { if (ctx.team && teamMod.bumpUsage) await teamMod.bumpUsage(ctx.team, 'jarvis', r2.usage, r2.model); } catch (e) {}
     } else {
-      const r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] }, 45000);
-      if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); ctx.json(res, 502, { error: ASSISTANT_UNAVAILABLE }); return true; }
-      if (r.status === 429) { ctx.json(res, 429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' }); return true; }
-      if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); ctx.json(res, 502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); return true; }
-      const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
-      answer = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
-      try { const u = r.body && r.body.usage; if (ctx.team && teamMod && teamMod.bumpUsage && u) await teamMod.bumpUsage(ctx.team, 'jarvis', { in: u.input_tokens || 0, out: u.output_tokens || 0 }, CHAT_MODEL); } catch (e) {}
+      const reqBody = { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] };
+      let r, u = null;
+      if (sse) {
+        let sent = '', inTok = 0, outTok = 0;
+        r = await doStream('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          Object.assign({ stream: true }, reqBody), (ev) => {
+            if (ev.type === 'message_start' && ev.message && ev.message.usage) inTok = ev.message.usage.input_tokens || 0;
+            else if (ev.type === 'message_delta' && ev.usage) outTok = ev.usage.output_tokens || outTok;
+            else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
+              answer += ev.delta.text;
+              const now = sayPrefix(answer).text;
+              if (now.length > sent.length && now.indexOf(sent) === 0) { sse({ t: 'd', v: now.slice(sent.length) }); sent = now; }
+            }
+          }, 45000);
+        if (r.status === 200) u = { input_tokens: inTok, output_tokens: outTok };
+      } else {
+        r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, reqBody, 45000);
+      }
+      if (r.status === 401 || r.status === 403 || r.status === 404) { logUpstream('do', r.status); return finish(502, { error: ASSISTANT_UNAVAILABLE }); }
+      if (r.status === 429) return finish(429, { error: 'Anthropic is rate-limiting this key. Try again in a minute.' });
+      if (r.status < 200 || r.status >= 300) { logUpstream('do', r.status, upstreamWhy(r)); return finish(502, { error: 'That could not be understood just now (upstream ' + r.status + ').' }); }
+      if (!sse) {
+        const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
+        answer = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+        u = r.body && r.body.usage;
+      }
+      try { if (ctx.team && teamMod && teamMod.bumpUsage && u) await teamMod.bumpUsage(ctx.team, 'jarvis', { in: u.input_tokens || 0, out: u.output_tokens || 0 }, CHAT_MODEL); } catch (e) {}
     }
     const out = parseDo(answer, known);
-    if (!out) { ctx.json(res, 502, { error: 'The answer came back in a shape the app could not read. Try again.' }); return true; }
+    if (!out) return finish(502, { error: 'The answer came back in a shape the app could not read. Try again.' });
     /* where this answer came from, for "where did that come from?" */
     let sources = []; try { if (ctx.team && teamMod && teamMod.provenance) { const rec = await teamMod.provenance(ctx.team, { agent: 'jarvis', via: onWatch ? 'watch' : 'app', model: team.model || CHAT_MODEL, said, reply: out.say, knowledge: team.shared, superseded: (team.superseded || []).map((id) => ({ id })), memory: known.memory, snapshot: !!snapshot, thread: past.length }); if (rec && teamMod.context) sources = teamMod.context.sourcesFor(team.shared || [], rec.used); } } catch (e) {}
     out.actions = fixWeekdays(said, out.actions, known.today);
     await ctx.counter.set(doCountKey(), spent + 1);
     if (wk) await ctx.counter.set(wk, ((await ctx.counter.get(wk)) || 0) + 1);
-    ctx.json(res, 200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL, sources });
+    return finish(200, { ok: true, heard: said, say: out.say, actions: onWatch ? [] : out.actions, end: out.end, used: spent + 1, cap: DO_DAILY_CAP, model: team.model || CHAT_MODEL, sources });
   } catch (e) {
-    ctx.json(res, 502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
+    return finish(502, { error: friendlyUpstream(e) || 'That could not be understood just now.' });
   }
   return true;
 }
@@ -2608,6 +2683,7 @@ module.exports._internals.buildDirectionContext = buildDirectionContext;
 module.exports._internals.directionConfig = () => ({ cap: DIR_DAILY_CAP });
 module.exports._internals.postStream = postStream;
 module.exports._internals.sseFrames = sseFrames;
+module.exports._internals.sayPrefix = sayPrefix;
 module.exports._internals.systemBlocks = systemBlocks;
 module.exports._internals.statement = {
   prepareStatement, xlsxToText, htmlTableToText, parseStatementReply, maskNumbers, decodeText,
@@ -2630,7 +2706,8 @@ module.exports._internals.ahead = {
 module.exports._internals.wellFormed = wellFormed;
 module.exports._internals.say = {
   parseDo, doContext, doMemory, doPersona, doHistory, doCalendar, fixWeekdays, weekdaysSaid, handle: handleDo, DO_SYSTEM, DO_PAGES, config: () => ({ cap: DO_DAILY_CAP, free: DO_FREE_WEEKLY }),
-  setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); }
+  setPoster(fn) { doPost = fn || ((...a) => postJSON(...a)); },
+  setStreamer(fn) { doStream = fn || ((...a) => postStream(...a)); }
 };
 module.exports._internals.document = {
   parse: (text, known) => parseDo(text, known, DOC_MAX_ACTIONS), unpack: docUnpack, handle: handleDocument, DOC_SYSTEM, jobs: docJobs,

@@ -14226,9 +14226,8 @@ const Say = {
         Say.follow(false);
         return;
       }
-      const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
-      const j = await r.json().catch(() => ({}));
+      const r = await Say.ask({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })), stream: true });
+      const j = r.j || {};
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
       const reply = String(j.say || '');
@@ -14264,6 +14263,60 @@ const Say = {
       Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
     finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); try { const ca = Hud.el && Hud.el.querySelector('.hud-cap-a.thinking'); if (ca) ca.classList.remove('thinking'); } catch (e) {} }
+  },
+  /* Asks /api/flow/do and, when the server streams, shows the spoken
+     sentence as it is written — under the orb and in the log — the way a
+     chat app does, instead of a pause and then a block of text. The answer
+     it hands back has the plain reply's shape ({status, ok, j}), so the rest
+     of send() does not know or care which way it came. An older server, or
+     a refusal, is ordinary JSON and is read as before. */
+  async ask(payload) {
+    const r = await fetch('/api/flow/do', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const ct = String(r.headers.get('content-type') || '');
+    if (!/event-stream/.test(ct) || !r.body || !r.body.getReader) {
+      const j = await r.json().catch(() => ({}));
+      return { status: r.status, ok: r.ok, j };
+    }
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', said = '', done = null, raf = 0;
+    const show = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; Say.streamShow(payload.text, said); }); };
+    try {
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        buf += dec.decode(step.value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          const data = block.split('\n').filter((l) => l.indexOf('data:') === 0).map((l) => l.slice(5).trim()).join('');
+          if (!data) continue;
+          let ev = null; try { ev = JSON.parse(data); } catch (e) { continue; }
+          if (ev.t === 'd' && typeof ev.v === 'string') { said += ev.v; show(); }
+          else if (ev.t === 'done') done = ev;
+        }
+      }
+    } catch (e) {}
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (!done) { Say.streamDrop(); return { status: 502, ok: false, j: { error: 'The answer was cut off — check the connection and try again.' } }; }
+    if (!(done.status >= 200 && done.status < 300)) Say.streamDrop();
+    else if (said) Say.streamShow(payload.text, said);
+    return { status: done.status, ok: done.status >= 200 && done.status < 300, j: done.body || {} };
+  },
+  streamShow(heard, text) {
+    try { Hud.caption('stream', text); } catch (e) {}
+    const box = Say.el && Say.el.querySelector('.sy-log'); if (!box) return;
+    let b = box.querySelector('.sy-b.streaming');
+    if (!b) {
+      box.insertAdjacentHTML('beforeend', '<div class="sy-b u" data-i18n="off">' + esc(heard || '') + '</div><div class="sy-b a streaming" data-i18n="off"></div>');
+      b = box.querySelector('.sy-b.streaming'); box.hidden = false;
+    }
+    b.textContent = text;
+    box.scrollTop = box.scrollHeight;
+  },
+  streamDrop() {
+    const box = Say.el && Say.el.querySelector('.sy-log');
+    if (box) { const b = box.querySelector('.sy-b.streaming'); if (b) { const u = b.previousElementSibling; b.remove(); if (u && u.classList.contains('u')) u.remove(); } }
+    try { Hud.caption('a', ''); Hud.capA = ''; } catch (e) {}
   },
   /* ---- from a document: a PDF, a photo of a page, or a text ----
      The file goes to the server as it is; the model reads it and answers in
@@ -14858,9 +14911,11 @@ const Hud = {
     if (kind === 'live') { u.textContent = text || ''; u.classList.toggle('live', !!text); return; }
     if (kind === 'u') { u.textContent = text || ''; u.classList.remove('live'); return; }
     if (kind === 'think') { clearTimeout(Hud.flowT); Hud.flowing = ''; a.textContent = ''; a.classList.add('thinking'); return; }
+    /* Streaming in: shown exactly as far as it has been written. */
+    if (kind === 'stream') { clearTimeout(Hud.flowT); a.classList.remove('thinking'); a.classList.toggle('streaming', !!text); const t = String(text || ''); if (t !== a.textContent) a.textContent = t; Hud.capA = t; return; }
     if (kind === 'a') {
       const t = String(text || '');
-      a.classList.remove('thinking');
+      a.classList.remove('thinking'); a.classList.remove('streaming');
       if (t === Hud.capA) return;
       const fresh = !!t && t !== Hud.capA && (!Hud.capA || t.indexOf(Hud.capA) !== 0) && Hud.capFresh;
       Hud.capA = t; clearTimeout(Hud.flowT);
