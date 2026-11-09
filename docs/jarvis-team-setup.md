@@ -371,6 +371,37 @@ OAuth-only servers (Notion, Linear, HubSpot) need the sign-in step that MCP
 authorisation defines; until it is built they are listed as such and connect
 once a token variable can be given.
 
+## 12g. Smooth on a phone: the dock, and what was making it lag
+
+**The console on a phone is a dock.** In the command centre on anything up
+to 900 px wide, the J.A.R.V.I.S. box no longer floats over the dashboard as
+a half-screen sheet. It is one row at the very bottom — Document · Type ·
+Live · Talk — and the room above leaves it exactly that much space, so
+nothing is ever covered while scrolling. The words go to the orb: what is
+being said shows under it live as it is heard, then what was said and what
+he answered stay there (tap them to open the whole conversation). The dock
+opens into the full sheet to type (**Type**, which then reads **Hide**), when
+a plan is on screen to review (it settles back to the dock when the plan is
+gone), when a new answer lands while typing (back to the dock, the answer is
+under the orb), and when the microphone has an error to show. Desktop is
+unchanged. (`html.hud-dock`, `Say.dockable/dockSync/kb`, `Hud.caption`.)
+
+**What was lagging, measured on the live account** (7–8 k DOM nodes):
+
+| Where | Cause | Fix |
+|---|---|---|
+| Command centre, always | the orb's frame callback ran at the screen's rate (79/s on a 120 Hz screen), each frame asking `speechSynthesis.speaking` (a trip to the platform) and drawing 720 points at 32 fps even when the orb was scrolled away or on another page | one frame chain; 20 fps idle, 60 at most when busy; `speaking` polled 5×/s; the orb naps when hidden, off-screen (IntersectionObserver) or on a page; 420 points on phones |
+| Command centre, boot and every 30 s | `Hud.paint()` 34× at boot, each rewriting both columns' innerHTML — a mutation storm re-translated and re-laid-out by every observer | `Hud.set` writes the DOM only when the HTML changed; a burst of paints becomes one on the next frame (`Hud.paint` → `paintNow`) |
+| Every tab switch in Simple | `Visuals.findHeadings` walked every heading/div/span in the document calling `closest()` first — 43 ms per switch on the live account, from the TimeChips rescan which also re-scanned the whole document for any added node | cheap tests first, `closest()` last; rescans scoped to the subtrees that changed; mutations inside the command centre, the console and the sheets never trigger one |
+| Every tab switch | `Nav.paintSeg` rewrote the segment row and read `offsetLeft/scrollWidth` three times per tap — three forced layouts of the whole page | the row is rewritten only when it changes; measurements on the next frame |
+| Journal | 500 rows × `toLocaleDateString` + `toLocaleTimeString` (a new formatter each call), redrawn every time the tab opened | three `Intl.DateTimeFormat`s made once; no redraw when nothing changed |
+| iPhone scrolling | `backdrop-filter: blur(20px)` on the fixed bottom bar re-blurred the page under it on every scrolled frame | no blur on the bar (it is 94–96 % opaque anyway) |
+
+Numbers (phone viewport, CPU ×4, replica): orb frames 629 → 382 ms over a
+twelve-page tour, whole-document rescans 102 → 24 ms, boot paints 34 → 6
+builds / 9 DOM writes. The hud suite checks the dock, the captions, the
+single frame chain, the idle rate and the write guard.
+
 ## 13. Tests
 
 `node tests/run.js team team2 team3 channels memory skills scripts efficiency setup context groups voicenotes mail plugins` runs the team with a stand-in
