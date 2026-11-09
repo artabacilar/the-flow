@@ -14158,6 +14158,9 @@ const Say = {
     Say.typed = false;
     Say.busy = true; Say.said = text; Say.confirming = false;
     Say.state('Working it out…'); Say.mode('thinking');
+    /* Answered at once, the way a chat answers: what was said is under the orb
+       the moment it is sent, with his thinking pulse, before any reply. */
+    try { Hud.caption('u', text); Hud.caption('think'); } catch (e) {}
     const go = Say.el.querySelector('[data-say="send"]'); go.disabled = true;
     try {
       /* "Where did that come from?" is answered from the record of the last
@@ -14260,7 +14263,7 @@ const Say = {
       await Say.speak(reply);
       Say.follow(false);
     } catch (e) { Say.state('That did not work — check the connection and try again.'); }
-    finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); }
+    finally { Say.busy = false; go.disabled = false; if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); try { const ca = Hud.el && Hud.el.querySelector('.hud-cap-a.thinking'); if (ca) ca.classList.remove('thinking'); } catch (e) {} }
   },
   /* ---- from a document: a PDF, a photo of a page, or a text ----
      The file goes to the server as it is; the model reads it and answers in
@@ -14381,8 +14384,9 @@ const Say = {
     try {
       const all = Say.history;
       let u = null, an = null; for (let i = all.length - 1; i >= 0; i--) { if (!an && all[i].role === 'assistant') an = all[i]; if (!u && all[i].role === 'user') u = all[i]; }
-      Hud.caption('u', u ? u.text : ''); Hud.caption('a', an ? an.text : '');
       /* A new answer: the phone settles back to the dock; the answer is under the orb. */
+      Hud.capFresh = all.length !== Say.capLen && !!an && all[all.length - 1] === an;
+      Hud.caption('u', u ? u.text : ''); Hud.caption('a', an ? an.text : ''); Hud.capFresh = false;
       if (all.length !== Say.capLen) { Say.capLen = all.length; if (an && all[all.length - 1] === an && Say.kbOpen) { Say.kbOpen = false; Say.dockSync(); } }
     } catch (e) {}
   },
@@ -14755,7 +14759,7 @@ const Hud = {
     if (!cv || typeof IntersectionObserver !== 'function') return;
     try { Hud.io = new IntersectionObserver((es) => { for (const e of es) Hud.seen = e.isIntersecting; if (Hud.seen) Hud.wake(); }); Hud.io.observe(cv); } catch (e) { Hud.seen = true; }
   },
-  FRAME_IDLE: 48, FRAME_BUSY: 15, seen: true,
+  FRAME_IDLE: 48, FRAME_BUSY: 15, seen: true, PX_BUDGET: 520000,
   frame(now) {
     if (!Hud.on) return;
     Hud.raf = 0;
@@ -14766,8 +14770,11 @@ const Hud = {
     if (now - (Hud.lastDraw || 0) < (idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY)) return;
     Hud.lastDraw = now;
     let cv = Hud.cv; if (!cv || !cv.isConnected) { cv = Hud.cv = Hud.el.querySelector('.hud-orb'); Hud.g = null; Hud.watchOrb(cv); } if (!cv) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    /* A pixel budget, not the screen's density: the dots are soft points of
+       light and look the same at 1.5×; on a Retina Mac 2× was four times the
+       pixels, redrawn twenty times a second — on Safari's engine, on the CPU. */
     const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    const dpr = Math.max(1, Math.min(1.5, window.devicePixelRatio || 1, Math.sqrt(Hud.PX_BUDGET / (w * h))));
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); Hud.g = null; }
     const g = Hud.g || (Hud.g = cv.getContext('2d')); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     const t = (now - Hud.t0) / 1000;
@@ -14850,7 +14857,21 @@ const Hud = {
     if (!u) { box.innerHTML = '<div class="hud-cap-u"></div><div class="hud-cap-a"></div>'; u = box.firstChild; a = box.lastChild; }
     if (kind === 'live') { u.textContent = text || ''; u.classList.toggle('live', !!text); return; }
     if (kind === 'u') { u.textContent = text || ''; u.classList.remove('live'); return; }
-    if (kind === 'a') { a.textContent = text || ''; return; }
+    if (kind === 'think') { clearTimeout(Hud.flowT); Hud.flowing = ''; a.textContent = ''; a.classList.add('thinking'); return; }
+    if (kind === 'a') {
+      const t = String(text || '');
+      a.classList.remove('thinking');
+      if (t === Hud.capA) return;
+      const fresh = !!t && t !== Hud.capA && (!Hud.capA || t.indexOf(Hud.capA) !== 0) && Hud.capFresh;
+      Hud.capA = t; clearTimeout(Hud.flowT);
+      if (!fresh || t.length < 24 || document.hidden) { a.textContent = t; return; }
+      /* A new answer flows in a few words at a time — about as fast as he
+         says it — instead of landing as a block. */
+      const words = t.split(/(\s+)/); let i = 0;
+      const step = () => { i = Math.min(words.length, i + 4); a.textContent = words.slice(0, i).join(''); if (i < words.length) Hud.flowT = setTimeout(step, 45); };
+      step();
+      return;
+    }
   },
   status(st) {
     const el = Hud.el && Hud.el.querySelector('.hud-status'); if (!el) return;

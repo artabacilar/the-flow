@@ -3889,7 +3889,7 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
   grid-template-columns:minmax(220px,300px) 1fr minmax(220px,300px);grid-template-rows:auto auto 1fr;gap:16px;
   padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(min(40vh,330px) + 24px) max(20px,env(safe-area-inset-left))}
 #flow-hud.on{display:grid}
-#flow-hud .hud-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
+#flow-hud .hud-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;will-change:transform;transform:translateZ(0);
   background-image:linear-gradient(rgba(90,170,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(90,170,255,.06) 1px,transparent 1px);background-size:44px 44px;
   -webkit-mask-image:radial-gradient(circle at 50% 45%,#000 30%,transparent 80%);mask-image:radial-gradient(circle at 50% 45%,#000 30%,transparent 80%)}
 #flow-hud .hud-top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;z-index:1}
@@ -3903,7 +3903,9 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud .hud-x:hover{border-color:#7fd8ff}
 #flow-hud .hud-col{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;overflow:auto;position:relative;z-index:1;scrollbar-width:none}
 #flow-hud .hud-core{position:relative;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-#flow-hud .hud-orb{width:100%;height:auto;flex:1 1 0;min-height:160px;display:block}
+#flow-hud .hud-orb{flex:1 1 0;min-height:160px;height:auto;aspect-ratio:1/1;width:auto;max-width:100%;align-self:center;display:block;
+  /* its own layer: a frame of the orb repaints the orb, not the room behind it */
+  will-change:transform;transform:translateZ(0);contain:strict}
 #flow-hud .hud-status{position:absolute;bottom:4%;left:0;right:0;text-align:center;font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:rgba(150,215,255,.8)}
 /* The words, on the dashboard: what was said to him and what he said back,
    under the orb — the conversation lives with the orb, not in a box. */
@@ -4381,3 +4383,16 @@ html.hud-on #flow-say input[type=checkbox]{accent-color:#2fa8ff}
   html.hud-on.hud-axis.hud-axis-narrow #flow-say :is(.sy-doc,.sy-kb,.sy-golive) span{display:none}
   html.hud-on.hud-axis.hud-axis-narrow #flow-say .fn-sheet{width:min(420px,calc(var(--hud-cw,420px) + 40px))}
 }
+
+/* Repaints stay where they happen: the clock ticking, a panel changing, the
+   words under the orb — none of them invalidates the rest of the room. */
+#flow-hud .hud-p,#flow-hud .hud-time,#flow-hud .hud-cap,#flow-hud .hud-status{contain:layout paint}
+#flow-hud .hud-col{contain:layout}
+html.hud-on #flow-say .fn-sheet{will-change:transform;contain:layout paint}
+
+/* his thinking pulse under the orb, while the answer is on its way */
+#flow-hud .hud-cap-a.thinking{display:block!important;height:18px}
+#flow-hud .hud-cap-a.thinking::before{content:"";display:inline-block;width:42px;height:8px;
+  background:radial-gradient(circle,#7fd8ff 45%,transparent 50%) 0 50%/14px 8px repeat-x;animation:hudThink 1s steps(3) infinite;opacity:.85}
+@keyframes hudThink{0%{clip-path:inset(0 66% 0 0)}50%{clip-path:inset(0 33% 0 0)}100%{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:reduce){#flow-hud .hud-cap-a.thinking::before{animation:none}}
