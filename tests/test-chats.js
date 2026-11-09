@@ -126,6 +126,24 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const sent2 = await p.evaluate(async () => (await (await fetch('/api/flow/chats?id=' + FlowSay.chatId, { credentials: 'same-origin' })).json()).chat.messages.length);
   ok('the new turn joined that chat', sent2 === 4, sent2);
 
+  console.log('\n— on a phone: pull the chat down to put it away —');
+  const ph = p, pc = { newCDPSession: (x) => ctx.newCDPSession(x), close: async () => {} };
+  await ph.setViewportSize({ width: 390, height: 844 });
+  const cdp0 = await ctx.newCDPSession(ph); await cdp0.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await ph.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); if (!FlowHud.on) FlowHud.open(); });
+  await ph.waitForTimeout(1200);
+  await ph.evaluate(() => { if (!document.querySelector('#flow-say.on')) FlowSay.open({ idle: true }); FlowSay.dockSync(); FlowSay.kb(true); }); await ph.waitForTimeout(400);
+  const opened0 = await ph.evaluate(() => !document.documentElement.classList.contains('hud-dock'));
+  const at = await ph.evaluate(() => { const r = document.querySelector('#flow-say .fn-sheet').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 20 }; });
+  const cdp = await pc.newCDPSession(ph);
+  const tp = (type, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: at.x, y }] });
+  await tp('touchStart', at.y); for (let i = 1; i <= 3; i++) { await tp('touchMove', at.y + i * 12); await ph.waitForTimeout(30); } await tp('touchEnd', 0); await ph.waitForTimeout(450);
+  const short = await ph.evaluate(() => !document.documentElement.classList.contains('hud-dock') && FlowSay.kbOpen);
+  await tp('touchStart', at.y); for (let i = 1; i <= 8; i++) { await tp('touchMove', at.y + i * 20); await ph.waitForTimeout(16); } await tp('touchEnd', 0); await ph.waitForTimeout(600);
+  const gone = await ph.evaluate(() => ({ dock: document.documentElement.classList.contains('hud-dock'), kb: FlowSay.kbOpen, chats: document.querySelector('#flow-say .sy-chats').hidden, tf: document.querySelector('#flow-say .fn-sheet').style.transform }));
+  ok('a short pull springs back; a real pull settles it into the dock, as it first was', opened0 && short && gone.dock && !gone.kb && gone.chats && !gone.tf, { opened0, short, gone });
+  await pc.close();
+
   ok('no page errors', errs.length === 0, errs.slice(0, 3));
   await b.close();
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
