@@ -194,6 +194,47 @@ const PROVIDERS = {
     actions: { events: outlookEvents, flagged: outlookFlagged, related: outlookRelated }
   },
 
+  /* Sending email as yourself, from your own mailbox: a separate, narrower
+     permission per account (gmail.send is "sensitive", not "restricted", so
+     it does not wait on Gmail reading's review). One connection can hold a
+     personal Gmail and a Workspace address (abko.com.tr) side by side; an
+     approved email then goes from the account chosen on the card and lands
+     in that account's own Sent folder. */
+  gsend: {
+    id: 'gsend',
+    kind: 'oauth',
+    via: 'google',
+    name: 'Gmail & Google Workspace \u2014 sending',
+    blurb: 'Emails you approve can go from this address, and land in its Sent folder. Nothing is ever sent without your yes.',
+    clientId: () => process.env.GOOGLE_CLIENT_ID || '',
+    secret: () => process.env.GOOGLE_CLIENT_SECRET || '',
+    fixedRedirect: () => process.env.GOOGLE_REDIRECT_URI || '',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope: 'openid email https://www.googleapis.com/auth/gmail.send',
+    need: 'https://www.googleapis.com/auth/gmail.send',
+    needWhy: 'Tick the box that lets The Flow send email as you, then try again.',
+    extra: { response_type: 'code', access_type: 'offline', prompt: 'consent select_account' },
+    finish: finishCode
+  },
+  osend: {
+    id: 'osend',
+    kind: 'oauth',
+    via: 'outlook',
+    name: 'Outlook \u2014 sending',
+    blurb: 'Emails you approve can go from this Outlook or Microsoft 365 address, and land in its Sent Items. Nothing is ever sent without your yes.',
+    clientId: () => process.env.MS_CLIENT_ID || '',
+    secret: () => process.env.MS_CLIENT_SECRET || '',
+    fixedRedirect: () => process.env.MS_REDIRECT_URI || '',
+    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    scope: 'openid email profile offline_access User.Read Mail.Send',
+    need: ['mail.send'],
+    needWhy: 'Allow The Flow to send mail as you, then try again.',
+    extra: { response_type: 'code', response_mode: 'query', prompt: 'select_account' },
+    finish: finishCode
+  },
+
   /* Fathom and Notion are connected with a key the person makes in that
      app and pastes here, once. Neither offers sign-in without a secret of
      our own, and a personal key is what both document for one person's
@@ -1006,6 +1047,69 @@ async function upsertAccount(raw, uid, id, rec) {
   return merged;
 }
 
+/* ---------- sending as the person ---------------------------------------
+   senders(): the addresses an approved email can go from. sendAs(): one
+   email, from one of them, through that provider's own API — so it is in
+   that mailbox's Sent folder, threaded like anything else they send. */
+const SENDERS = ['gsend', 'osend'];
+async function senders(raw, uid) {
+  const out = [];
+  for (const id of SENDERS) {
+    const pv = PROVIDERS[id];
+    if (!configured(pv)) continue;
+    for (const a of await readAccounts(raw, uid, id)) {
+      if (!a.email) continue;
+      out.push({ id: id + ':' + a.aid, provider: id, email: a.email, broken: !!a.broken, label: a.email + (id === 'gsend' ? ' \u00b7 Google' : ' \u00b7 Outlook') });
+    }
+  }
+  return out;
+}
+const encWord = (s) => /^[\x20-\x7e]*$/.test(s) ? s : '=?UTF-8?B?' + Buffer.from(s, 'utf8').toString('base64') + '?=';
+function mimeOf(m) {
+  const lines = [
+    'To: ' + m.to,
+    'Subject: ' + encWord(String(m.subject || '').replace(/[\r\n]+/g, ' ')),
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64'
+  ];
+  if (m.cc) lines.splice(1, 0, 'Cc: ' + m.cc);
+  if (m.replyTo) lines.push('Reply-To: ' + m.replyTo);
+  const body = Buffer.from(String(m.text || ''), 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
+  return lines.join('\r\n') + '\r\n\r\n' + body;
+}
+async function sendAs(raw, uid, sender, m, opts) {
+  opts = opts || {};
+  const cut = String(sender || '').indexOf(':');
+  const id = cut > 0 ? String(sender).slice(0, cut) : '', aid = cut > 0 ? String(sender).slice(cut + 1) : '';
+  const pv = PROVIDERS[id];
+  if (!pv || SENDERS.indexOf(id) < 0) return { ok: false, error: 'That is not an account The Flow can send from.' };
+  const rec = (await readAccounts(raw, uid, id)).find((a) => a.aid === aid);
+  if (!rec) return { ok: false, error: 'That address is no longer allowed to send. In Settings \u2192 Connections, allow sending for it again.' };
+  const to = String(m.to || '').split(/[,;]/).map((x) => x.trim()).filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+  if (!to.length) return { ok: false, error: 'There is no valid address to send to.' };
+  const f = opts.fetch || fetch;
+  const actx = { fetch: opts.fetch, now: opts.now, saveRec: (r) => upsertAccount(raw, uid, id, r) };
+  let tok;
+  try { tok = await accessToken(pv, rec, actx); } catch (e) { return { ok: false, error: (e && e.message) || 'That account needs reconnecting.' }; }
+  try {
+    if (id === 'gsend') {
+      const r = await f('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: b64url(Buffer.from(mimeOf({ to: to.join(', '), subject: m.subject, text: m.text, replyTo: m.replyTo }), 'utf8')) }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) return { ok: true, id: j.id || '', from: rec.email };
+      if (r.status === 401 || r.status === 403) return { ok: false, error: 'Google refused to send from ' + rec.email + ' (' + r.status + '). Allow sending for it again in Settings \u2192 Connections.' };
+      return { ok: false, error: 'Gmail did not send it (' + r.status + (j.error && j.error.message ? ': ' + String(j.error.message).slice(0, 120) : '') + ').' };
+    }
+    const r = await f(GRAPH + '/me/sendMail', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saveToSentItems: true, message: { subject: String(m.subject || ''), body: { contentType: 'Text', content: String(m.text || '') }, toRecipients: to.map((a) => ({ emailAddress: { address: a } })) } }) });
+    if (r.status === 202 || r.ok) return { ok: true, id: '', from: rec.email };
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'Microsoft refused to send from ' + rec.email + ' (' + r.status + '). Allow sending for it again in Settings \u2192 Connections.' };
+    return { ok: false, error: 'Outlook did not send it (' + r.status + (j.error && j.error.message ? ': ' + String(j.error.message).slice(0, 120) : '') + ').' };
+  } catch (e) { return { ok: false, error: 'The mail service could not be reached.' }; }
+}
+
 /* Everything one account has connected, for deleting the account. */
 async function purgeUser(raw, uid) {
   let n = 0;
@@ -1302,6 +1406,8 @@ module.exports = {
   handle,
   purgeUser,
   PROVIDERS,
-  _internals: { relatedTerms, newPart, maskPersonal, relatedPack, htmlToText, notionBlocks, Refused, readAccounts, upsertAccount, utc, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
+  senders,
+  sendAs,
+  _internals: { mimeOf, relatedTerms, newPart, maskPersonal, relatedPack, htmlToText, notionBlocks, Refused, readAccounts, upsertAccount, utc, readIdToken, photoUrlOk, sizedPhoto, fetchPhoto, redirectFor, KEY, ST, STATE_TTL_MS, donePage,
                 resetKeys: () => { jwksCache = { at: 0, ttl: 0, keys: [] }; } }
 };

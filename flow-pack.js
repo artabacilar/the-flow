@@ -15535,7 +15535,7 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.suPanel() + Team.approvalsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
+    return Team.suPanel() + Team.approvalsPanel() + Team.contactsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
@@ -15740,6 +15740,36 @@ const Team = {
     const n = open.length;
     return Hud.panel('work', 'Work' + (n ? ' · ' + n + ' in flight' : ''), body);
   },
+  /* The To on a card: the address the draft has; else a saved one whose name the draft used ("Azize (address to add)" → azize.sungar@…). */
+  toFor(d) {
+    const to = String(d.to || ''); if (/@/.test(to)) return to;
+    const C = (Team.data && Team.data.contacts) || []; const words = to.toLocaleLowerCase('tr').split(/[^\p{L}]+/u).filter((w) => w.length > 2);
+    const hit = C.filter((c) => c.name && words.some((w) => c.name.toLocaleLowerCase('tr').split(/\s+/).indexOf(w) >= 0));
+    return hit.length === 1 ? hit[0].email : '';
+  },
+  contactsList() { const C = (Team.data && Team.data.contacts) || []; return '<datalist id="hud-contacts">' + C.map((c) => '<option value="' + esc(c.email) + '">' + esc(c.name || '') + '</option>').join('') + '</datalist>'; },
+  contactsPanel() {
+    const C = (Team.data && Team.data.contacts) || [];
+    const row = (c) => '<div class="hud-r"><span data-i18n="off">' + (c.name ? '<b>' + esc(c.name) + '</b> ' : '') + esc(c.email) + (c.uses ? '<small> · ' + c.uses + ' sent</small>' : '') + '</span><button type="button" class="hud-btn ghost" data-hud="ctdel" data-email="' + esc(c.email) + '" aria-label="Remove ' + esc(c.email) + '">×</button></div>';
+    return Hud.panel('contacts', 'Saved addresses' + (C.length ? ' · ' + C.length : ''), '<p class="hud-sub">Every address an approved email went to is kept here; the To field offers them, and the team uses them in the next drafts.</p>' +
+      '<form data-team="ctadd" class="hud-row hud-ctadd"><input class="hud-sel" type="text" name="name" maxlength="80" placeholder="Name"><input class="hud-sel" type="email" name="email" maxlength="200" placeholder="name@company.com" required><button type="submit" class="hud-btn">Save</button></form>' +
+      (C.length ? C.slice(0, Team.ctAll ? 300 : 8).map(row).join('') + (C.length > 8 && !Team.ctAll ? '<button type="button" class="hud-btn ghost" data-hud="ctall">All ' + C.length + '</button>' : '') : '<p class="hud-none">None yet.</p>') + Team.contactsList());
+  },
+  /* Which address an email goes from: what the card says, else the one he used last, else The Flow's. */
+  fromOf(x) {
+    const S = (Team.data && Team.data.senders) || []; const d = x.detail || {};
+    if (Team.fromPick && Team.fromPick[x.id]) return Team.fromPick[x.id];
+    if (d.from && (d.from === 'flow' || S.some((s) => s.id === d.from))) return d.from;
+    let last = ''; try { last = localStorage.getItem('flow:mailFrom') || ''; } catch (e) {}
+    if (last && S.some((s) => s.id === last)) return last;
+    return 'flow';
+  },
+  fromSelect(x) {
+    const S = (Team.data && Team.data.senders) || []; const cur = Team.fromOf(x);
+    const opts = [['flow', 'The Flow (replies to you)']].concat(S.map((s) => [s.id, s.label || s.email]));
+    return '<label class="hud-apl hud-apin" data-i18n="off"><span>From</span><select class="hud-sel" data-ap-from="' + esc(x.id) + '">' + opts.map(([v, l]) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>' +
+      (S.length ? '' : '<p class="hud-sub hud-apfrom">To send from your Gmail, abko.com.tr or Outlook: Settings → Connections → “sending” → Connect, once per address.</p>');
+  },
   approvalsPanel() {
     const ap = ((Team.data && Team.data.approvals) || []).filter((x) => x.status === 'pending' || x.status === 'send_failed');
     if (!ap.length) return '';
@@ -15751,12 +15781,12 @@ const Team = {
       return '<div class="hud-ap' + (failed ? ' failed' : '') + '" data-id="' + esc(x.id) + '"><div class="hud-aph"><b data-i18n="off">' + esc(a.name) + '</b> wants to send ' + esc(x.kind === 'email' ? 'an email' : x.kind === 'message' ? 'a message' : x.kind === 'spend' ? 'money' : x.kind === 'post' ? 'a post' : x.kind === 'change' ? 'a change' : 'something') + '</div>' +
         '<div class="hud-apm" data-i18n="off">' + esc(x.summary) + '</div>' +
         (x.kind === 'email' && !failed
-          ? '<label class="hud-apl hud-apin" data-i18n="off"><span>To</span><input class="hud-sel" type="email" data-ap-to="' + esc(x.id) + '" value="' + esc(/@/.test(d.to || '') ? d.to : '') + '" placeholder="' + esc(/@/.test(d.to || '') ? '' : (d.to ? d.to + ' — ' : '') + 'name@company.com') + '" autocomplete="email" multiple></label>' +
+          ? Team.fromSelect(x) + '<label class="hud-apl hud-apin" data-i18n="off"><span>To</span><input class="hud-sel" type="email" data-ap-to="' + esc(x.id) + '" value="' + esc(Team.toFor(d)) + '" placeholder="' + esc(/@/.test(d.to || '') ? '' : (d.to ? d.to + ' — ' : '') + 'name@company.com') + '" autocomplete="email" list="hud-contacts" multiple></label>' +
             '<label class="hud-apl hud-apin" data-i18n="off"><span>Subject</span><input class="hud-sel" type="text" data-ap-subject="' + esc(x.id) + '" value="' + esc(d.subject || '') + '" maxlength="200"></label>'
           : (d.to ? '<div class="hud-apl" data-i18n="off"><span>To</span>' + esc(d.to) + '</div>' : '') + (d.subject ? '<div class="hud-apl" data-i18n="off"><span>Subject</span>' + esc(d.subject) + '</div>' : '')) +
         (d.body ? '<textarea class="hud-apb" data-ap-body="' + esc(x.id) + '" rows="5" aria-label="What would be sent" data-i18n="off"' + (failed ? ' readonly' : '') + '>' + esc(d.body) + '</textarea>' : '') +
-        (failed ? '<p class="hud-alert" data-i18n="off">' + esc(x.error || 'It could not be sent.') + ' Nothing went out.</p>' : '<p class="hud-sub">' + (live ? 'Approving sends it now — once, exactly as shown — from ' + esc(a.name) + ' at The Flow\'s address, with replies to you.' : a.permissions === 'read' ? esc(a.name) + ' is read-only: approving records your yes, nothing is sent.' : 'Nothing is connected to send this yet: approving marks it to go once, exactly as shown, when the connection exists.') + '</p>') +
-        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="approve" data-id="' + esc(x.id) + '">' + (failed ? 'Try sending again' : live ? 'Approve and send' : 'Approve') + '</button><button type="button" class="hud-btn ghost" data-hud="reject" data-id="' + esc(x.id) + '">Decline</button></div></div>';
+        (failed ? '<p class="hud-alert" data-i18n="off">' + esc(x.error || 'It could not be sent.') + ' Nothing went out.</p>' : '<p class="hud-sub">' + (x.kind === 'email' && a.permissions !== 'read' && Team.fromOf(x) !== 'flow' ? 'Approving sends it now — once, exactly as shown — from the address above, and it lands in that account\'s Sent folder.' : live ? 'Approving sends it now — once, exactly as shown — from ' + esc(a.name) + ' at The Flow\'s address, with replies to you.' : a.permissions === 'read' ? esc(a.name) + ' is read-only: approving records your yes, nothing is sent.' : 'Nothing is connected to send this yet: approving marks it to go once, exactly as shown, when the connection exists.') + '</p>') +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="approve" data-id="' + esc(x.id) + '">' + (failed ? 'Try sending again' : (live || (x.kind === 'email' && Team.fromOf(x) !== 'flow' && a.permissions !== 'read')) ? 'Approve and send' : 'Approve') + '</button><button type="button" class="hud-btn ghost" data-hud="reject" data-id="' + esc(x.id) + '">Decline</button></div></div>';
     }).join('') + (((Team.data && Team.data.recent) || []).length ? '<p class="hud-sub">Sent lately: ' + Team.data.recent.slice(0, 3).map((x) => esc(x.summary) + ' (' + esc(Team.when(x.executedAt)) + ')').join(' · ') + '</p>' : ''));
   },
   taskPanel(id) {
@@ -16722,6 +16752,8 @@ const Team = {
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
     if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup' || a === 'projects') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
     if (await Team.pjClick(a, b)) return;
+    if (a === 'ctall') { Team.ctAll = true; Hud.paint(); return; }
+    if (a === 'ctdel') { const j = await Team.post('/api/team/contacts', { op: 'remove', email: b.getAttribute('data-email') }); if (j && j.ok) { Team.data.contacts = j.contacts; Hud.paint(); } return; }
     if (await Team.suClick(a, b)) return;
     if (await Team.ctxClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
@@ -16770,11 +16802,13 @@ const Team = {
       const item = ((Team.data && Team.data.approvals) || []).find((x) => x.id === id) || {};
       const toEl = Hud.el.querySelector('[data-ap-to="' + id + '"]'), suEl = Hud.el.querySelector('[data-ap-subject="' + id + '"]');
       const dd = item.detail || {};
-      const now = { to: toEl ? toEl.value.trim() : dd.to, subject: suEl ? suEl.value.trim() : dd.subject, body: ta ? ta.value : dd.body };
+      const frEl = Hud.el.querySelector('[data-ap-from="' + id + '"]');
+      const now = { to: toEl ? toEl.value.trim() : dd.to, subject: suEl ? suEl.value.trim() : dd.subject, body: ta ? ta.value : dd.body, from: frEl ? frEl.value : (dd.from || '') };
+      if (frEl && a === 'approve') { try { localStorage.setItem('flow:mailFrom', frEl.value); } catch (e) {} }
       if (a === 'approve' && item.kind === 'email' && toEl && !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+(\s*[,;]\s*[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+)*$/.test(now.to)) { toast('Add the email address it goes to first.', 'bad', 2600); try { toEl.focus(); } catch (e) {} return; }
-      const detail = item.detail && (now.to !== dd.to || now.subject !== dd.subject || now.body !== dd.body) ? Object.assign({}, dd, now) : undefined;
+      const detail = item.detail && (now.to !== dd.to || now.subject !== dd.subject || now.body !== dd.body || (now.from || '') !== (dd.from || '')) ? Object.assign({}, dd, now) : undefined;
       const j = await Team.post('/api/team/approve', { id, decision: a, detail });
-      if (j && j.ok) { await Team.load(true); Hud.paint(); toast(a === 'approve' ? 'Approved — it goes once the connection exists' : 'Declined', null, 2600); }
+      if (j && j.ok) { await Team.load(true); Hud.paint(); toast(a === 'approve' ? ((j.approval && j.approval.note) || 'Approved') : 'Declined', null, 3200); }
       return;
     }
     if (a === 'archive') { const id = b.getAttribute('data-ag'); const ag = Team.agent(id); if (!ag || !confirm('Archive ' + ag.name + '? The conversation and memory are kept; it can be restored later.')) return; const j = await Team.post('/api/team/agent/update', { id, archived: true }); if (j && j.ok) { await Team.load(true); Team.select('jarvis'); } return; }
@@ -16800,6 +16834,7 @@ const Team = {
       if (j && j.ok && Team.data) { Team.data.brief = Object.assign(Team.data.brief || {}, { on: j.on, at: j.at }); toast(j.on ? 'Every morning at ' + j.at : 'Morning briefing off', null, 1600); }
       return;
     }
+    if (t.matches('[data-ap-from]')) { Team.fromPick = Team.fromPick || {}; Team.fromPick[t.getAttribute('data-ap-from')] = t.value; const card = t.closest('.hud-ap'); const note = card && card.querySelector('.hud-sub:not(.hud-apfrom)'); if (note && t.value !== 'flow') note.textContent = 'Approving sends it now — once, exactly as shown — from ' + t.options[t.selectedIndex].text.replace(/ · (Google|Outlook)$/, '') + ', and it lands in that account\'s Sent folder.'; const btn = card && card.querySelector('[data-hud="approve"]'); if (btn && t.value !== 'flow') btn.textContent = 'Approve and send'; return; }
     if (t.matches('[data-team-sales]')) { const f = t.files && t.files[0]; t.value = ''; await Team.salesUpload(f); return; }
     if (t.matches('[data-team-pj]')) { const k = t.getAttribute('data-team-pj'); const j = await Team.post('/api/team/projects', { op: 'settings', [k]: !!t.checked }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); toast(t.checked ? 'On' : 'Off', null, 1600); } return; }
     if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
@@ -16816,6 +16851,7 @@ const Team = {
     if (/^sk/.test(kind)) { try { await Team.skSubmit(kind, f); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
+    if (kind === 'ctadd') { const j = await Team.post('/api/team/contacts', { name: f.name.value.trim(), email: f.email.value.trim() }); if (j && j.ok) { Team.data.contacts = j.contacts; toast('Saved: ' + j.contact.email, null, 1800); Hud.paint(); } return; }
     if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }

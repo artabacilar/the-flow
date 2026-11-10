@@ -506,7 +506,7 @@ async function handle(p, req, res, ctx) {
     json(res, 200, { ok: true, agents: list, providers: provs, defaultModel: DEFAULT_MODEL, knowledge: know, usage: use, counts, attention, tasks: tl.slice(-40).reverse(), approvals: ap.filter((x) => x.status === 'pending' || x.status === 'send_failed').slice(-40).reverse(),
       recent: ap.filter((x) => x.status === 'executed').slice(-5).reverse(),
       paused: (await ctx.get('team:paused')) === true, log: (Array.isArray(lg) ? lg : []).slice(-60), templates: TEMPLATE_IDS.map((t) => ({ id: t, name: TEMPLATES[t].name, role: TEMPLATES[t].role })), permissions: PERMISSIONS,
-      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' } });
+      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' }, senders: await sendersFor(ctx), contacts: (await contacts(ctx)).slice(0, 300) });
     return true;
   }
 
@@ -1080,6 +1080,7 @@ function start(deps) {
   channelsTo = typeof deps.channels === 'function' ? deps.channels : null;
   usersFn = deps.users;
   usersKey = deps.usersKey || '';
+  rawStore = deps.raw;
   rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
   /* the morning briefing: a minute tick, in each person's own clock */
   if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
@@ -1147,7 +1148,8 @@ async function decide(ctx, id, decision, detail) {
   if (decision !== 'approve' && decision !== 'reject') return { error: 'approve or reject.', status: 400 };
   const retry = item.status === 'send_failed' && decision === 'approve';
   if (item.status !== 'pending' && !retry) return { approval: item, already: true };
-  if (detail && typeof detail === 'object' && !retry) { item.detail = { to: str(detail.to, 200), subject: str(detail.subject, 200), body: block(detail.body, 6000) }; item.edited = true; }
+  const toBefore = item.detail && item.detail.to;
+  if (detail && typeof detail === 'object' && !retry) { item.detail = { to: str(detail.to, 400), subject: str(detail.subject, 200), body: block(detail.body, 6000), from: str(detail.from, 200) || (item.detail && item.detail.from) || '' }; item.edited = true; }
   item.decidedAt = item.decidedAt || Date.now();
   const list = await agents(ctx); const a = list.find((x) => x.id === item.agent) || { name: 'An agent', permissions: 'draft' };
   if (item.kind === 'batch') {
@@ -1171,6 +1173,14 @@ async function decide(ctx, id, decision, detail) {
     if (r.ok) { item.status = 'executed'; item.executedAt = Date.now(); item.note = 'Done: ' + str(r.text, 400); }
     else { item.status = 'send_failed'; item.error = r.error || 'The tool could not be run.'; item.note = item.error + ' Approve again to retry.'; }
   }
+  else if (item.kind === 'email' && a.permissions !== 'read' && item.detail && item.detail.from && item.detail.from !== 'flow' && /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+(\s*[,;]\s*[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+)*$/.test(String(item.detail.to || ''))) {
+    /* from one of his own accounts: through that mailbox, into its Sent folder */
+    item.status = 'sending'; item.note = '';
+    await saveApprovals(ctx, ap);
+    const sent = await sendFromAccount(ctx, item.detail.from, { to: item.detail.to, subject: item.detail.subject || '(no subject)', text: item.detail.body || '' });
+    if (sent.ok) { item.status = 'executed'; item.executedAt = Date.now(); item.ref = sent.id || ''; item.note = 'Sent to ' + item.detail.to + ' from ' + sent.from + ' (in its Sent folder).'; }
+    else { item.status = 'send_failed'; item.error = sent.error || 'The email could not be sent.'; item.note = item.error + ' Nothing went out. Approve again to retry.'; }
+  }
   else if (item.kind === 'email' && mailReady() && a.permissions !== 'read' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.detail && item.detail.to || ''))) {
     /* The one tool that exists: it goes now, once. 'sending' is saved first
        so a second click, or a restart mid-send, cannot send it twice. */
@@ -1185,6 +1195,7 @@ async function decide(ctx, id, decision, detail) {
     item.note = a.permissions === 'read' ? 'Approved, but ' + a.name + ' is read-only: nothing is sent on their behalf. Raise their permissions to let it go.' : item.kind === 'email' ? 'Approved. Email is not connected yet (RESEND_API_KEY), so it has not been sent; it will go once, as approved, when the connection exists.' : 'Approved. Nothing is connected to carry this out yet, so it has not happened; it will go once, as approved, when the connection exists.';
   }
   await saveApprovals(ctx, ap);
+  if (item.kind === 'email' && item.status === 'executed') { try { await rememberRecipients(ctx, item, toBefore); } catch (e) {} }
   await log(ctx, item.agent, (decision === 'approve' ? (item.status === 'executed' ? 'Sent: ' : item.status === 'send_failed' ? 'Could not send: ' : 'Approved: ') : 'Declined: ') + item.summary + (item.status === 'awaiting_tool' ? ' (awaiting a connection)' : ''));
   const stillPending = ap.some((x) => x.task === item.task && x.status === 'pending');
   if (!stillPending) await patchTask(ctx, item.task, (x) => { if (x.status === 'awaiting_approval') x.status = 'done'; });
@@ -1198,6 +1209,63 @@ async function decide(ctx, id, decision, detail) {
  * the owner. The footer says what it is: an assistant's message, approved by
  * a person. In the test stand-in nothing leaves; the call is recorded. */
 const mailSent = [];
+let rawStore = null;
+let connectMod = null;
+function connectLib() { if (connectMod === null) { try { connectMod = require('./flow-connect'); } catch (e) { connectMod = false; } } return connectMod || null; }
+/* FAKE only: sending accounts a test has added */
+const fakeSenders = [];
+/* The addresses an approved email can go from: The Flow's own, and each of
+   his accounts he allowed to send (flow-connect gsend / osend). */
+async function sendersFor(ctx) {
+  const uid = ctx.user && ctx.user.id; const out = [];
+  if (FAKE) return fakeSenders.slice();
+  const C = connectLib();
+  if (C && rawStore && uid) { try { return (await C.senders(rawStore, uid)).filter((x) => !x.broken); } catch (e) {} }
+  return out;
+}
+async function sendFromAccount(ctx, sender, m) {
+  if (FAKE) { const fs = fakeSenders.find((x) => x.id === sender); if (!fs) return { ok: false, error: 'That address is no longer allowed to send.' }; mailSent.push({ from: fs.email, to: [m.to], subject: m.subject, text: m.text, account: sender }); return { ok: true, id: 'fake-' + mailSent.length, from: fs.email }; }
+  const C = connectLib();
+  if (!C || !rawStore) return { ok: false, error: 'Sending from your own accounts is not available on this server.' };
+  return C.sendAs(rawStore, ctx.user && ctx.user.id, sender, m);
+}
+/* ---------- saved addresses ---------------------------------------------
+   Every address an approved email went to is kept (with the name the draft
+   used for them), and he can add or remove them by hand. The To field offers
+   them, a draft that names someone without an address gets theirs filled
+   in, and the team knows them for the next draft. team:contacts */
+const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+async function contacts(ctx) { const v = await ctx.get('team:contacts'); return Array.isArray(v) ? v : []; }
+function nameFrom(text) { const t = String(text || '').replace(/<[^>]*>|\([^)]*\)|[^\p{L}\s.'-]/gu, ' ').replace(/\s+/g, ' ').trim(); return /@/.test(text || '') && !t ? '' : str(t, 80); }
+async function saveContact(ctx, name, email, opts) {
+  email = String(email || '').trim().toLowerCase(); if (!EMAIL_RE.test(email)) return null;
+  const list = await contacts(ctx); let c = list.find((x) => x.email === email);
+  name = str(name, 80);
+  if (c) { if (name && (!c.name || (opts && opts.rename))) c.name = name; c.uses = (c.uses || 0) + (opts && opts.used ? 1 : 0); c.at = Date.now(); }
+  else { c = { email, name, at: Date.now(), uses: opts && opts.used ? 1 : 0 }; list.push(c); }
+  await ctx.set('team:contacts', list.sort((a, b) => (b.uses || 0) - (a.uses || 0) || b.at - a.at).slice(0, 500));
+  /* the team knows it for the next draft */
+  if (c.name) {
+    const know = await knowledge(ctx); const fact = c.name + "'s email address is " + email + '.';
+    if (!know.some((k) => k.status !== 'superseded' && String(k.text).toLowerCase().indexOf(email) >= 0)) { know.push({ id: 'k' + newId(), text: fact, kind: 'fact', scope: 'shared', status: 'current', source: 'contacts', at: Date.now(), updated: Date.now() }); await ctx.set('team:knowledge', know.slice(-600)); }
+  }
+  return c;
+}
+async function rememberRecipients(ctx, item, before) {
+  const to = String(item.detail && item.detail.to || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+  const named = nameFrom(before && !/@/.test(before) ? before : '');
+  for (const one of to) { const m = one.match(/^(.*?)<([^>]+)>$/); const email = m ? m[2] : one; await saveContact(ctx, (m && m[1].trim()) || (to.length === 1 ? named : ''), email, { used: true }); }
+}
+async function handleContacts(p, req, res, ctx, json, body) {
+  if (p !== '/api/team/contacts') return false;
+  if (req.method === 'GET') { json(res, 200, { ok: true, contacts: await contacts(ctx) }); return true; }
+  const b = await body();
+  if (b.op === 'remove') { const email = String(b.email || '').toLowerCase(); await ctx.set('team:contacts', (await contacts(ctx)).filter((x) => x.email !== email)); json(res, 200, { ok: true, contacts: await contacts(ctx) }); return true; }
+  const c = await saveContact(ctx, b.name, b.email, { rename: true });
+  if (!c) { json(res, 400, { error: 'That is not an email address.' }); return true; }
+  await log(ctx, 'team', 'Address saved: ' + (c.name ? c.name + ' ' : '') + c.email);
+  json(res, 200, { ok: true, contact: c, contacts: await contacts(ctx) }); return true;
+}
 async function sendEmail(m) {
   const fromAddr = (process.env.MAIL_FROM || '').trim().replace(/^.*<|>.*$/g, '') || 'mail@theflow.today';
   const from = str(m.agent, 40) + (m.owner ? ' for ' + str(m.owner, 40) : '') + ' <' + fromAddr + '>';
@@ -1815,6 +1883,8 @@ async function handleWork(p, req, res, ctx) {
     json(res, 200, { ok: true, task: t }); return true;
   }
 
+  if (await handleContacts(p, req, res, ctx, json, body)) return true;
+  if (FAKE && p === '/api/team/_sender' && req.method === 'POST') { const b = await body(); fakeSenders.push({ id: String(b.provider || 'gsend') + ':' + String(b.email), provider: String(b.provider || 'gsend'), email: String(b.email), label: String(b.email) }); json(res, 200, { ok: true }); return true; }
   /* approvals: the exact action, a yes or a no, and never twice */
   if (p === '/api/team/approve' && req.method === 'POST') {
     const b = await body();
