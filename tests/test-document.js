@@ -19,18 +19,34 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2
 const dataUrl = (type, buf) => 'data:' + type + ';base64,' + buf.toString('base64');
 const isoWeek = () => { const d = new Date(); const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return t.getUTCFullYear() + '-W' + String(Math.ceil(((t - y0) / 864e5 + 1) / 7)).padStart(2, '0'); };
 
+/* a .docx is a zip of XML: the smallest one, stored, built here */
+function zipOf(files) {
+  const zlib = require('zlib'); const parts = [], cen = []; let off = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const data = Buffer.from(text, 'utf8'), nm = Buffer.from(name, 'utf8'), crc = zlib.crc32(data);
+    const h = Buffer.alloc(30); h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt32LE(crc, 14); h.writeUInt32LE(data.length, 18); h.writeUInt32LE(data.length, 22); h.writeUInt16LE(nm.length, 26);
+    const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt32LE(crc, 16); c.writeUInt32LE(data.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(nm.length, 28); c.writeUInt32LE(off, 42);
+    parts.push(h, nm, data); cen.push(c, nm); off += 30 + nm.length + data.length;
+  }
+  const cd = Buffer.concat(cen), e = Buffer.alloc(22); e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(Object.keys(files).length, 8); e.writeUInt16LE(Object.keys(files).length, 10); e.writeUInt32LE(cd.length, 12); e.writeUInt32LE(off, 16);
+  return Buffer.concat(parts.concat([cd, e]));
+}
 (async () => {
   console.log('\n— the file is looked at before anything else —');
   const pdf = X.unpack({ data: dataUrl('application/pdf', PDF), name: 'plan.pdf' });
-  ok('a PDF goes up as a document block, as the model reads it', pdf.kind === 'document' && pdf.block.type === 'document' && pdf.block.source.media_type === 'application/pdf' && pdf.block.source.data === PDF.toString('base64'));
-  const img = X.unpack({ data: dataUrl('image/jpeg', Buffer.from('notreallyajpeg')) });
+  ok('a PDF goes up as a document block, as the model reads it', pdf.kind === 'pdf' && pdf.block.type === 'document' && pdf.block.source.media_type === 'application/pdf' && pdf.block.source.data === PDF.toString('base64'));
+  const img = X.unpack({ data: dataUrl('image/jpeg', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])) });
   ok('a photo of the page goes up as an image', img.kind === 'image' && img.block.type === 'image' && img.block.source.media_type === 'image/jpeg');
   const txt = X.unpack({ data: dataUrl('text/plain', Buffer.from('1. Call the venue\n2. Send the deck')) });
   ok('a text file is read into the prompt as text', txt.kind === 'text' && /Call the venue/.test(txt.block.text) && /THE DOCUMENT/.test(txt.block.text));
-  ok('a bare base64 body with a type works too', X.unpack({ data: PDF.toString('base64'), type: 'application/pdf' }).kind === 'document');
+  ok('a bare base64 body with a type works too', X.unpack({ data: PDF.toString('base64'), type: 'application/pdf' }).kind === 'pdf');
   const refuse = (body) => { try { X.unpack(body); return null; } catch (e) { return e.code; } };
   ok('nothing is a 400', refuse({ data: '' }) === 400 && refuse({}) === 400);
-  ok('a kind the app cannot read is a 415, named', refuse({ data: dataUrl('application/zip', PDF) }) === 415 && refuse({ data: PDF.toString('base64'), type: 'application/msword' }) === 415);
+  ok('a kind the app cannot read is a 415, named (an old .doc, a binary that is no document)', refuse({ data: dataUrl('application/octet-stream', Buffer.from(Array.from({ length: 300 }, (_, i) => (i * 7) % 32))) }) === 415 && refuse({ data: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0]).toString('base64'), type: 'application/msword' }) === 415);
+  const X2 = require('../flow-extras.js')._internals;
+  const docx = X.unpack({ data: dataUrl('application/octet-stream', zipOf({ '[Content_Types].xml': '<Types/>', 'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>Toplantı notu: Burak fiyat listesini cuma gönderecek.</w:t></w:r></w:p><w:p><w:r><w:t>İkinci satır</w:t></w:r></w:p></w:body></w:document>' })), name: 'not.docx' });
+  ok('a Word file is read into text (and Excel, PowerPoint, CSV, HTML the same way)', docx.kind === 'text' && /THE DOCUMENT \(docx\)/.test(docx.block.text) && /Burak fiyat listesini cuma/.test(docx.block.text), docx.block && docx.block.text);
+  ok('HTML is read as its words, not its tags', /Merhaba\s+Dünya/.test(X2.docToText(Buffer.from('<html><body><p>Merhaba</p><script>x()</script><p>Dünya</p></body></html>'), 'a.html').text));
   ok('over the limit is a 413', refuse({ data: dataUrl('application/pdf', Buffer.alloc(X.config().maxBase64, 1)) }) === 413);
   ok('an empty text file is a 400', refuse({ data: dataUrl('text/plain', Buffer.from('   ')) }) === 400);
 
@@ -66,7 +82,7 @@ const isoWeek = () => { const d = new Date(); const t = new Date(Date.UTC(d.getU
   const other = mk(); other.ctx.user = { id: 'someone-else' };
   await X.handle('/api/flow/document', { method: 'GET', url: '/api/flow/document?job=' + a.out.body.job }, other.res, other.ctx);
   ok('another account cannot read the job', other.out.status === 404);
-  const bad = mk(); bad.out.req = JSON.stringify({ data: dataUrl('application/zip', PDF) });
+  const bad = mk(); bad.out.req = JSON.stringify({ data: dataUrl('application/octet-stream', Buffer.from(Array.from({ length: 300 }, (_, i) => (i * 7) % 32))) });
   await X.handle('/api/flow/document', { method: 'POST' }, bad.res, bad.ctx);
   ok('a file it cannot read is refused before any cost', bad.out.status === 415 && calls.length === 1 && bad.ctx.counter.m['docn:' + new Date().toISOString().slice(0, 10)] === undefined, bad.out);
   const f = mk('free'); f.ctx.counter.m['docw:' + isoWeek()] = X.config().free; f.out.req = JSON.stringify({ data: dataUrl('application/pdf', PDF) });
@@ -122,7 +138,7 @@ const isoWeek = () => { const d = new Date(); const t = new Date(Date.UTC(d.getU
   await p.evaluate(() => FlowSay.open({ quiet: true })); await p.waitForTimeout(400);
   ok('the sheet has a Document door and a file input that takes a PDF, a photo or a text', await p.evaluate(() => { const i = document.querySelector('#flow-say #sy-file'); const d = document.querySelector('#flow-say [data-say="doc"]'); return !!i && !!d && /pdf/.test(i.accept) && /image/.test(i.accept) && i.hidden; }));
   await p.setInputFiles('#flow-say #sy-file', { name: 'notes.zip', mimeType: 'application/zip', buffer: Buffer.from('zip') }); await p.waitForTimeout(300);
-  ok('a file it cannot read is turned away on the device, with no request', posted === null && /PDF, a photo of the page, or a text file/.test(await p.evaluate(() => document.querySelector('#flow-say .sy-state').textContent)));
+  ok('a file it cannot read is turned away on the device, with no request', posted === null && /PDF, Word, Excel, PowerPoint, CSV, text file or a photo/.test(await p.evaluate(() => document.querySelector('#flow-say .sy-state').textContent)));
   await p.fill('#sy-text', 'only the launch items');
   await p.setInputFiles('#flow-say #sy-file', { name: 'plan.pdf', mimeType: 'application/pdf', buffer: PDF });
   await p.waitForTimeout(600);
