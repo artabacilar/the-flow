@@ -22,10 +22,10 @@ const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().sli
 /* ---------- presets ------------------------------------------------------ */
 /* ElevenLabs premade voices. The ids are public (they are the library's). */
 const PRESETS = {
-  'british-male': { label: 'British male (Daniel)', provider: 'elevenlabs', voiceId: 'onwK4e9ZLuTAKqWW03F9', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } },
-  'british-female': { label: 'British female (Lily)', provider: 'elevenlabs', voiceId: 'pFZP5JQG7iQjIQuC4Bku', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } },
-  'american-male': { label: 'American male (Brian)', provider: 'elevenlabs', voiceId: 'nPczCjzI2devNBz1zQrb', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } },
-  'american-female': { label: 'American female (Sarah)', provider: 'elevenlabs', voiceId: 'EXAVITQu4vr4xnSDxMaL', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } },
+  'british-male': { label: 'British male (Daniel)', provider: 'elevenlabs', voiceId: 'onwK4e9ZLuTAKqWW03F9', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.12 } },
+  'british-female': { label: 'British female (Lily)', provider: 'elevenlabs', voiceId: 'pFZP5JQG7iQjIQuC4Bku', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.12 } },
+  'american-male': { label: 'American male (Brian)', provider: 'elevenlabs', voiceId: 'nPczCjzI2devNBz1zQrb', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.12 } },
+  'american-female': { label: 'American female (Sarah)', provider: 'elevenlabs', voiceId: 'EXAVITQu4vr4xnSDxMaL', settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.12 } },
   'openai-male': { label: 'OpenAI male (Onyx)', provider: 'openai', voiceId: 'onyx' },
   'openai-female': { label: 'OpenAI female (Nova)', provider: 'openai', voiceId: 'nova' }
 };

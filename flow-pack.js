@@ -310,6 +310,8 @@ const SETTINGS_DEFAULTS = {
   /* The assistant: premium voice (falls back to the device's), how it
      addresses you, whether it keeps listening, and its AI finish. */
   asstVoice: 'premium',
+  /* How fast he talks: normal 1.0, brisk 1.12 (the default), fast 1.2. */
+  asstSpeed: 'brisk',
   asstCall: 'name',
   /* Hands-free: J.A.R.V.I.S. starts listening when opened and after each
      answer, and a pause ends what you say. Off: Talk starts, Talk stops. */
@@ -13553,6 +13555,7 @@ window.FlowHabitDo = HabitDo;
 const Speech = {
   ac: null, src: null, premium: null, token: 0, primed: false,
   pref(k) { try { return Settings.get(k); } catch (e) { return undefined; } },
+  speed() { const v = Speech.pref('asstSpeed'); return v === 'normal' ? 1 : v === 'fast' ? 1.2 : 1.12; },
   mode() { const v = Speech.pref('asstVoice'); return v === 'device' || v === 'off' ? v : 'premium'; },
   unlock() {
     try {
@@ -13591,7 +13594,7 @@ const Speech = {
     const my = ++Speech.token;
     if (Speech.mode() === 'premium' && await Speech.premiumOn()) {
       try {
-        const r = await fetch('/api/flow/speak', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang }) });
+        const r = await fetch('/api/flow/speak', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang, speed: Speech.speed() }) });
         if (my !== Speech.token) return;
         if (r.ok && /audio/.test(r.headers.get('content-type') || '')) {
           const buf = await r.arrayBuffer();
@@ -13662,7 +13665,7 @@ const Speech = {
         const u = new SpeechSynthesisUtterance(text);
         const v = Speech.voice(lang); if (v) u.voice = v;
         u.lang = v ? v.lang : (lang === 'tr' ? 'tr-TR' : 'en-GB');
-        u.rate = 1; u.pitch = 0.95;
+        u.rate = Speech.speed(); u.pitch = 0.95;
         let done = false; const fin = () => { if (!done) { done = true; ok(); } };
         u.onend = fin; u.onerror = fin;
         setTimeout(fin, 1500 + text.length * 90);  /* a voice that never reports its end */
@@ -13809,6 +13812,7 @@ const Say = {
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
             '<label class="sy-opt"><span>Voice</span><select data-say-pref="asstVoice"><option value="premium">Premium British voice</option><option value="device">This device\'s voice</option><option value="off">Silent — text only</option></select></label>' +
+            '<label class="sy-opt"><span>Speed</span><select data-say-pref="asstSpeed"><option value="normal">Normal</option><option value="brisk">Brisk</option><option value="fast">Fast</option></select></label>' +
             '<label class="sy-opt"><span>Call me</span><select data-say-pref="asstCall"><option value="sir">Sir</option><option value="madam">Ma\'am</option><option value="name">My first name</option><option value="none">Nothing</option></select></label>' +
             '<label class="sy-opt"><span>Manner</span><select data-say-pref="asstStyle"><option value="butler">Butler — composed, British</option><option value="loose">Loose — casual, hype, swears</option></select></label>' +
             '<label class="sy-opt sy-micpick" hidden><span>Microphone</span><select data-say-mic></select></label>' +
@@ -13875,6 +13879,7 @@ const Say = {
         const v = pf.type === 'checkbox' ? !!pf.checked : pf.value;
         try { Settings.set(k, k === 'asstName' ? String(v).replace(/\s+/g, ' ').trim().slice(0, 24) : v); } catch (x) {}
         if (k === 'asstName') { try { Say.decorate(); } catch (x) {} const kk = Say.el.querySelector('.sy-k'); if (kk) kk.textContent = Say.title(); Speech.say(Say.name() ? (Say.lang() === 'tr' ? Say.name() + ' hizmetinizde.' : Say.name() + ', at your service.') : (Say.lang() === 'tr' ? 'Peki.' : 'Very good.'), Say.lang()); return; }
+        if (k === 'asstSpeed') { Speech.unlock(); Speech.say(Say.lang() === 'tr' ? 'Bu hızda konuşacağım.' : 'I shall speak at this pace' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }
         if (k === 'asstVoice' && v !== 'off') { Speech.unlock(); Speech.say(Say.lang() === 'tr' ? 'Ses böyle' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'At your service' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang()); }
         if (k === 'asstWake') { setTimeout(() => { try { Wake.tick(); } catch (x) {} }, 50); if (v) Say.state(Say.lang() === 'tr' ? '“Hey J.A.R.V.I.S.” deyin; bitince “over”.' : 'Say “Hey J.A.R.V.I.S.” any time; end with “over”.'); }
         if (k === 'asstCall') Speech.say(Say.lang() === 'tr' ? 'Peki' + (Say.call() ? ', ' + Say.call() : '') + '.' : 'Very good' + (Say.call() ? ', ' + Say.call() : '') + '.', Say.lang());
@@ -17039,6 +17044,10 @@ const Wake = {
   free() {
     try { return !Say.busy && !Say.waiting && !Speech.speaking() && !(Say.el && Say.el.getAttribute('data-sy') === 'thinking'); } catch (e) { return true; }
   },
+  /* Speaking, not thinking, and not in the middle of a request by voice. */
+  barging() {
+    try { return Speech.speaking() && !Say.busy && Wake.phase === 'idle' && !(Say.el && Say.el.getAttribute('data-sy') === 'thinking'); } catch (e) { return false; }
+  },
   release() {
     if (Wake.mine) { Wake.mine = false; try { if (FlowVoice.listening && FlowVoice.sink) FlowVoice.cancel(); } catch (e) {} }
     clearTimeout(Wake.overT);
@@ -17047,8 +17056,17 @@ const Wake = {
     if (!Wake.on()) { if (Wake.mine) Wake.release(); Wake.phase = 'off'; Wake.paint(); return; }
     if (Wake.phase === 'off') Wake.phase = 'idle';
     const free = Wake.free();
-    /* He is speaking or thinking: the ear closes so it cannot hear him. */
-    if (!free) { if (Wake.mine) Wake.release(); Wake.wasFree = false; Wake.paint(); return; }
+    /* While he is speaking the ear stays open for one thing only — his name.
+       "Hey J.A.R.V.I.S." over him stops him and he listens (check below);
+       anything else heard meanwhile, his own voice included, is dropped
+       when he finishes. Thinking: the ear closes. */
+    if (!free && Wake.barging()) {
+      Wake.wasFree = false; Wake.barge = true;
+      if (!FlowVoice.listening && !document.hidden) { Wake.mine = true; try { FlowVoice.start(null, { sink: Wake.heard }); } catch (e) { Wake.mine = false; } if (!FlowVoice.listening) Wake.mine = false; }
+      Wake.paint(); return;
+    }
+    if (!free) { if (Wake.mine) Wake.release(); Wake.wasFree = false; Wake.barge = false; Wake.paint(); return; }
+    if (Wake.barge) { Wake.barge = false; if (Wake.phase === 'idle') { Wake.buf = ''; Wake.partial = ''; } }
     /* Just finished answering a request made by voice: a few seconds in
        which the next thing needs no name. */
     if (!Wake.wasFree && Wake.follow) { Wake.follow = false; if (Say.el && Say.el.classList.contains('on')) Wake.command('', true); }
@@ -17097,6 +17115,8 @@ const Wake = {
     try { if (Hud.on) { const g = new RegExp(Wake.re().source, 'giu'); let m, lastName = ''; while ((m = g.exec(all))) { lastName = m[0]; if (!m[0].length) g.lastIndex++; } if (lastName) Team.calledBy(lastName); } } catch (e) {}
     if (Wake.phase === 'idle') {
       if (!Wake.re().test(all)) { if (Wake.buf.length > 400) Wake.buf = Wake.buf.slice(-200); return; }
+      /* talked over: he stops mid-sentence and listens */
+      if (Wake.barge || Speech.speaking()) { try { Speech.stop(); } catch (e) {} Wake.barge = false; Wake.wasFree = true; Wake.follow = false; }
       Wake.chime();
       Wake.command('');
     }
