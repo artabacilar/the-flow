@@ -2355,6 +2355,11 @@ async function gate(req, res) {
       return true;
     }
   }
+  /* An MCP server's sign-in coming back (no session; the one-time state carries the account). */
+  if (team && team.handleMcpOAuth && p.indexOf('/api/mcp-oauth/') === 0) {
+    try { if (await team.handleMcpOAuth(p, req, res, { readBody, query: u.searchParams, json })) return true; }
+    catch (e) { console.error('[mcp-oauth]', e && e.message ? e.message : e); json(res, 502, { error: 'unavailable' }); return true; }
+  }
   /* The email provider's delivery events (no session; a signature proves the sender). */
   if (team && team.handleMailEvents && p === '/api/mail/events') {
     try { if (await team.handleMailEvents(p, req, res, { readBody, query: u.searchParams, json })) return true; }

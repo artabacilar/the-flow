@@ -57,6 +57,7 @@ const setup = require('./flow-setup');
 const context = require('./flow-context');
 const mail = require('./flow-mail');
 const plugins = require('./flow-plugins');
+const mcpauth = require('./flow-mcpauth');
 const projectsMod = require('./flow-projects');
 const salesMod = require('./flow-sales');
 const recMod = require('./flow-recordings');
@@ -1092,6 +1093,7 @@ function start(deps) {
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
     return { get: getJSON, set: (k, v) => deps.raw.set(pre + k, JSON.stringify(v)), user: null };
   };
+  mcpauth.setStore({ raw: deps.raw, ctxFor: (uid) => { const c = bootCtx(uid); c.user = { id: uid }; return c; } });
   (async () => {
     try {
       const ids = await deps.users();
@@ -1983,6 +1985,7 @@ async function handleMailEvents(p, req, res, ctx) {
   return ok(200, Object.assign({ ok: true }, r));
 }
 module.exports.handleMailEvents = handleMailEvents;
+module.exports.handleMcpOAuth = (p, req, res, ctx) => mcpauth.handle(p, req, res, ctx, { finish: (c, id, oauth) => plugins.finish(c, { log }, id, oauth) });
 module.exports.mail = mail;
 module.exports.plugins = plugins;
 module.exports.mailDeps = mailDeps;
