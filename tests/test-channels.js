@@ -89,6 +89,16 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   ok('"@sarah …" goes to Sarah, who answers from her own model', /claude-sonnet-4-5 says: remember that the team/.test(s1.last.body.text), s1.last.body.text);
   await tg(777, 'what is left today?'); await wait(1500); s1 = await sentNow();
   ok('anything else goes to J.A.R.V.I.S.', /chief of staff over a channel/.test(s1.last.body.text) || /says:/.test(s1.last.body.text) || s1.last.body.text.length > 0, s1.last.body.text.slice(0, 100));
+  const rocksNow = async () => { const r = await api('/api/get?key=ld_compass'); let c = r.j && r.j.value; if (typeof c === 'string') c = JSON.parse(c); return [].concat(...Object.values((c && c.rocks) || {})); };
+  await tg(777, 'add Kadir Yildiz from Noar to my schedule for friday'); await wait(1500); s1 = await sentNow();
+  let rk = (await rocksNow()).find((r) => /Kadir Yildiz/.test(r.title));
+  ok('from Telegram he changes the planner: "add Kadir … for Friday" is a Priority on Friday', !!rk && rk.day === 4 && !/can't edit|cannot edit/i.test(s1.last.body.text), { rk, said: s1.last.body.text.slice(0, 120) });
+  await tg(777, 'mark Kadir done'); await wait(1500);
+  rk = (await rocksNow()).find((r) => /Kadir Yildiz/.test(r.title));
+  ok('…and he can tick it off by its name (he sees the week, with ids)', !!rk && rk.done === true, rk);
+  await tg(777, 'track stretching daily'); await wait(1200);
+  const hb = await api('/api/get?key=ld_habits'); let hv = hb.j && hb.j.value; if (typeof hv === 'string') hv = JSON.parse(hv);
+  ok('…and start a habit', !!hv && hv.habits.some((h) => /stretching/i.test(h.name)), hv && hv.habits.map((h) => h.name));
   await tg(777, 'have sarah draft a reply to the refund question'); await wait(2500);
   const tl = await api('/api/team/tasks');
   const viaTg = tl.j.tasks.find((t) => t.via === 'telegram');
