@@ -80,6 +80,13 @@ const SATIS = { id: 'm-satis', title: 'ABKO SATIS TOPLANTISI', at: today, url: '
   r = await P.processMeeting(wd.ctx, wd.deps, 'u1', SATIS);
   ok('when he says not to hand out work, it is read and remembered but nothing starts', r.ok && wd.tasks.length === 0 && wd.know.length === 2);
 
+  const wr = world(model); await P.processMeeting(wr.ctx, wr.deps, 'u1', SATIS); wr.mem['team:projects'] = []; delete wr.mem['team:meetproc'];
+  r = await P.processMeeting(wr.ctx, wr.deps, 'u1', SATIS, { noTasks: true });
+  ok('read again without new work, the work it already started is filed back under its project', r.ok && wr.tasks.length === 3 && wr.mem['team:projects'][0].tasks.length === 3, wr.mem['team:projects']);
+  const wq = world(model); wq.deps.modelJson = async (c, sys, user) => { await new Promise((res) => setTimeout(res, /bar/.test(user) ? 60 : 5)); return /bar/.test(user) ? Object.assign({}, model, { projects: [{ name: 'Sales dashboard', status: 'x', next: [] }], delegate: [] }) : Object.assign({}, model, { delegate: [] }); };
+  await Promise.all([P.processMeeting(wq.ctx, wq.deps, 'u1', Object.assign({}, SATIS, { id: 'q1', title: 'bar november 9' })), P.processMeeting(wq.ctx, wq.deps, 'u1', Object.assign({}, SATIS, { id: 'q2' }))]);
+  ok('two meetings read at once both keep their project and their record', wq.mem['team:projects'].length === 2 && Object.keys(wq.mem['team:meetproc']).length === 2, wq.mem['team:projects'].map((x) => x.name));
+
   console.log('\n— on its own, as meetings arrive —');
   const wa = world(model);
   const old = { id: 'm-old', title: 'Old', at: new Date(Date.now() - 8 * 86400000).toISOString(), summary: 'long ago' };
