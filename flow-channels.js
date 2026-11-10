@@ -47,6 +47,8 @@ let team = null;
 try { team = require('./flow-team'); } catch (e) { team = null; }
 let extras = null;
 try { extras = require('./flow-extras'); } catch (e) { extras = null; }
+let mcpMod = null;
+try { mcpMod = require('./flow-mcp'); } catch (e) { mcpMod = null; }
 let groups = null;
 try { groups = require('./flow-groups'); } catch (e) { groups = null; }
 let speech = null;
@@ -104,7 +106,9 @@ async function ctxFor(uid) {
     get: async (k) => rawGet(pre + k),
     set: (k, v) => rawSet(pre + k, v),
     /* for J.A.R.V.I.S.'s own data: the reader flow-extras knows */
-    mine: { get: async (k) => rawGet(pre + k) }
+    mine: { get: async (k) => rawGet(pre + k) },
+    /* the planner, in the app's own stored shapes (what flow-mcp reads and writes) */
+    planner: { get: (k) => D.raw.get(pre + k), set: (k, v) => D.raw.set(pre + k, v) }
   };
 }
 async function links(ctx) { const v = await ctx.get('team:channels'); return v && typeof v === 'object' ? v : {}; }
@@ -353,22 +357,26 @@ async function talk(ctx, uid, channel, agent, text, meta) {
   return await jarvis(ctx, uid, channel, text, meta);
 }
 
-const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot) => [
+const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot, planner) => [
   'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', answering a text message from them (not in the app: a chat channel, so plain text, short, no markdown symbols, no lists longer than five lines).',
   'Manner: an impeccable British butler — composed, precise, courteous, a dry wit used sparingly. Address them as "sir" at most once per reply. Never claim to be a film character.',
-  'You never act yourself and never pretend to have done something: you answer from THEIR DATA below, or you start work for the team, or you approve/decline on their word.',
+  'You act on their word: you change their planner (Priorities on a day, habits), start work for the team, approve/decline — and you never claim something was done that your actions do not do. Questions get answers from THEIR DATA below.',
   '',
   'THE TEAM (id | name | role): ' + agents.filter((a) => a.id !== 'jarvis').map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('; '),
   know.length ? 'WHAT THE TEAM KNOWS (current): ' + know.map((k) => k.text).join(' · ') : '',
   tasks.length ? 'WORK IN FLIGHT / RECENT: ' + tasks.map((t) => t.title + ' (' + t.status.replace('_', ' ') + ')').join('; ') : 'No work in flight.',
   pending.length ? 'WAITING FOR THEIR YES: ' + pending.map((x, i) => '[' + (i + 1) + '] ' + x.summary).join('; ') : '',
   '',
+  planner ? 'TODAY: ' + planner.today + '\nTHEIR WEEK (id | day date | time | title | done):\n' + (planner.rocks || '(nothing planned)') + '\nHABITS: ' + (planner.habits || '(none)') : '',
+  '',
   'Return ONLY a JSON object:',
-  '{ "say": "your reply", "actions": [ { "type": "delegate", "title": "", "brief": "", "callMe": false }, { "type": "approve", "n": 1 }, { "type": "decline", "n": 1 } ] }',
+  '{ "say": "your reply", "ask": false, "actions": [ { "type": "rock", "title": "", "day": "friday | tomorrow | 2026-11-13", "time": "14:00 (optional)", "end": "", "priority": "high | medium | low", "note": "who, why, what to bring" }, { "type": "rock_update", "id": "from THEIR WEEK", "title": "", "day": "", "time": "", "note": "", "done": true }, { "type": "habit", "name": "" }, { "type": "habit_log", "habit": "name", "day": "today", "done": true }, { "type": "delegate", "title": "", "brief": "", "callMe": false }, { "type": "approve", "n": 1 }, { "type": "decline", "n": 1 } ] }',
+  '· rock / rock_update / habit / habit_log: their planner. Telling you what they have to do, or who they want to meet, IS the request — add it at once, no confirmation. A meeting with someone is a Priority on that day titled "Meet <name> (<company>)", with who they are and why in the note. Two things to raise with the same person are ONE Priority. Waiting on someone is a follow-up Priority. Check THEIR WEEK first: change what is there (rock_update) rather than adding it twice; "done", "move", "rename" use rock_update with its id. Something done every day is a habit, not seven Priorities.',
+  '· Ask only when it truly matters (which of two people, a day that cannot be guessed): then "ask": true, one short question, and NO actions. A missing time is not a reason to ask — leave it out.',
+  '· "say" says what was done, in the past tense ("Added Kadir Yıldız (Noar) to Friday."), in the language they wrote in.',
   '· delegate: when they want work done by the team — drafting, replying, analysing, researching, checking, preparing. "brief" carries every detail; "callMe": true if they asked to be rung when it is ready. The team works in the background and they are messaged when it is done; say so.',
   '· approve / decline: only when they clearly say yes or no to a numbered item waiting for their yes.',
   '· A question about their day, week, habits, sleep, spend, or the team\'s work gets a real answer from the data, no actions. If the data does not show it, say so; invent nothing.',
-  '· Things to add or change in their planner (a Priority, a habit, a note) you cannot do from here: say they can tell you in the app, or you can hand it to the team if it is work.',
   '',
   snapshot ? '# THEIR DATA\n' + snapshot.slice(0, 20000) : ''
 ].filter((x) => x !== '').join('\n');
@@ -388,19 +396,23 @@ async function jarvis(ctx, uid, channel, text, meta) {
   const hkey = meta && meta.ws ? 'ws:' + meta.ws.id : channel;
   const hist = await histGet(ctx, hkey);
   const messages = hist.concat([{ role: 'user', content: text }]);
-  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
+  const planner = await plannerView(ctx);
+  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot, planner).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
     (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
   const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: 1200, timeoutMs: 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
   let say = '', actions = [];
   const m = String(r.text || '').match(/\{[\s\S]*\}/);
-  if (m) { try { const o = JSON.parse(m[0]); say = block(o.say, 3000); actions = Array.isArray(o.actions) ? o.actions.slice(0, 4) : []; } catch (e) {} }
+  if (m) { try { const o = JSON.parse(m[0]); say = block(o.say, 3000); actions = Array.isArray(o.actions) && !o.ask ? o.actions.slice(0, 10) : []; } catch (e) {} }
   if (!say && !m) say = block(r.text, 3000);
   const extra = [];
   for (const a of actions) {
     if (!a || typeof a !== 'object') continue;
-    if (a.type === 'delegate' && a.brief) {
+    if (/^(rock|rock_update|habit|habit_log)$/.test(a.type)) {
+      const r = await plannerDo(ctx, a);
+      if (r) extra.push(r);
+    } else if (a.type === 'delegate' && a.brief) {
       const d = await team.delegateText(ctx, uid, block(a.brief, 4000), 'en', { callMe: a.callMe === true && configured('voice'), via: channel, origin: meta && meta.ws ? { channel, to: meta.ws.to, ws: meta.ws.id } : null });
       if (d.error) extra.push(d.error); else if (d.task) extra.push('Started: ' + d.task.title + ' (' + d.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + '). I will message you here when it is ready' + (d.task.callMe ? ', and ring you' : '') + '.');
     } else if ((a.type === 'approve' || a.type === 'decline') && pending[(+a.n || 1) - 1]) {
@@ -413,6 +425,34 @@ async function jarvis(ctx, uid, channel, text, meta) {
   let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used), team.context.langOf(text)); } catch (e) {}
   await histSet(ctx, hkey, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply + foot;
+}
+/* ---------- the planner, from a chat channel ------------------------------
+   The same writes Claude's MCP connector makes (flow-mcp), on this person's
+   own stored planner, so the app shows them on its next sync. */
+async function plannerView(ctx) {
+  if (!mcpMod || !ctx.planner) return null;
+  const I = mcpMod._internals.IMPL; const c = { store: ctx.planner, now: new Date() };
+  const line = (r) => r.id + ' | ' + r.dayName + ' ' + r.date + ' | ' + (r.time || '-') + ' | ' + r.title + ' | ' + (r.done ? 'done' : 'open');
+  const rows = [];
+  for (const w of ['this', 'next']) {
+    try { const wk = await I.get_week({ week: w }, c); for (const d of wk.days) for (const r of d.rocks) rows.push(line({ id: r.id, dayName: d.day.slice(0, 3), date: d.date, time: r.time, title: r.title, done: r.done })); } catch (e) {}
+  }
+  let habits = '';
+  try { const hb = await c.store.get('ld_habits'); const h = typeof hb === 'string' ? JSON.parse(hb) : hb; habits = ((h && h.habits) || []).map((x) => x.name).join(', '); } catch (e) {}
+  const now = new Date();
+  return { today: now.toISOString().slice(0, 10) + ' (' + ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()] + ')', rocks: rows.slice(0, 80).join('\n'), habits };
+}
+async function plannerDo(ctx, a) {
+  if (!mcpMod || !ctx.planner) return 'I could not reach your planner just now.';
+  const I = mcpMod._internals.IMPL; const c = { store: ctx.planner, now: new Date() };
+  const pick = (o, keys) => { const out = {}; for (const k of keys) if (o[k] != null && o[k] !== '') out[k] = typeof o[k] === 'string' ? str(o[k], k === 'note' ? 1000 : 300) : o[k]; return out; };
+  try {
+    if (a.type === 'rock') { if (!a.title) return null; await I.add_rock(pick(a, ['title', 'day', 'time', 'end', 'priority', 'note', 'role']), c); return null; }
+    if (a.type === 'rock_update') { if (!a.id) return null; await I.update_rock(pick(a, ['id', 'title', 'day', 'time', 'end', 'priority', 'note', 'done']), c); return null; }
+    if (a.type === 'habit') { if (!a.name) return null; await I.add_habit({ name: str(a.name, 120) }, c); return null; }
+    if (a.type === 'habit_log') { if (!a.habit) return null; await I.log_habit(pick(a, ['habit', 'day', 'done']), c); return null; }
+  } catch (e) { return 'Not done: ' + str(e.message, 200); }
+  return null;
 }
 async function histGet(ctx, channel) { const v = await ctx.get('team:chan:hist:' + channel); return Array.isArray(v) ? v : []; }
 async function histSet(ctx, channel, h) { await ctx.set('team:chan:hist:' + channel, h.map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 2000) }))); }

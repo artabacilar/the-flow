@@ -229,6 +229,11 @@ function fakePost(url, opts) {
     const actions = [];
     if (/have \w+ draft|ask \w+ to|get the team to/i.test(said)) actions.push({ type: 'delegate', title: 'From a message', brief: said, callMe: /call me/i.test(said) });
     if (/^\s*(yes|approve)\b/i.test(said)) actions.push({ type: 'approve', n: 1 });
+    const add = said.match(/^add (.+?) to my (?:schedule|week|planner) (?:for|on) (\w+)/i);
+    if (add) actions.push({ type: 'rock', title: 'Meet ' + add[1], day: add[2], note: 'From a message' });
+    const dn = said.match(/^mark (.+?) done/i);
+    if (dn) { const row = (system.split('\n').find((l) => l.indexOf(' | ') > 0 && l.toLowerCase().indexOf(dn[1].toLowerCase()) >= 0) || ''); const id = row.split(' | ')[0]; if (id) actions.push({ type: 'rock_update', id, done: true }); }
+    if (/^track (.+) daily/i.test(said)) actions.push({ type: 'habit', name: said.match(/^track (.+) daily/i)[1] });
     text = JSON.stringify({ say: b.model + ' says: ' + said, actions });
   } else if (/hand it over/.test(system)) {
     text = 'Summary by ' + b.model + ':\n' + String((last && last.content) || '');
@@ -257,7 +262,7 @@ async function complete(opts) {
   const which = await resolveModel(opts.model);
   if (!which) return { error: 'That model is not available here.', status: 0 };
   const P = PROVIDERS[which.provider], key = keyOf(which.provider);
-  const maxTokens = Math.max(200, Math.min(4000, opts.maxTokens || 1200));
+  const maxTokens = Math.max(200, Math.min(8000, opts.maxTokens || 1200));
   /* Streamed, when the caller wants the words as they are written (Say in
      the app). Only against the real providers; a stand-in or a test's
      poster answers whole, and the answer is then dripped out the same way. */
