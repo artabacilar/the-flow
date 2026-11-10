@@ -2353,6 +2353,7 @@ async function handleDo(p, req, res, ctx) {
     known.memory.length ? known.memory.map((m) => m.id + ' | ' + m.text).join('\n') : '(nothing yet)',
     team.shared.length ? 'WHAT THE TEAM KNOWS (shared business knowledge, current, read-only here — id | fact):\n' + team.shared.map((k) => k.id + ' | ' + k.text).join('\n') : '',
     team.history ? 'SUPERSEDED (no longer true — only for questions about the past, with the dates; never state these as current):\n' + team.history : '',
+    team.projects ? 'PROJECTS (id | name | health | where it stands | next) — the work J.A.R.V.I.S. is running for them; answer "where am I with…" from here:\n' + team.projects : '',
     '',
     onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',

@@ -15025,6 +15025,7 @@ const Hud = {
     if (Team.sel === 'skills') { try { Team.paintSkills(); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (Team.sel === 'scripts') { try { Team.paintScripts(); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (Team.sel === 'efficiency') { try { Team.paintEfficiency(); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
+    if (Team.sel === 'projects') { try { Team.paintProjects(); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (Team.sel === 'setup') { try { Team.paintSetup(); } catch (e) { console.warn('[Flow] setup', e); } return; }
     Hud.el.classList.remove('hud-memview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
@@ -15225,7 +15226,7 @@ const Hud = {
   page: null, pageHome: null, pageLast: {},
   PAGES: { today: ['today'], focus: ['northstar', 'quad', 'compass', 'abko', 'dtc'], body: ['training', 'sleep', 'habits'], record: ['journal', 'finance', 'ask'], settings: ['settings'] },
   PAGE_LABEL: { today: 'Today', focus: 'Plan', body: 'Body', record: 'Record', settings: 'Settings' },
-  VIEWS: ['setup', 'memory', 'skills', 'scripts', 'efficiency'],
+  VIEWS: ['projects', 'setup', 'memory', 'skills', 'scripts', 'efficiency'],
   pageGroup(tab) { for (const g of Object.keys(Hud.PAGES)) if (Hud.PAGES[g].indexOf(tab) >= 0) return g; return null; },
   /* Back to J.A.R.V.I.S.: the day round the orb, no page, no room. */
   home() {
@@ -15284,6 +15285,7 @@ const Hud = {
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     Hud.setEl(nav, it('home', 'orb', nm, 'Command centre', 'data-hud="home"') +
       '<div class="hud-rh">The team</div>' +
+      it('projects', 'compass', 'Projects', Team.toolSub('projects'), 'data-hud="projects"') +
       it('setup', 'check', 'Setup', Team.toolSub('setup'), 'data-hud="setup"') +
       it('memory', 'note', 'Memory', Team.toolSub('memory'), 'data-hud="memory"') +
       it('skills', 'star', 'Skills', Team.toolSub('skills'), 'data-hud="skills"') +
@@ -15379,6 +15381,7 @@ const Team = {
     try {
       if (id === 'setup') return Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.steps.filter((x) => x.status === 'done').length + ' of ' + Team.su.steps.length) : 'start here';
       if (id === 'memory') return 'sources · corrections';
+      if (id === 'projects') return Team.pj && Team.pj.projects ? Team.pj.projects.filter((x) => x.status === 'active').length + ' active' : 'meetings · work';
       if (id === 'skills') return Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done';
       if (id === 'scripts') return Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' : 'routine, no model';
       if (id === 'efficiency') return Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure';
@@ -15388,7 +15391,7 @@ const Team = {
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup') { Team.sel = id; Team.adding = false; Team.editing = null; if (Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); } if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); } return; }
+    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup' || id === 'projects') { Team.sel = id; Team.adding = false; Team.editing = null; if (Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); } if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -16158,6 +16161,87 @@ const Team = {
     const cur = V.steps.find((s) => s.id === V.current) || {};
     return Hud.panel('sunudge', 'Setup · ' + V.progress.done + ' of ' + V.progress.total, '<div class="hud-r"><span data-i18n="off">' + esc(cur.status === 'attention' ? 'Needs attention: ' + cur.title : 'Next: ' + cur.title) + '</span></div><div class="hud-row"><button type="button" class="hud-btn" data-hud="sustep" data-id="' + esc(V.current) + '">' + (V.progress.done ? 'Continue' : 'Start') + '</button></div>');
   },
+  /* ---- Projects: what J.A.R.V.I.S. is running, from the meetings in ----
+     Every Fathom meeting is read as it arrives: filed under a project,
+     what matters remembered, work handed to the team. Here each project
+     shows where it stands, its health, the next steps, its tasks and how
+     far they are, its meetings and what was learned — and he can steer. */
+  pj: null, pjOpen: null, pjBusy: '', pjNew: false,
+  async loadPj(force) {
+    if (Team.pj && !force) return Team.pj;
+    try { const r = await fetch('/api/team/projects', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.pj = (r.ok && j && j.ok) ? j : (Team.pj || { projects: [], meetings: [], settings: {}, failed: true }); } catch (e) { Team.pj = Team.pj || { projects: [], meetings: [], settings: {}, failed: true }; }
+    if (Team.pj.projects.length && !Team.pj.projects.some((x) => x.id === Team.pjOpen)) Team.pjOpen = Team.pj.projects[0].id;
+    return Team.pj;
+  },
+  PJH: { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked' },
+  PJT: { queued: 'Queued', running: 'Working', awaiting_info: 'Has a question', awaiting_approval: 'Needs your yes', done: 'Done', failed: 'Did not finish', cancelled: 'Cancelled' },
+  paintProjects() {
+    Hud.el.classList.add('hud-memview');
+    if (!Team.pj && !Team.pjLoading) { Team.pjLoading = true; Team.loadPj().then(() => { Team.pjLoading = false; if (Hud.on && Team.sel === 'projects') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Projects';
+    Hud.el.querySelector('.hud-brand span').textContent = 'What J.A.R.V.I.S. is running for you — from your meetings, with the team on it';
+    const P = Team.pj, list = (P && P.projects) || [];
+    const card = (p) => '<button type="button" class="hud-pj' + (Team.pjOpen === p.id ? ' sel' : '') + (p.status !== 'active' ? ' quiet' : '') + '" data-hud="pjopen" data-id="' + esc(p.id) + '">' +
+      '<span class="hud-pjn" data-i18n="off">' + esc(p.name) + '</span>' +
+      '<em class="hud-pjh" data-h="' + esc(p.status === 'active' ? p.health : p.status) + '">' + esc(p.status === 'active' ? (Team.PJH[p.health] || 'On track') : p.status === 'done' ? 'Done' : 'Paused') + '</em>' +
+      '<i class="hud-pjbar"><b style="width:' + (p.progress || 0) + '%"></b></i>' +
+      '<small>' + (p.counts.open ? p.counts.open + ' in progress · ' : '') + p.counts.done + '/' + p.counts.tasks + ' tasks done · ' + p.counts.meetings + ' meeting' + (p.counts.meetings === 1 ? '' : 's') + (p.counts.waiting ? ' · ' + p.counts.waiting + ' waiting for you' : '') + ' · ' + esc(Team.when(p.updatedAt)) + '</small></button>';
+    const newForm = Team.pjNew ? '<form data-team="pjcreate" class="hud-skform"><input class="hud-sel" type="text" name="name" maxlength="80" placeholder="Project name, e.g. “Goldwell distribution”"><input class="hud-sel" type="text" name="goal" maxlength="300" placeholder="Goal, in one sentence"><div class="hud-row"><button type="submit" class="hud-btn">Create</button><button type="button" class="hud-btn ghost" data-hud="pjnew">Cancel</button></div></form>' : '<button type="button" class="hud-btn ghost" data-hud="pjnew">＋ New project</button>';
+    const left = Hud.panel('pjlist', 'Projects · ' + list.filter((x) => x.status === 'active').length + ' active', (P ? (list.length ? '<div class="hud-pjs">' + list.map(card).join('') + '</div>' : '<p class="hud-none">No projects yet. The next meeting Fathom records starts one — or let him read one below.</p>') : '<p class="hud-sub">Looking…</p>') + newForm);
+    const M = (P && P.meetings) || [], S = (P && P.settings) || {};
+    const mrow = (m) => '<div class="hud-r hud-lg"><span data-i18n="off">' + (m.url ? '<a href="' + esc(m.url) + '" target="_blank" rel="noopener">' + esc(m.title) + '</a>' : esc(m.title)) + '<small>' + esc(Team.when(m.at)) + (m.read ? ' · read' + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') + ' started' : '') : '') + '</small>' + (m.summary ? '<small class="hud-pjsum">' + esc(m.summary) + '</small>' : '') + '</span>' +
+      (m.read ? '<b class="hud-ok">✓</b>' : '<button type="button" class="hud-btn" data-hud="pjread" data-id="' + esc(m.id) + '"' + (Team.pjBusy === m.id ? ' disabled' : '') + '>' + (Team.pjBusy === m.id ? 'Reading…' : 'Let him read it') + '</button>') + '</div>';
+    const meets = Hud.panel('pjmeet', 'Meetings from Fathom', (M.length ? M.map(mrow).join('') : '<p class="hud-none">No meetings yet. Connect Fathom in Settings → Connections; each recording arrives here a few minutes after its notes.</p>') +
+      '<label class="hud-tick hud-opt" data-flow-no-chip><input type="checkbox" data-team-pj="auto"' + (S.auto !== false ? ' checked' : '') + '> Read every new meeting by himself</label>' +
+      '<label class="hud-tick hud-opt" data-flow-no-chip><input type="checkbox" data-team-pj="delegate"' + (S.delegate !== false ? ' checked' : '') + '> Hand the work to the team at once (anything that would go out still waits for your yes)</label>');
+    Hud.set('.hud-left', left + meets);
+    const p = list.find((x) => x.id === Team.pjOpen);
+    if (!p) { Hud.set('.hud-right', Hud.panel('pjone', 'Pick a project', '<p class="hud-sub">Open one on the left: where it stands, the next steps, the work in progress and what came out of each meeting.</p>')); Team.paintRail(); return; }
+    const sel = (name, opts, cur) => '<select class="hud-sel" data-team-pjset="' + name + '" data-id="' + esc(p.id) + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+    const head = '<div class="hud-row hud-pjctl">' + sel('health', [['on_track', 'On track'], ['at_risk', 'At risk'], ['blocked', 'Blocked']], p.health) + sel('status', [['active', 'Active'], ['paused', 'Paused'], ['done', 'Done']], p.status) +
+      '<button type="button" class="hud-btn" data-hud="pjask" data-id="' + esc(p.id) + '">Ask J.A.R.V.I.S.</button></div>';
+    const state = '<p class="hud-pjgoal" data-i18n="off">' + esc(p.goal || '') + '</p>' + (p.state ? '<p class="hud-pjstate" data-i18n="off"><b>Where it stands.</b> ' + esc(p.state) + '</p>' : '') +
+      (p.next && p.next.length ? '<p class="hud-sub"><b>Next steps</b></p><ul class="hud-ev">' + p.next.map((x) => '<li data-i18n="off">' + esc(x) + '</li>').join('') + '</ul>' : '');
+    const tasks = (p.taskList || []).length ? p.taskList.map((t) => '<details class="hud-pjt"><summary><em class="hud-pjts" data-s="' + esc(t.status) + '">' + esc(Team.PJT[t.status] || t.status) + '</em><span data-i18n="off">' + esc(t.title) + '</span><small data-i18n="off">' + esc((Team.agent(t.agent) || {}).name || t.agent) + '</small></summary>' + (t.result ? '<p class="hud-sub" data-i18n="off">' + esc(t.result) + '</p>' : '<p class="hud-sub">No result yet.</p>') + '</details>').join('') : '<p class="hud-none">No work handed out for this project yet.</p>';
+    const mt = (p.meetingList || []).map((m) => '<div class="hud-r hud-lg"><span data-i18n="off">' + (m.url ? '<a href="' + esc(m.url) + '" target="_blank" rel="noopener">' + esc(m.title) + '</a>' : esc(m.title)) + '<small>' + esc(Team.when(m.at)) + '</small>' + (m.summary ? '<small class="hud-pjsum">' + esc(m.summary) + '</small>' : '') + '</span></div>').join('');
+    const facts = (p.factList || []).length ? '<ul class="hud-ev">' + p.factList.map((k) => '<li data-i18n="off">' + esc(k.text) + '</li>').join('') + '</ul>' : '<p class="hud-none">Nothing learned from this project yet.</p>';
+    const ideas = (p.ideas || []).length ? '<ul class="hud-ev">' + p.ideas.map((i) => '<li data-i18n="off"><b>' + esc(i.title) + '</b> — ' + esc(i.why) + '</li>').join('') + '</ul>' : '';
+    const tl = (p.timeline || []).slice().reverse().slice(0, 12).map((e) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(e.text) + '<small>' + esc(Team.when(e.at)) + ' · ' + (e.kind === 'meeting' ? esc(e.title || 'meeting') : 'your note') + '</small></span></div>').join('');
+    const noteForm = '<form data-team="pjnote" data-id="' + esc(p.id) + '" class="hud-row"><input class="hud-sel" type="text" name="text" maxlength="600" placeholder="Add a note — a decision, a change, where you are"><button type="submit" class="hud-btn">Add</button></form>';
+    Hud.set('.hud-right',
+      Hud.panel('pjone', p.name, head + state) +
+      Hud.panel('pjwork', 'The work · ' + (p.counts.done) + ' of ' + p.counts.tasks + ' done', '<i class="hud-pjbar big"><b style="width:' + (p.progress || 0) + '%"></b></i>' + tasks) +
+      Hud.panel('pjmt', 'Meetings · ' + (p.meetingList || []).length, mt || '<p class="hud-none">No meetings filed here yet.</p>') +
+      Hud.panel('pjlearn', 'What he learned', facts + (ideas ? '<p class="hud-sub"><b>Ideas for the business</b></p>' + ideas : '')) +
+      Hud.panel('pjtl', 'Timeline', noteForm + (tl || '<p class="hud-none">Nothing yet.</p>') + '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="pjremove" data-id="' + esc(p.id) + '">Remove project</button></div>'));
+    Team.paintRail();
+  },
+  async pjClick(a, b) {
+    if (a === 'pjopen') { Team.pjOpen = b.getAttribute('data-id'); Hud.paint(); return true; }
+    if (a === 'pjnew') { Team.pjNew = !Team.pjNew; Hud.paint(); return true; }
+    if (a === 'pjread') {
+      const id = b.getAttribute('data-id'); Team.pjBusy = id; Hud.paint();
+      const j = await Team.post('/api/team/projects', { op: 'process', meeting: id });
+      Team.pjBusy = '';
+      if (j && j.ok) { Team.pj = j.view; if (j.projects && j.projects[0]) Team.pjOpen = j.projects[0].id; toast(j.say || 'Read', null, 4200); try { await Team.load(true); } catch (e) {} }
+      Hud.paint(); return true;
+    }
+    if (a === 'pjask') {
+      const p = Team.pj && Team.pj.projects.find((x) => x.id === b.getAttribute('data-id')); if (!p) return true;
+      try { const ta = Say.el && Say.el.querySelector('#sy-text'); if (ta) { ta.value = (Say.lang() === 'tr' ? '"' + p.name + '" projesinde neredeyim ve sırada ne var?' : 'Where am I with "' + p.name + '", and what should happen next?'); Say.typed = true; Say.send(); } } catch (e) {}
+      return true;
+    }
+    if (a === 'pjremove') {
+      if (!confirm('Remove this project? Its tasks, meetings and what was learned stay; only the project goes.')) return true;
+      const j = await Team.post('/api/team/projects', { op: 'remove', id: b.getAttribute('data-id') }); if (j && j.ok) { Team.pjOpen = null; await Team.loadPj(true); Hud.paint(); }
+      return true;
+    }
+    return false;
+  },
+  async pjSubmit(kind, f) {
+    if (kind === 'pjcreate') { const name = f.name.value.trim(); if (!name) return; const j = await Team.post('/api/team/projects', { op: 'create', name, goal: f.goal.value.trim() }); if (j && j.ok) { Team.pjNew = false; Team.pjOpen = j.project.id; await Team.loadPj(true); Hud.paint(); } return; }
+    if (kind === 'pjnote') { const text = f.text.value.trim(); if (!text) return; const j = await Team.post('/api/team/projects', { op: 'note', id: f.getAttribute('data-id'), text }); if (j && j.ok) { await Team.loadPj(true); Hud.paint(); } return; }
+  },
   async loadEf(force) {
     if (Team.ef && !force) return Team.ef;
     try { const r = await fetch('/api/team/efficiency?days=30', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.ef = (r.ok && j && j.ok) ? j : (Team.ef || { metrics: null, review: null, applied: [], baselines: [], failed: true }); } catch (e) { Team.ef = Team.ef || { metrics: null, review: null, applied: [], baselines: [], failed: true }; }
@@ -16599,7 +16683,8 @@ const Team = {
     if (a === 'agent') { Team.select(b.getAttribute('data-ag')); return; }
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
-    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
+    if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup' || a === 'projects') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
+    if (await Team.pjClick(a, b)) return;
     if (await Team.suClick(a, b)) return;
     if (await Team.ctxClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
@@ -16674,6 +16759,8 @@ const Team = {
       if (j && j.ok && Team.data) { Team.data.brief = Object.assign(Team.data.brief || {}, { on: j.on, at: j.at }); toast(j.on ? 'Every morning at ' + j.at : 'Morning briefing off', null, 1600); }
       return;
     }
+    if (t.matches('[data-team-pj]')) { const k = t.getAttribute('data-team-pj'); const j = await Team.post('/api/team/projects', { op: 'settings', [k]: !!t.checked }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); toast(t.checked ? 'On' : 'Off', null, 1600); } return; }
+    if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
     if (t.matches('[data-team-eff]')) { const k = t.getAttribute('data-team-eff'); const j = await Team.post('/api/team/efficiency/settings', { [k]: !!t.checked }); if (j && j.ok) { await Team.loadEf(true); toast(t.checked ? 'On — one-step delegations skip the hand-over call' : 'Off', null, 2000); } return; }
     if (t.matches('[data-hud-toggle="efdismissed"]')) { Team.efShowDismissed = !!t.checked; Hud.paint(); return; }
     if (t.matches('[data-team-limit]')) {
@@ -16687,6 +16774,7 @@ const Team = {
     if (/^sk/.test(kind)) { try { await Team.skSubmit(kind, f); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
+    if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
     if (kind === 'pladd') { const url = f.url.value.trim(); if (!url) return; const j = await Team.post('/api/team/plugins', { op: 'add', name: f.name.value.trim(), url, envVar: f.envVar.value.trim(), mode: f.mode.value }); if (j && j.ok) { Team.plNew = null; Team.plOpen = j.plugin.id; toast(j.plugin.status === 'working' ? j.plugin.name + ' connected — ' + j.plugin.tools.length + ' tools' : j.plugin.name + ': ' + (j.plugin.error || j.plugin.status), null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }

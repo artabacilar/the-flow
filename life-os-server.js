@@ -1173,6 +1173,8 @@ const MEETING_DEPS = () => ({
   nsPrefix: flowAuth.nsPrefix,
   fetch: (...a) => fetch(...a),
   sendToUser: push ? push.sendToUser : null,
+  /* J.A.R.V.I.S. reads each new meeting: projects, memory, work for the team */
+  onFiled: teamMod && teamMod.meetingsFiled ? (uid, list) => teamMod.meetingsFiled(uid, list) : null,
   log: (m) => console.error(m)
 });
 if (meetings && connectMod) meetings.start(MEETING_DEPS());

@@ -4466,3 +4466,35 @@ html.hud-on #flow-say .sy-chats{border-color:rgba(110,170,255,.22);background:rg
 html.hud-on #flow-say .sy-did{border-color:rgba(110,170,255,.18)}
 html.hud-on #flow-say .sy-did li::before{color:#7fd8ff}
 html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rgba(110,170,255,.28);color:#e8f4ff}
+
+/* ---- Projects (J.A.R.V.I.S. reads your meetings) ---- */
+#flow-hud .hud-pjs{display:grid;gap:8px;margin-bottom:10px}
+#flow-hud .hud-pj{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;text-align:left;width:100%;font:inherit;color:#e8f4ff;background:rgba(10,24,52,.55);border:1px solid rgba(110,170,255,.18);border-radius:14px;padding:10px 12px;cursor:pointer;transition:border-color .15s,background .15s}
+#flow-hud .hud-pj:hover{border-color:rgba(127,216,255,.45)}
+#flow-hud .hud-pj.sel{border-color:#7fd8ff;background:rgba(20,48,96,.6);box-shadow:0 0 0 1px rgba(127,216,255,.25) inset}
+#flow-hud .hud-pj.quiet{opacity:.62}
+#flow-hud .hud-pjn{font-size:14px;font-weight:600;letter-spacing:0;text-transform:none}
+#flow-hud .hud-pj small{grid-column:1/-1;font-size:11.5px;color:rgba(200,225,255,.62)}
+#flow-hud .hud-pjh,#flow-hud .hud-pjts{font-style:normal;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;background:rgba(127,216,255,.14);color:#9fe0ff;white-space:nowrap}
+#flow-hud .hud-pjh[data-h="at_risk"],#flow-hud .hud-pjts[data-s="awaiting_approval"],#flow-hud .hud-pjts[data-s="awaiting_info"]{background:rgba(255,190,90,.16);color:#ffcf85}
+#flow-hud .hud-pjh[data-h="blocked"],#flow-hud .hud-pjts[data-s="failed"]{background:rgba(255,110,120,.16);color:#ff9aa3}
+#flow-hud .hud-pjh[data-h="done"],#flow-hud .hud-pjts[data-s="done"]{background:rgba(140,170,255,.16);color:#b9c8ff}
+#flow-hud .hud-pjh[data-h="paused"],#flow-hud .hud-pjts[data-s="cancelled"]{background:rgba(255,255,255,.08);color:rgba(220,230,255,.6)}
+#flow-hud .hud-pjbar{grid-column:1/-1;display:block;height:4px;border-radius:99px;background:rgba(110,170,255,.14);overflow:hidden}
+#flow-hud .hud-pjbar b{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4aa8ff,#7fd8ff)}
+#flow-hud .hud-pjbar.big{height:6px;margin:2px 0 10px}
+#flow-hud .hud-pjctl{flex-wrap:wrap;gap:8px}
+#flow-hud .hud-pjctl .hud-sel{width:auto;flex:1 1 120px}
+#flow-hud .hud-pjgoal{margin:8px 0 4px;font-size:13px;color:rgba(220,236,255,.75)}
+#flow-hud .hud-pjstate{margin:6px 0;font-size:13.5px;line-height:1.45}
+#flow-hud .hud-pjsum{display:block;margin-top:4px;white-space:pre-wrap;line-height:1.4;color:rgba(210,230,255,.7)}
+#flow-hud .hud-pjt{border-top:1px solid rgba(110,170,255,.1);padding:6px 0}
+#flow-hud .hud-pjt summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;list-style:none}
+#flow-hud .hud-pjt summary::-webkit-details-marker{display:none}
+#flow-hud .hud-pjt summary span{flex:1;min-width:0}
+#flow-hud .hud-pjt summary small{font-size:11.5px;color:rgba(200,225,255,.6)}
+#flow-hud .hud-pjt .hud-sub{white-space:pre-wrap;margin:6px 0 2px}
+#flow-hud [data-k="pjmeet"] .hud-tick,#flow-hud [data-k="pjmeet"] .hud-opt{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin:10px 0 0;text-align:left;text-transform:none;letter-spacing:0;font-size:12.5px;line-height:1.4;color:rgba(220,236,255,.82)}
+#flow-hud [data-k="pjmeet"] .hud-tick input{flex:none;margin-top:2px}
+#flow-hud [data-k="pjmeet"] a,#flow-hud [data-k="pjmt"] a{color:#9fe0ff;text-decoration:none;font-weight:600}
+#flow-hud [data-k="pjmeet"] a:hover,#flow-hud [data-k="pjmt"] a:hover{text-decoration:underline}

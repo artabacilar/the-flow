@@ -236,6 +236,9 @@ async function pullUser(deps, uid, now) {
   }
   if (queued) await writeJSON(raw, INBOX(uid), inbox);
 
+  /* J.A.R.V.I.S. reads what came in: projects, memory, work for the team. */
+  if (deps.onFiled) { try { await deps.onFiled(uid, fresh); } catch (e) { deps.log && deps.log('[flow/meetings] jarvis: ' + e.message); } }
+
   const mine = fresh.reduce((n, s) => n + s.actions.filter((a) => a.mine && !a.done).length, 0);
   if (deps.sendToUser) {
     const one = fresh.length === 1;

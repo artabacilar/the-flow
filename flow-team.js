@@ -57,6 +57,7 @@ const setup = require('./flow-setup');
 const context = require('./flow-context');
 const mail = require('./flow-mail');
 const plugins = require('./flow-plugins');
+const projectsMod = require('./flow-projects');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -483,6 +484,7 @@ async function handle(p, req, res, ctx) {
   if (await handleMail(p, req, res, ctx)) return true;
   if (await plugins.handle(p, req, res, ctx, { log })) return true;
   if (await handleRank(p, req, res, ctx)) return true;
+  if (await projectsMod.handle(p, req, res, ctx, projDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -1591,6 +1593,38 @@ function ctxDeps() {
     spec: (ctx, d, draft) => modelJson(ctx, 'Write up a workflow spec from an interview. Return ONLY a JSON object with keys goal, trigger, inputs, steps, guardrails, people, cadence, pitfalls, success, notes — each a short plain-text paragraph (or empty string), using only what the person said; invent nothing.', 'Topic: ' + (d.topic || '') + '\n' + d.qa.map((x, i) => 'Q' + (i + 1) + ': ' + x.q + '\nA' + (i + 1) + ': ' + x.a).join('\n') + '\n\nDraft: ' + JSON.stringify(draft), 1800)
   };
 }
+/* ---------- projects and meetings: what flow-projects needs from here ------- */
+function projDeps() {
+  return {
+    fake: FAKE,
+    agents: (ctx) => agents(ctx), knowledge: (ctx) => knowledge(ctx), tasks: (ctx) => tasks(ctx),
+    modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens),
+    newTask: (ctx, uid, f) => newTask(ctx, uid, f),
+    log: (ctx, who, what) => log(ctx, who, what),
+    /* what a meeting taught the team: shared, current, with the meeting as its source */
+    addKnowledge: async (ctx, items, origin) => {
+      const know = await knowledge(ctx); const now = Date.now(); const ids = []; let added = 0;
+      for (const it of items) {
+        if (know.some((k) => k.status !== 'superseded' && String(k.text).toLowerCase() === String(it.text).toLowerCase())) continue;
+        const k = { id: 'k' + newId(), text: it.text, kind: it.kind || 'fact', scope: 'shared', status: 'current', source: origin.id, origin: { id: origin.id, title: origin.title, quote: it.quote || '', url: origin.url || '' }, at: now, updated: now, validFrom: now, history: [] };
+        know.push(k); ids.push(k.id); added++;
+      }
+      if (added) await ctx.set('team:knowledge', know.slice(-600));
+      return { added, ids };
+    },
+    notify: async (uid, ctx, text, data) => {
+      if (pushTo) { try { await pushTo(uid, { title: 'J.A.R.V.I.S. read your meeting', body: str(text, 170), thread: 'team', data: Object.assign({ team: 'projects' }, data || {}) }); } catch (e) {} }
+      if (channelsTo) { try { await channelsTo(uid, text, { what: 'meeting' }); } catch (e) {} }
+    }
+  };
+}
+/* flow-meetings has filed new meetings for this person: J.A.R.V.I.S. reads them. */
+async function meetingsFiled(uid, list) {
+  if (!bootCtx || !list || !list.length) return [];
+  const ctx = bootCtx(uid);
+  try { ctx.user = await userOf(uid); } catch (e) {}
+  return projectsMod.onFiled(ctx, projDeps(), uid, list);
+}
 /* ---------- automations: what the module needs from here ------------------ */
 function scriptDeps() {
   return {
@@ -1934,7 +1968,8 @@ async function forJarvis(ctx) {
     const shared = kb.facts.concat(kb.rules).slice(-80).map((k) => ({ id: k.id, text: k.text + (k.kind === 'rule' || k.kind === 'procedure' ? ' [rule]' : ''), source: k.source, origin: k.origin || null }));
     const history = kb.historyText;
     const paused = (await ctx.get('team:paused')) === true;
-    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused };
+    let projects = ''; try { projects = await projectsMod.brief(ctx); } catch (e) {}
+    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused, projects };
   } catch (e) { return { model: '', shared: [], paused: false }; }
 }
 
@@ -1943,4 +1978,5 @@ module.exports.complete = complete;
 module.exports.resolveModel = resolveModel;
 module.exports.providers = providers;
 module.exports.forJarvis = forJarvis;
+module.exports.meetingsFiled = meetingsFiled;
 module.exports._internals = { PROVIDERS, TEMPLATES, STARTER_IDS, TEMPLATE_IDS, MANNERS, agentSystem, parseReply, fromTemplate, setPost: (f) => { post = f; }, DEFAULT_MODEL };
