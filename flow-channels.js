@@ -197,12 +197,13 @@ async function converse(ctx, uid, channel, text, meta) {
   if ((await ctx.get('team:paused')) === true && !/^\/(team|tasks|help|diag|whoami)\b/i.test(text)) return 'The team is paused. Resume it from the command centre.';
 
   /* 3. commands */
-  const cmd = text.match(/^\/(\w+)(?:\s+([\s\S]*))?$/);
+  const cmd = text.match(/^\/([\p{L}\w]+)(?:\s+([\s\S]*))?$/u);
   if (cmd) {
-    const c = cmd[1].toLowerCase(), rest = (cmd[2] || '').trim();
+    let c = cmd[1].toLowerCase(), rest = (cmd[2] || '').trim();
     if (c === 'help' || c === 'start') return HELP(names);
     if (c === 'team') return active.map((a) => (a.id === mine.agent ? '▶ ' : '· ') + a.name + ' — ' + a.role + (a.id === 'jarvis' ? '' : ' (/' + firstName(a) + ')')).join('\n');
     if (c === 'tasks') return await tasksText(ctx);
+    if (c === 'evet' || c === 'onay' || c === 'onayla') c = 'yes'; if (c === 'hayır' || c === 'hayir' || c === 'reddet') c = 'no';
     if (c === 'yes' || c === 'approve' || c === 'no' || c === 'decline') {
       const n = parseInt(rest, 10) || 1;
       const pending = (await team.approvals(ctx)).filter((x) => x.status === 'pending');
@@ -351,7 +352,7 @@ async function tasksText(ctx) {
    approve and decline — in words, from a text message. */
 async function talk(ctx, uid, channel, agent, text, meta) {
   if (agent.id !== 'jarvis') {
-    const r = await team.sayTo(ctx, agent.id, text, 'en', { via: channel, spoken: meta && meta.spoken ? meta.spoken : null });
+    const r = await team.sayTo(ctx, agent.id, text, team.context ? team.context.langOf(text) : 'en', { via: channel, spoken: meta && meta.spoken ? meta.spoken : null });
     return r.error ? r.error : r.say + (team.context && !(meta && meta.spoken) ? team.context.footer(r.sources, team.context.langOf(text)) : '');
   }
   return await jarvis(ctx, uid, channel, text, meta);
@@ -360,6 +361,7 @@ async function talk(ctx, uid, channel, agent, text, meta) {
 const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot, planner) => [
   'You are J.A.R.V.I.S., chief of staff to ' + str(owner, 60) + ', answering a text message from them (not in the app: a chat channel, so plain text, short, no markdown symbols, no lists longer than five lines).',
   'Manner: an impeccable British butler — composed, precise, courteous, a dry wit used sparingly. Address them as "sir" at most once per reply. Never claim to be a film character.',
+  'Language: they write and speak Turkish, English, or both mixed. Understand both fully and take commands in either. Reply in the language of their LAST message (mostly Turkish → natural, polite Turkish, "efendim" in place of "sir"; mixed → the language most of it is in). Keep names, companies and product names as they wrote them. Titles of Priorities and briefs in the language they used. For "day" always write an English weekday ("friday", "next friday"), "today"/"tomorrow", or YYYY-MM-DD — "cuma" is "friday", "yarın" is "tomorrow", "haftaya salı" is "next tuesday". Times as 24-hour "14:30" ("öğleden sonra 3" is "15:00").',
   'You act on their word: you change their planner (Priorities on a day, habits), start work for the team, approve/decline — and you never claim something was done that your actions do not do. Questions get answers from THEIR DATA below.',
   '',
   'THE TEAM (id | name | role): ' + agents.filter((a) => a.id !== 'jarvis').map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('; '),
@@ -413,7 +415,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
       const r = await plannerDo(ctx, a);
       if (r) extra.push(r);
     } else if (a.type === 'delegate' && a.brief) {
-      const d = await team.delegateText(ctx, uid, block(a.brief, 4000), 'en', { callMe: a.callMe === true && configured('voice'), via: channel, origin: meta && meta.ws ? { channel, to: meta.ws.to, ws: meta.ws.id } : null });
+      const d = await team.delegateText(ctx, uid, block(a.brief, 4000), team.context ? team.context.langOf(text) : 'en', { callMe: a.callMe === true && configured('voice'), via: channel, origin: meta && meta.ws ? { channel, to: meta.ws.to, ws: meta.ws.id } : null });
       if (d.error) extra.push(d.error); else if (d.task) extra.push('Started: ' + d.task.title + ' (' + d.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + '). I will message you here when it is ready' + (d.task.callMe ? ', and ring you' : '') + '.');
     } else if ((a.type === 'approve' || a.type === 'decline') && pending[(+a.n || 1) - 1]) {
       const item = pending[(+a.n || 1) - 1];
@@ -421,7 +423,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
       if (!dr.error) extra.push((a.type === 'approve' ? 'Approved: ' : 'Declined: ') + item.summary + (a.type === 'approve' ? ' — not sent yet; nothing is connected to send it.' : ''));
     }
   }
-  const reply = [say].concat(extra).filter(Boolean).join('\n\n') || 'Noted, sir.';
+  const reply = [say].concat(extra).filter(Boolean).join('\n\n') || (team.context && team.context.langOf(text) === 'tr' ? 'Not aldım, efendim.' : 'Noted, sir.');
   let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used), team.context.langOf(text)); } catch (e) {}
   await histSet(ctx, hkey, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply + foot;
@@ -451,7 +453,7 @@ async function plannerDo(ctx, a) {
     if (a.type === 'rock_update') { if (!a.id) return null; await I.update_rock(pick(a, ['id', 'title', 'day', 'time', 'end', 'priority', 'note', 'done']), c); return null; }
     if (a.type === 'habit') { if (!a.name) return null; await I.add_habit({ name: str(a.name, 120) }, c); return null; }
     if (a.type === 'habit_log') { if (!a.habit) return null; await I.log_habit(pick(a, ['habit', 'day', 'done']), c); return null; }
-  } catch (e) { return 'Not done: ' + str(e.message, 200); }
+  } catch (e) { return (team.context && team.context.langOf(String(a.title || a.name || a.habit || '')) === 'tr' ? 'Yapılamadı: ' : 'Not done: ') + str(e.message, 200); }
   return null;
 }
 async function histGet(ctx, channel) { const v = await ctx.get('team:chan:hist:' + channel); return Array.isArray(v) ? v : []; }
@@ -607,7 +609,7 @@ async function telegramUpdate(u) {
     if (!uidV) { if (!isGroup) await send('telegram', to, UNKNOWN('telegram')); return; }
     let audio; try { audio = await speech.telegramVoice(msg.voice.file_id); } catch (e) { await send('telegram', to, 'I could not fetch that voice note (' + str(e.message, 80) + '). Say it again, or type it.'); return; }
     const cV = await ctxFor(uidV); let lang = 'en'; try { const st = await cV.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}
-    const tr = await speech.transcribe(audio, lang === 'tr' ? 'tr' : '');
+    const tr = await speech.transcribe(audio, '');   /* detected: he mixes Turkish and English */
     if (tr.error) { if (groups) await groups.noteError(tr.error); await send('telegram', to, tr.missing ? tr.error : 'I could not make out that voice note. ' + tr.error); return; }
     if (!tr.text) { await send('telegram', to, 'I heard nothing in that voice note. Say it again?'); return; }
     msg.text = tr.text; meta.voice = { text: tr.text, seconds: msg.voice.duration || 0, provider: tr.provider, lang: tr.lang };

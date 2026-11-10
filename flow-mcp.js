@@ -67,6 +67,15 @@ function parseDay(input, now) {
     if (isNaN(d.getTime()) || d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== da) return null;
     return d;
   }
+  /* Turkish, as he speaks it: "bugün", "yarın", "cuma", "gelecek cuma" */
+  const TR = { 'bugün': 'today', 'bugun': 'today', 'yarın': 'tomorrow', 'yarin': 'tomorrow', 'dün': 'yesterday', 'dun': 'yesterday' };
+  if (TR[raw]) return parseDay(TR[raw], now);
+  if (raw === 'öbür gün' || raw === 'obur gun' || raw === 'ertesi gün') { const d = new Date(now); d.setDate(d.getDate() + 2); return d; }
+  const trd = raw.match(/^(?:(gelecek|haftaya|önümüzdeki|bu)\s+)?(pazartesi|salı|sali|çarşamba|carsamba|perşembe|persembe|cumartesi|cuma|pazar)(?:\s*(?:günü|gunu|ya|ye|a|e))?$/);
+  if (trd) {
+    const map = { pazartesi: 'mon', 'salı': 'tue', sali: 'tue', 'çarşamba': 'wed', carsamba: 'wed', 'perşembe': 'thu', persembe: 'thu', cuma: 'fri', cumartesi: 'sat', pazar: 'sun' };
+    return parseDay((trd[1] && trd[1] !== 'bu' ? 'next ' : '') + map[trd[2]], now);
+  }
   if (raw === 'today') return new Date(now);
   if (raw === 'tomorrow') { const d = new Date(now); d.setDate(d.getDate() + 1); return d; }
   if (raw === 'yesterday') { const d = new Date(now); d.setDate(d.getDate() - 1); return d; }

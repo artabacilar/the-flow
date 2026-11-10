@@ -233,8 +233,10 @@ function fakePost(url, opts) {
     if (add) actions.push({ type: 'rock', title: 'Meet ' + add[1], day: add[2], note: 'From a message' });
     const dn = said.match(/^mark (.+?) done/i);
     if (dn) { const row = (system.split('\n').find((l) => l.indexOf(' | ') > 0 && l.toLowerCase().indexOf(dn[1].toLowerCase()) >= 0) || ''); const id = row.split(' | ')[0]; if (id) actions.push({ type: 'rock_update', id, done: true }); }
+    const trAdd = said.match(/^(\S+) günü (.+?) ile toplantı ekle/i);
+    if (trAdd) actions.push({ type: 'rock', title: trAdd[2] + ' ile toplantı', day: trAdd[1].toLowerCase(), note: 'Mesajdan' });
     if (/^track (.+) daily/i.test(said)) actions.push({ type: 'habit', name: said.match(/^track (.+) daily/i)[1] });
-    text = JSON.stringify({ say: b.model + ' says: ' + said, actions });
+    text = JSON.stringify({ say: (trAdd ? b.model + ' ekledi: ' : b.model + ' says: ') + said, actions });
   } else if (/hand it over/.test(system)) {
     text = 'Summary by ' + b.model + ':\n' + String((last && last.content) || '');
   } else {
