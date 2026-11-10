@@ -4498,3 +4498,10 @@ html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rg
 #flow-hud [data-k="pjmeet"] .hud-tick input{flex:none;margin-top:2px}
 #flow-hud [data-k="pjmeet"] a,#flow-hud [data-k="pjmt"] a{color:#9fe0ff;text-decoration:none;font-weight:600}
 #flow-hud [data-k="pjmeet"] a:hover,#flow-hud [data-k="pjmt"] a:hover{text-decoration:underline}
+/* Sales reports: the add button on its own line; a report's name above its numbers, never on top of them */
+#flow-hud [data-k="sales"] label.hud-btn{display:inline-flex;align-items:center;margin:10px 0 12px}
+#flow-hud .hud-pjt summary{flex-wrap:wrap;row-gap:4px}
+#flow-hud .hud-pjt summary span{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}
+#flow-hud .hud-pjt summary small{flex:1 1 100%}
+#flow-hud .hud-apin{display:grid;grid-template-columns:64px 1fr;align-items:center;gap:8px;margin:4px 0}
+#flow-hud .hud-apin .hud-sel{min-height:32px;padding:6px 9px}

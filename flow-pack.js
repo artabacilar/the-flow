@@ -15750,7 +15750,10 @@ const Team = {
       const failed = x.status === 'send_failed';
       return '<div class="hud-ap' + (failed ? ' failed' : '') + '" data-id="' + esc(x.id) + '"><div class="hud-aph"><b data-i18n="off">' + esc(a.name) + '</b> wants to send ' + esc(x.kind === 'email' ? 'an email' : x.kind === 'message' ? 'a message' : x.kind === 'spend' ? 'money' : x.kind === 'post' ? 'a post' : x.kind === 'change' ? 'a change' : 'something') + '</div>' +
         '<div class="hud-apm" data-i18n="off">' + esc(x.summary) + '</div>' +
-        (d.to ? '<div class="hud-apl" data-i18n="off"><span>To</span>' + esc(d.to) + '</div>' : '') + (d.subject ? '<div class="hud-apl" data-i18n="off"><span>Subject</span>' + esc(d.subject) + '</div>' : '') +
+        (x.kind === 'email' && !failed
+          ? '<label class="hud-apl hud-apin" data-i18n="off"><span>To</span><input class="hud-sel" type="email" data-ap-to="' + esc(x.id) + '" value="' + esc(/@/.test(d.to || '') ? d.to : '') + '" placeholder="' + esc(/@/.test(d.to || '') ? '' : (d.to ? d.to + ' — ' : '') + 'name@company.com') + '" autocomplete="email" multiple></label>' +
+            '<label class="hud-apl hud-apin" data-i18n="off"><span>Subject</span><input class="hud-sel" type="text" data-ap-subject="' + esc(x.id) + '" value="' + esc(d.subject || '') + '" maxlength="200"></label>'
+          : (d.to ? '<div class="hud-apl" data-i18n="off"><span>To</span>' + esc(d.to) + '</div>' : '') + (d.subject ? '<div class="hud-apl" data-i18n="off"><span>Subject</span>' + esc(d.subject) + '</div>' : '')) +
         (d.body ? '<textarea class="hud-apb" data-ap-body="' + esc(x.id) + '" rows="5" aria-label="What would be sent" data-i18n="off"' + (failed ? ' readonly' : '') + '>' + esc(d.body) + '</textarea>' : '') +
         (failed ? '<p class="hud-alert" data-i18n="off">' + esc(x.error || 'It could not be sent.') + ' Nothing went out.</p>' : '<p class="hud-sub">' + (live ? 'Approving sends it now — once, exactly as shown — from ' + esc(a.name) + ' at The Flow\'s address, with replies to you.' : a.permissions === 'read' ? esc(a.name) + ' is read-only: approving records your yes, nothing is sent.' : 'Nothing is connected to send this yet: approving marks it to go once, exactly as shown, when the connection exists.') + '</p>') +
         '<div class="hud-row"><button type="button" class="hud-btn" data-hud="approve" data-id="' + esc(x.id) + '">' + (failed ? 'Try sending again' : live ? 'Approve and send' : 'Approve') + '</button><button type="button" class="hud-btn ghost" data-hud="reject" data-id="' + esc(x.id) + '">Decline</button></div></div>';
@@ -16765,7 +16768,11 @@ const Team = {
     if (a === 'approve' || a === 'reject') {
       const id = b.getAttribute('data-id'); const ta = Hud.el.querySelector('[data-ap-body="' + id + '"]');
       const item = ((Team.data && Team.data.approvals) || []).find((x) => x.id === id) || {};
-      const detail = ta && item.detail && ta.value !== item.detail.body ? Object.assign({}, item.detail, { body: ta.value }) : undefined;
+      const toEl = Hud.el.querySelector('[data-ap-to="' + id + '"]'), suEl = Hud.el.querySelector('[data-ap-subject="' + id + '"]');
+      const dd = item.detail || {};
+      const now = { to: toEl ? toEl.value.trim() : dd.to, subject: suEl ? suEl.value.trim() : dd.subject, body: ta ? ta.value : dd.body };
+      if (a === 'approve' && item.kind === 'email' && toEl && !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+(\s*[,;]\s*[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+)*$/.test(now.to)) { toast('Add the email address it goes to first.', 'bad', 2600); try { toEl.focus(); } catch (e) {} return; }
+      const detail = item.detail && (now.to !== dd.to || now.subject !== dd.subject || now.body !== dd.body) ? Object.assign({}, dd, now) : undefined;
       const j = await Team.post('/api/team/approve', { id, decision: a, detail });
       if (j && j.ok) { await Team.load(true); Hud.paint(); toast(a === 'approve' ? 'Approved — it goes once the connection exists' : 'Declined', null, 2600); }
       return;
