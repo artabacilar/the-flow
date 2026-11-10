@@ -160,6 +160,16 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const cut = await q.evaluate(() => ({ state: (document.querySelector('#flow-say .sy-state') || {}).textContent || '', bubble: !!document.querySelector('#flow-say .sy-b.streaming'), last: (FlowSay.history[FlowSay.history.length - 1] || {}).text }));
   ok('a stream cut off half way says so and leaves no half answer behind', /cut off/.test(cut.state) && !cut.bubble && cut.last === 'Right, the venue is on tomorrow.', cut);
   await q.unroute('**/api/flow/do');
+  const sse2 = ['open', 'Right. ', 'The venue is ', 'booked for ', 'tomorrow. And the ', 'band confirmed.'].map((v, i) => 'data: ' + JSON.stringify(i ? { t: 'd', v } : { t: 'open' }) + '\n\n').join('') +
+    'data: ' + JSON.stringify({ t: 'done', status: 200, body: { ok: true, say: 'Right. The venue is booked for tomorrow. And the band confirmed.', actions: [] } }) + '\n\n';
+  await q.route('**/api/flow/do', (rt) => rt.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: sse2 }));
+  await q.evaluate(() => { window.__fed = []; window.__said = []; const S = window.FlowSpeech; S.__f = S.streamFeed; S.__s = S.say; S.__m = S.mode; S.mode = () => 'device'; S.streamFeed = function (st, t) { window.__fed.push(t); }; S.say = function (t) { window.__said.push(t); return Promise.resolve(); }; });
+  await q.evaluate(() => { document.getElementById('sy-text').value = 'is the venue sorted'; FlowSay.typed = true; FlowSay.send(); });
+  await q.waitForTimeout(900);
+  const fd = await q.evaluate(() => ({ fed: window.__fed.slice(), said: window.__said.slice() }));
+  ok('he starts speaking at the first full stop: sentences go to the voice as they arrive, not the whole answer at the end', fd.fed[0] === 'Right.' && fd.fed.length >= 3 && fd.fed.join(' ').replace(/\s+/g, ' ').trim() === 'Right. The venue is booked for tomorrow. And the band confirmed.' && fd.said.length === 0, fd);
+  await q.evaluate(() => { const S = window.FlowSpeech; S.streamFeed = S.__f; S.say = S.__s; S.mode = S.__m; });
+  await q.unroute('**/api/flow/do');
   await q.evaluate(() => { const H = window.FlowHud; H.caption = H.__cap; delete H.__cap; });
   const px = await q.evaluate(() => { const cv = document.querySelector('#flow-hud .hud-orb'); return { square: Math.abs(cv.clientWidth - cv.clientHeight) <= 1, px: cv.width * cv.height, layer: getComputedStyle(cv).willChange }; });
   ok('the orb\'s canvas is square, within its pixel budget, and on its own layer', px.square && px.px <= 520000 * 1.05 && /transform/.test(px.layer), px);
