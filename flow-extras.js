@@ -2273,11 +2273,36 @@ function sayPrefix(buf) {
   return { text: out, closed: false };
 }
 
+/* The reply as an object, as forgivingly as is safe: the one balanced object
+   (not prose with braces around it), a stray trailing comma or curly quote
+   repaired, and — when the answer ran out of room before it closed, as a
+   long "what's on today" can — the spoken part rescued with no actions,
+   rather than nothing at all. */
+function doJson(text) {
+  const t = String(text || '').replace(/```(?:json)?/gi, '').trim();
+  const a = t.indexOf('{');
+  if (a >= 0) {
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let i = a; i < t.length; i++) {
+      const c = t[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true; else if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) { end = i; break; } }
+    }
+    const tries = [];
+    if (end > 0) tries.push(t.slice(a, end + 1));
+    const m = t.match(/\{[\s\S]*\}/); if (m) tries.push(m[0]);
+    for (const s of tries) for (const x of [s, s.replace(/,\s*([}\]])/g, '$1'), s.replace(/[“”]/g, '"').replace(/,\s*([}\]])/g, '$1'), s.replace(/\r?\n/g, ' ')]) { try { return JSON.parse(x); } catch (e) {} }
+  }
+  /* cut off before it closed: keep what he was saying */
+  const sm = t.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (sm && sm[1].trim()) {
+    let say = sm[1].replace(/\\$/, ''); try { say = JSON.parse('"' + say + '"'); } catch (e) {}
+    say = say.trim(); return { say: say + (/[.!?…]$/.test(say) ? '' : '…'), actions: [] };
+  }
+  return null;
+}
 function parseDo(text, known, max) {
-  const s = String(text || '');
-  const m = s.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  let j; try { j = JSON.parse(m[0]); } catch (e) { return null; }
+  const j = doJson(text);
   if (!j || typeof j !== 'object') return null;
   known = known || {};
   const rockIds = new Set((known.rocks || []).map((r) => String(r.id)));
@@ -2435,12 +2460,12 @@ async function handleDo(p, req, res, ctx) {
         const now = sayPrefix(soFar).text;
         if (now.length > sent2.length && now.indexOf(sent2) === 0) { sse({ t: 'd', v: now.slice(sent2.length) }); sent2 = now; }
       } : undefined;
-      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 1400, timeoutMs: 45000, onText });
+      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 3000, timeoutMs: 45000, onText });
       if (r2.error) return finish(r2.status === 429 ? 429 : 502, { error: r2.error });
       answer = r2.text;
       try { if (ctx.team && teamMod.bumpUsage) await teamMod.bumpUsage(ctx.team, 'jarvis', r2.usage, r2.model); } catch (e) {}
     } else {
-      const reqBody = { model: CHAT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: lines }] };
+      const reqBody = { model: CHAT_MODEL, max_tokens: 3000, system, messages: [{ role: 'user', content: lines }] };
       let r, u = null;
       if (sse) {
         let sent = '', inTok = 0, outTok = 0;
