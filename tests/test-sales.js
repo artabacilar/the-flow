@@ -85,6 +85,10 @@ const REPORT = [
   await pg.waitForTimeout(2500);
   const v = await pg.evaluate(() => ({ rows: [...document.querySelectorAll('#flow-hud [data-k="sales"] .hud-pjt')].map((x) => x.textContent), tasks: (FlowTeam.data.tasks || []).filter((t) => t.via === 'sales').map((t) => t.agent) }));
   ok('adding the file lists the report and puts Finance on the review', v.rows.length === 1 && /satis\.csv/.test(v.rows[0]) && /6 lines/.test(v.rows[0]) && v.tasks[0] === 'finance', v);
+  await pg.setViewportSize({ width: 390, height: 844 }); await pg.waitForTimeout(600);
+  const lay = await pg.evaluate(() => { const P = document.querySelector('#flow-hud [data-k="sales"]'); const r = (el) => el && el.getBoundingClientRect(); const p = r(P.querySelector('.hud-sub')), b = r(P.querySelector('label.hud-btn')), sp = r(P.querySelector('.hud-pjt summary span')), sm = r(P.querySelector('.hud-pjt summary small')); return { gapBtn: b.top - p.bottom, gapRow: sm.top - sp.bottom }; });
+  ok('on a phone the add button sits under the text, and a report\'s name sits above its numbers', lay.gapBtn >= 0 && lay.gapRow >= 0, lay);
+  await pg.setViewportSize({ width: 1380, height: 920 }); await pg.waitForTimeout(300);
   const bad = await pg.evaluate(async () => { const r = await fetch('/api/team/sales', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'n.csv', text: 'name,email\nx,y' }) }); return r.status; });
   ok('a file that is not a sales report is refused by the server', bad === 400);
   ok('no page errors', errs.length === 0, errs);
