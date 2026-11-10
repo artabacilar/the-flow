@@ -140,12 +140,14 @@ const post = (path, body, headers) => fetch(H + path, { method: 'POST', headers:
   let ap = (await api('/api/team/tasks')).j.approvals.find((x) => x.task === t2.j.task.id && x.status === 'pending');
   const nMail = (await mail()).n;
   await p.evaluate(async () => { await FlowTeam.load(true); FlowHud.paint(); }); await p.waitForTimeout(600);
-  const apUi = await p.evaluate(() => ({ btn: (document.querySelector('#flow-hud [data-hud="approve"]') || {}).textContent, line: (document.querySelector('#flow-hud .hud-ap .hud-sub') || {}).textContent }));
+  const apUi = await p.evaluate(() => ({ btn: (document.querySelector('#flow-hud [data-hud="approve"]') || {}).textContent, line: (document.querySelector('#flow-hud .hud-ap .hud-sub:not(.hud-apfrom)') || {}).textContent }));
   ok('the card says it will really be sent, once, in Sarah\'s name, with replies to you', /Approve and send/.test(apUi.btn || '') && /sends it now/.test(apUi.line || '') && /replies to you/.test(apUi.line || ''), apUi);
   const ed = await p.evaluate((id) => ({ to: (document.querySelector('#flow-hud [data-ap-to="' + id + '"]') || {}).value, subject: (document.querySelector('#flow-hud [data-ap-subject="' + id + '"]') || {}).value }), ap.id);
   ok('the address and the subject can be changed on the card before the yes', ed.to === ap.detail.to && ed.subject === ap.detail.subject, ed);
   await p.fill('#flow-hud [data-ap-to="' + ap.id + '"]', 'Azize (address to add)'); await p.click('#flow-hud [data-hud="approve"][data-id="' + ap.id + '"]'); await p.waitForTimeout(600);
   ok('without a real address, the yes is refused on the card and nothing is sent', (await mail()).n === nMail && (await api('/api/team/tasks')).j.approvals.find((x) => x.id === ap.id).status === 'pending');
+  const fromNone = await p.evaluate((id) => { const sel = document.querySelector('#flow-hud [data-ap-from="' + id + '"]'); return sel && [...sel.options].map((o) => o.value); }, ap.id);
+  ok('the card has a From choice; with no account allowed to send, only The Flow\'s address, and it says how to add his', JSON.stringify(fromNone) === '["flow"]' && await p.evaluate(() => /Settings → Connections/.test((document.querySelector('#flow-hud .hud-apfrom') || {}).textContent || '')), fromNone);
   const d1 = await api('/api/team/approve', { id: ap.id, decision: 'approve', detail: Object.assign({}, ap.detail, { body: 'Dear customer, your refund is on its way.' }) });
   const m1 = await mail();
   ok('approving sends it — exactly the edited text, from the verified address, in Sarah\'s name, reply-to the owner, with the honest footer', d1.j.ok && d1.j.approval.status === 'executed' && m1.n === nMail + 1 && m1.last.text.indexOf('Dear customer, your refund is on its way.') === 0 && /^Sarah for Artur <mail@theflow\.today>$/.test(m1.last.from) && m1.last.to[0] === 'customer@example.com' && /AI assistant working for Artur/.test(m1.last.text) && /approved by them/.test(m1.last.text) && m1.last.reply_to === process.env.FLOW_OWNER_EMAIL, { st: d1.j.approval && d1.j.approval.status, mail: m1.last });
@@ -162,11 +164,39 @@ const post = (path, body, headers) => fetch(H + path, { method: 'POST', headers:
   const d3 = await api('/api/team/approve', { id: ap.id, decision: 'approve' });
   ok('a read-only agent\'s approved email is NOT sent, and the note says so', d3.j.approval.status === 'awaiting_tool' && /read-only/.test(d3.j.approval.note) && (await mail()).n === nMail + 1, d3.j.approval);
   await api('/api/team/agent/update', { id: 'sarah', permissions: 'draft' });
+  /* from one of his own accounts */
+  await api('/api/team/_sender', { provider: 'gsend', email: 'artur@abko.example' });
+  await api('/api/team/_sender', { provider: 'osend', email: 'artur@outlook.example' });
+  const tFrom = await api('/api/team/task', { agent: 'sarah', title: 'Note from his address', brief: 'Draft an email to the customer about the invoice', lang: 'en' });
+  await until(async () => { const r = await api('/api/team/tasks'); const t = r.j.tasks.find((x) => x.id === tFrom.j.task.id); return t && t.status === 'awaiting_approval'; }, 20000);
+  const apFrom = (await api('/api/team/tasks')).j.approvals.find((x) => x.task === tFrom.j.task.id && x.status === 'pending');
+  await p.evaluate(async () => { await FlowTeam.load(true); FlowHud.paint(); }); await p.waitForTimeout(600);
+  const optsFrom = await p.evaluate((id) => [...document.querySelector('#flow-hud [data-ap-from="' + id + '"]').options].map((o) => o.value), apFrom.id);
+  ok('each address he allowed to send is offered: Google and Outlook alike', optsFrom.indexOf('gsend:artur@abko.example') > 0 && optsFrom.indexOf('osend:artur@outlook.example') > 0, optsFrom);
+  await p.selectOption('#flow-hud [data-ap-from="' + apFrom.id + '"]', 'gsend:artur@abko.example'); await p.waitForTimeout(200);
+  ok('choosing it says the email goes from there, into its Sent folder', /Sent folder/.test(await p.evaluate((id) => document.querySelector('#flow-hud .hud-ap[data-id="' + id + '"] .hud-sub:not(.hud-apfrom)').textContent, apFrom.id)));
+  const nFrom = (await mail()).n;
+  await p.click('#flow-hud [data-hud="approve"][data-id="' + apFrom.id + '"]'); await p.waitForTimeout(1200);
+  const mFrom = await mail(); const doneFrom = (await api('/api/team/tasks')).j.approvals.find((x) => x.id === apFrom.id);
+  ok('approving sends it once, from his own address — not The Flow\'s, with no assistant footer', mFrom.n === nFrom + 1 && mFrom.last.from === 'artur@abko.example' && mFrom.last.account === 'gsend:artur@abko.example' && doneFrom.status === 'executed' && /from artur@abko\.example/.test(doneFrom.note), { last: mFrom.last, note: doneFrom.note });
+  ok('the address he chose is remembered for the next one', await p.evaluate(() => localStorage.getItem('flow:mailFrom')) === 'gsend:artur@abko.example');
+  /* saved addresses */
+  const ct = await api('/api/team/contacts');
+  ok('every address an approved email went to is saved', ct.j.contacts.some((c) => c.email === 'customer@example.com' && c.uses >= 1), ct.j.contacts);
+  const addC = await api('/api/team/contacts', { name: 'Azize Sungar', email: 'azize.sungar@abko.example' });
+  ok('he can save one by hand, with a name', addC.j.ok && addC.j.contacts.some((c) => c.email === 'azize.sungar@abko.example' && c.name === 'Azize Sungar'));
+  ok('…and the team knows it for the next draft', (await api('/api/team')).j.knowledge.some((k) => /Azize Sungar's email address is azize\.sungar@abko\.example/.test(k.text)));
+  ok('a bad address is refused', (await api('/api/team/contacts', { name: 'x', email: 'not-an-address' })).status === 400);
+  await p.evaluate(async () => { await FlowTeam.load(true); FlowHud.paint(); }); await p.waitForTimeout(500);
+  const ctUi = await p.evaluate(() => ({ panel: !!document.querySelector('#flow-hud [data-k="contacts"] form[data-team="ctadd"]'), list: [...document.querySelectorAll('#hud-contacts option')].map((o) => o.value), pre: FlowTeam.toFor({ to: 'Azize (e-posta adresi eklenmeli)' }) }));
+  ok('his room lists them, the To field offers them, and a draft that only names Azize gets her address', ctUi.panel && ctUi.list.indexOf('azize.sungar@abko.example') >= 0 && ctUi.pre === 'azize.sungar@abko.example', ctUi);
+  await api('/api/team/contacts', { op: 'remove', email: 'azize.sungar@abko.example' });
+  ok('…and removes one', !(await api('/api/team/contacts')).j.contacts.some((c) => c.email === 'azize.sungar@abko.example'));
   /* approve by text */
   const t4 = await api('/api/team/task', { agent: 'sarah', title: 'Third email', brief: 'Draft an email to the customer about the invoice', lang: 'en' });
   await until(async () => { const r = await api('/api/team/tasks'); const t = r.j.tasks.find((x) => x.id === t4.j.task.id); return t && t.status === 'awaiting_approval'; }, 20000);
   await tg(4242, '/yes 1'); await wait(900);
-  ok('"/yes 1" from Telegram sends it and the reply says "Sent", with the address', (await mail()).n === nMail + 2 && /^Sent: /.test((await sentNow()).last.body.text) && /customer@example\.com/.test((await sentNow()).last.body.text), (await sentNow()).last.body.text);
+  ok('"/yes 1" from Telegram sends it and the reply says "Sent", with the address', (await mail()).n === nMail + 3 && /^Sent: /.test((await sentNow()).last.body.text) && /customer@example\.com/.test((await sentNow()).last.body.text), (await sentNow()).last.body.text);
 
   console.log('\n— reading the web inside work and chat —');
   const t5 = await api('/api/team/task', { agent: 'tom', title: 'Prices', brief: 'read ' + H + '/_page/plain and report the prices', lang: 'en' });

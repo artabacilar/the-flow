@@ -255,7 +255,7 @@ const first = (v) => { if (!v) return null; const o = JSON.parse(v); return Arra
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
   const gBlock = code.slice(code.indexOf('  google: {'), code.indexOf('  gcal: {'));
   ok('the profile connection still needs no client secret', gBlock.length > 100 && !/secret/i.test(gBlock));
-  ok('the secret is read only from the environment, for Calendar and Gmail', (code.match(/GOOGLE_CLIENT_SECRET/g) || []).length === 2);
+  ok('the secret is read only from the environment, for Calendar, Gmail and sending', (code.match(/GOOGLE_CLIENT_SECRET/g) || []).length === 3);
   ok('account deletion purges connections', /connect\.purgeUser\(raw, uid\)/.test(auth));
   ok('and WHOOP\'s refresh token, which it used to leave behind', /raw\.set\('whoop:tok:' \+ uid, ''\)/.test(auth));
 
