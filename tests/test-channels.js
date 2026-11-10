@@ -99,6 +99,13 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   await tg(777, 'track stretching daily'); await wait(1200);
   const hb = await api('/api/get?key=ld_habits'); let hv = hb.j && hb.j.value; if (typeof hv === 'string') hv = JSON.parse(hv);
   ok('…and start a habit', !!hv && hv.habits.some((h) => /stretching/i.test(h.name)), hv && hv.habits.map((h) => h.name));
+  await tg(777, 'cuma günü Kadir Yıldız ile toplantı ekle'); await wait(1500); s1 = await sentNow();
+  rk = (await rocksNow()).find((r) => /Kadir Yıldız ile toplantı/.test(r.title));
+  ok('in Turkish too: "cuma günü … ekle" is a Priority on Friday, and the answer is in Turkish', !!rk && rk.day === 4 && /ekledi/.test(s1.last.body.text), { rk, said: s1.last.body.text.slice(0, 120) });
+  const PD = require('../flow-mcp.js')._internals.parseDay; const tue = new Date('2026-11-10T10:00:00');
+  ok('Turkish days are read: cuma, yarın, haftaya salı, pazar günü', PD('cuma', tue).getDate() === 13 && PD('yarın', tue).getDate() === 11 && PD('haftaya salı', tue).getDate() === 17 && PD('pazar günü', tue).getDate() === 15);
+  const CH = require('fs').readFileSync(require('path').join(__dirname, '..', 'flow-channels.js'), 'utf8');
+  ok('he is told to take commands in Turkish or English and answer in the language of the message; /evet and /hayır work', /Turkish, English, or both mixed/.test(CH) && /language of their LAST message/.test(CH) && /c === 'evet'/.test(CH) && /c === 'hayır'/.test(CH));
   await tg(777, 'have sarah draft a reply to the refund question'); await wait(2500);
   const tl = await api('/api/team/tasks');
   const viaTg = tl.j.tasks.find((t) => t.via === 'telegram');
