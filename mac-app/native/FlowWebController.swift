@@ -26,6 +26,9 @@ final class FlowWebController: NSViewController, WKNavigationDelegate, WKUIDeleg
            non-persistent one, or the app signs itself out every launch. */
         config.websiteDataStore = .default()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        /* J.A.R.V.I.S. answers seconds after he asks: let the page play
+           sound without a fresh click each time (the iPhone app does the same). */
+        config.mediaTypesRequiringUserActionForPlayback = []
 
         let controller = WKUserContentController()
         controller.add(self, name: FlowMacBridge.channel)
