@@ -13607,7 +13607,11 @@ const Speech = {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
     if (!Speech.ac) Speech.ac = new AC();
     const ac = Speech.ac;
-    try { if (ac.state === 'suspended') await ac.resume(); } catch (e) {}
+    try { if (ac.state === 'suspended') await Promise.race([ac.resume(), new Promise((r) => setTimeout(r, 600))]); } catch (e) {}
+    /* A web view that has not been touched yet keeps audio locked (the Mac
+       app's WKWebView): a buffer started then plays to nobody. Say so, and
+       let the device voice speak instead. */
+    if (ac.state !== 'running') return false;
     let audio;
     try { audio = await new Promise((ok, no) => { const pr = ac.decodeAudioData(buf.slice(0), ok, no); if (pr && pr.then) pr.then(ok, no); }); } catch (e) { return false; }
     if (my !== Speech.token) return true;
@@ -13668,6 +13672,10 @@ const Speech = {
   }
 };
 window.FlowSpeech = Speech;
+/* Any touch, click or key unlocks audio for what he will say later: browsers
+   and the Mac and iPhone web views only let sound start from a gesture, and
+   a reply arrives seconds after the one that asked for it. */
+(() => { const wake = () => { try { if (!Speech.ac || Speech.ac.state !== 'running' || !Speech.primed) Speech.unlock(); } catch (e) {} }; ['pointerdown', 'keydown', 'touchend'].forEach((t) => document.addEventListener(t, wake, { capture: true, passive: true })); })();
 
 const Say = {
   el: null, busy: false, waiting: false, spoken: false, plan: null, said: '',
