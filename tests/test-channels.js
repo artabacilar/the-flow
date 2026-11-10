@@ -124,6 +124,11 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   await post('/api/channels/telegram', { message: { chat: { id: 777, type: 'private' }, from: { id: 777, first_name: 'Artur' }, photo: [{ file_id: 'ph-0', width: 90 }, { file_id: 'ph-1', width: 1280 }], caption: 'Add this to my schedule' } }, { 'x-telegram-bot-api-secret-token': tgSecret });
   await wait(1500); s1 = await sentNow();
   ok('a photo sent on Telegram is read by J.A.R.V.I.S. (the largest size), with what he was asked', /read photo \(photo\)/.test(s1.last.body.text) && /Add this to my schedule/.test(s1.last.body.text), s1.last.body.text.slice(0, 160));
+  await post('/api/channels/_file', { id: 'au-1', data: Buffer.from('Speaker 1: We calculate salon travel at 8 lira per kilometre.').toString('base64') });
+  await post('/api/channels/telegram', { message: { chat: { id: 777, type: 'private' }, from: { id: 777, first_name: 'Artur' }, audio: { file_id: 'au-1', file_name: 'call.m4a', mime_type: 'audio/mp4', duration: 400 } } }, { 'x-telegram-bot-api-secret-token': tgSecret });
+  await wait(2500); s1 = await sentNow();
+  const recs = await api('/api/team/recordings');
+  ok('an audio or video file sent on Telegram is listened to as a recording, and he says so', s1.recent.some((m) => /Listening to "call\.m4a"/.test(m.body.text)) && recs.j.recordings.some((r) => r.name === 'call.m4a' && r.via === 'telegram'), { said: s1.recent.map((m) => m.body.text.slice(0, 60)), recs: recs.j.recordings.map((r) => [r.name, r.status]) });
   await tg(777, 'have sarah draft a reply to the refund question'); await wait(2500);
   const tl = await api('/api/team/tasks');
   const viaTg = tl.j.tasks.find((t) => t.via === 'telegram');
