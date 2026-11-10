@@ -82,9 +82,19 @@ window.__say = function (text, isFinal) {
 
   console.log('\n— he never hears himself —');
   await p.evaluate(() => { window.__sp = FlowSpeech.speaking; FlowSpeech.speaking = () => true; FlowWake.tick(); });
-  ok('while he speaks, the ear is shut', await p.evaluate(() => !(FlowVoice.listening && FlowVoice.sink) && !FlowWake.mine));
+  ok('while he speaks, the ear is shut — or, with no request open, open for his name only', await p.evaluate(() => FlowWake.phase === 'idle' ? FlowWake.barge === true : (!(FlowVoice.listening && FlowVoice.sink) && !FlowWake.mine)));
   await p.evaluate(() => { FlowSpeech.speaking = window.__sp; FlowWake.tick(); }); await p.waitForTimeout(200);
   ok('and opens again when he stops', await p.evaluate(() => FlowVoice.listening && !!FlowVoice.sink));
+
+  console.log('\n— talking over him —');
+  await p.evaluate(() => { FlowSay.close(); FlowWake.reset(); window.__stops = 0; window.__st = FlowSpeech.stop; FlowSpeech.stop = () => { window.__stops++; }; window.__sp2 = FlowSpeech.speaking; FlowSpeech.speaking = () => true; FlowWake.tick(); });
+  ok('while he speaks unasked, the ear stays open for his name only', await p.evaluate(() => FlowVoice.listening && !!FlowVoice.sink && FlowWake.mine && FlowWake.barge));
+  await p.evaluate(() => window.__say('the weather today is fine sir', true)); await p.waitForTimeout(300);
+  ok('his own words (or anything else) do not stop him', await p.evaluate(() => window.__stops === 0 && FlowWake.phase === 'idle'));
+  await p.evaluate(() => window.__say('hey Jarvis skip the weather', false)); await p.waitForTimeout(300);
+  const bi = await p.evaluate(() => ({ stops: window.__stops, phase: FlowWake.phase, live: (document.querySelector('#flow-say .sy-live') || {}).textContent }));
+  ok('"Hey Jarvis" over him: he stops talking and listens to what follows', bi.stops >= 1 && bi.phase === 'cmd' && bi.live === 'skip the weather', bi);
+  await p.evaluate(() => { FlowSpeech.speaking = window.__sp2; FlowSpeech.stop = window.__st; FlowSay.close(); FlowWake.reset(); FlowWake.tick(); });
 
   console.log('\n— the console by hand —');
   await p.evaluate(() => { FlowSay.close(); FlowWake.tick(); }); await p.waitForTimeout(300);
