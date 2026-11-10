@@ -1579,8 +1579,35 @@ async function modelJson(ctx, system, user, maxTokens, model, opts) {
   const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: maxTokens || 2500, timeoutMs: (opts && opts.timeoutMs) || 60000 });
   if (r.error) return why(String(r.error).slice(0, 160));
   try { await bumpUsage(ctx, 'jarvis', r.usage, which.model); } catch (e) {}
-  const m = String(r.text || '').match(/[\[{][\s\S]*[\]}]/); if (!m) return why('the answer had no JSON');
-  try { return JSON.parse(m[0]); } catch (e) { return why('the answer was cut off or not valid JSON (' + String(r.text || '').length + ' chars)'); }
+  const got = looseJson(r.text);
+  if (got !== undefined) return got;
+  if (!String(r.text || '').match(/[\[{]/)) return why('the answer had no JSON');
+  if (opts && opts.repair) {
+    /* one more go: the model mends its own answer (usually an unescaped quote from a transcript) */
+    const r2 = await complete({ model: which.model, system: 'You fix broken JSON. Return ONLY the corrected JSON, same content, every string properly escaped, nothing else.', messages: [{ role: 'user', content: String(r.text).slice(0, 40000) }], maxTokens: maxTokens || 2500, timeoutMs: (opts && opts.timeoutMs) || 60000 });
+    if (!r2.error) { try { await bumpUsage(ctx, 'jarvis', r2.usage, which.model); } catch (e) {} const g2 = looseJson(r2.text); if (g2 !== undefined) return g2; }
+  }
+  return why('the answer was cut off or not valid JSON (' + String(r.text || '').length + ' chars' + (r.stop ? ', ' + r.stop : '') + ')');
+}
+/* JSON out of a model's answer: fences, a sentence around it, trailing commas,
+   curly quotes used as JSON quotes. undefined when nothing parses. */
+function looseJson(text) {
+  let t = String(text || '').replace(/```(?:json)?/gi, '').trim();
+  const tries = [];
+  const a = t.search(/[\[{]/); if (a < 0) return undefined;
+  const open = t[a], close = open === '{' ? '}' : ']';
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = a; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true; else if (c === open) depth++; else if (c === close) { depth--; if (!depth) { end = i; break; } }
+  }
+  if (end > 0) tries.push(t.slice(a, end + 1));
+  const m = t.match(/[\[{][\s\S]*[\]}]/); if (m) tries.push(m[0]);
+  for (const s of tries) {
+    for (const x of [s, s.replace(/,\s*([}\]])/g, '$1'), s.replace(/[\u201c\u201d]/g, '"').replace(/,\s*([}\]])/g, '$1')]) { try { return JSON.parse(x); } catch (e) {} }
+  }
+  return undefined;
 }
 function ctxDeps() {
   return {
@@ -1599,7 +1626,7 @@ function projDeps() {
   return {
     fake: FAKE,
     agents: (ctx) => agents(ctx), knowledge: (ctx) => knowledge(ctx), tasks: (ctx) => tasks(ctx),
-    modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens, null, { timeoutMs: 170000 }),
+    modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens, null, { timeoutMs: 170000, repair: true }),
     newTask: (ctx, uid, f) => newTask(ctx, uid, f),
     log: (ctx, who, what) => log(ctx, who, what),
     /* what a meeting taught the team: shared, current, with the meeting as its source */

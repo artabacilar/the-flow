@@ -43,11 +43,11 @@ async function meetingsOf(ctx) { const v = await ctx.get('ld_meetings'); return 
 function system(owner) {
   return [
     'You are J.A.R.V.I.S., chief of staff to ' + (owner || 'the owner') + ', who runs ABKO and other ventures. A meeting he recorded has just come in. Read it like a sharp chief of staff and decide what happens next — he has asked you to act on it without asking him.',
-    'Return ONLY one JSON object:',
+    'Return ONLY one valid JSON object (no prose, no code fence; escape any double quote inside a string as \\"):',
     '{',
     '  "summary": "two sentences: what was decided and why it matters for the business",',
     '  "projects": [ { "id": "an existing project id, or empty", "name": "short project name (only for a new one)", "goal": "one sentence (only for a new one)", "status": "where it stands after this meeting, one or two sentences", "health": "on_track | at_risk | blocked", "next": ["the next steps, short, up to 5"] } ],',
-    '  "facts": [ { "text": "one self-contained sentence worth remembering for the business", "kind": "fact | rule | preference", "quote": "the short passage it comes from" } ],',
+    '  "facts": [ { "text": "one self-contained sentence worth remembering for the business", "kind": "fact | rule | preference" } ],',
     '  "delegate": [ { "agent": "an agent id from TEAM", "title": "short", "brief": "everything needed to do it well: the context from the meeting, who is involved, what a good result looks like, any deadline said", "project": "the project id or name it belongs to" } ],',
     '  "ideas": [ { "title": "an improvement or opportunity for ABKO you noticed", "why": "one sentence" } ]',
     '}',
