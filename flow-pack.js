@@ -16224,6 +16224,7 @@ const Team = {
       const j = await Team.post('/api/team/projects', { op: 'process', meeting: id });
       Team.pjBusy = '';
       if (j && j.ok) { Team.pj = j.view; if (j.projects && j.projects[0]) Team.pjOpen = j.projects[0].id; toast(j.say || 'Read', null, 4200); try { await Team.load(true); } catch (e) {} }
+      else if (!j || !j.error) { toast('Still reading — it can take a minute or two. This page updates when he is done.', null, 4200); setTimeout(async () => { await Team.loadPj(true); if (Hud.on && Team.sel === 'projects') Hud.paint(); }, 60000); }
       Hud.paint(); return true;
     }
     if (a === 'pjask') {

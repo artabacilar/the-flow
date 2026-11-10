@@ -1571,15 +1571,16 @@ function setupDeps() {
   };
 }
 /* ---------- business context: what the module needs from here ------------------ */
-async function modelJson(ctx, system, user, maxTokens, model) {
+async function modelJson(ctx, system, user, maxTokens, model, opts) {
   if (FAKE) return null;
-  const list = await agents(ctx); const j = list.find((x) => x.id === 'jarvis'); const which = (model && await resolveModel(model)) || (j && await resolveModel(j.model)); if (!which) return null;
-  const bud = await budget(ctx); if (bud.over) return null;
-  const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: maxTokens || 2500, timeoutMs: 60000 });
-  if (r.error) return null;
+  const why = (w) => { try { ctx.lastModelError = w; } catch (e) {} return null; };
+  const list = await agents(ctx); const j = list.find((x) => x.id === 'jarvis'); const which = (model && await resolveModel(model)) || (j && await resolveModel(j.model)); if (!which) return why('no model with a key');
+  const bud = await budget(ctx); if (bud.over) return why('the monthly limit is reached');
+  const r = await complete({ model: which.model, system, messages: [{ role: 'user', content: user }], maxTokens: maxTokens || 2500, timeoutMs: (opts && opts.timeoutMs) || 60000 });
+  if (r.error) return why(String(r.error).slice(0, 160));
   try { await bumpUsage(ctx, 'jarvis', r.usage, which.model); } catch (e) {}
-  const m = String(r.text || '').match(/[\[{][\s\S]*[\]}]/); if (!m) return null;
-  try { return JSON.parse(m[0]); } catch (e) { return null; }
+  const m = String(r.text || '').match(/[\[{][\s\S]*[\]}]/); if (!m) return why('the answer had no JSON');
+  try { return JSON.parse(m[0]); } catch (e) { return why('the answer was cut off or not valid JSON (' + String(r.text || '').length + ' chars)'); }
 }
 function ctxDeps() {
   return {
@@ -1598,7 +1599,7 @@ function projDeps() {
   return {
     fake: FAKE,
     agents: (ctx) => agents(ctx), knowledge: (ctx) => knowledge(ctx), tasks: (ctx) => tasks(ctx),
-    modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens),
+    modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens, null, { timeoutMs: 170000 }),
     newTask: (ctx, uid, f) => newTask(ctx, uid, f),
     log: (ctx, who, what) => log(ctx, who, what),
     /* what a meeting taught the team: shared, current, with the meeting as its source */

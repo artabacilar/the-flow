@@ -112,9 +112,9 @@ async function processMeeting(ctx, deps, uid, m, opts) {
   const owner = ctx.user && (ctx.user.name || ctx.user.email);
   let read = null;
   if (deps.fake) read = fakeRead(m, list, agentList);
-  else read = await deps.modelJson(ctx, system(owner), userMsg(m, list, agentList, know), 3500);
+  else read = await deps.modelJson(ctx, system(owner), userMsg(m, list, agentList, know), 8000);
   read = cleanRead(read, agentList.map((a) => a.id));
-  if (!read) return { error: 'J.A.R.V.I.S. could not read that meeting just now (no model, the monthly limit, or an unreadable answer). It will be tried again.', status: 502 };
+  if (!read) { const w = ctx.lastModelError || 'no answer'; if (deps.log) await deps.log(ctx, 'jarvis', 'Could not read "' + m.title + '": ' + w); return { error: 'J.A.R.V.I.S. could not read that meeting just now: ' + w + '. Press "Let him read it" to try again.', status: 502 }; }
 
   const now = Date.now();
   /* 1. projects */
