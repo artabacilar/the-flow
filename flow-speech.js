@@ -139,6 +139,48 @@ async function transcribe(audio, lang) {
   } catch (e) { return { error: 'Transcription failed: ' + str(e.message, 100) }; }
 }
 
+/* A whole recording — a meeting, a call, a video — not a voice note: no
+   length cap, the language detected (Turkish, English or both), and who
+   spoke when the provider can tell (ElevenLabs Scribe diarises). The file
+   goes up as it is: Scribe takes audio and video alike. */
+const EXT = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/flac': 'flac', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-matroska': 'mkv', 'video/mpeg': 'mpeg' };
+async function transcribeFile(buffer, mime, name) {
+  const started = Date.now();
+  const p = sttProvider();
+  if (!p) return { error: 'Recordings need a speech-to-text key on the server: ELEVENLABS_API_KEY or OPENAI_API_KEY.', missing: true };
+  if (p === 'fake') { const t = buffer.toString('utf8'); return { text: /^[\x09\x0a\x0d\x20-\x7e\u00a0-\uffff]*$/.test(t) ? t : 'fake transcript', lang: 'en', provider: 'fake', ms: 1 }; }
+  const ext = EXT[String(mime || '').toLowerCase()] || (String(name || '').match(/\.([a-z0-9]{2,5})$/i) || [])[1] || 'mp4';
+  try {
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mime || 'application/octet-stream' }), 'recording.' + ext);
+    if (p === 'elevenlabs') {
+      form.append('model_id', 'scribe_v1'); form.append('diarize', 'true'); form.append('tag_audio_events', 'false');
+      const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': env('ELEVENLABS_API_KEY') }, body: form });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j) return { error: 'Transcription failed (' + r.status + (j && j.detail && j.detail.message ? ': ' + str(j.detail.message, 120) : '') + ').' };
+      /* who said what, when there was more than one voice */
+      let text = String(j.text || '');
+      const words = Array.isArray(j.words) ? j.words.filter((w) => w && w.type !== 'spacing' && w.text) : [];
+      const speakers = new Set(words.map((w) => w.speaker_id).filter(Boolean));
+      if (speakers.size > 1) {
+        const lines = []; let cur = null, buf = [];
+        const label = (id) => 'Speaker ' + (String(id).replace(/\D+/g, '') ? Number(String(id).replace(/\D+/g, '')) + 1 : id);
+        for (const w of words) { if (w.speaker_id !== cur) { if (buf.length) lines.push(label(cur) + ': ' + buf.join(' ')); cur = w.speaker_id; buf = []; } buf.push(w.text); }
+        if (buf.length) lines.push(label(cur) + ': ' + buf.join(' '));
+        text = lines.join('\n').replace(/ ([.,!?;:])/g, '$1');
+      }
+      const last = words.length ? words[words.length - 1].end : 0;
+      return { text, lang: j.language_code ? (String(j.language_code).indexOf('tur') === 0 ? 'tr' : 'en') : '', speakers: speakers.size, seconds: Math.round(Number(last) || 0), provider: p, ms: Date.now() - started };
+    }
+    if (buffer.length > 25 * 1024 * 1024) return { error: 'That recording is over 25 MB, the most OpenAI transcribes at once. Add ELEVENLABS_API_KEY for long recordings, or send a shorter part.' };
+    form.append('model', 'whisper-1');
+    const r = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + env('OPENAI_API_KEY') }, body: form });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j) return { error: 'Transcription failed (' + r.status + ').' };
+    return { text: String(j.text || ''), lang: '', provider: p, ms: Date.now() - started };
+  } catch (e) { return { error: 'Transcription failed: ' + str(e.message, 100) }; }
+}
+
 /* ---------- synthesis (out) ------------------------------------------------- */
 /* Trim to the preset's length at a sentence end, so a long answer is not cut mid-word. */
 function trimForSpeech(text, limit) {
@@ -184,4 +226,4 @@ async function command(ctx, rest, channel, wsId) {
   return 'I do not know /voice ' + a + '. /voice on its own shows the choices.';
 }
 
-module.exports = { PRESETS, LENGTHS, DEFAULT, providers, sttProvider, ttsProvider, status, settings, saveSettings, voiceFor, setVoice, telegramVoice, transcribe, trimForSpeech, synthesize, command, describe };
+module.exports = { PRESETS, LENGTHS, DEFAULT, providers, sttProvider, ttsProvider, status, settings, saveSettings, voiceFor, setVoice, telegramVoice, transcribe, transcribeFile, trimForSpeech, synthesize, command, describe };

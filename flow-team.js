@@ -59,6 +59,7 @@ const mail = require('./flow-mail');
 const plugins = require('./flow-plugins');
 const projectsMod = require('./flow-projects');
 const salesMod = require('./flow-sales');
+const recMod = require('./flow-recordings');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -496,6 +497,7 @@ async function handle(p, req, res, ctx) {
   if (await handleRank(p, req, res, ctx)) return true;
   if (await projectsMod.handle(p, req, res, ctx, projDeps())) return true;
   if (await salesMod.handle(p, req, res, ctx, salesDeps())) return true;
+  if (await recMod.handle(p, req, res, ctx, recDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -1081,7 +1083,7 @@ function start(deps) {
   channelsTo = typeof deps.channels === 'function' ? deps.channels : null;
   usersFn = deps.users;
   usersKey = deps.usersKey || '';
-  rawStore = deps.raw;
+  rawStore = deps.raw; nsPrefixFn = deps.nsPrefix;
   rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
   /* the morning briefing: a minute tick, in each person's own clock */
   if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
@@ -1210,7 +1212,10 @@ async function decide(ctx, id, decision, detail) {
  * the owner. The footer says what it is: an assistant's message, approved by
  * a person. In the test stand-in nothing leaves; the call is recorded. */
 const mailSent = [];
-let rawStore = null;
+let rawStore = null; let nsPrefixFn = null;
+/* his planner, in the app's own stored shapes (flow-mcp's writes) */
+function plannerStore(uid) { if (!rawStore || !nsPrefixFn || !uid) return null; const pre = nsPrefixFn(uid); return { get: (k) => rawStore.get(pre + k), set: (k, v) => rawStore.set(pre + k, v) }; }
+async function addRockFor(ctx, uid, f) { const store = plannerStore(uid || (ctx.user && ctx.user.id)); if (!store) throw new Error('the planner is not reachable here'); const I = require('./flow-mcp')._internals.IMPL; return I.add_rock({ title: f.title, day: f.day, time: f.time, note: f.note }, { store, now: new Date() }); }
 let connectMod = null;
 function connectLib() { if (connectMod === null) { try { connectMod = require('./flow-connect'); } catch (e) { connectMod = false; } } return connectMod || null; }
 /* FAKE only: sending accounts a test has added */
@@ -1720,11 +1725,20 @@ function projDeps() {
       return { added, ids };
     },
     notify: async (uid, ctx, text, data) => {
-      if (pushTo) { try { await pushTo(uid, { title: 'J.A.R.V.I.S. read your meeting', body: str(text, 170), thread: 'team', data: Object.assign({ team: 'projects' }, data || {}) }); } catch (e) {} }
+      if (pushTo) { try { await pushTo(uid, { title: data && /^rec:/.test(String(data.meeting || '')) ? 'J.A.R.V.I.S. listened to your recording' : 'J.A.R.V.I.S. read your meeting', body: str(text, 170), thread: 'team', data: Object.assign({ team: 'projects' }, data || {}) }); } catch (e) {} }
       if (channelsTo) { try { await channelsTo(uid, text, { what: 'meeting' }); } catch (e) {} }
     }
   };
 }
+/* recordings: heard, read like a meeting, his own action items on his week (flow-recordings) */
+function recDeps() {
+  return {
+    transcribe: async (buf, mime, name) => { let sp = null; try { sp = require('./flow-speech'); } catch (e) {} if (!sp || !sp.transcribeFile) return { error: 'Transcription is not available on this server.' }; return sp.transcribeFile(buf, mime, name); },
+    read: async (ctx, uid, m) => projectsMod.processMeeting(ctx, Object.assign(projDeps(), { addRock: addRockFor }), uid, m, { mine: true, again: true })
+  };
+}
+async function recordingIngest(ctx, uid, input) { return recMod.ingest(ctx, recDeps(), uid, input); }
+async function recall(ctx, question) { try { return recMod.recallText(await recMod.recall(ctx, question)); } catch (e) { return ''; } }
 /* sales reports: the Finance assistant reviews them (flow-sales) */
 function salesDeps() {
   let st = null; try { st = require('./flow-extras')._internals.statement; } catch (e) {}
@@ -2095,4 +2109,7 @@ module.exports.providers = providers;
 module.exports.forJarvis = forJarvis;
 module.exports.meetingsFiled = meetingsFiled;
 module.exports.salesIngest = salesIngest;
+module.exports.recordingIngest = recordingIngest;
+module.exports.recall = recall;
+module.exports.isMedia = recMod.isMedia;
 module.exports._internals = { PROVIDERS, TEMPLATES, STARTER_IDS, TEMPLATE_IDS, MANNERS, agentSystem, parseReply, fromTemplate, setPost: (f) => { post = f; }, DEFAULT_MODEL };

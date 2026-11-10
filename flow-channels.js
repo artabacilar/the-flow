@@ -408,8 +408,9 @@ async function jarvis(ctx, uid, channel, text, meta) {
   }
   const messages = hist.concat([{ role: 'user', content }]);
   const planner = await plannerView(ctx);
+  let recalled = ''; try { if (team.recall && text && text.length > 12) recalled = await team.recall(ctx, text); } catch (e) {}
   const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot, planner).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
-    (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
+    (recalled ? '\n\nFROM HIS RECORDINGS AND MEETINGS (what was actually said; when asked how something is done or what was agreed, answer from these and name where it came from):\n' + recalled : '') + (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
   const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: meta && meta.doc ? 2500 : 1200, timeoutMs: meta && meta.doc ? 150000 : 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
@@ -624,6 +625,23 @@ async function telegramUpdate(u) {
   const threadId = isGroup && msg.is_topic_message && msg.message_thread_id ? String(msg.message_thread_id) : '';
   const to = groups ? groups.toOf(chat.id, threadId) : String(chat.id);
   const meta = { name, from: msg.from, chat, to };
+  /* a recording — an audio or video file, a video message, or a voice note
+     longer than three minutes: listened to in full and read like a meeting */
+  const media = !isGroup && (msg.audio || msg.video || msg.video_note || (msg.voice && msg.voice.duration > 180) || (msg.document && team && team.isMedia && team.isMedia(msg.document.mime_type, msg.document.file_name)));
+  if (media && team && team.recordingIngest) {
+    const uidM = await whose('telegram', String(chat.id));
+    if (!uidM) { await send('telegram', to, UNKNOWN('telegram')); return; }
+    const cM = await ctxFor(uidM); let lang = 'en'; try { const st = await cM.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}
+    if (msg.caption && team.context) lang = team.context.langOf(msg.caption, lang);
+    const f = media === true ? (msg.audio || msg.video || msg.video_note || msg.voice || msg.document) : media;
+    if (f.file_size && f.file_size > 20 * 1024 * 1024) { await send('telegram', to, lang === 'tr' ? 'Telegram botlara en fazla 20 MB dosya verir. Daha uzun kayıtları komuta merkezinde J.A.R.V.I.S.\'in Kayıtlar bölümüne yükleyin.' : 'Telegram gives bots files of at most 20 MB. Upload longer recordings in the command centre, under J.A.R.V.I.S. → Recordings.'); return; }
+    let buf; try { buf = await telegramFile(f.file_id); } catch (e) { await send('telegram', to, lang === 'tr' ? 'Kaydı alamadım. Bir kez daha gönderin.' : 'I could not fetch that recording. Send it once more.'); return; }
+    const mime = f.mime_type || (msg.video || msg.video_note ? 'video/mp4' : msg.voice ? 'audio/ogg' : 'audio/mpeg');
+    const name = f.file_name || (f.title ? f.title : (msg.video || msg.video_note ? 'Video ' : 'Recording ') + new Date().toISOString().slice(0, 16).replace('T', ' '));
+    const r = await team.recordingIngest(cM, uidM, { name, data: buf, mime, note: msg.caption || '', via: 'telegram' });
+    await send('telegram', to, r.error ? r.error : (lang === 'tr' ? 'Dinliyorum: "' + name + '". Bitince özeti, işleri ve haftana eklediklerimi buraya yazarım.' : 'Listening to "' + name + '". When I am done I will send the summary here, with what I put on your week and handed to the team.'));
+    return;
+  }
   /* a voice note: understood first, then handled like the same words typed */
   if (msg.voice && speech) {
     const uidV = isGroup ? await groups.groupOwner('telegram', chat.id) : await whose('telegram', String(chat.id));
@@ -789,7 +807,7 @@ async function handle(p, req, res, ctx) {
     if (!safeEq(headers['x-telegram-bot-api-secret-token'], telegramSecret())) return text(403, 'no');
     const raw = await ctx.readBody(req); let u = {}; try { u = JSON.parse(raw); } catch (e) {}
     const msg = u.message || u.edited_message; const chat = msg && msg.chat;
-    if (!msg || !chat || (typeof msg.text !== 'string' && !msg.voice && !msg.photo && !msg.document)) { json(200, { ok: true }); return true; }
+    if (!msg || !chat || (typeof msg.text !== 'string' && !msg.voice && !msg.photo && !msg.document && !msg.audio && !msg.video && !msg.video_note)) { json(200, { ok: true }); return true; }
     /* written down before it is acknowledged: a restart mid-reply replays it */
     let inId = null; try { if (groups) inId = await groups.inboxPut('telegram', u); } catch (e) {}
     json(200, { ok: true });

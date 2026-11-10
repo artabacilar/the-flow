@@ -13804,7 +13804,7 @@ const Say = {
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<div class="sy-ex sy-docex">Or add a PDF, a photo of a page or a text file, and it becomes a to-do list you can edit before it goes in.</div>' +
-          '<input type="file" id="sy-file" accept=".pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp,.csv,.tsv,.txt,.md,.rtf,.html,.htm,.json,.xml,.eml,.ics,.vcf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*,text/*" hidden>' +
+          '<input type="file" id="sy-file" accept=".pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp,.csv,.tsv,.txt,.md,.rtf,.html,.htm,.json,.xml,.eml,.ics,.vcf,.jpg,.jpeg,.png,.webp,.gif,.mp3,.m4a,.wav,.aac,.ogg,.mp4,.mov,.m4v,.webm,application/pdf,image/*,text/*,audio/*,video/*" hidden>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
@@ -14631,6 +14631,7 @@ const Say = {
   async document(file) {
     if (!file || !Say.el || Say.busy) return;
     const type = Say.docType(file);
+    if (/^(audio|video)\//.test(String(file.type || '')) || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|mp4|mov|m4v|webm|mkv|3gp)$/i.test(String(file.name || ''))) { await Say.recording(file); return; }
     if (!Say.DOC_TYPES.test(type) && !Say.DOC_EXT.test(String(file.name || ''))) { Say.state(Say.lang() === 'tr' ? 'PDF, Word, Excel, PowerPoint, CSV, metin ya da fotoğraf.' : 'A PDF, Word, Excel, PowerPoint, CSV, text file or a photo.'); return; }
     /* a sales export handed to the Finance assistant: the sales review, not a to-do list */
     try { const ag = Say.agent && Say.agent !== 'jarvis' && window.FlowTeam ? FlowTeam.agent(Say.agent) : null; if (ag && FlowTeam.isFinance(ag) && /\.(xlsx|csv)$/i.test(String(file.name || ''))) { Say.history.push({ role: 'user', text: file.name }); await FlowTeam.salesUpload(file); const r = (FlowTeam.sales || [])[0]; Say.history.push({ role: 'assistant', text: r && r.name === file.name ? (Say.lang() === 'tr' ? r.name + ' inceleniyor: ' + r.lines + ' satır. Hazır olunca haber veririm.' : 'Reviewing ' + r.name + ': ' + r.lines + ' lines. I will tell you when it is ready.') : (Say.lang() === 'tr' ? 'Bu dosya satış raporu olarak okunamadı.' : 'That file could not be read as a sales report.') }); try { Say.logPaint(); Say.chatPersist && Say.chatPersist(); } catch (e) {} const i = Say.el.querySelector('#sy-file'); if (i) i.value = ''; return; } } catch (e) {}
@@ -14662,6 +14663,41 @@ const Say = {
       const i = Say.el.querySelector('#sy-file'); if (i) i.value = '';
       if (Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle');
     }
+  },
+  /* A recording or a video: heard in full on the server, read like a meeting,
+     his own to-dos on his week, work to the team — then summarised here. */
+  async recording(file) {
+    if (!file || !Say.el || Say.busy) return;
+    const tr = Say.lang() === 'tr';
+    if (file.size > 60 * 1024 * 1024) { Say.state(tr ? 'Bu dosya 60 MB\'tan büyük. Sadece sesi ya da daha kısa bir bölümü gönderin.' : 'That file is over 60 MB. Send the audio only, or a shorter part.'); return; }
+    const name = String(file.name || 'Recording').slice(0, 120);
+    Say.busy = true; Say.mode('thinking'); Say.state((tr ? 'Yükleniyor: ' : 'Uploading ') + name + '…');
+    const go = Say.el.querySelector('[data-say="send"]'); if (go) go.disabled = true;
+    try {
+      const data = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result || '').split(',')[1] || ''); fr.onerror = () => ok(''); fr.readAsDataURL(file); });
+      if (!data) { Say.state(tr ? 'Dosya okunamadı.' : 'That file could not be read.'); return; }
+      const note = String(Say.el.querySelector('#sy-text').value || '').trim();
+      const r = await fetch('/api/team/recordings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, data, mime: file.type || '', note }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.id) { Say.state(j.error || (tr ? 'Olmadı. Tekrar deneyin.' : 'That did not work. Try again.')); return; }
+      Say.history.push({ role: 'user', text: '🎙 ' + name + (note ? ' — ' + note : '') }); Say.logPaint(); try { Say.chatPersist(); } catch (e) {}
+      const until = Date.now() + 15 * 60 * 1000; let rec = null;
+      while (Date.now() < until) {
+        await new Promise((ok) => setTimeout(ok, 3000));
+        const g = await fetch('/api/team/recordings?id=' + encodeURIComponent(j.id), { credentials: 'same-origin', cache: 'no-store' }); const gj = await g.json().catch(() => ({}));
+        rec = gj.recording; if (!rec) break;
+        if (rec.status !== 'working') break;
+        Say.state((rec.step === 'Reading' ? (tr ? 'Okuyor: ' : 'Reading ') : (tr ? 'Dinliyor: ' : 'Listening to ')) + name + '…');
+      }
+      if (!rec || rec.status === 'working') { Say.state(tr ? 'Hâlâ dinliyor — bitince haber veririm.' : 'Still listening — I will tell you when it is done.'); return; }
+      if (rec.status === 'failed') { Say.state(rec.error || (tr ? 'Kayıt okunamadı.' : 'The recording could not be read.')); return; }
+      const did = [].concat((rec.rocks || []).map((t) => (tr ? 'Haftana: ' : 'On your week: ') + t), rec.tasks ? [(tr ? 'Ekibe ' : 'To the team: ') + rec.tasks + (tr ? ' iş' : ' task' + (rec.tasks === 1 ? '' : 's'))] : [], (rec.projects || []).length ? [(tr ? 'Proje: ' : 'Project: ') + rec.projects.join(', ')] : []);
+      const say = rec.summary || rec.say || (tr ? 'Dinledim.' : 'Done.');
+      Say.history.push({ role: 'assistant', text: say, did }); Say.state(''); Say.logPaint(); try { Say.chatPersist(); } catch (e) {}
+      try { await Team.load(true); } catch (e) {}
+      await Say.speak(say);
+    } catch (e) { Say.state(tr ? 'Bağlantıyı kontrol edip tekrar deneyin.' : 'That did not work — check the connection and try again.'); }
+    finally { Say.busy = false; if (go) go.disabled = false; const i = Say.el.querySelector('#sy-file'); if (i) i.value = ''; if (Say.el.getAttribute('data-sy') === 'thinking') Say.mode('idle'); }
   },
   /* Every two seconds until it is read; a PDF of twenty pages takes a minute. */
   async pollDocument(job, name) {
@@ -15543,7 +15579,7 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.suPanel() + Team.approvalsPanel() + Team.contactsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
+    return Team.suPanel() + Team.approvalsPanel() + Team.recordingsPanel() + Team.contactsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
@@ -15754,6 +15790,34 @@ const Team = {
     const C = (Team.data && Team.data.contacts) || []; const words = to.toLocaleLowerCase('tr').split(/[^\p{L}]+/u).filter((w) => w.length > 2);
     const hit = C.filter((c) => c.name && words.some((w) => c.name.toLocaleLowerCase('tr').split(/\s+/).indexOf(w) >= 0));
     return hit.length === 1 ? hit[0].email : '';
+  },
+  async loadRecs(force) {
+    if (Team.recs && !force) return Team.recs;
+    try { const r = await fetch('/api/team/recordings', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.recs = (r.ok && j && j.recordings) || []; } catch (e) { Team.recs = Team.recs || []; }
+    if (Team.recs.some((x) => x.status === 'working') && !Team.recTimer) Team.recTimer = setTimeout(async () => { Team.recTimer = null; await Team.loadRecs(true); if (Hud.on) Hud.paint(); }, 5000);
+    return Team.recs;
+  },
+  recordingsPanel() {
+    if (!Team.recs && !Team.recsLoading) { Team.recsLoading = true; Team.loadRecs().then(() => { Team.recsLoading = false; if (Hud.on) Hud.paint(); }); }
+    const L = Team.recs || [];
+    const S = { working: 'Listening', done: 'Read', failed: 'Did not work' };
+    const row = (r) => '<details class="hud-pjt"><summary><em class="hud-pjts" data-s="' + (r.status === 'done' ? 'done' : r.status === 'failed' ? 'failed' : 'running') + '">' + esc(r.status === 'working' && r.step === 'Reading' ? 'Reading' : S[r.status] || r.status) + '</em><span data-i18n="off">' + esc(r.name) + '</span><small>' + esc(Team.when(r.at)) + (r.seconds ? ' · ' + Math.round(r.seconds / 60) + ' min' : '') + (r.speakers > 1 ? ' · ' + r.speakers + ' voices' : '') + (r.via === 'telegram' ? ' · Telegram' : '') + '</small></summary>' +
+      (r.summary ? '<p class="hud-sub" data-i18n="off">' + esc(r.summary) + '</p>' : '') + ((r.rocks || []).length ? '<p class="hud-sub" data-i18n="off"><b>On your week:</b> ' + esc(r.rocks.join(' · ')) + '</p>' : '') + (r.tasks ? '<p class="hud-sub">' + r.tasks + ' task' + (r.tasks === 1 ? '' : 's') + ' to the team' + ((r.projects || []).length ? ' · project ' + esc(r.projects.join(', ')) : '') + '</p>' : '') + (r.error ? '<p class="hud-sub">' + esc(r.error) + '</p>' : '') +
+      '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="recdel" data-id="' + esc(r.id) + '">Remove</button></div></details>';
+    return Hud.panel('recordings', 'Recordings' + (L.length ? ' · ' + L.length : ''), '<p class="hud-sub">A video, a call, a voice memo of a meeting (up to 60 MB; Turkish or English). He listens to it all, sums it up, puts your own to-dos on your week, hands the rest to the team, and keeps what was said — ask him about it any time.</p>' +
+      '<label class="hud-btn" data-flow-no-chip>' + (Team.recBusy ? 'Uploading…' : 'Add a recording') + '<input type="file" accept="audio/*,video/*,.mp3,.m4a,.wav,.aac,.ogg,.mp4,.mov,.m4v,.webm" data-team-rec hidden' + (Team.recBusy ? ' disabled' : '') + '></label>' +
+      (L.length ? L.slice(0, 10).map(row).join('') : '<p class="hud-none">None yet.</p>'));
+  },
+  async recUpload(file) {
+    if (!file) return;
+    if (file.size > 60 * 1024 * 1024) { toast('That file is over 60 MB. Send the audio only, or a shorter part.', 'bad', 3000); return; }
+    Team.recBusy = true; Hud.paint();
+    try {
+      const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(fr.error); fr.readAsDataURL(file); });
+      const j = await Team.post('/api/team/recordings', { name: file.name, data, mime: file.type || '' });
+      if (j && j.ok) toast('Listening to ' + file.name + ' — it shows here when he is done.', null, 3600);
+    } catch (e) { toast('That file could not be read.', 'bad', 2400); }
+    Team.recBusy = false; await Team.loadRecs(true); Hud.paint();
   },
   contactsList() { const C = (Team.data && Team.data.contacts) || []; return '<datalist id="hud-contacts">' + C.map((c) => '<option value="' + esc(c.email) + '">' + esc(c.name || '') + '</option>').join('') + '</datalist>'; },
   contactsPanel() {
@@ -16760,6 +16824,7 @@ const Team = {
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
     if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup' || a === 'projects') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
     if (await Team.pjClick(a, b)) return;
+    if (a === 'recdel') { await Team.post('/api/team/recordings', { op: 'remove', id: b.getAttribute('data-id') }); await Team.loadRecs(true); Hud.paint(); return; }
     if (a === 'ctall') { Team.ctAll = true; Hud.paint(); return; }
     if (a === 'ctdel') { const j = await Team.post('/api/team/contacts', { op: 'remove', email: b.getAttribute('data-email') }); if (j && j.ok) { Team.data.contacts = j.contacts; Hud.paint(); } return; }
     if (await Team.suClick(a, b)) return;
@@ -16842,6 +16907,7 @@ const Team = {
       if (j && j.ok && Team.data) { Team.data.brief = Object.assign(Team.data.brief || {}, { on: j.on, at: j.at }); toast(j.on ? 'Every morning at ' + j.at : 'Morning briefing off', null, 1600); }
       return;
     }
+    if (t.matches('[data-team-rec]')) { const f = t.files && t.files[0]; t.value = ''; await Team.recUpload(f); return; }
     if (t.matches('[data-ap-from]')) { Team.fromPick = Team.fromPick || {}; Team.fromPick[t.getAttribute('data-ap-from')] = t.value; const card = t.closest('.hud-ap'); const note = card && card.querySelector('.hud-sub:not(.hud-apfrom)'); if (note && t.value !== 'flow') note.textContent = 'Approving sends it now — once, exactly as shown — from ' + t.options[t.selectedIndex].text.replace(/ · (Google|Outlook)$/, '') + ', and it lands in that account\'s Sent folder.'; const btn = card && card.querySelector('[data-hud="approve"]'); if (btn && t.value !== 'flow') btn.textContent = 'Approve and send'; return; }
     if (t.matches('[data-team-sales]')) { const f = t.files && t.files[0]; t.value = ''; await Team.salesUpload(f); return; }
     if (t.matches('[data-team-pj]')) { const k = t.getAttribute('data-team-pj'); const j = await Team.post('/api/team/projects', { op: 'settings', [k]: !!t.checked }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); toast(t.checked ? 'On' : 'Off', null, 1600); } return; }

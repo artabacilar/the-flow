@@ -49,7 +49,8 @@ function system(owner) {
     '  "projects": [ { "id": "an existing project id, or empty", "name": "short project name (only for a new one)", "goal": "one sentence (only for a new one)", "status": "where it stands after this meeting, one or two sentences", "health": "on_track | at_risk | blocked", "next": ["the next steps, short, up to 5"] } ],',
     '  "facts": [ { "text": "one self-contained sentence worth remembering for the business", "kind": "fact | rule | preference" } ],',
     '  "delegate": [ { "agent": "an agent id from TEAM", "title": "short", "brief": "everything needed to do it well: the context from the meeting, who is involved, what a good result looks like, any deadline said", "project": "the project id or name it belongs to" } ],',
-    '  "ideas": [ { "title": "an improvement or opportunity for ABKO you noticed", "why": "one sentence" } ]',
+    '  "ideas": [ { "title": "an improvement or opportunity for ABKO you noticed", "why": "one sentence" } ],',
+    '  "mine": [ { "title": "something HE has to do himself — a call, a visit, a decision, a reply", "date": "YYYY-MM-DD when one was said, else empty", "time": "HH:MM or empty", "note": "who and why, one line" } ]',
     '}',
     'Rules:',
     '· Projects: file the meeting under an existing project when it is the same client, deal or initiative; make a new one only for a distinct initiative. Usually one project, at most three.',
@@ -57,6 +58,8 @@ function system(owner) {
     '· Delegate (at most ' + MAX_TASKS + '): work the team can do now — research, competitor or market checks, drafts, proposals, follow-up emails prepared for his approval, plans, analyses, documents, CRM notes, preparing the next meeting. Not his own calls, visits or meetings (those stay his). Pick the agent whose role fits; "jarvis" only when no specialist does. A brief must stand on its own: the agent did not hear the meeting.',
     '· Ideas (at most 3): what would grow the business or fix a weak spot you can see from this meeting. When one is clearly worth doing now, also delegate it.',
     '· The meeting may be in Turkish, English or both: understand both; write briefs and facts in the language the meeting mostly used.',
+    '· Mine (at most 10): only what he himself agreed or was asked to do, in the words of the meeting. Dates relative to TODAY when it says "Friday" or "next week"; empty when none was said.',
+    '· It may be a recording or a video rather than a meeting with notes: then the TRANSCRIPT is what was said (speakers may be labelled "Speaker 1", "Speaker 2" — he is usually the one asking or deciding). Work from it the same way.',
     '· Never invent: if the meeting does not say it, it is not a fact.'
   ].join('\n');
 }
@@ -68,7 +71,10 @@ function userMsg(m, list, agents, know) {
     '', 'MEETING: ' + m.title + ' — ' + (m.at || ''),
     'People: ' + ((m.people || []).map((p) => (p.name || p.email) + (p.ext ? ' (external)' : '')).join(', ') || '(not listed)'),
     'Action items: ' + ((m.actions || []).length ? m.actions.map((a) => '- ' + a.text + (a.who ? ' [' + a.who + ']' : '') + (a.done ? ' (done)' : '')).join('\n') : '(none)'),
-    'Summary:', block(m.summary, 9000) || '(no summary)'
+    'TODAY: ' + new Date().toISOString().slice(0, 10),
+    m.note ? 'He said about it: ' + block(m.note, 600) : '',
+    'Summary:', block(m.summary, 9000) || '(no summary)',
+    m.transcript ? 'TRANSCRIPT:\n' + block(m.transcript, 60000) : ''
   ].join('\n');
 }
 
@@ -76,14 +82,15 @@ function userMsg(m, list, agents, know) {
 function fakeRead(m, list, agents) {
   const words = (m.title || 'Meeting').replace(/[^\p{L}\p{N} ]/gu, ' ').trim();
   const hit = list.find((p) => p.status !== 'done' && words && p.name.toLowerCase().indexOf(words.split(/\s+/)[0].toLowerCase()) >= 0);
-  const sentences = String(m.summary || '').replace(/[#*>_`-]/g, ' ').split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 25);
+  const sentences = String(m.summary || m.transcript || '').replace(/[#*>_`-]/g, ' ').split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 25);
   const pick = (re) => (agents.find((a) => re.test(a.role + ' ' + a.name)) || agents.find((a) => a.id !== 'jarvis') || { id: 'jarvis' }).id;
   return {
     summary: sentences.slice(0, 2).join(' ') || m.title,
     projects: [hit ? { id: hit.id, status: 'Discussed in "' + m.title + '".', health: 'on_track', next: (m.actions || []).slice(0, 3).map((a) => a.text) } : { name: words || 'Meeting follow-up', goal: 'Follow up "' + m.title + '".', status: 'Started from "' + m.title + '".', health: 'on_track', next: (m.actions || []).slice(0, 3).map((a) => a.text) }],
     facts: sentences.slice(0, 3).map((s) => ({ text: s, kind: 'fact', quote: s.slice(0, 120) })),
     delegate: (m.actions || []).filter((a) => !a.mine && !a.done).slice(0, 3).map((a) => ({ agent: pick(/sales|advert|market|support|customer/i), title: str(a.text, 80), brief: 'From the meeting "' + m.title + '": ' + a.text, project: hit ? hit.id : (words || 'Meeting follow-up') })),
-    ideas: []
+    ideas: [],
+    mine: (m.actions || []).filter((a) => a.mine && !a.done).map((a) => a.text).concat((String(m.transcript || '').match(/(?:^|\n)(?:Speaker \d+: )?(?:I will|I'll) [^.\n]+/g) || []).map((x) => x.replace(/^\n?(?:Speaker \d+: )?(?:I will|I'll) /, ''))).slice(0, 5).map((t) => ({ title: str(t.charAt(0).toUpperCase() + t.slice(1), 100), date: (t.match(/\d{4}-\d{2}-\d{2}/) || [''])[0], time: '', note: 'From "' + m.title + '"' }))
   };
 }
 
@@ -94,7 +101,8 @@ function cleanRead(j, agentIds) {
     projects: (Array.isArray(j.projects) ? j.projects : []).slice(0, 3).map((p) => ({ id: str(p && p.id, 40), name: str(p && p.name, 80), goal: str(p && p.goal, 300), status: str(p && p.status, 500), health: HEALTH.indexOf(p && p.health) >= 0 ? p.health : 'on_track', next: (Array.isArray(p && p.next) ? p.next : []).map((x) => str(x, 200)).filter(Boolean).slice(0, 5) })).filter((p) => p.id || p.name),
     facts: (Array.isArray(j.facts) ? j.facts : []).map((f) => ({ text: str(f && f.text, 300), kind: ['fact', 'rule', 'preference'].indexOf(f && f.kind) >= 0 ? f.kind : 'fact', quote: str(f && f.quote, 240) })).filter((f) => f.text.length > 8 && !/password|şifre|card number|kart numarası|\b\d{13,19}\b/i.test(f.text)).slice(0, MAX_FACTS),
     delegate: (Array.isArray(j.delegate) ? j.delegate : []).map((d) => ({ agent: agentIds.indexOf(str(d && d.agent, 40)) >= 0 ? str(d.agent, 40) : 'jarvis', title: str(d && d.title, 100), brief: block(d && d.brief, 3000), project: str(d && d.project, 80) })).filter((d) => d.title && d.brief.length > 20).slice(0, MAX_TASKS),
-    ideas: (Array.isArray(j.ideas) ? j.ideas : []).map((i) => ({ title: str(i && i.title, 140), why: str(i && i.why, 300) })).filter((i) => i.title).slice(0, 3)
+    ideas: (Array.isArray(j.ideas) ? j.ideas : []).map((i) => ({ title: str(i && i.title, 140), why: str(i && i.why, 300) })).filter((i) => i.title).slice(0, 3),
+    mine: (Array.isArray(j.mine) ? j.mine : []).map((x) => ({ title: str(x && x.title, 120), date: /^\d{4}-\d{2}-\d{2}$/.test(String(x && x.date || '')) ? x.date : '', time: /^\d{1,2}:\d{2}$/.test(String(x && x.time || '')) ? x.time : '', note: str(x && x.note, 300) })).filter((x) => x.title).slice(0, 10)
   };
   return out;
 }
@@ -168,20 +176,28 @@ async function readMeeting(ctx, deps, uid, m, opts) {
   }
   /* read again without new work: the work this meeting already started stays filed under it */
   if (opts.noTasks && home) { try { for (const t of await deps.tasks(ctx)) if (t.from && t.from.meeting === m.id && home.tasks.indexOf(t.id) < 0) home.tasks.push(t.id); } catch (e) {} }
+  /* his own action items, on his week — for recordings (a Fathom meeting's are filed by the app already) */
+  const rocks = [];
+  if (opts.mine && deps.addRock) {
+    for (const x of read.mine) {
+      try { const r = await deps.addRock(ctx, uid, { title: x.title, day: x.date || 'today', time: x.time || '', note: [x.note, 'From "' + m.title + '"'].filter(Boolean).join(' · ') }); rocks.push({ title: x.title, date: (r && r.on) || x.date || 'today' }); }
+      catch (e) { if (deps.log) await deps.log(ctx, 'jarvis', 'Could not add "' + x.title + '": ' + e.message); }
+    }
+  }
   if (home && read.ideas.length) home.ideas = read.ideas.concat(home.ideas || []).slice(0, 8);
   await saveProjects(ctx, list);
 
-  const rec = { at: now, title: m.title, meetingAt: m.at, summary: read.summary, projects: touched.map((p) => p.id), tasks: started.map((t) => t.id), facts: added, ideas: read.ideas };
+  const rec = { at: now, title: m.title, meetingAt: m.at, summary: read.summary, projects: touched.map((p) => p.id), tasks: started.map((t) => t.id), facts: added, ideas: read.ideas, rocks };
   done[m.id] = rec;
   const keys = Object.keys(done); if (keys.length > 200) for (const k of keys.sort((a, b) => done[a].at - done[b].at).slice(0, keys.length - 200)) delete done[k];
   await ctx.set('team:meetproc', done);
 
   const names = (id) => (agentList.find((a) => a.id === id) || { name: id }).name;
   const line = 'From "' + m.title + '": ' + (started.length ? started.length + ' task' + (started.length === 1 ? '' : 's') + ' started (' + started.map((t) => names(t.agent) + ': ' + t.title).join('; ') + ')' : 'no work to hand out') +
-    (added ? ', ' + added + ' thing' + (added === 1 ? '' : 's') + ' remembered' : '') + (touched.length ? ', project ' + touched.map((p) => '"' + p.name + '"').join(' and ') + ' updated' : '') + '.';
+    (rocks.length ? ', ' + rocks.length + ' on your week (' + rocks.map((r) => r.title).join('; ') + ')' : '') + (added ? ', ' + added + ' thing' + (added === 1 ? '' : 's') + ' remembered' : '') + (touched.length ? ', project ' + touched.map((p) => '"' + p.name + '"').join(' and ') + ' updated' : '') + '.';
   if (deps.log) await deps.log(ctx, 'jarvis', line);
   if (deps.notify && !opts.quiet) { try { await deps.notify(uid, ctx, line + (read.summary ? '\n\n' + read.summary : ''), { meeting: m.id }); } catch (e) {} }
-  return { ok: true, meeting: m.id, summary: read.summary, projects: touched.map((p) => ({ id: p.id, name: p.name })), tasks: started, facts: added, ideas: read.ideas, say: line };
+  return { ok: true, meeting: m.id, summary: read.summary, projects: touched.map((p) => ({ id: p.id, name: p.name })), tasks: started, facts: added, ideas: read.ideas, rocks, say: line };
 }
 
 /* A meeting is "fresh" for J.A.R.V.I.S. when it was recorded in the last
