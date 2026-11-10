@@ -13586,6 +13586,30 @@ const Speech = {
   sayable(text) {
     return String(text || '').replace(/\b((?:[A-Za-z]\.){3,}[A-Za-z]?\.?)/g, (m) => { const w = m.replace(/\./g, ''); return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
   },
+  /* Speaking while the answer is still arriving: each finished sentence is
+     sent for its voice the moment it is written (so the next is fetched
+     while this one plays), and they play one after another. He starts
+     talking at the first full stop, not after the last letter. */
+  streamStart(lang) {
+    Speech.stop();
+    return { token: ++Speech.token, lang, q: Promise.resolve(), any: false };
+  },
+  streamFeed(S, text, onStart) {
+    text = Speech.sayable(String(text || '').trim());
+    if (!S || !text || Speech.mode() === 'off' || S.token !== Speech.token) return;
+    S.any = true;
+    const audio = (Speech.mode() === 'premium') ? Speech.premiumOn().then((on) => !on ? null : fetch('/api/flow/speak', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang: S.lang, speed: Speech.speed() }) })
+      .then((r) => r.ok && /audio/.test(r.headers.get('content-type') || '') ? r.arrayBuffer() : null)).catch(() => null) : Promise.resolve(null);
+    S.q = S.q.then(async () => {
+      if (S.token !== Speech.token) return;
+      const buf = await audio;
+      if (S.token !== Speech.token) return;
+      try { if (onStart) onStart(); } catch (e) {}
+      if (buf && await Speech.play(buf, S.token)) return;
+      if (S.token !== Speech.token) return;
+      await Speech.device(text, S.lang, S.token);
+    });
+  },
   /* Resolves once it has finished speaking, or could not speak at all. */
   async say(text, lang) {
     text = Speech.sayable(String(text || '').trim());
@@ -14575,6 +14599,18 @@ const Say = {
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = '', said = '', done = null, raf = 0;
     const show = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; Say.streamShow(payload.text, said); }); };
+    /* his voice starts with the first finished sentence */
+    const SV = Speech.mode() === 'off' ? null : { S: Speech.streamStart(Say.lang()), fed: 0 };
+    const voiced = () => { if (Say.el && Say.el.getAttribute('data-sy') === 'thinking') Say.mode('speaking'); };
+    const feed = (all) => {
+      if (!SV) return;
+      const rest = said.slice(SV.fed); let cut = -1;
+      if (all) cut = rest.length;
+      else { const re = /[.!?…](?=\s)/g; let m; while ((m = re.exec(rest))) { const before = rest.slice(Math.max(0, m.index - 3), m.index + 1); if (/(?:^|[\s.])[A-Z]\.$/.test(before)) continue; cut = m.index + 1; if (SV.fed === 0) break; } }
+      if (cut <= 0) return;
+      const piece = rest.slice(0, cut); SV.fed += cut;
+      if (piece.trim()) Speech.streamFeed(SV.S, piece, voiced);
+    };
     try {
       for (;;) {
         const step = await reader.read();
@@ -14586,15 +14622,15 @@ const Say = {
           const data = block.split('\n').filter((l) => l.indexOf('data:') === 0).map((l) => l.slice(5).trim()).join('');
           if (!data) continue;
           let ev = null; try { ev = JSON.parse(data); } catch (e) { continue; }
-          if (ev.t === 'd' && typeof ev.v === 'string') { said += ev.v; show(); }
+          if (ev.t === 'd' && typeof ev.v === 'string') { said += ev.v; show(); feed(false); }
           else if (ev.t === 'done') done = ev;
         }
       }
     } catch (e) {}
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (!done) { Say.streamDrop(); return { status: 502, ok: false, j: { error: 'The answer was cut off — check the connection and try again.' } }; }
-    if (!(done.status >= 200 && done.status < 300)) Say.streamDrop();
-    else if (said) Say.streamShow(payload.text, said);
+    if (!(done.status >= 200 && done.status < 300)) { Say.streamDrop(); if (SV) Speech.stop(); }
+    else if (said) { Say.streamShow(payload.text, said); if (SV) { feed(true); Say.sv = { S: SV.S, text: said }; } }
     return { status: done.status, ok: done.status >= 200 && done.status < 300, j: done.body || {} };
   },
   streamShow(heard, text) {
@@ -14760,6 +14796,16 @@ const Say = {
      kept for when they spoke. */
   speak(text) {
     if (!text) return Promise.resolve();
+    /* Already being spoken as it streamed in: say only what is left, and
+       finish when the last sentence does. */
+    const sv = Say.sv; Say.sv = null;
+    const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+    if (sv && sv.S.token === Speech.token && norm(text).indexOf(norm(sv.text)) === 0) {
+      const extra = norm(text).slice(norm(sv.text).length);
+      if (extra.trim()) Speech.streamFeed(sv.S, extra);
+      Say.mode('speaking');
+      return sv.S.q.finally(() => { if (Say.el && Say.el.getAttribute('data-sy') === 'speaking') Say.mode('idle'); });
+    }
     Say.mode('speaking');
     return Promise.resolve(Speech.say(text, Say.lang())).finally(() => { if (Say.el && Say.el.getAttribute('data-sy') === 'speaking') Say.mode('idle'); });
   },
