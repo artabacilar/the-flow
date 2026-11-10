@@ -175,8 +175,8 @@ function wav() {
   ok('and it is listed under his answer, the conversation carrying on', y.open && y.did.some((d) => /Call the venue/.test(d)), y);
   doReply = { ok: true, say: 'Which day — Thursday or Friday?', ask: true, actions: [] };
   await ask('put the dentist on thursday or friday', true);
-  const q = await p.evaluate(() => ({ last: FlowSay.history[FlowSay.history.length - 1].text, cards: document.querySelectorAll('#flow-say .sy-card').length, open: document.querySelector('#flow-say').classList.contains('on') }));
-  ok('when it is unclear he asks, and nothing changes', /Thursday or Friday/.test(q.last) && q.cards === 0 && q.open, q);
+  const qa = await p.evaluate(() => ({ last: FlowSay.history[FlowSay.history.length - 1].text, cards: document.querySelectorAll('#flow-say .sy-card').length, open: document.querySelector('#flow-say').classList.contains('on') }));
+  ok('when it is unclear he asks, and nothing changes', /Thursday or Friday/.test(qa.last) && qa.cards === 0 && qa.open, qa);
 
   doReply = { ok: true, say: 'Flossing, daily. Shall I?', actions: [{ type: 'habit', name: 'Floss' }] };
   await ask('add flossing', true);
