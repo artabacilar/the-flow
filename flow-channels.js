@@ -375,7 +375,7 @@ const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot, planner) => [
   'Return ONLY a JSON object:',
   '{ "say": "your reply", "ask": false, "actions": [ { "type": "rock", "title": "", "day": "friday | tomorrow | 2026-11-13", "time": "14:00 (optional)", "end": "", "priority": "high | medium | low", "note": "who, why, what to bring" }, { "type": "rock_update", "id": "from THEIR WEEK", "title": "", "day": "", "time": "", "note": "", "done": true }, { "type": "habit", "name": "" }, { "type": "habit_log", "habit": "name", "day": "today", "done": true }, { "type": "delegate", "title": "", "brief": "", "callMe": false }, { "type": "approve", "n": 1 }, { "type": "decline", "n": 1 } ] }',
   '· rock / rock_update / habit / habit_log: their planner. Telling you what they have to do, or who they want to meet, IS the request — add it at once, no confirmation. A meeting with someone is a Priority on that day titled "Meet <name> (<company>)", with who they are and why in the note. Two things to raise with the same person are ONE Priority. Waiting on someone is a follow-up Priority. Check THEIR WEEK first: change what is there (rock_update) rather than adding it twice; "done", "move", "rename" use rock_update with its id. Something done every day is a habit, not seven Priorities.',
-  '· A DOCUMENT may come with the message (a PDF, Word, Excel, PowerPoint, a photo…): read it fully, in whatever language it is. Answer what they ask about it; add Priorities for what it asks of them; hand work on it to the team (with what the document says in the brief, since they will not see the file). With no question: say in a few lines what it is, what matters, and what is for them to do.',
+  '· A DOCUMENT or PHOTO may come with the message (a PDF, Word, Excel, PowerPoint, a photo of an invitation, a flyer, a page…): read every word in it, in whatever language it is. "Add this to my schedule" with an invitation means a Priority on its date and time, titled with what it is (e.g. "Wedding: Malika & Mehmet Salih"), the venue and address in the note. Answer what they ask about it; add Priorities for what it asks of them; hand work on it to the team (with what the document says in the brief, since they will not see the file). With no question: say in a few lines what it is, what matters, and what is for them to do.',
   '· Ask only when it truly matters (which of two people, a day that cannot be guessed): then "ask": true, one short question, and NO actions. A missing time is not a reason to ask — leave it out.',
   '· "say" says what was done, in the past tense ("Added Kadir Yıldız (Noar) to Friday."), in the language they wrote in.',
   '· delegate: when they want work done by the team — drafting, replying, analysing, researching, checking, preparing. "brief" carries every detail; "callMe": true if they asked to be rung when it is ready. The team works in the background and they are messaged when it is done; say so.',
@@ -646,6 +646,18 @@ async function telegramUpdate(u) {
   /* a document sent to him: a sales export goes to the Finance assistant's
      review; anything else (PDF, Word, Excel, PowerPoint, text, a photo sent
      as a file) is read with the message, like the same words typed */
+  /* a photo sent to him (an invitation, a flyer, a whiteboard): he reads it with the message — "add this to my schedule" */
+  if (msg.photo && !isGroup && msg.photo.length) {
+    if (!ctxR) { await send('telegram', to, UNKNOWN('telegram')); return; }
+    let lang = 'en'; try { const st = await ctxR.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}
+    if (msg.caption && team && team.context) lang = team.context.langOf(msg.caption, lang);
+    const big = msg.photo[msg.photo.length - 1] || {};
+    let buf; try { buf = await telegramFile(big.file_id); } catch (e) { await send('telegram', to, lang === 'tr' ? 'Fotoğrafı alamadım. Bir kez daha gönderin.' : 'I could not fetch that photo. Send it once more.'); return; }
+    const d = extras && extras._internals && extras._internals.docToText ? extras._internals.docToText(buf, 'photo.jpg', 'image/jpeg') : { error: 'Photos cannot be read on this server.' };
+    if (d.error) { await send('telegram', to, d.error); return; }
+    meta.doc = { name: 'photo', kind: 'photo', text: d.text || '', block: d.block || null };
+    msg.text = msg.caption || (lang === 'tr' ? 'Bu fotoğrafı oku: ne olduğunu ve benim için ne gerektirdiğini söyle.' : 'Read this photo: tell me what it is and what it means for me.');
+  }
   if (msg.document && !isGroup) {
     if (!ctxR) { await send('telegram', to, UNKNOWN('telegram')); return; }
     let lang = 'en'; try { const st = await ctxR.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}

@@ -185,7 +185,8 @@ function fakePost(url, opts) {
   const b = JSON.parse(opts.body || '{}');
   const msgs = Array.isArray(b.messages) ? b.messages : [];
   const system = typeof b.system === 'string' ? b.system : String((msgs[0] && msgs[0].role === 'system' && msgs[0].content) || '');
-  const last = msgs.filter((m) => m.role === 'user').pop();
+  const last0 = msgs.filter((m) => m.role === 'user').pop();
+  const last = last0 && Array.isArray(last0.content) ? Object.assign({}, last0, { content: last0.content.filter((c) => c && c.type === 'text').map((c) => c.text).join('\n\n') }) : last0;
   const said = String((last && last.content) || '').split('\n\n').pop();
   let text;
   if (/YOU HAVE BEEN GIVEN A PIECE OF WORK/.test(system)) {
