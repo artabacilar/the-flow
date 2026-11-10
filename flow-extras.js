@@ -1080,7 +1080,8 @@ function xmlText(s) {
 
 /* The smallest zip reader that opens an .xlsx: central directory, then each
    member inflated on its own. No streaming, no encryption, no zip64. */
-function unzip(buf) {
+function unzip(buf, want) {
+  want = want || /^xl\/(sharedStrings|styles|workbook|worksheets\/sheet\d+|_rels\/workbook)\.xml(\.rels)?$/;
   const out = {};
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) {
@@ -1097,7 +1098,7 @@ function unzip(buf) {
     const local = buf.readUInt32LE(p + 42);
     const name = buf.slice(p + 46, p + 46 + nlen).toString('utf8');
     p += 46 + nlen + xlen + clen;
-    if (!/^xl\/(sharedStrings|styles|workbook|worksheets\/sheet\d+|_rels\/workbook)\.xml(\.rels)?$/.test(name)) continue;
+    if (!want.test(name)) continue;
     const lnlen = buf.readUInt16LE(local + 26), lxlen = buf.readUInt16LE(local + 28);
     const data = buf.slice(local + 30 + lnlen + lxlen, local + 30 + lnlen + lxlen + csize);
     out[name] = (method === 8 ? zlib.inflateRawSync(data) : data).toString('utf8');
@@ -1200,6 +1201,44 @@ function decodeText(buf) {
     try { return new TextDecoder(enc).decode(buf); } catch (e) {}
   }
   return utf8;
+}
+
+/* Any document, as what a model can read: a PDF or a photo as itself, the
+   rest (Word, Excel, PowerPoint, OpenDocument, CSV, HTML, RTF, e-mail, plain
+   text…) turned into text here. {text} | {block} | {error}. */
+const IMG_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+function xmlRuns(xml, para, run) {
+  return String(xml || '').replace(new RegExp('</' + para + '>', 'g'), '\n').replace(/<w:tab\/>|<text:tab\/>/g, '\t').replace(/<w:br\/>|<text:line-break\/>|<a:br\/>/g, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function docToText(buf, name, type) {
+  name = String(name || ''); type = String(type || '').toLowerCase();
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1] ? name.match(/\.([a-z0-9]+)$/i)[1].toLowerCase() : '';
+  if (!buf || !buf.length) return { error: 'That file is empty.' };
+  const head = buf.slice(0, 12);
+  if (head.slice(0, 4).toString('latin1') === '%PDF') return { block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } }, kind: 'pdf' };
+  const img = (head[0] === 0xff && head[1] === 0xd8) ? 'image/jpeg' : (head[0] === 0x89 && head.slice(1, 4).toString('latin1') === 'PNG') ? 'image/png' : (head.slice(0, 4).toString('latin1') === 'RIFF' && head.slice(8, 12).toString('latin1') === 'WEBP') ? 'image/webp' : head.slice(0, 3).toString('latin1') === 'GIF' ? 'image/gif' : '';
+  if (img) return { block: { type: 'image', source: { type: 'base64', media_type: img, data: buf.toString('base64') } }, kind: 'image' };
+  if (/heic|heif/.test(type) || /^(heic|heif)$/.test(ext) || head.slice(4, 12).toString('latin1').indexOf('ftyphei') === 0) return { error: 'HEIC photos cannot be read here. On the iPhone: Settings → Camera → Formats → Most Compatible, or send it as a screenshot.' };
+  if (head[0] === 0xd0 && head[1] === 0xcf) return { error: 'That is an old Office file (.doc, .xls or .ppt). Open it and save it as .docx, .xlsx or .pptx, or as PDF.' };
+  if (head[0] === 0x50 && head[1] === 0x4b) {
+    let z;
+    try { z = unzip(buf, /^(word\/document\.xml|word\/(header|footer)\d*\.xml|ppt\/slides\/slide\d+\.xml|ppt\/notesSlides\/notesSlide\d+\.xml|content\.xml|xl\/(sharedStrings|styles|workbook|worksheets\/sheet\d+)\.xml)$/); } catch (e) { return { error: 'That file could not be opened.' }; }
+    if (z['word/document.xml']) return { text: xmlRuns(z['word/document.xml'], 'w:p'), kind: 'docx' };
+    const slides = Object.keys(z).filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a, b) => (+a.match(/(\d+)\.xml$/)[1]) - (+b.match(/(\d+)\.xml$/)[1]));
+    if (slides.length) return { text: slides.map((k, i) => { const n = k.match(/(\d+)\.xml$/)[1]; const note = z['ppt/notesSlides/notesSlide' + n + '.xml']; return '--- Slide ' + (i + 1) + ' ---\n' + xmlRuns(z[k], 'a:p') + (note ? '\n(Notes: ' + xmlRuns(note, 'a:p').replace(/\n+/g, ' ') + ')' : ''); }).join('\n\n'), kind: 'pptx' };
+    if (z['xl/workbook.xml'] || Object.keys(z).some((k) => /^xl\/worksheets/.test(k))) { try { return { text: xlsxToText(buf), kind: 'xlsx' }; } catch (e) { return { error: 'That spreadsheet could not be opened.' }; } }
+    if (z['content.xml']) return { text: xmlRuns(z['content.xml'].replace(/<\/table:table-cell>/g, '\t'), 'text:p').replace(/<\/table:table-row>/g, '\n'), kind: 'odf' };
+    return { error: 'That zip file holds no document that can be read.' };
+  }
+  let t = decodeText(buf).replace(/\u0000/g, '');
+  if (/^\{\\rtf/.test(t)) t = t.replace(/\\par[d]?/g, '\n').replace(/\{\\\*[^{}]*\}|\\[a-z]+-?\d* ?|[{}]/g, '').replace(/\n{3,}/g, '\n\n');
+  else if (/html|xml/.test(type) || /^(html?|xml|svg)$/.test(ext) || /^\s*<(!doctype|html)/i.test(t)) t = t.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<\/(p|div|tr|li|h\d|br)>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n');
+  /* binary that is none of the above */
+  const bad = (t.slice(0, 4000).match(/[\u0001-\u0008\u000e-\u001f\ufffd]/g) || []).length;
+  if (bad > 40) return { error: 'That file is not one that can be read: a PDF, Word, Excel, PowerPoint, OpenDocument, CSV, text, HTML or a photo (JPEG, PNG).' };
+  if (!t.trim()) return { error: 'That file is empty.' };
+  return { text: t.trim(), kind: ext || 'text' };
 }
 
 /* What the model will see: a PDF as a document, everything else as text. */
@@ -2473,12 +2512,13 @@ const docJobs = new Map();
 let docPost = (...a) => postJSON(...a);
 
 const DOC_SYSTEM = [
-  'You are the assistant inside The Flow, a personal planner. The person has handed you a document — a PDF, a photo of a page, or a text — and wants it turned into a to-do list in the app.',
+  'You are the assistant inside The Flow, a personal planner. The person has handed you a document — a PDF, a photo, a Word, Excel or PowerPoint file, a CSV, a text — and wants to know what is in it and what they have to do. Read it in whatever language it is (Turkish or English, often both).',
+  'If they ask something about it (a question, a summary, a check), answer that in "say" — up to about 120 words, plain sentences — and add to-dos only for what it asks them to do. With no instruction: "say" says in one or two sentences what the document is and what matters in it, and the actions are its to-dos.',
   'You never act yourself: the app shows your list for them to edit and confirm.',
   '',
   'Return ONLY a JSON object, no prose around it:',
   '{',
-  '  "say": "one or two short sentences: how many things you found, and anything you could not place",',
+  '  "say": "what the document is and what matters (or the answer to their question); how many to-dos you found, and anything you could not place",',
   '  "actions": [',
   '    { "type": "rock",  "title": "Send the signed contract back", "date": "YYYY-MM-DD", "time": "", "note": "p. 2 · due before the launch" },',
   '    { "type": "habit", "name": "Stretch 10 minutes" }',
@@ -2513,16 +2553,12 @@ function docUnpack(body) {
   const type = String((m ? m[1] : body.type) || '').toLowerCase().trim();
   const b64 = (m ? m[2] : raw).replace(/\s+/g, '');
   if (!b64) throw Object.assign(new Error('No file came through.'), { code: 400 });
-  const kind = DOC_MEDIA[type];
-  if (!kind) throw Object.assign(new Error('That file is not one the app can read. A PDF, a photo of the page, or a text file.'), { code: 415 });
   if (b64.length > DOC_MAX_BASE64) throw Object.assign(new Error('That file is over 6 MB. Export a smaller PDF, or the pages that matter.'), { code: 413 });
   if (!/^[A-Za-z0-9+/=]+$/.test(b64)) throw Object.assign(new Error('That file did not arrive in one piece. Try again.'), { code: 400 });
-  if (kind === 'text') {
-    const text = Buffer.from(b64, 'base64').toString('utf8').replace(/\u0000/g, '').slice(0, DOC_MAX_TEXT);
-    if (!text.trim()) throw Object.assign(new Error('That file is empty.'), { code: 400 });
-    return { kind, block: { type: 'text', text: '# THE DOCUMENT\n\n' + text } };
-  }
-  return { kind, block: { type: kind, source: { type: 'base64', media_type: type, data: b64 } } };
+  const d = docToText(Buffer.from(b64, 'base64'), body.name, type);
+  if (d.error) throw Object.assign(new Error(d.error), { code: /empty/.test(d.error) ? 400 : 415 });
+  if (d.block) return { kind: d.kind, block: d.block };
+  return { kind: 'text', block: { type: 'text', text: '# THE DOCUMENT (' + d.kind + ')\n\n' + d.text.slice(0, DOC_MAX_TEXT) } };
 }
 
 async function readDocument(job, body, key) {
@@ -2859,6 +2895,7 @@ module.exports._internals.sayPrefix = sayPrefix;
 module.exports._internals.hear = { handle: handleHear, polish: hearPolish, SYSTEM: HEAR_SYSTEM, setPoster(fn) { hearPost = fn || ((...a) => postJSON(...a)); } };
 module.exports._internals.chats = { handle: handleChats, title: chatTitle, clean: chatClean };
 module.exports._internals.systemBlocks = systemBlocks;
+module.exports._internals.docToText = docToText;
 module.exports._internals.statement = {
   prepareStatement, xlsxToText, htmlTableToText, parseStatementReply, maskNumbers, decodeText,
   jobs: stmtJobs, config: () => ({ cap: STMT_DAILY_CAP, maxBytes: STMT_MAX_BYTES }),

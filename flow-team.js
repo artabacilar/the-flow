@@ -58,6 +58,7 @@ const context = require('./flow-context');
 const mail = require('./flow-mail');
 const plugins = require('./flow-plugins');
 const projectsMod = require('./flow-projects');
+const salesMod = require('./flow-sales');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -236,7 +237,8 @@ function fakePost(url, opts) {
     const trAdd = said.match(/^(\S+) günü (.+?) ile toplantı ekle/i);
     if (trAdd) actions.push({ type: 'rock', title: trAdd[2] + ' ile toplantı', day: trAdd[1].toLowerCase(), note: 'Mesajdan' });
     if (/^track (.+) daily/i.test(said)) actions.push({ type: 'habit', name: said.match(/^track (.+) daily/i)[1] });
-    text = JSON.stringify({ say: (trAdd ? b.model + ' ekledi: ' : b.model + ' says: ') + said, actions });
+    const docSeen = String(typeof (last && last.content) === 'string' ? last.content : JSON.stringify((last && last.content) || '')).match(/DOCUMENT "([^"]+)" \((\w+)\)(?::\n([^\n]*))?/);
+    text = JSON.stringify({ say: (docSeen ? 'read ' + docSeen[1] + ' (' + docSeen[2] + '): ' + (docSeen[3] || '') + ' — ' : '') + (trAdd ? b.model + ' ekledi: ' : b.model + ' says: ') + said, actions });
   } else if (/hand it over/.test(system)) {
     text = 'Summary by ' + b.model + ':\n' + String((last && last.content) || '');
   } else {
@@ -492,6 +494,7 @@ async function handle(p, req, res, ctx) {
   if (await plugins.handle(p, req, res, ctx, { log })) return true;
   if (await handleRank(p, req, res, ctx)) return true;
   if (await projectsMod.handle(p, req, res, ctx, projDeps())) return true;
+  if (await salesMod.handle(p, req, res, ctx, salesDeps())) return true;
 
   if (p === '/api/team' && req.method === 'GET') {
     const [list, provs, know, use, lg] = await Promise.all([agents(ctx), providers(), knowledge(ctx), usage(ctx), ctx.get('team:log')]);
@@ -1653,6 +1656,12 @@ function projDeps() {
     }
   };
 }
+/* sales reports: the Finance assistant reviews them (flow-sales) */
+function salesDeps() {
+  let st = null; try { st = require('./flow-extras')._internals.statement; } catch (e) {}
+  return { agents: (ctx) => agents(ctx), tasks: (ctx) => tasks(ctx), newTask: (ctx, uid, f) => newTask(ctx, uid, f), log: (ctx, who, what) => log(ctx, who, what), xlsxToText: st ? st.xlsxToText : null, decodeText: st ? st.decodeText : null };
+}
+async function salesIngest(ctx, uid, input) { return salesMod.ingest(ctx, salesDeps(), uid, input); }
 /* flow-meetings has filed new meetings for this person: J.A.R.V.I.S. reads them. */
 async function meetingsFiled(uid, list) {
   if (!bootCtx || !list || !list.length) return [];
@@ -2014,4 +2023,5 @@ module.exports.resolveModel = resolveModel;
 module.exports.providers = providers;
 module.exports.forJarvis = forJarvis;
 module.exports.meetingsFiled = meetingsFiled;
+module.exports.salesIngest = salesIngest;
 module.exports._internals = { PROVIDERS, TEMPLATES, STARTER_IDS, TEMPLATE_IDS, MANNERS, agentSystem, parseReply, fromTemplate, setPost: (f) => { post = f; }, DEFAULT_MODEL };

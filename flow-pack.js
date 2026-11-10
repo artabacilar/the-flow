@@ -13796,7 +13796,7 @@ const Say = {
           '<textarea id="sy-text" rows="3" placeholder="Tomorrow at 10 call the venue. Start reading 20 minutes a day. Tick cold shower. Note: today felt slow."></textarea>' +
           '<div class="sy-ex">Big Rocks, habits, ticks, notes, moving things, opening a page — in one go, in your own words.</div>' +
           '<div class="sy-ex sy-docex">Or add a PDF, a photo of a page or a text file, and it becomes a to-do list you can edit before it goes in.</div>' +
-          '<input type="file" id="sy-file" accept="application/pdf,image/*,text/plain,text/markdown,.pdf,.txt,.md" hidden>' +
+          '<input type="file" id="sy-file" accept=".pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp,.csv,.tsv,.txt,.md,.rtf,.html,.htm,.json,.xml,.eml,.ics,.vcf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*,text/*" hidden>' +
           '<label class="sy-own"><input type="checkbox" data-say-own> I dictate with Wispr Flow or my keyboard — don\'t listen</label>' +
           '<details class="sy-set"><summary>Voice and manners</summary>' +
             '<label class="sy-opt"><span>Name</span><input type="text" id="sy-name" maxlength="24" data-say-pref="asstName" placeholder="Assistant" autocomplete="off"></label>' +
@@ -14605,7 +14605,8 @@ const Say = {
      The file goes to the server as it is; the model reads it and answers in
      the shape Say it answers in, so the same cards and the same "Do it" take
      it from there. Nothing lands in the planner unseen. */
-  DOC_TYPES: /^(application\/pdf|image\/(jpeg|png|webp|gif)|text\/(plain|markdown))$/,
+  DOC_TYPES: /^(application\/(pdf|json|xml|rtf|vnd\.openxmlformats-officedocument\.[a-z.]+|vnd\.oasis\.opendocument\.[a-z]+|vnd\.ms-excel|msword|vnd\.ms-powerpoint)|image\/(jpeg|png|webp|gif|heic|heif)|text\/[a-z.+-]+|message\/rfc822)$/,
+  DOC_EXT: /\.(pdf|docx|xlsx|pptx|odt|ods|odp|csv|tsv|txt|md|markdown|rtf|html?|json|xml|eml|ics|vcf|log|jpe?g|png|webp|gif|heic|doc|xls|ppt)$/i,
   DOC_MAX: 6 * 1024 * 1024,
   pickFile() {
     const i = Say.el && Say.el.querySelector('#sy-file'); if (!i || Say.busy) return;
@@ -14616,13 +14617,16 @@ const Say = {
     if (t) return t;
     if (/\.pdf$/i.test(file.name)) return 'application/pdf';
     if (/\.(txt|md|markdown)$/i.test(file.name)) return 'text/plain';
+    if (Say.DOC_EXT.test(file.name)) return 'application/octet-stream';
     return '';
   },
   async document(file) {
     if (!file || !Say.el || Say.busy) return;
     const type = Say.docType(file);
-    if (!Say.DOC_TYPES.test(type)) { Say.state('A PDF, a photo of the page, or a text file.'); return; }
-    if (file.size > Say.DOC_MAX) { Say.state('That file is over 6 MB. Export a smaller PDF, or just the pages that matter.'); return; }
+    if (!Say.DOC_TYPES.test(type) && !Say.DOC_EXT.test(String(file.name || ''))) { Say.state(Say.lang() === 'tr' ? 'PDF, Word, Excel, PowerPoint, CSV, metin ya da fotoğraf.' : 'A PDF, Word, Excel, PowerPoint, CSV, text file or a photo.'); return; }
+    /* a sales export handed to the Finance assistant: the sales review, not a to-do list */
+    try { const ag = Say.agent && Say.agent !== 'jarvis' && window.FlowTeam ? FlowTeam.agent(Say.agent) : null; if (ag && FlowTeam.isFinance(ag) && /\.(xlsx|csv)$/i.test(String(file.name || ''))) { Say.history.push({ role: 'user', text: file.name }); await FlowTeam.salesUpload(file); const r = (FlowTeam.sales || [])[0]; Say.history.push({ role: 'assistant', text: r && r.name === file.name ? (Say.lang() === 'tr' ? r.name + ' inceleniyor: ' + r.lines + ' satır. Hazır olunca haber veririm.' : 'Reviewing ' + r.name + ': ' + r.lines + ' lines. I will tell you when it is ready.') : (Say.lang() === 'tr' ? 'Bu dosya satış raporu olarak okunamadı.' : 'That file could not be read as a sales report.') }); try { Say.logPaint(); Say.chatPersist && Say.chatPersist(); } catch (e) {} const i = Say.el.querySelector('#sy-file'); if (i) i.value = ''; return; } } catch (e) {}
+    if (file.size > Say.DOC_MAX) { Say.state('That file is over 6 MB. Export a smaller file, or just the pages that matter.'); return; }
     Say.waiting = false;
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
     Speech.stop();
@@ -15493,9 +15497,38 @@ const Team = {
     const sh = Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
     const lg = (Team.data.log || []).filter((l) => l.agent === a.id).slice(-6).reverse();
     const act = Hud.panel('activity', 'Activity', lg.length ? lg.map((l) => '<div class="hud-r"><span data-i18n="off">' + esc(l.what) + '</span><b>' + esc(Team.when(l.at)) + '</b></div>').join('') : '<p class="hud-none">Nothing yet.</p>');
-    Hud.set('.hud-right', Team.assignPanel(a) + Team.tasksPanel(a.id) + Team.toolsPanel(a) + mem + sh + act);
+    Hud.set('.hud-right', Team.assignPanel(a) + (Team.isFinance(a) ? Team.salesPanel(a) : '') + Team.tasksPanel(a.id) + Team.toolsPanel(a) + mem + sh + act);
     Team.paintRail();
     Team.watch();
+  },
+  /* Sales reports for the Finance assistant: the export goes in, the review comes back. */
+  isFinance(a) { return a && (a.id === 'finance' || /financ|finans|muhasebe|account/i.test(String(a.role || '') + ' ' + String(a.name || ''))); },
+  async loadSales(force) {
+    if (Team.sales && !force) return Team.sales;
+    try { const r = await fetch('/api/team/sales', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.sales = (r.ok && j && j.reports) || []; } catch (e) { Team.sales = Team.sales || []; }
+    return Team.sales;
+  },
+  salesPanel(a) {
+    if (!Team.sales && !Team.salesLoading) { Team.salesLoading = true; Team.loadSales().then(() => { Team.salesLoading = false; if (Hud.on && Team.sel === a.id) Hud.paint(); }); }
+    const L = Team.sales || [];
+    const S = { queued: 'Queued', running: 'Reviewing', awaiting_info: 'Has a question', awaiting_approval: 'Needs your yes', done: 'Reviewed', failed: 'Did not finish', cancelled: 'Cancelled', none: 'Not started', gone: 'Removed' };
+    const tl = (n) => Math.round(n || 0).toLocaleString('tr-TR') + ' TL';
+    const row = (r) => '<details class="hud-pjt"><summary><em class="hud-pjts" data-s="' + esc(r.status) + '">' + esc(S[r.status] || r.status) + '</em><span data-i18n="off">' + esc(r.name) + '</span><small>' + r.lines + ' lines · ' + tl(r.total) + (r.from ? ' · ' + esc(r.from) + ' → ' + esc(r.to) : '') + ' · ' + esc(Team.when(r.at)) + (r.via === 'telegram' ? ' · Telegram' : '') + '</small></summary>' +
+      (r.result ? '<p class="hud-sub" data-i18n="off">' + esc(r.result) + '</p>' : '') + (r.task ? '<button type="button" class="hud-btn ghost" data-hud="task" data-id="' + esc(r.task) + '">Open the review</button>' : '') + (r.error ? '<p class="hud-sub">' + esc(r.error) + '</p>' : '') + '</details>';
+    return Hud.panel('sales', 'Sales reports', '<p class="hud-sub">Drop in the sales export (.xlsx or CSV, e.g. TigerLogo "Cari Hesaplara Göre Satış Dağılımı"). The numbers are counted first — by rep, campaign and customer, free-of-charge lines, prices that differ — then ' + esc(a.name) + ' reviews it. You can also send the file to J.A.R.V.I.S. on Telegram.</p>' +
+      '<label class="hud-btn" data-flow-no-chip>' + (Team.salesBusy ? 'Reading…' : 'Add a sales report') + '<input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-team-sales hidden' + (Team.salesBusy ? ' disabled' : '') + '></label>' +
+      (L.length ? L.map(row).join('') : '<p class="hud-none">No reports yet.</p>'));
+  },
+  async salesUpload(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { toast('That file is larger than 8 MB.', 'bad', 2600); return; }
+    Team.salesBusy = true; Hud.paint();
+    try {
+      const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = () => rej(fr.error); fr.readAsDataURL(file); });
+      const j = await Team.post('/api/team/sales', { name: file.name, data });
+      if (j && j.ok) { Team.sales = j.reports; toast(j.say, null, 5200); try { await Team.load(true); } catch (e) {} }
+    } catch (e) { toast('That file could not be read.', 'bad', 2400); }
+    Team.salesBusy = false; Hud.paint();
   },
   /* On his own view: his model, and the shared knowledge, under the day. */
   jarvisPanels() {
@@ -16760,6 +16793,7 @@ const Team = {
       if (j && j.ok && Team.data) { Team.data.brief = Object.assign(Team.data.brief || {}, { on: j.on, at: j.at }); toast(j.on ? 'Every morning at ' + j.at : 'Morning briefing off', null, 1600); }
       return;
     }
+    if (t.matches('[data-team-sales]')) { const f = t.files && t.files[0]; t.value = ''; await Team.salesUpload(f); return; }
     if (t.matches('[data-team-pj]')) { const k = t.getAttribute('data-team-pj'); const j = await Team.post('/api/team/projects', { op: 'settings', [k]: !!t.checked }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); toast(t.checked ? 'On' : 'Off', null, 1600); } return; }
     if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
     if (t.matches('[data-team-eff]')) { const k = t.getAttribute('data-team-eff'); const j = await Team.post('/api/team/efficiency/settings', { [k]: !!t.checked }); if (j && j.ok) { await Team.loadEf(true); toast(t.checked ? 'On — one-step delegations skip the hand-over call' : 'Off', null, 2000); } return; }

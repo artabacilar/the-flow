@@ -325,7 +325,7 @@ async function converse(ctx, uid, channel, text, meta) {
   if (at) { const ag = active.find((a) => firstName(a) === at[1].toLowerCase()); if (ag) return await talk(ctx, uid, channel, ag, at[2].trim(), meta); }
   /* a bare answer while someone is waiting on one */
   const waiting = (await team.tasks(ctx)).filter((t) => t.status === 'awaiting_info');
-  if (waiting.length && mine.agent === 'jarvis' && text.length < 400 && !/\?$/.test(text)) {
+  if (waiting.length && !(meta && meta.doc) && mine.agent === 'jarvis' && text.length < 400 && !/\?$/.test(text)) {
     await team.patchTask(ctx, waiting[0].id, (x) => { x.answer = text; x.status = 'queued'; x.seen = true; });
     team.kick(uid, ctx);
     return 'Passed on to ' + ((active.find((a) => a.id === waiting[0].asker) || {}).name || 'them') + '. They are back on it.';
@@ -352,6 +352,7 @@ async function tasksText(ctx) {
    approve and decline — in words, from a text message. */
 async function talk(ctx, uid, channel, agent, text, meta) {
   if (agent.id !== 'jarvis') {
+    if (meta && meta.doc) text = meta.doc.text ? 'DOCUMENT "' + meta.doc.name + '":\n' + meta.doc.text.slice(0, 30000) + '\n\n---\n' + text : text + ' (a file "' + meta.doc.name + '" was sent; only J.A.R.V.I.S. reads PDFs and photos)';
     const r = await team.sayTo(ctx, agent.id, text, team.context ? team.context.langOf(text) : 'en', { via: channel, spoken: meta && meta.spoken ? meta.spoken : null });
     return r.error ? r.error : r.say + (team.context && !(meta && meta.spoken) ? team.context.footer(r.sources, team.context.langOf(text)) : '');
   }
@@ -374,6 +375,7 @@ const J_SYSTEM = (owner, agents, know, tasks, pending, snapshot, planner) => [
   'Return ONLY a JSON object:',
   '{ "say": "your reply", "ask": false, "actions": [ { "type": "rock", "title": "", "day": "friday | tomorrow | 2026-11-13", "time": "14:00 (optional)", "end": "", "priority": "high | medium | low", "note": "who, why, what to bring" }, { "type": "rock_update", "id": "from THEIR WEEK", "title": "", "day": "", "time": "", "note": "", "done": true }, { "type": "habit", "name": "" }, { "type": "habit_log", "habit": "name", "day": "today", "done": true }, { "type": "delegate", "title": "", "brief": "", "callMe": false }, { "type": "approve", "n": 1 }, { "type": "decline", "n": 1 } ] }',
   '· rock / rock_update / habit / habit_log: their planner. Telling you what they have to do, or who they want to meet, IS the request — add it at once, no confirmation. A meeting with someone is a Priority on that day titled "Meet <name> (<company>)", with who they are and why in the note. Two things to raise with the same person are ONE Priority. Waiting on someone is a follow-up Priority. Check THEIR WEEK first: change what is there (rock_update) rather than adding it twice; "done", "move", "rename" use rock_update with its id. Something done every day is a habit, not seven Priorities.',
+  '· A DOCUMENT may come with the message (a PDF, Word, Excel, PowerPoint, a photo…): read it fully, in whatever language it is. Answer what they ask about it; add Priorities for what it asks of them; hand work on it to the team (with what the document says in the brief, since they will not see the file). With no question: say in a few lines what it is, what matters, and what is for them to do.',
   '· Ask only when it truly matters (which of two people, a day that cannot be guessed): then "ask": true, one short question, and NO actions. A missing time is not a reason to ask — leave it out.',
   '· "say" says what was done, in the past tense ("Added Kadir Yıldız (Noar) to Friday."), in the language they wrote in.',
   '· delegate: when they want work done by the team — drafting, replying, analysing, researching, checking, preparing. "brief" carries every detail; "callMe": true if they asked to be rung when it is ready. The team works in the background and they are messaged when it is done; say so.',
@@ -397,11 +399,18 @@ async function jarvis(ctx, uid, channel, text, meta) {
   try { if (extras && extras._internals && extras._internals.buildContext) snapshot = await extras._internals.buildContext(ctx.mine); } catch (e) {}
   const hkey = meta && meta.ws ? 'ws:' + meta.ws.id : channel;
   const hist = await histGet(ctx, hkey);
-  const messages = hist.concat([{ role: 'user', content: text }]);
+  let content = text;
+  if (meta && meta.doc) {
+    const dn = 'DOCUMENT "' + meta.doc.name + '" (' + meta.doc.kind + ')';
+    if (meta.doc.text) content = dn + ':\n' + meta.doc.text.slice(0, 60000) + '\n\n---\n' + text;
+    else if (meta.doc.block && which.provider === 'anthropic') content = [meta.doc.block, { type: 'text', text: dn + ' is attached.\n\n' + text }];
+    else content = text + '\n\n(' + dn + ' was sent, but the model in use cannot read PDFs or photos; say so.)';
+  }
+  const messages = hist.concat([{ role: 'user', content }]);
   const planner = await plannerView(ctx);
   const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot, planner).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
     (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
-  const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: 1200, timeoutMs: 60000 });
+  const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: meta && meta.doc ? 2500 : 1200, timeoutMs: meta && meta.doc ? 150000 : 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
   let say = '', actions = [];
@@ -425,7 +434,7 @@ async function jarvis(ctx, uid, channel, text, meta) {
   }
   const reply = [say].concat(extra).filter(Boolean).join('\n\n') || (team.context && team.context.langOf(text) === 'tr' ? 'Not aldım, efendim.' : 'Noted, sir.');
   let foot = ''; try { const rec = await team.provenance(ctx, { agent: 'jarvis', via: channel, model: which.model, said: text, reply, knowledge: know, superseded: kb.old, snapshot: !!snapshot, thread: hist.length }); if (team.context && rec) foot = team.context.footer(team.context.sourcesFor(know, rec.used), team.context.langOf(text)); } catch (e) {}
-  await histSet(ctx, hkey, hist.concat([{ role: 'user', content: text }, { role: 'assistant', content: reply }]).slice(-12));
+  await histSet(ctx, hkey, hist.concat([{ role: 'user', content: (meta && meta.doc ? '[document: ' + meta.doc.name + '] ' : '') + text }, { role: 'assistant', content: reply }]).slice(-12));
   return reply + foot;
 }
 /* ---------- the planner, from a chat channel ------------------------------
@@ -455,6 +464,18 @@ async function plannerDo(ctx, a) {
     if (a.type === 'habit_log') { if (!a.habit) return null; await I.log_habit(pick(a, ['habit', 'day', 'done']), c); return null; }
   } catch (e) { return (team.context && team.context.langOf(String(a.title || a.name || a.habit || '')) === 'tr' ? 'Yapılamadı: ' : 'Not done: ') + str(e.message, 200); }
   return null;
+}
+const fakeFiles = new Map();   /* FAKE only: file_id → contents */
+async function telegramFile(fileId) {
+  if (FAKE) { const b = fakeFiles.get(String(fileId)); if (!b) throw new Error('no such file'); return b; }
+  const tok = env('TELEGRAM_BOT_TOKEN');
+  const r = await fetch('https://api.telegram.org/bot' + tok + '/getFile?file_id=' + encodeURIComponent(fileId));
+  const j = await r.json().catch(() => null);
+  if (!j || !j.ok || !j.result || !j.result.file_path) throw new Error('telegram getFile failed');
+  if (j.result.file_size && j.result.file_size > 8 * 1024 * 1024) throw new Error('larger than 8 MB');
+  const f = await fetch('https://api.telegram.org/file/bot' + tok + '/' + j.result.file_path);
+  if (!f.ok) throw new Error('download failed (' + f.status + ')');
+  return Buffer.from(await f.arrayBuffer());
 }
 async function histGet(ctx, channel) { const v = await ctx.get('team:chan:hist:' + channel); return Array.isArray(v) ? v : []; }
 async function histSet(ctx, channel, h) { await ctx.set('team:chan:hist:' + channel, h.map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 2000) }))); }
@@ -622,6 +643,24 @@ async function telegramUpdate(u) {
   meta.command = /^\s*\//.test(String(msg.text || ''));
   const uid = isGroup ? await groups.groupOwner('telegram', chat.id) : await whose('telegram', String(chat.id));
   const ctxR = uid ? await ctxFor(uid) : null;
+  /* a document sent to him: a sales export goes to the Finance assistant's
+     review; anything else (PDF, Word, Excel, PowerPoint, text, a photo sent
+     as a file) is read with the message, like the same words typed */
+  if (msg.document && !isGroup) {
+    if (!ctxR) { await send('telegram', to, UNKNOWN('telegram')); return; }
+    let lang = 'en'; try { const st = await ctxR.get('flow:settings'); const o = typeof st === 'string' ? JSON.parse(st) : st; lang = (o && o.lang) || 'en'; } catch (e) {}
+    if (msg.caption && team && team.context) lang = team.context.langOf(msg.caption, lang);
+    const fname = str(msg.document.file_name || 'document', 120);
+    let buf; try { buf = await telegramFile(msg.document.file_id); } catch (e) { await send('telegram', to, lang === 'tr' ? 'Dosyayı alamadım (' + str(e.message, 80) + '). Bir kez daha gönderin.' : 'I could not fetch that file (' + str(e.message, 80) + '). Send it once more.'); return; }
+    if (/\.(xlsx|csv)$/i.test(fname) && team && team.salesIngest && !/\b(oku|özet|read|summar)/i.test(msg.caption || '')) {
+      const r = await team.salesIngest(ctxR, uid, { name: fname, data: buf, via: 'telegram', note: msg.caption || '' });
+      if (r.ok) { await send('telegram', to, lang === 'tr' ? r.sayTr : r.say); return; }
+    }
+    const d = extras && extras._internals && extras._internals.docToText ? extras._internals.docToText(buf, fname, msg.document.mime_type) : { error: 'Documents cannot be read on this server.' };
+    if (d.error) { await send('telegram', to, d.error); return; }
+    meta.doc = { name: fname, kind: d.kind, text: d.text || '', block: d.block || null };
+    msg.text = msg.caption || (lang === 'tr' ? 'Bu belgeyi oku: ne olduğunu, önemli noktaları ve benden ne yapmam gerektiğini söyle.' : 'Read this document: tell me what it is, what matters in it, and what I need to do.');
+  }
   /* a screenshot in an email's topic is feedback on that draft */
   if (msg.photo && !msg.text) {
     if (!ctxR || !team || !team.mail || !isGroup) return;
@@ -728,6 +767,7 @@ async function handle(p, req, res, ctx) {
 
   /* tests only: what the stand-in would have sent */
   if (FAKE && p === '/api/channels/_sent') return json(200, { n: sent.length, last: sent[sent.length - 1] || null, recent: sent.slice(-6) });
+  if (FAKE && p === '/api/channels/_file' && req.method === 'POST') { let b = {}; try { b = JSON.parse(await ctx.readBody(req)); } catch (e) {} fakeFiles.set(String(b.id), Buffer.from(String(b.data || ''), 'base64')); return json(200, { ok: true }); }
   if (FAKE && p === '/api/channels/_failnext') { global.__failNextSend = true; return json(200, { ok: true }); }
   if (FAKE && p === '/api/channels/_replay' && groups) { const n = await groups.replayInbox((ch, u) => telegramUpdate(u)); const d = await groups.retryOutbox(); return json(200, { ok: true, replayed: n, delivered: d }); }
 
@@ -737,7 +777,7 @@ async function handle(p, req, res, ctx) {
     if (!safeEq(headers['x-telegram-bot-api-secret-token'], telegramSecret())) return text(403, 'no');
     const raw = await ctx.readBody(req); let u = {}; try { u = JSON.parse(raw); } catch (e) {}
     const msg = u.message || u.edited_message; const chat = msg && msg.chat;
-    if (!msg || !chat || (typeof msg.text !== 'string' && !msg.voice && !msg.photo)) { json(200, { ok: true }); return true; }
+    if (!msg || !chat || (typeof msg.text !== 'string' && !msg.voice && !msg.photo && !msg.document)) { json(200, { ok: true }); return true; }
     /* written down before it is acknowledged: a restart mid-reply replays it */
     let inId = null; try { if (groups) inId = await groups.inboxPut('telegram', u); } catch (e) {}
     json(200, { ok: true });
