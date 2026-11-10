@@ -287,6 +287,11 @@ async function buildContext(mine) {
   push('Training', await pick('ld_training'));
   push('Habits', await pick('ld_habits'));
   push('Sleep', await pick('ld_sleep'));
+  /* The band's own numbers, when WHOOP is connected: recovery %, HRV (ms),
+     resting heart rate, day strain, sleep performance % and hours asleep,
+     by day. What lets him say how the body is doing, not only the diary. */
+  const wh = await pick('whoop');
+  if (wh && typeof wh === 'object') push('WHOOP (by day: recovery %, HRV ms, resting HR, strain, sleep %, hours asleep)', wh);
   push('Mood and energy', await pick('ld_mood'));
   push('Finances (budget and the first expense form)', await pick('ld_finance'));
   /* The second expense store: receipts, statement imports and the newer
@@ -2143,6 +2148,7 @@ const DO_SYSTEM = [
   'Rules:',
   '· One request can hold several actions; keep their order. At most 12.',
   '· Never invent ids. If they mention a Priority or habit that is not in the list, use rock/habit to create it instead, and say so.',
+  '· "How do I feel?", "how am I today?", "nasıl hissediyorum?": give your read of how they are likely feeling from WHOOP (today\'s recovery against their recent days, HRV and resting heart rate against their own baseline, last night\'s sleep, yesterday\'s strain) together with their mood and energy entries and how full the day is. Say it plainly — e.g. "Recovery 38%, HRV well under your usual, five and a half hours\' sleep: you are probably flat and a bit short-fused today" — then one sensible suggestion (an easier session, an earlier night, the hard thing in the morning). It is a read of the numbers, not a diagnosis; never claim certainty about feelings. With no WHOOP data, say WHOOP is not connected and read what there is.',
   '· A question ("what is left today?", "how did I sleep this week?", "what should I focus on?", "how much did I spend on food?") gets a real answer in "say", from the lists and from THEIR DATA below, and no actions. Be specific; cite what you saw. If the data does not show it, say so — never invent numbers, entries or dates.',
   '· Advice is welcome when asked: brief, concrete, grounded in their own data.',
   '· "say" is spoken aloud by a voice: plain sentences, no markdown, no lists or bullet points, no emoji, no URLs. Numbers and times as a person says them. One or two short sentences for a confirmation. An answer: the point first, in at most three or four short sentences (about 60 words) — name two or three things, not every item; offer more ("Shall I go through the rest?") rather than reading out a list. Longer only when they ask for detail.',
