@@ -118,6 +118,7 @@ const SUITES = [
   ['hud',      'test-hud.js',      { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_MERGE: '1' }],
   ['wake',     'test-wake.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein' }],
   ['team',     'test-team.js',     { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
+  ['projects', 'test-projects.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1', FLOW_MERGE: '1' }],
   ['team2',    'test-team2.js',    { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['channels', 'test-channels.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1', PUBLIC_URL: 'http://localhost:4222',
     TELEGRAM_BOT_TOKEN: 'test-tg', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: '1', WHATSAPP_VERIFY_TOKEN: 'verify-me', WHATSAPP_APP_SECRET: 'wa-secret', WATI_API_ENDPOINT: 'https://live-mt-server.wati.io/12345', WATI_API_TOKEN: 'Bearer wati-test', WATI_WEBHOOK_KEY: 'wati-key-123',
