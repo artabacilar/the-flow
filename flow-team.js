@@ -1282,7 +1282,16 @@ async function sendEmail(m) {
   if (m.replyTo && /^[^\s@]+@[^\s@]+$/.test(m.replyTo)) payload.reply_to = m.replyTo;
   if (FAKE) { mailSent.push(payload); return { ok: true, id: 'fake-' + mailSent.length, from }; }
   try {
-    const r = await fetchJSON('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + String(process.env.RESEND_API_KEY || '').trim(), 'content-type': 'application/json', 'Idempotency-Key': String(m.key || '').slice(0, 64) }, body: JSON.stringify(payload) }, 20000);
+    const post = (p, k) => fetchJSON('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + String(process.env.RESEND_API_KEY || '').trim(), 'content-type': 'application/json', 'Idempotency-Key': String(k || '').slice(0, 64) }, body: JSON.stringify(p) }, 20000);
+    let r = await post(payload, m.key);
+    /* A sending key can be locked to one domain (the one in Render is locked
+       to mail.theflow.today). Refused from theflow.today, it goes once more
+       from the verified subdomain — the same fallback the password resets use. */
+    if (r.status === 403 && !(process.env.MAIL_FROM || '').trim()) {
+      const alt = from.replace('<' + fromAddr + '>', '<hello@mail.theflow.today>');
+      r = await post(Object.assign({}, payload, { from: alt }), String(m.key || '').slice(0, 58) + '-m');
+      if (r.status >= 200 && r.status < 300) return { ok: true, id: r.body && r.body.id, from: alt };
+    }
     if (r.status >= 200 && r.status < 300) return { ok: true, id: r.body && r.body.id, from };
     return { ok: false, error: 'The email provider refused it (' + r.status + (r.body && r.body.message ? ': ' + str(r.body.message, 120) : '') + ').' };
   } catch (e) { return { ok: false, error: 'The email provider could not be reached.' }; }
