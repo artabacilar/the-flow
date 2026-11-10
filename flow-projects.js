@@ -100,7 +100,16 @@ function cleanRead(j, agentIds) {
 }
 
 /* ---------- acting on it -------------------------------------------------- */
-async function processMeeting(ctx, deps, uid, m, opts) {
+/* One meeting at a time per person: each reading rewrites the project list. */
+const queues = new Map();
+function processMeeting(ctx, deps, uid, m, opts) {
+  const key = uid || (ctx.user && ctx.user.id) || '';
+  const prev = queues.get(key) || Promise.resolve();
+  const next = prev.catch(() => {}).then(() => readMeeting(ctx, deps, uid, m, opts));
+  queues.set(key, next); next.finally(() => { if (queues.get(key) === next) queues.delete(key); }).catch(() => {});
+  return next;
+}
+async function readMeeting(ctx, deps, uid, m, opts) {
   opts = opts || {};
   const done = await processed(ctx);
   if (done[m.id] && !opts.again) return { skipped: 'already', record: done[m.id] };
@@ -157,6 +166,8 @@ async function processMeeting(ctx, deps, uid, m, opts) {
       } catch (e) { if (deps.log) await deps.log(ctx, 'jarvis', 'Could not start "' + d.title + '": ' + e.message); break; }
     }
   }
+  /* read again without new work: the work this meeting already started stays filed under it */
+  if (opts.noTasks && home) { try { for (const t of await deps.tasks(ctx)) if (t.from && t.from.meeting === m.id && home.tasks.indexOf(t.id) < 0) home.tasks.push(t.id); } catch (e) {} }
   if (home && read.ideas.length) home.ideas = read.ideas.concat(home.ideas || []).slice(0, 8);
   await saveProjects(ctx, list);
 
@@ -217,7 +228,7 @@ async function handle(p, req, res, ctx, deps) {
   if (b.op === 'process') {
     const m = (await meetingsOf(ctx)).find((x) => x.id === String(b.meeting || ''));
     if (!m) { json(res, 404, { error: 'That meeting is not in The Flow yet. It arrives from Fathom within ten minutes of its notes.' }); return true; }
-    const r = await processMeeting(ctx, deps, uid, m, { again: !!b.again });
+    const r = await processMeeting(ctx, deps, uid, m, { again: !!b.again, noTasks: !!b.noTasks });
     if (r.error) { json(res, r.status || 400, r); return true; }
     json(res, 200, Object.assign({ ok: true }, r, { view: await view(ctx, deps) })); return true;
   }
