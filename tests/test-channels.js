@@ -120,6 +120,10 @@ const post = (p, body, headers, raw) => fetch(H + p, { method: 'POST', headers: 
   await post('/api/channels/telegram', { message: { chat: { id: 777, type: 'private' }, from: { id: 777, first_name: 'Artur' }, document: { file_id: 'doc-3', file_name: 'eski.doc' } } }, { 'x-telegram-bot-api-secret-token': tgSecret });
   await wait(1000); s1 = await sentNow();
   ok('an old .doc is answered with how to send it instead', /save it as \.docx/.test(s1.last.body.text), s1.last.body.text);
+  await post('/api/channels/_file', { id: 'ph-1', data: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70]).toString('base64') });
+  await post('/api/channels/telegram', { message: { chat: { id: 777, type: 'private' }, from: { id: 777, first_name: 'Artur' }, photo: [{ file_id: 'ph-0', width: 90 }, { file_id: 'ph-1', width: 1280 }], caption: 'Add this to my schedule' } }, { 'x-telegram-bot-api-secret-token': tgSecret });
+  await wait(1500); s1 = await sentNow();
+  ok('a photo sent on Telegram is read by J.A.R.V.I.S. (the largest size), with what he was asked', /read photo \(photo\)/.test(s1.last.body.text) && /Add this to my schedule/.test(s1.last.body.text), s1.last.body.text.slice(0, 160));
   await tg(777, 'have sarah draft a reply to the refund question'); await wait(2500);
   const tl = await api('/api/team/tasks');
   const viaTg = tl.j.tasks.find((t) => t.via === 'telegram');
