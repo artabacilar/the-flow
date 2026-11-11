@@ -140,6 +140,18 @@ function person() {
   ok('a task opens with its comments and what changed', det && det.com && det.log, det);
   await p.click('#org-detail [data-hud="orgstatus"][data-s="done"]'); await p.waitForTimeout(800);
   ok('the owner marks it done from there', await p.evaluate(() => [...document.querySelectorAll('#flow-hud .org-col[data-s="done"] .org-t b')].some((x) => x.textContent === 'Fix the login')));
+
+  console.log('\n— filing projects that are not in a company —');
+  const u1 = (await own('/api/team/projects', { op: 'create', name: 'Turkey Hair Show', goal: 'Models and stage' })).j.project;
+  const u2 = (await own('/api/team/projects', { op: 'create', name: 'China sourcing trip' })).j.project;
+  await p.evaluate(async () => { await FlowOrg.load(true); FlowOrg.go({ company: '_none' }); }); await p.waitForTimeout(700);
+  ok('each project not in a company has a "Put in" menu on its card', await p.evaluate((id) => !!document.querySelector('#flow-hud .org-prw select[data-org="pjcompany"][data-id="' + id + '"]'), u1.id));
+  await p.selectOption('#flow-hud select[data-org="pjcompany"][data-id="' + u1.id + '"]', abko.id); await p.waitForTimeout(900);
+  ok('putting it in a company that exists moves it there', (await own('/api/team/org')).j.projects.find((x) => x.id === u1.id).company === abko.id && await p.evaluate((id) => !document.querySelector('#flow-hud .org-prw select[data-id="' + id + '"]'), u1.id));
+  await p.selectOption('#flow-hud select[data-org="pjcompany"][data-id="' + u2.id + '"]', '__new'); await p.waitForTimeout(500);
+  await p.fill('#flow-hud form[data-team="orgnewco"] input[name="name"]', 'BiovaLab'); await p.click('#flow-hud form[data-team="orgnewco"] button[type="submit"]'); await p.waitForTimeout(1200);
+  const g2 = (await own('/api/team/org')).j; const bv = g2.companies.find((c) => c.name === 'BiovaLab');
+  ok('"+ New company…" makes the company and puts the project in it', !!bv && g2.projects.find((x) => x.id === u2.id).company === bv.id, { companies: g2.companies.map((c) => c.name) });
   if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/org-task.png' });
 
   console.log('\n— Eren\'s screens —');
