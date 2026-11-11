@@ -141,6 +141,7 @@ const SUITES = [
   ['plugins', 'test-plugins.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['mcpauth', 'test-mcpauth.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['catalog', 'test-catalog.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
+  ['org',      'test-org.js',      { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_MERGE: '1', FLOW_TEAM_FAKE: '1' }],
   ['access', 'test-access.js', { FLOW_OWNER_EMAIL: OWNER, FLOW_INVITE_CODE: 'letmein', FLOW_TEAM_FAKE: '1' }],
   ['cache', 'test-cache.js', {}],
   ['audit',    'test-audit.js',    {}],

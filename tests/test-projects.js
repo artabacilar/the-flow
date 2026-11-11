@@ -141,6 +141,8 @@ const SATIS = { id: 'm-satis', title: 'ABKO SATIS TOPLANTISI', at: today, url: '
   await api({ op: 'update', id: pid, status: 'active', health: 'at_risk' });
   await p.evaluate(() => FlowHud.open()); await p.waitForTimeout(1200);
   await p.click('#flow-hud [data-hud="projects"]'); await p.waitForTimeout(1500);
+  ok('Projects opens on your companies; the meetings and J.A.R.V.I.S.\'s work are one button away', await p.evaluate(() => !!document.querySelector('#flow-hud .org') && !!document.querySelector('#flow-hud [data-hud="orgclassic"]')));
+  await p.click('#flow-hud [data-hud="orgclassic"]'); await p.waitForTimeout(1200);
   let v = await p.evaluate(() => ({ brand: document.querySelector('#flow-hud .hud-brand b').textContent, cards: [...document.querySelectorAll('#flow-hud .hud-pj')].map((x) => x.querySelector('.hud-pjn').textContent), sel: (document.querySelector('#flow-hud .hud-pj.sel .hud-pjn') || {}).textContent,
     health: (document.querySelector('#flow-hud .hud-pj .hud-pjh') || {}).textContent, right: (document.querySelector('#flow-hud .hud-right') || {}).textContent || '', meet: (document.querySelector('#flow-hud [data-k="pjmeet"]') || {}).textContent || '' }));
   ok('Projects opens from the rail, with each project as a card', v.brand === 'Projects' && v.cards.length === 2 && v.cards.indexOf('Revelle') >= 0, v);
