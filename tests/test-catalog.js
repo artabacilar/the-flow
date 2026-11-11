@@ -52,6 +52,15 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   const v = await p.evaluate(() => { const g = document.querySelector('#flow-hud [data-k="catalog"]'); return g && { title: g.querySelector('.hud-ph').textContent, rows: g.querySelectorAll('.hud-catr').length, more: !!g.querySelector('[data-hud="catmore"]'), search: !!g.querySelector('input[data-team-catq]'), shelf: g.querySelectorAll('select[data-team-catc] option').length }; });
   ok('"Browse all plugins" opens the catalogue: 1,200, forty showing, more to load, a search and shelves', v && /Plugin catalogue · 1,200/.test(v.title) && v.rows === 40 && v.more && v.search && v.shelf >= 5, v);
   await p.click('#flow-hud [data-hud="catmore"]'); await p.waitForTimeout(800);
+  const ic = await p.evaluate(async () => { const ids = FlowTeam.cat.items.slice(0, 6).map((x) => x.id); const out = []; for (const id of ids) { const r = await fetch('/api/team/plugins/icon?id=' + encodeURIComponent(id), { credentials: 'same-origin' }); out.push([id, r.status, r.headers.get('content-type'), r.headers.get('content-security-policy') || '']); } return out; });
+  ok('each plugin\'s logo comes through the server — an image, no script able to run — or a clean miss', ic.every(([id, st, ty, csp]) => C.fakeHasIcon(id) ? st === 200 && /^image\//.test(ty) && /sandbox/.test(csp) : st === 404), ic);
+  await p.waitForTimeout(800);
+  await p.fill('#flow-hud input[data-team-catq]', 'notes'); await p.waitForTimeout(2000);
+  const lg = await p.evaluate(() => [...document.querySelectorAll('#flow-hud [data-k="catalog"] .hud-catr')].map((r) => { const l = r.querySelector('.hud-catlogo'); const u = (r.querySelector('[data-hud="catadd"]') || {}).getAttribute ? '' : ''; const img = l.querySelector('img'); const id = img ? decodeURIComponent(img.getAttribute('src').split('id=')[1]) : (l.getAttribute('data-id') || ''); return { has: l.classList.contains('has'), img: !!img, letter: l.firstChild.textContent, id }; }));
+  const withImg = lg.filter((x) => x.img), without = lg.filter((x) => !x.img);
+  ok('the rows show the logos, and a first letter where a plugin has none', lg.length === 40 && withImg.length >= 5 && withImg.every((x) => x.has && C.fakeHasIcon(x.id)) && without.length >= 5 && lg.every((x) => /^[A-Z]$/.test(x.letter)), { w: withImg.length, wo: without.length, s: lg.slice(0, 3) });
+  await p.fill('#flow-hud input[data-team-catq]', ''); await p.waitForTimeout(1200);
+  await p.click('#flow-hud [data-hud="catmore"]'); await p.waitForTimeout(800);
   ok('"Show more" adds the next forty', await p.evaluate(() => document.querySelectorAll('#flow-hud [data-k="catalog"] .hud-catr').length === 80));
   await p.fill('#flow-hud input[data-team-catq]', 'recipes 7'); await p.waitForTimeout(1200);
   const s = await p.evaluate(() => [...document.querySelectorAll('#flow-hud [data-k="catalog"] .hud-catr b')].map((x) => x.textContent));
