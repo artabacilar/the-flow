@@ -13707,6 +13707,50 @@ const Speech = {
   }
 };
 window.FlowSpeech = Speech;
+/* Stop: whenever he is talking, a Stop button at the top of the screen
+   (and Esc) silences him at once — the sentence playing and every one
+   still queued behind it. It looks only while he speaks: a sound starting
+   wakes it, and it puts itself away a moment after he has finished. */
+const Hush = {
+  el: null, t: 0, quietSince: 0,
+  build() {
+    if (Hush.el) return Hush.el;
+    const b = document.createElement('button');
+    b.type = 'button'; b.id = 'flow-hush'; b.hidden = true; b.setAttribute('data-i18n', 'off');
+    b.setAttribute('aria-label', 'Stop talking');
+    b.innerHTML = '<i aria-hidden="true"></i><span>Stop</span>';
+    b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); Hush.now(); });
+    document.body.appendChild(b); Hush.el = b; return b;
+  },
+  now() {
+    try { Speech.stop(); } catch (e) {}
+    try { Wake.barge = false; } catch (e) {}
+    Hush.hide();
+    try { Track.hit('hush'); } catch (e) {}
+  },
+  hide() { clearInterval(Hush.t); Hush.t = 0; if (Hush.el) Hush.el.hidden = true; document.documentElement.classList.remove('jv-talking'); },
+  watch() {
+    if (!document.body) return;
+    Hush.build().hidden = false; document.documentElement.classList.add('jv-talking'); Hush.quietSince = 0;
+    if (Hush.t) return;
+    Hush.t = setInterval(() => {
+      if (Speech.speaking()) { Hush.quietSince = 0; return; }
+      if (!Hush.quietSince) { Hush.quietSince = Date.now(); return; }
+      if (Date.now() - Hush.quietSince > 900) Hush.hide();   /* not between two sentences: done */
+    }, 200);
+  }
+};
+window.FlowHush = Hush;
+(() => {
+  const play = Speech.play, device = Speech.device;
+  if (play) Speech.play = function () { try { Hush.watch(); } catch (e) {} return play.apply(this, arguments); };
+  Speech.device = function () { try { Hush.watch(); } catch (e) {} return device.apply(this, arguments); };
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !Hush.el || Hush.el.hidden) return;
+    if (!Speech.speaking() && !Hush.t) return;
+    e.preventDefault(); e.stopImmediatePropagation(); Hush.now();
+  }, true);
+})();
 /* Any touch, click or key unlocks audio for what he will say later: browsers
    and the Mac and iPhone web views only let sound start from a gesture, and
    a reply arrives seconds after the one that asked for it. */
@@ -13894,6 +13938,17 @@ const Say = {
       if (a === 'drop') { const i = +b.getAttribute('data-i'); if (Say.plan) { Say.plan.actions.splice(i, 1); Say.paintPlan(); } return; }
       if (a === 'when') { const i = +b.getAttribute('data-i'); const it = Say.plan && Say.plan.actions[i]; if (it) { it.date = b.getAttribute('data-d'); Say.paintPlan(); } return; }
     });
+    /* A photo pasted (⌘V) or dropped onto the console is read like one
+       added with Document: an invitation, a screenshot, a page. */
+    const fileOf = (list) => [...(list || [])].map((it) => (it && typeof it.getAsFile === 'function') ? (it.kind === 'file' ? it.getAsFile() : null) : it).find((f) => f && (/^image\//.test(f.type || '') || Say.DOC_EXT.test(f.name || '') || /^(application|audio|video)\//.test(f.type || '')));
+    wrap.addEventListener('paste', (e) => {
+      const f = e.clipboardData && (fileOf(e.clipboardData.files) || fileOf(e.clipboardData.items));
+      if (!f) return;
+      e.preventDefault(); Say.document(f);
+    });
+    ['dragenter', 'dragover'].forEach((ev) => wrap.addEventListener(ev, (e) => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].indexOf('Files') >= 0) { e.preventDefault(); wrap.classList.add('sy-drop'); } }));
+    ['dragleave', 'drop'].forEach((ev) => wrap.addEventListener(ev, () => wrap.classList.remove('sy-drop')));
+    wrap.addEventListener('drop', (e) => { const f = e.dataTransfer && fileOf(e.dataTransfer.files); if (f) { e.preventDefault(); Say.document(f); } });
     wrap.addEventListener('change', (e) => {
       if (e.target.id === 'sy-file') { const f = e.target.files && e.target.files[0]; if (f) Say.document(f); return; }
       if (e.target.matches('[data-say-ch]')) {
@@ -14333,7 +14388,7 @@ const Say = {
           body: JSON.stringify({ agent: Say.agent, text, lang: Say.lang() }) });
         const j0 = await r0.json().catch(() => ({}));
         try { Team.status(Say.agent, ''); } catch (e) {}
-        if (!r0.ok) { Say.state(j0.error || 'That did not work. Try again.'); try { if (j0.paused) Team.paintRail(); } catch (e) {} return; }
+        if (!r0.ok) { Say.state(j0.error || ('That did not work (' + r0.status + '). Try again.')); try { if (j0.paused) Team.paintRail(); } catch (e) {} return; }
         const reply0 = String(j0.say || '');
         Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply0, sources: Array.isArray(j0.sources) ? j0.sources.filter((s) => s.kind === 'import') : [] });
         Say.plan = null; Say.askView(); Say.state(''); Say.logPaint();
@@ -14345,7 +14400,7 @@ const Say = {
       const r = await Say.ask({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })), chat: Say.chatId || undefined, stream: true });
       const j = r.j || {};
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
-      if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
+      if (!r.ok) { Say.state(j.error || ('That did not work' + (r.status ? ' (' + r.status + ')' : '') + '. Try again.')); return; }
       const reply = String(j.say || '');
       Say.history.push({ role: 'user', text }, { role: 'assistant', text: reply, sources: Array.isArray(j.sources) ? j.sources.filter((s) => s.kind === 'import') : [] });
       Say.plan = { say: reply, actions: Array.isArray(j.actions) ? j.actions : [] };
@@ -14683,6 +14738,31 @@ const Say = {
   DOC_TYPES: /^(application\/(pdf|json|xml|rtf|vnd\.openxmlformats-officedocument\.[a-z.]+|vnd\.oasis\.opendocument\.[a-z]+|vnd\.ms-excel|msword|vnd\.ms-powerpoint)|image\/(jpeg|png|webp|gif|heic|heif)|text\/[a-z.+-]+|message\/rfc822)$/,
   DOC_EXT: /\.(pdf|docx|xlsx|pptx|odt|ods|odp|csv|tsv|txt|md|markdown|rtf|html?|json|xml|eml|ics|vcf|log|jpe?g|png|webp|gif|heic|doc|xls|ppt)$/i,
   DOC_MAX: 6 * 1024 * 1024,
+  /* An image, re-drawn as a JPEG no longer than 2000 px on its longest side.
+     null when the browser cannot open it. */
+  async shrink(file, max) {
+    max = max || 2000;
+    try {
+      let src = null, w = 0, h = 0;
+      if (typeof createImageBitmap === 'function') { try { src = await createImageBitmap(file); w = src.width; h = src.height; } catch (e) { src = null; } }
+      if (!src) {
+        const url = URL.createObjectURL(file);
+        try { src = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = url; }); w = src.naturalWidth; h = src.naturalHeight; }
+        finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      }
+      if (!w || !h) return null;
+      const small = file.size < 1.5 * 1024 * 1024 && Math.max(w, h) <= max && /^image\/(jpeg|png|webp)$/.test(file.type || '');
+      if (small) { try { src.close && src.close(); } catch (e) {} return file; }
+      const k = Math.min(1, max / Math.max(w, h)), cw = Math.round(w * k), ch = Math.round(h * k);
+      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch); g.drawImage(src, 0, 0, cw, ch);
+      try { src.close && src.close(); } catch (e) {}
+      const blob = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', 0.86));
+      if (!blob) return null;
+      const name = String(file.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg';
+      try { return new File([blob], name, { type: 'image/jpeg' }); } catch (e) { blob.name = name; return blob; }
+    } catch (e) { return null; }
+  },
   pickFile() {
     const i = Say.el && Say.el.querySelector('#sy-file'); if (!i || Say.busy) return;
     try { i.click(); } catch (e) {}
@@ -14702,6 +14782,16 @@ const Say = {
     if (!Say.DOC_TYPES.test(type) && !Say.DOC_EXT.test(String(file.name || ''))) { Say.state(Say.lang() === 'tr' ? 'PDF, Word, Excel, PowerPoint, CSV, metin ya da fotoğraf.' : 'A PDF, Word, Excel, PowerPoint, CSV, text file or a photo.'); return; }
     /* a sales export handed to the Finance assistant: the sales review, not a to-do list */
     try { const ag = Say.agent && Say.agent !== 'jarvis' && window.FlowTeam ? FlowTeam.agent(Say.agent) : null; if (ag && FlowTeam.isFinance(ag) && /\.(xlsx|csv)$/i.test(String(file.name || ''))) { Say.history.push({ role: 'user', text: file.name }); await FlowTeam.salesUpload(file); const r = (FlowTeam.sales || [])[0]; Say.history.push({ role: 'assistant', text: r && r.name === file.name ? (Say.lang() === 'tr' ? r.name + ' inceleniyor: ' + r.lines + ' satır. Hazır olunca haber veririm.' : 'Reviewing ' + r.name + ': ' + r.lines + ' lines. I will tell you when it is ready.') : (Say.lang() === 'tr' ? 'Bu dosya satış raporu olarak okunamadı.' : 'That file could not be read as a sales report.') }); try { Say.logPaint(); Say.chatPersist && Say.chatPersist(); } catch (e) {} const i = Say.el.querySelector('#sy-file'); if (i) i.value = ''; return; } } catch (e) {}
+    /* A photo goes as a JPEG of a sensible size: a Retina screenshot or a
+       12-megapixel photo is too big for the model to take (5 MB a picture),
+       and an iPhone HEIC is turned into something it can read. */
+    let type2 = type;
+    if (/^image\/(heic|heif|png|jpeg|webp)$/.test(type) || /\.(heic|heif)$/i.test(String(file.name || ''))) {
+      Say.state(Say.lang() === 'tr' ? 'Fotoğraf hazırlanıyor…' : 'Getting the photo ready…');
+      const small = await Say.shrink(file);
+      if (small) { file = small; type2 = small.type; }
+      else if (/heic|heif/i.test(type + ' ' + file.name)) { Say.state(Say.lang() === 'tr' ? 'Bu HEIC fotoğrafı açılamadı. Ekran görüntüsü ya da JPEG gönderin.' : 'That HEIC photo could not be opened here. Send a screenshot or a JPEG of it.'); return; }
+    }
     if (file.size > Say.DOC_MAX) { Say.state('That file is over 6 MB. Export a smaller file, or just the pages that matter.'); return; }
     Say.waiting = false;
     try { if (window.FlowVoice && FlowVoice.listening) FlowVoice.cancel(); } catch (e) {}
@@ -14715,10 +14805,10 @@ const Say = {
     try {
       const text = String(Say.el.querySelector('#sy-text').value || '').trim();
       const r = await fetch('/api/flow/document', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data, name, type, text, lang: Say.lang(), ctx: Say.context(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
+        body: JSON.stringify({ data, name, type: type2, text, lang: Say.lang(), ctx: Say.context(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })) }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('document'); return; }
-      if (!r.ok || !j.job) { Say.state(j.error || 'That did not work. Try again.'); return; }
+      if (!r.ok || !j.job) { Say.state(j.error || ('That file did not go through (' + r.status + '). Try again.')); return; }
       const out = await Say.pollDocument(j.job, name);
       Say.history.push({ role: 'user', text: name }, { role: 'assistant', text: out.say });
       Say.plan = { say: out.say, actions: out.actions };
