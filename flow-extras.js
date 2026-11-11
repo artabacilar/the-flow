@@ -291,7 +291,7 @@ async function buildContext(mine) {
      resting heart rate, day strain, sleep performance % and hours asleep,
      by day. What lets him say how the body is doing, not only the diary. */
   const wh = await pick('whoop');
-  if (wh && typeof wh === 'object') push('WHOOP (by day: recovery %, HRV ms, resting HR, strain, sleep %, hours asleep)', wh);
+  if (wh && typeof wh === 'object') push('WHOOP (latest and by day: recovery %, HRV ms, resting HR, SpO2, skin temp, strain, calories, heart rate; last night in stages, need and debt; naps; workouts with heart-rate zones; body)', wh);
   push('Mood and energy', await pick('ld_mood'));
   push('Finances (budget and the first expense form)', await pick('ld_finance'));
   /* The second expense store: receipts, statement imports and the newer

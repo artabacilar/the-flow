@@ -63,7 +63,8 @@ const SCOPES = [
   'read:cycles',          /* day strain */
   'read:sleep',           /* sleep performance and stages */
   'read:workout',
-  'read:profile'
+  'read:profile',
+  'read:body_measurement' /* height, weight, max heart rate — asked for on the next connect */
 ].join(' ');
 
 const CLIENT_ID     = process.env.WHOOP_CLIENT_ID || '';
@@ -225,10 +226,20 @@ async function collect(raw, uid, days) {
 
   /* One failure should not cost the other two: a person whose sleep is still
      being scored should still see their recovery. */
-  const [rec, cyc, slp] = await Promise.all([
-    api(raw, uid, '/v2/recovery', range).catch((e) => { if (e.code === 'disconnected') throw e; return null; }),
-    api(raw, uid, '/v2/cycle', range).catch((e) => { if (e.code === 'disconnected') throw e; return null; }),
-    api(raw, uid, '/v2/activity/sleep', range).catch((e) => { if (e.code === 'disconnected') throw e; return null; })
+  /* Every page of a collection (WHOOP hands 25 at a time), up to a few. */
+  const all = async (path) => {
+    let out = null, next = null;
+    for (let i = 0; i < 4; i++) {
+      const r = await api(raw, uid, path, Object.assign({}, range, next ? { nextToken: next } : {})).catch((e) => { if (e.code === 'disconnected') throw e; return null; });
+      if (!r) return out;
+      out = { records: ((out && out.records) || []).concat(r.records || []) };
+      next = r.next_token || r.nextToken || null; if (!next) break;
+    }
+    return out;
+  };
+  const [rec, cyc, slp, wko, body] = await Promise.all([
+    all('/v2/recovery'), all('/v2/cycle'), all('/v2/activity/sleep'), all('/v2/activity/workout'),
+    api(raw, uid, '/v2/user/measurement/body').catch((e) => { if (e.code === 'disconnected') throw e; return null; })
   ]);
 
   /* date → the day's numbers, merged from whichever collections had them. */
@@ -244,16 +255,22 @@ async function collect(raw, uid, days) {
       recovery: int(r.score.recovery_score),
       hrv: hrvMs(r.score.hrv_rmssd_milli),
       rhr: int(r.score.resting_heart_rate),
+      spo2: round1(r.score.spo2_percentage),
+      skinTemp: round1(r.score.skin_temp_celsius),
       calibrating: !!r.score.user_calibrating
     });
   }
 
   for (const c of ((cyc && cyc.records) || [])) {
     if (c.score_state !== 'SCORED' || !c.score) continue;
-    put(dayOf(c.start), { strain: round1(c.score.strain) });
+    put(dayOf(c.start), { strain: round1(c.score.strain), kcal: c.score.kilojoule != null ? int(c.score.kilojoule / 4.184) : null,
+      avgHr: int(c.score.average_heart_rate), maxHr: int(c.score.max_heart_rate) });
   }
 
+  const H = (ms) => ms == null || !isFinite(Number(ms)) ? null : Math.round(Number(ms) / 3600000 * 100) / 100;
+  const naps = [];
   for (const s of ((slp && slp.records) || [])) {
+    if (s.nap && s.score_state === 'SCORED' && s.score) { const st = s.score.stage_summary || {}; naps.push({ date: dayOf(s.end), start: s.start, end: s.end, hours: H((st.total_in_bed_time_milli || 0) - (st.total_awake_time_milli || 0)) }); continue; }
     if (s.nap || s.score_state !== 'SCORED' || !s.score) continue;
     const st = s.score.stage_summary || {};
     /* Time asleep, not time in bed — the number a person means by "I got
@@ -262,12 +279,32 @@ async function collect(raw, uid, days) {
     put(dayOf(s.end), {
       sleep: int(s.score.sleep_performance_percentage),
       hours: asleep > 0 ? Math.round(asleep / 3600000 * 100) / 100 : null,
-      sleepEnd: s.end
+      sleepEnd: s.end, sleepStart: s.start,
+      inBed: H(st.total_in_bed_time_milli), awake: H(st.total_awake_time_milli),
+      light: H(st.total_light_sleep_time_milli), deep: H(st.total_slow_wave_sleep_time_milli), rem: H(st.total_rem_sleep_time_milli),
+      cycles: int(st.sleep_cycle_count), disturbances: int(st.disturbance_count),
+      respiratory: round1(s.score.respiratory_rate), efficiency: int(s.score.sleep_efficiency_percentage), consistency: int(s.score.sleep_consistency_percentage),
+      need: s.score.sleep_needed ? H((s.score.sleep_needed.baseline_milli || 0) + (s.score.sleep_needed.need_from_sleep_debt_milli || 0) + (s.score.sleep_needed.need_from_recent_strain_milli || 0) - (s.score.sleep_needed.need_from_recent_nap_milli || 0)) : null,
+      debt: s.score.sleep_needed ? H(s.score.sleep_needed.need_from_sleep_debt_milli) : null
     });
   }
 
+  /* Workouts: what, when, how hard, heart rate zones. */
+  const Z = ['zone_zero_milli', 'zone_one_milli', 'zone_two_milli', 'zone_three_milli', 'zone_four_milli', 'zone_five_milli'];
+  const workouts = ((wko && wko.records) || []).filter((w) => w.score_state === 'SCORED' && w.score).map((w) => ({
+    date: dayOf(w.start), start: w.start, end: w.end, sport: String(w.sport_name || (w.sport_id != null ? 'Sport ' + w.sport_id : 'Workout')).replace(/[-_]/g, ' '),
+    minutes: w.start && w.end ? Math.round((Date.parse(w.end) - Date.parse(w.start)) / 60000) : null,
+    strain: round1(w.score.strain), avgHr: int(w.score.average_heart_rate), maxHr: int(w.score.max_heart_rate),
+    kcal: w.score.kilojoule != null ? int(w.score.kilojoule / 4.184) : null,
+    km: w.score.distance_meter != null ? Math.round(w.score.distance_meter / 10) / 100 : null,
+    zones: w.score.zone_durations ? Z.map((k) => Math.round((w.score.zone_durations[k] || 0) / 60000)) : null
+  })).sort((a, b) => String(b.start).localeCompare(String(a.start))).slice(0, 30);
+  for (const w of workouts) { const d = byDay.get(w.date); if (d) d.workouts = (d.workouts || 0) + 1; }
+
   const history = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
   const latest = history[history.length - 1] || {};
+  /* the last night with a sleep record, even if today's recovery came first */
+  const night = [...history].reverse().find((h) => h.sleep != null || h.hours != null) || {};
 
   return {
     recovery: latest.recovery == null ? null : latest.recovery,
@@ -280,7 +317,17 @@ async function collect(raw, uid, days) {
     calibrating: !!latest.calibrating,
     source: 'whoop',
     updated: new Date().toISOString(),
-    history: history.slice(-14),
+    history: history.slice(-30),
+    /* everything else WHOOP measures, for the Body page and for J.A.R.V.I.S. */
+    detail: {
+      spo2: latest.spo2 == null ? null : latest.spo2, skinTemp: latest.skinTemp == null ? null : latest.skinTemp,
+      kcal: latest.kcal == null ? null : latest.kcal, avgHr: latest.avgHr == null ? null : latest.avgHr, maxHr: latest.maxHr == null ? null : latest.maxHr,
+      sleep: { date: night.date || null, start: night.sleepStart || null, end: night.sleepEnd || null, hours: night.hours == null ? null : night.hours, inBed: night.inBed, awake: night.awake, light: night.light, deep: night.deep, rem: night.rem,
+        cycles: night.cycles, disturbances: night.disturbances, respiratory: night.respiratory, efficiency: night.efficiency, consistency: night.consistency, performance: night.sleep, need: night.need, debt: night.debt },
+      naps: naps.slice(-10)
+    },
+    workouts,
+    body: body ? { heightM: body.height_meter != null ? Math.round(body.height_meter * 100) / 100 : null, weightKg: body.weight_kilogram != null ? Math.round(body.weight_kilogram * 10) / 10 : null, maxHr: int(body.max_heart_rate) } : null,
     /* Said plainly so the panel does not have to infer it from a null. A
        band that has not synced since yesterday is not a broken connection. */
     partial: !rec || !cyc || !slp
@@ -382,7 +429,7 @@ async function handle(req, res, ctx) {
     /* Fetch once straight away. Landing on a panel that still says "—" after
        connecting reads as a connection that did not work. */
     try {
-      const fresh = await collect(raw, uid, 8);
+      const fresh = await collect(raw, uid, 30);
       await store.set('whoop', JSON.stringify(fresh));
     } catch (e) {}
 
@@ -392,7 +439,7 @@ async function handle(req, res, ctx) {
   /* ---- the numbers ---- */
   if (p === '/api/whoop/data.json' || (p === '/api/whoop/sync' && req.method === 'POST')) {
     try {
-      const fresh = await collect(raw, uid, 8);
+      const fresh = await collect(raw, uid, 30);
       await store.set('whoop', JSON.stringify(fresh));
       json(res, 200, Object.assign({ connected: true }, fresh));
     } catch (e) {

@@ -311,6 +311,24 @@ canvas{width:100%;height:120px;}
 .whoop-manual input{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 9px;font-size:14px;}
 .whoop-manual label{font-size:12px;color:var(--muted);}
 .whoop-foot{font-size:11px;color:var(--muted);margin-top:12px;}
+.whoop-more .wx-sec{margin-top:20px;padding-top:14px;border-top:1px solid var(--border);}
+.whoop-more h4{font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:0 0 10px;}
+.whoop-more .wx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
+.whoop-more .wx-tile{background:var(--card2,rgba(255,255,255,.03));border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;}
+.whoop-more .wx-tile b{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;}
+.whoop-more .wx-tile b small{font-size:11px;font-weight:600;color:var(--muted);margin-left:3px;}
+.whoop-more .wx-tile span{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;}
+.whoop-more .wx-stages{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:6px 0;background:var(--border);}
+.whoop-more .wx-stages i{display:block;height:100%;}
+.whoop-more .wx-zones{height:7px;}
+.whoop-more .wx-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-bottom:10px;}
+.whoop-more .wx-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px;}
+.whoop-more .wx-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;}
+.whoop-more .wx-sub{font-size:12px;color:var(--muted);}
+.whoop-more .wx-wk{padding:8px 0;border-bottom:1px solid var(--border);}
+.whoop-more .wx-tbl{font-size:12.5px;font-variant-numeric:tabular-nums;overflow-x:auto;}
+.whoop-more .wx-tr{display:grid;grid-template-columns:60px repeat(7,minmax(54px,1fr));gap:6px;padding:5px 0;border-bottom:1px solid var(--border);}
+.whoop-more .wx-th{font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px;}
 .whoop-foot a{color:var(--accent);}
 
 /* ── Sleep section ── */
@@ -1309,6 +1327,7 @@ try{document.body.classList.add('fn-on');setTimeout(function(){
         <div class="whoop-metric"><div class="wm-num pink" id="whoopRhr">—</div><div class="wm-lbl">Resting HR</div></div>
       </div>
     </div>
+    <div class="whoop-more" id="whoopMore"></div>
     <div class="whoop-connect" id="whoopConnect" style="display:none;margin-top:10px;">
       <button class="btn btn-primary" id="wConnect">Connect WHOOP</button>
       <span style="font-size:12px;color:var(--muted);margin-left:10px;" id="wConnectNote">Sign in to WHOOP once and your Recovery, Strain, Sleep, HRV and resting heart rate arrive on their own — on every device you use this on.</span>
@@ -2847,6 +2866,48 @@ function paintWhoop(){
   document.getElementById('whoopSleep').textContent=whoopData.sleep!=null?whoopData.sleep+'%':'—';
   document.getElementById('whoopHrv').textContent=whoopData.hrv!=null?whoopData.hrv:'—';
   document.getElementById('whoopRhr').textContent=whoopData.rhr!=null?whoopData.rhr:'—';
+  try{ paintWhoopMore(); }catch(e){ console.warn('[whoop]',e); }
+}
+/* Everything else WHOOP measures: the day, last night in detail, the
+   workouts with their heart-rate zones, the trend, and the body. */
+function paintWhoopMore(){
+  const box=document.getElementById('whoopMore'); if(!box) return;
+  const d=whoopData.detail, W=whoopData.workouts||[], B=whoopData.body, Hh=whoopData.history||[];
+  if(!d && !W.length && !Hh.length){ box.innerHTML=''; return; }
+  const e=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const hm=h=>{ if(h==null||!isFinite(h)) return '—'; const m=Math.round(h*60); return Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'; };
+  const tm=iso=>{ try{ return iso?new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''; }catch(x){ return ''; } };
+  const tile=(v,l,u)=>'<div class="wx-tile"><b>'+(v==null||v===''?'—':e(v)+(u?'<small>'+u+'</small>':''))+'</b><span>'+l+'</span></div>';
+  let h='';
+  if(d){
+    h+='<div class="wx-sec"><h4>Today</h4><div class="wx-grid">'+tile(d.spo2,'Blood oxygen','%')+tile(d.skinTemp,'Skin temp','°C')+tile(d.kcal,'Calories','kcal')+tile(d.avgHr,'Avg heart rate','bpm')+tile(d.maxHr,'Max heart rate','bpm')+tile(whoopData.hours!=null?hm(whoopData.hours):null,'Slept')+'</div></div>';
+    const S=d.sleep||{};
+    if(S.hours!=null||S.inBed!=null){
+      const tot=(S.light||0)+(S.deep||0)+(S.rem||0)+(S.awake||0)||1;
+      const seg=(v,c,l)=>v?'<i style="flex:'+(v/tot)+';background:'+c+'" title="'+l+' '+hm(v)+'"></i>':'';
+      h+='<div class="wx-sec"><h4>Last night'+(S.date?' · '+e(S.date):'')+(S.start&&S.end?' · '+tm(S.start)+'–'+tm(S.end):'')+'</h4>'+
+        '<div class="wx-stages">'+seg(S.awake,'#6b7280','Awake')+seg(S.light,'#60a5fa','Light')+seg(S.deep,'#7c3aed','Deep')+seg(S.rem,'#22d3ee','REM')+'</div>'+
+        '<div class="wx-legend"><span><i style="background:#6b7280"></i>Awake '+hm(S.awake)+'</span><span><i style="background:#60a5fa"></i>Light '+hm(S.light)+'</span><span><i style="background:#7c3aed"></i>Deep '+hm(S.deep)+'</span><span><i style="background:#22d3ee"></i>REM '+hm(S.rem)+'</span></div>'+
+        '<div class="wx-grid">'+tile(hm(S.hours),'Asleep')+tile(hm(S.inBed),'In bed')+tile(S.need!=null?hm(S.need):null,'Sleep needed')+tile(S.debt!=null?hm(S.debt):null,'Sleep debt')+tile(S.performance,'Performance','%')+tile(S.efficiency,'Efficiency','%')+tile(S.consistency,'Consistency','%')+tile(S.respiratory,'Respiratory rate','/min')+tile(S.disturbances,'Disturbances')+tile(S.cycles,'Sleep cycles')+'</div></div>';
+    }
+    if((d.naps||[]).length) h+='<div class="wx-sec"><h4>Naps</h4>'+d.naps.slice().reverse().map(n=>'<div class="wx-row"><span>'+e(n.date)+' · '+tm(n.start)+'–'+tm(n.end)+'</span><b>'+hm(n.hours)+'</b></div>').join('')+'</div>';
+  }
+  if(W.length){
+    const zc=['#475569','#60a5fa','#22c55e','#eab308','#f97316','#ef4444'];
+    h+='<div class="wx-sec"><h4>Workouts · last 30 days · '+W.length+'</h4>'+W.slice(0,15).map(w=>{
+      const zt=(w.zones||[]).reduce((a,b)=>a+b,0);
+      return '<div class="wx-wk"><div class="wx-row"><span><b>'+e(w.sport.charAt(0).toUpperCase()+w.sport.slice(1))+'</b> · '+e(w.date)+' '+tm(w.start)+(w.minutes!=null?' · '+w.minutes+' min':'')+'</span><b>'+(w.strain!=null?'Strain '+w.strain:'')+'</b></div>'+
+        '<div class="wx-sub">'+[w.avgHr!=null?'avg '+w.avgHr+' bpm':'',w.maxHr!=null?'max '+w.maxHr+' bpm':'',w.kcal!=null?w.kcal+' kcal':'',w.km?w.km+' km':''].filter(Boolean).join(' · ')+'</div>'+
+        (zt?'<div class="wx-stages wx-zones">'+w.zones.map((z,i)=>z?'<i style="flex:'+(z/zt)+';background:'+zc[i]+'" title="Zone '+i+': '+z+' min"></i>':'').join('')+'</div>':'')+'</div>';
+    }).join('')+'</div>';
+  }
+  if(Hh.length){
+    const rows=Hh.slice().reverse().slice(0,30);
+    h+='<div class="wx-sec"><h4>Day by day</h4><div class="wx-tbl"><div class="wx-tr wx-th"><span>Day</span><span>Recovery</span><span>HRV</span><span>RHR</span><span>Strain</span><span>Sleep</span><span>Slept</span><span>SpO₂</span></div>'+
+      rows.map(r=>'<div class="wx-tr"><span>'+e(r.date.slice(5))+'</span><span style="color:'+whoopRingColor(r.recovery)+'">'+(r.recovery!=null?r.recovery+'%':'—')+'</span><span>'+(r.hrv!=null?r.hrv:'—')+'</span><span>'+(r.rhr!=null?r.rhr:'—')+'</span><span>'+(r.strain!=null?r.strain:'—')+'</span><span>'+(r.sleep!=null?r.sleep+'%':'—')+'</span><span>'+(r.hours!=null?hm(r.hours):'—')+'</span><span>'+(r.spo2!=null?r.spo2+'%':'—')+'</span></div>').join('')+'</div></div>';
+  }
+  if(B && (B.heightM||B.weightKg||B.maxHr)) h+='<div class="wx-sec"><h4>Body</h4><div class="wx-grid">'+tile(B.heightM,'Height','m')+tile(B.weightKg,'Weight','kg')+tile(B.maxHr,'Max heart rate','bpm')+'</div></div>';
+  box.innerHTML=h;
 }
 function setWhoopStatus(mode){
   const st=document.getElementById('whoopStatus');
@@ -2914,7 +2975,8 @@ async function syncWhoop(){
       whoopData={recovery:d.recovery,strain:d.strain,sleep:d.sleep,hrv:d.hrv,rhr:d.rhr,
                  hours:d.hours!=null?d.hours:null, date:d.date||null,
                  calibrating:!!d.calibrating, stale:!!d.stale,
-                 source:'whoop',updated:d.updated||new Date().toISOString(),history:d.history||[]};
+                 source:'whoop',updated:d.updated||new Date().toISOString(),history:d.history||[],
+                 detail:d.detail||null, workouts:d.workouts||[], body:d.body||null};
       S.set('whoop',whoopData); paintWhoop(); setWhoopStatus('live');
       if(d.recovery!=null && d.recovery!==prev) J('sleep','⚡ WHOOP synced — Recovery '+d.recovery+'%'+(d.strain!=null?' · Strain '+d.strain:'')+(d.sleep!=null?' · Sleep '+d.sleep+'%':''));
       whoopFillSleepLog(d.history);
