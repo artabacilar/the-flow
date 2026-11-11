@@ -96,98 +96,66 @@ function png(width, height, rgb) {
 }
 
 /* ---- the drawing -------------------------------------------------------- */
-/* Raw RGB, S*S*3 bytes. Split from the PNG step so the Mac icon
-   (mac-app/scripts/make-mac-icon.js) can composite the same artwork onto
-   its own canvas instead of redrawing it from different numbers. */
-function drawRaw(S, variant) {
-  const SS = 3;                       /* subsamples per axis, for smooth edges */
-  const px = Buffer.alloc(S * S * 3);
-
-  const flat = variant === 'dark';    /* iOS supplies its own dark ground */
-  let ink0 = A.inkTop, ink1 = A.inkBottom;
-  if (variant === 'tinted') { ink0 = [235, 235, 235]; ink1 = [170, 170, 170]; }
-  const dimA = variant === 'tinted' ? 0.45 : A.dimAlpha;
-
-  /* The three centrelines, as functions of the horizontal fraction. */
-  const curves = [
-    { centre: A.midCentre - A.dimOffset, amp: A.dimAmp, mirror: false, alpha: dimA },
-    { centre: A.midCentre - A.dimOffset, amp: A.dimAmp, mirror: true,  alpha: dimA },
-    { centre: A.midCentre, amp: A.midAmp, mirror: false, alpha: 1 }
-  ];
-  const half = A.stroke / 2;
-
-  /* Distance from a point to one curve, minimised over a local window. f is
-     smooth and slowly varying, so a window a little wider than the stroke is
-     enough — checking the whole curve for every pixel would be 400 million
-     comparisons and would buy nothing. */
-  const near = (c, xf, yf) => {
-    const w = half * 3;
-    const steps = 24;
-    let best = Infinity;
-    for (let i = 0; i <= steps; i++) {
-      const sx = xf - w + (2 * w) * i / steps;
-      if (sx < A.spanFrom - half || sx > A.spanTo + half) continue;
-      const cx = Math.min(Math.max(sx, A.spanFrom), A.spanTo);
-      let cy = waveY(cx, c.centre, c.amp);
-      if (c.mirror) cy = 2 * A.midCentre - cy;
-      const dx = xf - cx, dy = yf - cy;
-      const d = dx * dx + dy * dy;
-      if (d < best) best = d;
+/* Since 11 Nov 2026 the icon is Artur's artwork — the glowing rings — not
+   the drawn braid above (its numbers stay exported for anything that reads
+   them). icon-art.png is that artwork as a full-bleed 1024 square (the
+   rounded corners cropped away; iOS and the Mac grid add their own), and
+   every size is resampled from it here, still with nothing but Node. */
+const ART = path.join(__dirname, 'icon-art.png');
+let artCache = null;
+function decodePNG(buf) {
+  let o = 8, w = 0, h = 0, type = 0; const idat = [];
+  while (o < buf.length) {
+    const len = buf.readUInt32BE(o), t = buf.toString('ascii', o + 4, o + 8);
+    if (t === 'IHDR') { w = buf.readUInt32BE(o + 8); h = buf.readUInt32BE(o + 12); type = buf[o + 17]; }
+    else if (t === 'IDAT') idat.push(buf.subarray(o + 8, o + 8 + len));
+    else if (t === 'IEND') break;
+    o += 12 + len;
+  }
+  const bpp = type === 6 ? 4 : type === 2 ? 3 : 0;
+  if (!bpp) throw new Error('icon-art.png must be 8-bit RGB or RGBA');
+  const raw = zlib.inflateSync(Buffer.concat(idat)); const stride = w * bpp;
+  const out = Buffer.alloc(w * h * 3); let prev = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)]; const line = Buffer.from(raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)));
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? line[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+      let v = line[i];
+      if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); }
+      line[i] = v & 255;
     }
-    return Math.sqrt(best);
-  };
-
+    for (let x = 0; x < w; x++) { out[(y * w + x) * 3] = line[x * bpp]; out[(y * w + x) * 3 + 1] = line[x * bpp + 1]; out[(y * w + x) * 3 + 2] = line[x * bpp + 2]; }
+    prev = line;
+  }
+  return { w, h, px: out };
+}
+/* Raw RGB, S*S*3 bytes, area-averaged from the artwork (exact at 1024). */
+function drawRaw(S, variant) {
+  if (!artCache) artCache = decodePNG(fs.readFileSync(ART));
+  const { w, h, px: src } = artCache;
+  const px = Buffer.alloc(S * S * 3);
+  const fx = w / S, fy = h / S;
   for (let y = 0; y < S; y++) {
+    const y0 = y * fy, y1 = y0 + fy;
     for (let x = 0; x < S; x++) {
-      const xf0 = (x + 0.5) / S, yf0 = (y + 0.5) / S;
-
-      /* Background: a diagonal ramp, or flat for the dark appearance. */
-      let r, g, b;
-      if (flat) { r = 10; g = 11; b = 14; }
-      else {
-        const t = (xf0 + yf0) / 2;
-        r = A.bgFrom[0] + (A.bgTo[0] - A.bgFrom[0]) * t;
-        g = A.bgFrom[1] + (A.bgTo[1] - A.bgFrom[1]) * t;
-        b = A.bgFrom[2] + (A.bgTo[2] - A.bgFrom[2]) * t;
-      }
-
-      /* Ink is a vertical gradient: emerald at the crests, teal in the
-         troughs. Sampled once per pixel — it varies far too slowly for the
-         subsamples to disagree. */
-      const it = yf0;
-      const ir = ink0[0] + (ink1[0] - ink0[0]) * it;
-      const ig = ink0[1] + (ink1[1] - ink0[1]) * it;
-      const ib = ink0[2] + (ink1[2] - ink0[2]) * it;
-
-      for (const c of curves) {
-        /* Cheap rejection first: this pixel cannot be in this stroke if it is
-           further from the curve's own band than the stroke is wide. */
-        let cy = waveY(Math.min(Math.max(xf0, A.spanFrom), A.spanTo), c.centre, c.amp);
-        if (c.mirror) cy = 2 * A.midCentre - cy;
-        if (Math.abs(yf0 - cy) > half * 4) continue;
-
-        let hits = 0;
-        for (let sy = 0; sy < SS; sy++) {
-          for (let sx = 0; sx < SS; sx++) {
-            const xf = (x + (sx + 0.5) / SS) / S;
-            const yf = (y + (sy + 0.5) / SS) / S;
-            if (near(c, xf, yf) <= half) hits++;
-          }
+      const x0 = x * fx, x1 = x0 + fx;
+      let r = 0, g = 0, b = 0, wt = 0;
+      for (let sy = Math.floor(y0); sy < Math.ceil(y1) && sy < h; sy++) {
+        const wy = Math.min(y1, sy + 1) - Math.max(y0, sy);
+        for (let sx = Math.floor(x0); sx < Math.ceil(x1) && sx < w; sx++) {
+          const ww = wy * (Math.min(x1, sx + 1) - Math.max(x0, sx)); const i = (sy * w + sx) * 3;
+          r += src[i] * ww; g += src[i + 1] * ww; b += src[i + 2] * ww; wt += ww;
         }
-        if (!hits) continue;
-        const a = (hits / (SS * SS)) * c.alpha;
-        r += (ir - r) * a; g += (ig - g) * a; b += (ib - b) * a;
       }
-
+      r /= wt; g /= wt; b /= wt;
+      if (variant === 'tinted') { const l = 0.299 * r + 0.587 * g + 0.114 * b; r = g = b = l; }
       const o = (y * S + x) * 3;
-      px[o] = Math.max(0, Math.min(255, Math.round(r)));
-      px[o + 1] = Math.max(0, Math.min(255, Math.round(g)));
-      px[o + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      px[o] = Math.round(r); px[o + 1] = Math.round(g); px[o + 2] = Math.round(b);
     }
   }
   return px;
 }
-
 function draw(S, variant) { return png(S, S, drawRaw(S, variant)); }
 
 module.exports = { drawRaw, A };
