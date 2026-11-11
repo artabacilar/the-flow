@@ -149,7 +149,7 @@ async function whose(channel, externalId) { const v = await rawGet('__team:link:
 const HELP = (names) => 'You are talking to J.A.R.V.I.S. Write to him as you would in the app. Also:\n' +
   '/team — who is on the team\n' + names.map((n) => '/' + n).join(' · ') + ' — talk to one of them (sticky; /jarvis to come back)\n' +
   '/tasks — what is in flight and what is done\n/yes 1 · /no 1 — approve or decline what is waiting\n/answer <text> — answer an agent\'s question\n' +
-  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n/discover <topic> — five questions, then a workflow spec · /interview <topic> — he keeps asking until you say done · /request <text> · /feedback <text>\n' +
+  '/ideas — what the team could take off your plate · /start 1 — put them on it\n/briefing — this morning\'s briefing, now · /skills — what the team has been taught\n/learn — what J.A.R.V.I.S. noticed worth keeping · /keep 1 · /skipidea 1\n/automations · /run 1 — the scripts that do routine work without a model\n/setup — the guided setup · /setup first — run the first task from here · /deliver here — make this the default channel\n/discover <topic> — five questions, then a workflow spec · /interview <topic> — he keeps asking until you say done · /request <text> · /feedback <text>\n' +
   '/whoami — your numeric id · /diag — how everything is doing · in a group: /mode mention|all · /allow <id> [name] · /deny <id> · /members · /groups\n' +
   'Voice notes are understood; /voice chooses the voice that answers (presets, your own ElevenLabs voice id, text/voice replies, 30 or 60 seconds)\n' +
   'Email review: /review — the next email, one at a time · /send · /revise <what to change> · /skip · /inbox here (a group: one topic per email) · /autosend — the bounded policy\n' +
@@ -227,6 +227,20 @@ async function converse(ctx, uid, channel, text, meta) {
       const r = await team._work.suggestAct(ctx, uid, it.id, 'start', 'en');
       if (r.error) return r.error;
       return 'Started: ' + it.title + (r.task ? ' (' + r.task.steps.map((s) => (list.find((x) => x.id === s.agent) || {}).name || s.agent).join(', ') + ')' : '') + '. I will message you here when it is ready.';
+    }
+    if ((c === 'learn' || c === 'learned' || c === 'ogren' || c === 'öğren') && team.learn) {
+      const tr = c !== 'learn' && c !== 'learned';
+      if (/^(?:now|şimdi|simdi)$/i.test(rest)) { const r = await team.learn.review(ctx, uid); if (r && r.busy) return tr ? 'Zaten bakıyorum.' : 'Already looking.'; }
+      return team.learn.chatList(await team.learn.view(ctx), tr ? 'tr' : 'en');
+    }
+    if ((c === 'keep' || c === 'sakla' || c === 'skipidea' || c === 'gec' || c === 'geç') && team.learn) {
+      const tr = c === 'sakla' || c === 'gec' || c === 'geç';
+      const v = await team.learn.view(ctx); const n = parseInt(rest, 10) || 1; const it = v.pending[n - 1];
+      if (!it) return v.pending.length ? (tr ? '/sakla 1 … /sakla ' + v.pending.length : 'Say /keep 1 to /keep ' + v.pending.length + '.') : (tr ? 'Bekleyen bir şey yok.' : 'Nothing is waiting; /learn shows what is.');
+      const keep = c === 'keep' || c === 'sakla';
+      const r = keep ? await team.learn.accept(ctx, { id: it.id }) : await team.learn.dismiss(ctx, { id: it.id });
+      if (r.error) return r.error;
+      return keep ? (it.kind === 'memory' ? (tr ? 'Hafızaya aldım: ' : 'Kept: ') + it.text + (r.replaced ? (tr ? ' (eskisi: ' : ' (replaces: ') + str(r.replaced.text, 80) + ')' : '') : (tr ? 'Beceri olarak sakladım: ' : 'Kept as a skill: ') + it.doc.name + ' v1') : (tr ? 'Tamam, geçtim — bir daha önermeyeceğim.' : 'Dropped — I will not suggest it again.');
     }
     if (c === 'skills' || c === 'skill') {
       const sk = team.skills ? (await team.skills.all(ctx)).filter((s) => s.status === 'active') : [];

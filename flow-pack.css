@@ -4456,6 +4456,12 @@ html.hud-on #flow-say .fn-sheet{will-change:transform;contain:layout paint}
 #flow-say .sy-chx{flex:none;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:inherit;opacity:.5;font-size:16px;cursor:pointer}
 #flow-say .sy-chx:hover{opacity:1}
 #flow-say .sy-chnone{font-size:13px;opacity:.65;margin:4px 0}
+/* searching the chats (10 Nov) */
+#flow-say .sy-chfind{margin:0 0 8px}
+#flow-say .sy-chfind input{width:100%;box-sizing:border-box;font:inherit;font-size:13.5px;padding:7px 10px;border-radius:10px;border:1px solid var(--lk-line,rgba(255,255,255,.14));background:transparent;color:inherit}
+#flow-say .sy-chsn{display:block;font-size:12px;line-height:1.35;opacity:.78;margin-top:3px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#flow-say .sy-chhits + .sy-cb{margin-top:8px}
+.sy-b .sy-srcchat{font:inherit;background:none;border:0;padding:0;color:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 #flow-say .sy-did{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--lk-line,rgba(255,255,255,.12));font-size:13px;line-height:1.4;white-space:normal}
 #flow-say .sy-did li{padding:2px 0 2px 18px;position:relative;opacity:.85}
 #flow-say .sy-did li::before{content:'✓';position:absolute;left:0;color:#3ddc97}
@@ -4521,3 +4527,11 @@ html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rg
 #flow-hud .hud-catlogo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:4px;box-sizing:border-box;background:#fff;opacity:0}
 #flow-hud .hud-catlogo.has img{opacity:1}
 #flow-hud .hud-chk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;margin:4px 12px 4px 0}
+/* ── Worth keeping: what J.A.R.V.I.S. noticed, waiting for a yes (10 Nov) ── */
+#flow-hud .hud-lncard{border:1px solid rgba(127,216,255,.18);border-radius:12px;padding:10px 12px;margin:0 0 10px;background:rgba(127,216,255,.04)}
+#flow-hud .hud-lnh{font-size:13.5px;line-height:1.45}
+#flow-hud .hud-lnh .hud-badge{margin-right:4px}
+#flow-hud .hud-lnsteps{margin:6px 0 0 18px;padding:0;font-size:12.5px;line-height:1.4;opacity:.9}
+#flow-hud .hud-lncard .hud-sub{margin:6px 0 0}
+#flow-hud .hud-lncard .hud-row{margin-top:8px}
+#flow-hud .hud-sel.hud-sm{width:auto;min-width:0;padding:2px 6px;display:inline-block}

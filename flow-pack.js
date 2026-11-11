@@ -13871,6 +13871,7 @@ const Say = {
     ['dragleave', 'drop'].forEach((ev) => wrap.addEventListener(ev, () => wrap.classList.remove('drop')));
     wrap.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { e.preventDefault(); Say.document(f); } });
     wrap.addEventListener('paste', (e) => { const it = e.clipboardData && [...e.clipboardData.items].find((x) => x.kind === 'file'); if (it) { const f = it.getAsFile(); if (f) { e.preventDefault(); Say.document(f); } } });
+    wrap.addEventListener('submit', (e) => { const f = e.target.closest('form[data-say-form="chatfind"]'); if (!f) return; e.preventDefault(); e.stopPropagation(); Say.chatFind(f.q.value); });
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-say]'); if (!b) return;
       const a = b.getAttribute('data-say');
@@ -13885,6 +13886,7 @@ const Say = {
       if (a === 'undo') return Say.undo();
       if (a === 'newchat') return Say.chatNew();
       if (a === 'chats') return Say.chatsToggle();
+      if (a === 'chatfindclear') { Say.chatFindQ = ''; Say.chatHits = null; return Say.chatsToggle(true); }
       if (a === 'chatopen') return Say.chatOpen(b.getAttribute('data-id'));
       if (a === 'chatdel') return Say.chatDelete(b.getAttribute('data-id'));
       if (a === 'memdrop') { Say.forget(b.getAttribute('data-id')); return; }
@@ -14340,7 +14342,7 @@ const Say = {
         Say.follow(false);
         return;
       }
-      const r = await Say.ask({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })), stream: true });
+      const r = await Say.ask({ text, lang: Say.lang(), ctx: Say.context(), history: Say.history.slice(-8), persona: Say.style(), call: Say.call(), name: Say.name(), memory: Say.memory().map((m) => ({ id: m.id, text: m.text })), chat: Say.chatId || undefined, stream: true });
       const j = r.j || {};
       if (r.status === 402 && j.plus) { Say.close(); Plus.open('voice'); return; }
       if (!r.ok) { Say.state(j.error || 'That did not work. Try again.'); return; }
@@ -14487,7 +14489,15 @@ const Say = {
     if (id === Say.chatId) Say.chatNew();
     Say.chatList = null; Say.chatsToggle(true);
   },
-  chatList: null,
+  chatList: null, chatFindQ: '', chatHits: null,
+  async chatFind(q) {
+    Say.chatFindQ = String(q || '').trim(); Say.chatHits = null;
+    if (!Say.chatFindQ) return Say.chatsToggle(true);
+    const r = await fetch('/api/flow/chats?q=' + encodeURIComponent(Say.chatFindQ), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    Say.chatHits = Array.isArray(j.hits) ? j.hits : [];
+    return Say.chatsToggle(true);
+  },
   async chatsToggle(open) {
     const box = Say.el && Say.el.querySelector('.sy-chats'); if (!box) return;
     const btn = Say.el.querySelector('[data-say="chats"]');
@@ -14503,7 +14513,15 @@ const Say = {
     }
     if (box.hidden) return;
     const when = (t) => { const d = new Date(t), now = new Date(); const same = d.toDateString() === now.toDateString(); return same ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short' }); };
-    box.innerHTML = '<div class="sy-chk">Chats</div>' + (Say.chatList.length ? '<ul class="sy-chl">' + Say.chatList.map((c) =>
+    const find = '<form class="sy-chfind" data-say-form="chatfind"><input type="search" name="q" value="' + esc(Say.chatFindQ || '') + '" maxlength="200" placeholder="Search your chats…" aria-label="Search your chats"></form>';
+    if (Say.chatFindQ && Say.chatHits) {
+      box.innerHTML = '<div class="sy-chk">Chats</div>' + find + (Say.chatHits.length ? '<ul class="sy-chl sy-chhits">' + Say.chatHits.map((h) =>
+        '<li class="' + (h.id === Say.chatId ? 'on' : '') + '"><button type="button" class="sy-cho" data-say="chatopen" data-id="' + esc(h.id) + '"><b data-i18n="off">' + esc(h.title || 'Chat') + '</b><small>' + esc(when(h.at)) + '</small>' +
+        (h.snippets || []).slice(0, 2).map((x) => '<span class="sy-chsn" data-i18n="off">' + (x.role === 'user' ? '' : '↳ ') + esc(x.text) + '</span>').join('') + '</button></li>').join('') + '</ul>' : '<p class="sy-chnone">Nothing in your chats matches that.</p>') +
+        '<button type="button" class="sy-cb" data-say="chatfindclear">All chats</button>';
+      return;
+    }
+    box.innerHTML = '<div class="sy-chk">Chats</div>' + (Say.chatList.length || Say.chatFindQ ? find : '') + (Say.chatList.length ? '<ul class="sy-chl">' + Say.chatList.map((c) =>
       '<li class="' + (c.id === Say.chatId ? 'on' : '') + '"><button type="button" class="sy-cho" data-say="chatopen" data-id="' + esc(c.id) + '"><b data-i18n="off">' + esc(c.title || 'Chat') + '</b><small>' + esc(when(c.at)) + ' · ' + (c.n || 0) + '</small></button>' +
       '<button type="button" class="sy-chx" data-say="chatdel" data-id="' + esc(c.id) + '" aria-label="Delete this chat">×</button></li>').join('') + '</ul>' : '<p class="sy-chnone">No chats yet. What you say to him is kept here.</p>');
   },
@@ -14824,7 +14842,7 @@ const Say = {
     const lastUndo = (() => { for (let i = turns.length - 1; i >= 0; i--) if (turns[i].undo) return turns[i]; return null; })();
     box.innerHTML = turns.slice(-80).map((t) => '<div class="sy-b ' + (t.role === 'assistant' ? 'a' : 'u') + '" data-i18n="off">' + esc(t.text) +
       (t.did && t.did.length ? '<ul class="sy-did">' + t.did.map((d) => '<li>' + esc(d) + '</li>').join('') + '</ul>' + (t === lastUndo && Say.undoFn && Say.undoFn.key === t.undo ? '<button type="button" class="sy-undo" data-say="undo">Undo</button>' : '') : '') +
-      (t.sources && t.sources.length ? '<small class="sy-src">From: ' + esc(t.sources.map((s) => s.title).join(' · ')) + '</small>' : '') + '</div>').join('');
+      (t.sources && t.sources.length ? '<small class="sy-src">From: ' + t.sources.map((s) => s.chat && s.id ? '<button type="button" class="sy-srcchat" data-say="chatopen" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button>' : esc(s.title)).join(' · ') + '</small>' : '') + '</div>').join('');
     box.hidden = !turns.length;
     box.scrollTop = box.scrollHeight;
     Say.chatPersist();
@@ -15477,7 +15495,7 @@ const Team = {
         '<em class="hud-st" data-st="' + st + '" title="' + st + '"></em>' + (un ? '<b class="hud-unread">' + un + '</b>' : '') + '</button>';
     }).join('') + (Hud.merged() ? '' :
       '<button type="button" class="hud-ag hud-mem' + (sel === 'setup' ? ' sel' : '') + '" data-hud="setup" aria-label="Setup: from nothing to the first piece of work"><i class="hud-av">✓</i><span class="hud-agn">Setup</span><small>' + (Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.progress.done + ' of ' + Team.su.progress.total) : 'guided, resumable') + '</small></button>' +
-      '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>sources · corrections</small></button>' +
+      '<button type="button" class="hud-ag hud-mem' + (sel === 'memory' ? ' sel' : '') + '" data-hud="memory" aria-label="Memory: what the team knows, where it came from, and corrections"><i class="hud-av">M</i><span class="hud-agn">Memory</span><small>' + esc(Team.toolSub('memory')) + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'skills' ? ' sel' : '') + '" data-hud="skills" aria-label="Skills: what the team has been taught to do"><i class="hud-av">S</i><span class="hud-agn">Skills</span><small>' + (Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'scripts' ? ' sel' : '') + '" data-hud="scripts" aria-label="Automations: routine work done by scripts, not a model"><i class="hud-av">A</i><span class="hud-agn">Automations</span><small>' + (Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' + (Team.sc.counts.running ? ' · ' + Team.sc.counts.running + ' running' : '') : 'scripts, schedules') + '</small></button>' +
       '<button type="button" class="hud-ag hud-mem' + (sel === 'efficiency' ? ' sel' : '') + '" data-hud="efficiency" aria-label="Efficiency: where the team wastes effort and what to change"><i class="hud-av">E</i><span class="hud-agn">Efficiency</span><small>' + (Team.ef && Team.ef.review ? Team.ef.review.summary.recommended + ' recommended' : 'review · measure') + '</small></button>') +
@@ -15488,7 +15506,7 @@ const Team = {
   toolSub(id) {
     try {
       if (id === 'setup') return Team.su && Team.su.steps && Team.su.steps.length ? (Team.su.completedAt ? 'ready' : Team.su.steps.filter((x) => x.status === 'done').length + ' of ' + Team.su.steps.length) : 'start here';
-      if (id === 'memory') return 'sources · corrections';
+      if (id === 'memory') { const n = Team.ln && Team.ln.pending ? Team.ln.pending.length : (Team.data && Team.data.learn ? Team.data.learn.pending : 0); return n ? n + ' worth keeping' : 'sources · corrections'; }
       if (id === 'projects') return Team.pj && Team.pj.projects ? Team.pj.projects.filter((x) => x.status === 'active').length + ' active' : 'meetings · work';
       if (id === 'skills') return Team.sk && Team.sk.counts ? (Team.sk.counts.active || 0) + ' active' : 'how work is done';
       if (id === 'scripts') return Team.sc && Team.sc.counts ? (Team.sc.counts.active || 0) + ' active' : 'routine, no model';
@@ -16165,7 +16183,7 @@ const Team = {
     const list = Hud.panel('memlist', 'Sources · ' + ((M.counts || {}).current || 0) + ' current · ' + ((M.counts || {}).superseded || 0) + ' superseded', search + (Team.mem ? (items.length ? items.map(Team.memRow).join('') : '<p class="hud-none">Nothing matches.</p>') : '<p class="hud-sub">Looking…</p>') +
       '<p class="hud-sub">Facts and rules the team is shown; J.A.R.V.I.S.\'s memory of you; each agent\'s instructions; your preferences; and the platform rules (code — shown, never edited here). Your Flow record and the conversation are read, not listed.</p>');
     Hud.set('.hud-left', list);
-    Hud.set('.hud-right', Team.tracePanel() + Team.ctxPanels() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M));
+    Hud.set('.hud-right', Team.learnPanel() + Team.tracePanel() + Team.ctxPanels() + Team.correctPanel() + Team.auditPanel() + Team.changesPanel(M));
     Team.paintRail();
   },
   tracePanel() {
@@ -16266,6 +16284,57 @@ const Team = {
     if (Team.ctx && !force) return Team.ctx;
     try { const r = await fetch('/api/team/context', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.ctx = (r.ok && j && j.ok) ? j : (Team.ctx || { sources: [], requests: [], discovery: { active: null, recent: [] }, verifications: [], failed: true }); } catch (e) { Team.ctx = Team.ctx || { sources: [], requests: [], discovery: { active: null, recent: [] }, verifications: [], failed: true }; }
     return Team.ctx;
+  },
+  /* ---- worth keeping: what J.A.R.V.I.S. noticed, waiting for a yes ---- */
+  async loadLn(force) {
+    if (Team.ln && !force) return Team.ln;
+    try { const r = await fetch('/api/team/learn', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); Team.ln = r.ok && j && j.ok ? j : (Team.ln || { pending: [], decided: [], reviews: [], on: true, every: 10, failed: true }); } catch (e) { Team.ln = Team.ln || { pending: [], decided: [], reviews: [], on: true, every: 10, failed: true }; }
+    return Team.ln;
+  },
+  learnPanel() {
+    const L = Team.ln;
+    if (!L && !Team.lnLoading) { Team.lnLoading = true; Team.loadLn().then(() => { Team.lnLoading = false; if (Hud.on && Team.sel === 'memory') { Hud.paint(); Team.paintRail(); } }); }
+    const P = (L && L.pending) || [];
+    const from = (p) => p.from ? (p.from.task ? 'from the task “' + Team.cut(p.from.title || '', 60) + '”' : p.from.chat ? 'from the chat “' + Team.cut(p.from.title || '', 50) + '”' : '') + (p.from.at ? ' · ' + Team.when(p.from.at) : '') : '';
+    const card = (p) => {
+      const editing = Team.lnEdit === p.id;
+      const head = p.kind === 'memory'
+        ? '<em class="hud-badge" data-st="working">' + esc(p.mkind || 'fact') + '</em> <span data-i18n="off">' + esc(p.text) + '</span>'
+        : '<em class="hud-badge" data-st="awaiting">skill</em> <span data-i18n="off"><b>' + esc(p.doc.name) + '</b> — ' + esc(Team.cut(p.doc.purpose, 140)) + '</span>' + (p.doc.steps && p.doc.steps.length ? '<ol class="hud-lnsteps">' + p.doc.steps.slice(0, 6).map((x) => '<li data-i18n="off">' + esc(Team.cut(x, 140)) + '</li>').join('') + (p.doc.steps.length > 6 ? '<li>…</li>' : '') + '</ol>' : '');
+      const body = (p.quote ? '<p class="hud-sub" data-i18n="off">“' + esc(Team.cut(p.quote, 220)) + '”</p>' : '') +
+        '<p class="hud-sub" data-i18n="off">' + esc(p.why || '') + (from(p) ? ' · ' + esc(from(p)) : '') + '</p>' +
+        (p.replaces ? '<p class="hud-alert" data-i18n="off">Replaces: “' + esc(p.replaces.text) + '” — keeping this marks that entry superseded (dated, kept as history).</p>' : '');
+      const btns = editing && p.kind === 'memory'
+        ? '<form data-team="lnkeep" data-id="' + esc(p.id) + '" class="hud-skform"><input class="hud-sel" type="text" name="text" maxlength="300" value="' + esc(p.text) + '" aria-label="The fact, as it should be kept"><div class="hud-row"><select class="hud-sel" name="mkind" aria-label="Kind">' + ['fact', 'rule', 'preference'].map((k) => '<option value="' + k + '"' + (p.mkind === k ? ' selected' : '') + '>' + k + '</option>').join('') + '</select><button type="submit" class="hud-btn">Keep it</button><button type="button" class="hud-btn ghost" data-hud="lneditx">Cancel</button></div></form>'
+        : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="lnkeep" data-id="' + esc(p.id) + '">' + (p.kind === 'memory' ? 'Keep' : 'Keep as a skill') + '</button>' + (p.kind === 'memory' ? '<button type="button" class="hud-btn ghost" data-hud="lnedit" data-id="' + esc(p.id) + '">Edit, then keep</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="lndrop" data-id="' + esc(p.id) + '">Not this</button>' + (p.from && p.from.chat ? '<button type="button" class="hud-link" data-hud="lnchat" data-id="' + esc(p.from.chat) + '">open the chat</button>' : '') + (p.from && p.from.task ? '<button type="button" class="hud-link" data-hud="task" data-id="' + esc(p.from.task) + '">open the task</button>' : '') + '</div>';
+      return '<div class="hud-lncard" data-i18n="off">' + '<div class="hud-lnh">' + head + '</div>' + body + btns + '</div>';
+    };
+    const last = L && L.reviews && L.reviews[0];
+    const foot = '<div class="hud-row hud-wrap"><button type="button" class="hud-btn ghost" data-hud="lnreview"' + (Team.lnBusy ? ' disabled' : '') + '>' + (Team.lnBusy ? 'Looking…' : 'Look now') + '</button>' +
+      '<label class="hud-tick"><input type="checkbox" data-ln="on"' + (!L || L.on ? ' checked' : '') + '> Look back on our chats by himself</label>' +
+      '<label class="hud-tick">every <select class="hud-sel hud-sm" data-ln="every">' + [6, 10, 15, 25].map((n) => '<option value="' + n + '"' + ((L && L.every) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select> things you say</label></div>' +
+      '<p class="hud-sub">' + (last ? 'Last look ' + esc(Team.when(last.at)) + ': ' + last.turns + ' turn' + (last.turns === 1 ? '' : 's') + (last.tasks ? ' and ' + last.tasks + ' finished task' + (last.tasks === 1 ? '' : 's') : '') + ' read, ' + last.found + ' idea' + (last.found === 1 ? '' : 's') + '. ' : '') + 'He proposes; nothing reaches Memory or Skills until you keep it. Ideas you turn down are not offered again.</p>' +
+      (L && L.decided && L.decided.length ? '<details class="hud-det"><summary>Decided (' + L.decided.length + ')</summary>' + L.decided.slice(0, 12).map((p) => '<div class="hud-r' + (p.status === 'declined' ? ' old' : '') + '"><span data-i18n="off">' + esc(p.kind === 'memory' ? p.text : p.doc.name) + '<small>' + (p.status === 'kept' ? 'kept' : 'not this') + ' · ' + esc(Team.when(p.decidedAt)) + '</small></span></div>').join('') + '</details>' : '');
+    return Hud.panel('lnkeep', 'Worth keeping' + (P.length ? ' · ' + P.length : ''), (L ? (P.length ? P.map(card).join('') : '<p class="hud-none">Nothing waiting. Every ' + ((L && L.every) || 10) + ' things you say to him — and after the team finishes bigger work — he looks back for facts, rules, preferences and routines worth keeping.</p>') : '<p class="hud-sub">Looking…</p>') + foot);
+  },
+  async lnClick(a, b) {
+    if (a === 'lnkeep') { b.disabled = true; const j = await Team.post('/api/team/learn', { op: 'accept', id: b.getAttribute('data-id') }); if (j && j.ok) { toast(j.skill ? '“' + j.skill.name + '” is a skill now' : 'Kept in memory', null, 1600); Team.mem = null; Team.sk = null; await Team.loadLn(true); Hud.paint(); Team.paintRail(); } else { b.disabled = false; } return true; }
+    if (a === 'lndrop') { const j = await Team.post('/api/team/learn', { op: 'dismiss', id: b.getAttribute('data-id') }); if (j && j.ok) { await Team.loadLn(true); Hud.paint(); Team.paintRail(); } return true; }
+    if (a === 'lnedit') { Team.lnEdit = b.getAttribute('data-id'); Hud.paint(); return true; }
+    if (a === 'lneditx') { Team.lnEdit = null; Hud.paint(); return true; }
+    if (a === 'lnchat') { try { Say.open(); await Say.chatOpen(b.getAttribute('data-id')); } catch (e) {} return true; }
+    if (a === 'lnreview') { Team.lnBusy = true; Hud.paint(); const j = await Team.post('/api/team/learn', { op: 'review' }); Team.lnBusy = false; if (j && j.ok) { Team.ln = j; toast(j.found ? j.found + ' new idea' + (j.found === 1 ? '' : 's') + ' worth keeping' : 'Nothing new worth keeping', null, 1800); } Hud.paint(); Team.paintRail(); return true; }
+    return false;
+  },
+  async lnChange(el) {
+    const a = 'ln' + el.getAttribute('data-ln');
+    if (a === 'lnon') { const j = await Team.post('/api/team/learn', { op: 'settings', on: !!el.checked }); if (j && j.ok) { Team.ln = Object.assign(Team.ln || {}, { on: j.on }); toast(j.on ? 'He will look back by himself' : 'Only when you press Look now', null, 1600); } return true; }
+    if (a === 'lnevery') { const j = await Team.post('/api/team/learn', { op: 'settings', every: +el.value }); if (j && j.ok) Team.ln = Object.assign(Team.ln || {}, { every: j.every }); return true; }
+    return false;
+  },
+  async lnSubmit(kind, f) {
+    if (kind === 'lnkeep') { const j = await Team.post('/api/team/learn', { op: 'accept', id: f.getAttribute('data-id'), text: f.text.value.trim(), mkind: f.mkind.value }); if (j && j.ok) { Team.lnEdit = null; Team.mem = null; toast('Kept in memory', null, 1600); await Team.loadLn(true); Hud.paint(); Team.paintRail(); } return true; }
+    return false;
   },
   ctxPanels() {
     const C = Team.ctx;
@@ -16839,17 +16908,32 @@ const Team = {
       '<div class="hud-tabs">' + [['active', 'Active'], ['disabled', 'Disabled'], ['archived', 'Archived'], ['all', 'Everything']].map((t) => '<button type="button" class="hud-tab' + ((Team.skFilter || 'active') === t[0] ? ' on' : '') + '" data-hud="skfilter" data-f="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
     const c = S.counts || {};
     const list = Hud.panel('sklist', 'Skills · ' + (c.active || 0) + ' active' + (c.disabled ? ' · ' + c.disabled + ' disabled' : '') + (c.archived ? ' · ' + c.archived + ' archived' : ''), search + (Team.sk ? (items.length ? items.map(Team.skRow).join('') : '<p class="hud-none">' + (Team.skFilter === 'active' || !Team.skFilter ? 'No skills yet. Teach one on the right, or say “turn that into a skill” after a task.' : 'Nothing here.') + '</p>') : '<p class="hud-sub">Looking…</p>') +
-      '<div class="hud-row"><button type="button" class="hud-btn' + (Team.skNew ? ' ghost' : '') + '" data-hud="sknew">' + (Team.skNew ? 'Cancel' : 'Teach a new skill') + '</button></div>' +
+      '<div class="hud-row"><button type="button" class="hud-btn' + (Team.skNew ? ' ghost' : '') + '" data-hud="sknew">' + (Team.skNew ? 'Cancel' : 'Teach a new skill') + '</button><button type="button" class="hud-btn ghost" data-hud="skimportx">' + (Team.skImport ? 'Close import' : 'Import SKILL.md') + '</button></div>' +
       '<p class="hud-sub">A skill is an instruction document you can read and edit: purpose, when to use it, inputs, the steps and decision points, the tools and sources it relies on, what good looks like, exceptions and what needs your yes. Facts stay in Memory; skills point at them. A skill never widens what an agent may do.</p>');
     Hud.set('.hud-left', list);
     let right = '';
     if (Team.skNew) right = Team.skTeachPanel();
+    if (Team.skImport) right = Team.skImportPanel() + right;
     const open = Team.skOpen && Team.skill(Team.skOpen);
     if (open) right += Team.skEdit === open.id ? Team.skEditorPanel(open) : Team.skDetailPanel(open);
     if (open) right += Team.skTestPanel(open) + Team.skFeedbackPanel(open, (S.proposals || []).filter((p) => p.skill === open.id)) + Team.skVersionsPanel(open);
     if (!right) right = Hud.panel('skhint', 'Pick a skill', '<p class="hud-sub">Open one on the left to read it, test it on an example, give feedback that becomes a proposed change (shown as a diff), compare versions, assign it to agents, or disable and archive it.</p>' + ((S.proposals || []).some((p) => p.status === 'proposed') ? '<p class="hud-alert">' + (S.proposals || []).filter((p) => p.status === 'proposed').length + ' proposed change' + ((S.proposals || []).filter((p) => p.status === 'proposed').length === 1 ? '' : 's') + ' waiting: ' + esc((S.proposals || []).filter((p) => p.status === 'proposed').map((p) => p.skillName).filter((v, i, a) => a.indexOf(v) === i).join(', ')) + '</p>' : ''));
     Hud.set('.hud-right', right);
     Team.paintRail();
+  },
+  skImportPanel() {
+    const P = Team.skImp;
+    let pv = '';
+    if (P && P.doc) {
+      pv = '<div class="hud-tr"><p class="hud-sub" data-i18n="off"><b>' + esc(P.doc.name) + '</b>' + (P.frontMatter && P.frontMatter.name ? ' · ' + esc(P.frontMatter.name) : '') + (P.frontMatter && P.frontMatter.license ? ' · ' + esc(P.frontMatter.license) : '') + (P.url ? ' · ' + esc(P.url) : '') + '</p>' +
+        (P.risky && P.risky.length ? '<p class="hud-alert" data-i18n="off">Careful: this file ' + esc(P.risky.join('; ')) + '. If you import it anyway it arrives disabled, for you to read and enable.</p>' : '') +
+        (P.warnings || []).map((w) => '<p class="hud-sub" data-i18n="off">⚠ ' + esc(w) + '</p>').join('') +
+        Team.skDocView(Object.assign({ tools: [], inputs: [], steps: [], sources: [], scripts: [] }, P.doc)) +
+        '<details class="hud-det"><summary>The file, as written</summary><pre class="hud-pre" data-i18n="off">' + esc(String(P.raw || '').slice(0, 20000)) + '</pre></details>' +
+        '<div class="hud-row"><button type="button" class="hud-btn" data-hud="skimportgo"' + (Team.skBusy ? ' disabled' : '') + '>' + (P.risky && P.risky.length ? 'Import anyway (disabled)' : 'Import as a skill') + '</button><button type="button" class="hud-btn ghost" data-hud="skimportclear">Start over</button></div></div>';
+    } else if (P && P.error) pv = '<p class="hud-alert" data-i18n="off">' + esc(P.error) + '</p>';
+    return Hud.panel('skimport', 'Import a SKILL.md', (P && P.doc ? '' : '<form data-team="skimport" class="hud-skform"><input class="hud-sel" type="url" name="url" placeholder="GitHub link to a skill — the folder or its SKILL.md" aria-label="GitHub link"><textarea name="text" rows="6" maxlength="100000" placeholder="…or paste the SKILL.md here (front matter and all)" aria-label="SKILL.md"></textarea><div class="hud-row"><button type="submit" class="hud-btn"' + (Team.skBusy ? ' disabled' : '') + '>' + (Team.skBusy ? 'Reading…' : 'Read it') + '</button></div></form>') + pv +
+      '<p class="hud-sub">The open Agent Skills format (agentskills.io) that Claude, Codex, Cursor and others use. You see the whole file before anything is saved. Only SKILL.md is read — no scripts are fetched, nothing in it can run here, and its "allowed-tools" are ignored: each agent keeps its own permission level and outside actions still need your yes.</p>');
   },
   skTeachPanel() {
     const ags = Team.agents().filter((a) => a.id !== 'jarvis');
@@ -16871,7 +16955,7 @@ const Team = {
       (s.tools.length ? '<div class="hud-skf"><b>Tools</b><span>' + s.tools.map((t) => '<em class="hud-badge" data-st="' + ((Team.sk && Team.sk.tools && Team.sk.tools[t]) ? 'working' : 'awaiting') + '">' + esc((Team.sk && Team.sk.toolNames && Team.sk.toolNames[t]) || t) + '</em>').join(' ') + '</span></div>' : '') +
       (src.length ? '<div class="hud-skf"><b>Sources</b><ul>' + src.join('') + '</ul></div>' : '') +
       ((s.scripts || []).length ? '<div class="hud-skf"><b>Automations</b><ul>' + s.scripts.map((x) => { const sc = Team.script(x.id); return '<li data-i18n="off">⚙ ' + esc(sc ? sc.name + ' v' + sc.version : x.id) + (x.when ? ' — when: ' + esc(x.when) : '') + (x.inputs ? ' · inputs: ' + esc(x.inputs) : '') + (x.success ? ' · success: ' + esc(x.success) : '') + (x.errors ? ' · on error: ' + esc(x.errors) : '') + '</li>'; }).join('') + '</ul></div>' : '') +
-      row('Expected output', s.output) + row('What good looks like', s.quality) + row('Exceptions · missing information', s.exceptions) + row('Needs your yes', s.approvals || 'Anything that would reach the outside world — proposed, never done.') + '</div>';
+      row('Expected output', s.output) + row('What good looks like', s.quality) + row('Exceptions · missing information', s.exceptions) + row('Needs your yes', s.approvals || 'Anything that would reach the outside world — proposed, never done.') + (s.body ? '<div class="hud-skf"><b>Further instructions</b><pre class="hud-pre" data-i18n="off">' + esc(s.body) + '</pre></div>' : '') + '</div>';
   },
   skDetailPanel(s) {
     const ags = Team.agents().filter((a) => a.id !== 'jarvis');
@@ -16880,7 +16964,9 @@ const Team = {
     const btns = '<div class="hud-row">' + (s.status === 'active' ? '<button type="button" class="hud-btn" data-hud="skedit" data-id="' + esc(s.id) + '">Edit</button><button type="button" class="hud-btn ghost" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="disabled">Disable</button>' : s.status === 'disabled' ? '<button type="button" class="hud-btn" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="active">Enable</button><button type="button" class="hud-btn ghost" data-hud="skedit" data-id="' + esc(s.id) + '">Edit</button>' : '<button type="button" class="hud-btn" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="active">Restore</button><button type="button" class="hud-btn ghost" data-hud="skremove" data-id="' + esc(s.id) + '">Remove for good</button>') + (s.status !== 'archived' ? '<button type="button" class="hud-btn ghost" data-hud="skstatus" data-id="' + esc(s.id) + '" data-st="archived">Archive</button>' : '') + '<button type="button" class="hud-btn ghost" data-hud="skclose">Close</button></div>';
     const runs = (s.runs || []).filter((r) => r.kind !== 'test').slice(-5).reverse();
     const used = runs.length ? '<p class="hud-sub"><b>Used:</b> ' + runs.map((r) => esc((Team.agent(r.agent) || {}).name || r.agent) + ' v' + esc(r.version) + ' · ' + esc(Team.when(r.at)) + (r.task ? ' <button type="button" class="hud-link" data-hud="task" data-id="' + esc(r.task) + '">open task</button>' : '')).join(' · ') + '</p>' : '';
-    return Hud.panel('skview', esc(s.name), head + Team.skDocView(s) + used + assign + btns);
+    const imp = s.from && s.from.kind === 'import' && s.from.imported ? '<p class="hud-sub" data-i18n="off">Imported from a SKILL.md' + (s.from.imported.url ? ' · ' + esc(s.from.imported.url) : '') + ' · ' + esc(Team.when(s.from.imported.at)) + '</p>' + (s.from.imported.warnings || []).map((w) => '<p class="hud-sub" data-i18n="off">⚠ ' + esc(w) + '</p>').join('') : s.from && s.from.kind === 'learned' ? '<p class="hud-sub">J.A.R.V.I.S. noticed this routine; you kept it.</p>' : '';
+    const exp = '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="skexport" data-id="' + esc(s.id) + '">Export SKILL.md</button></div>';
+    return Hud.panel('skview', esc(s.name), head + imp + Team.skDocView(s) + used + assign + btns + exp);
   },
   skEditorPanel(s) {
     const f = (n, l, v, rows, ph) => '<label class="hud-skl"><span>' + l + '</span>' + (rows ? '<textarea name="' + n + '" rows="' + rows + '" placeholder="' + esc(ph || '') + '">' + esc(Array.isArray(v) ? v.join('\n') : (v || '')) + '</textarea>' : '<input class="hud-sel" type="text" name="' + n + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '">') + '</label>';
@@ -16943,6 +17029,24 @@ const Team = {
     if (a === 'skfilter') { Team.skFilter = b.getAttribute('data-f'); Hud.paint(); return true; }
     if (a === 'sknew') { Team.skNew = !Team.skNew; Hud.paint(); if (Team.skNew) setTimeout(() => { const t = Hud.el.querySelector('form[data-team="skcreate"] textarea'); if (t) t.focus(); }, 60); return true; }
     if (a === 'skclose') { Team.skOpen = null; Team.skEdit = null; Hud.paint(); return true; }
+    if (a === 'skimportx') { Team.skImport = !Team.skImport; Team.skImp = null; Hud.paint(); return true; }
+    if (a === 'skimportclear') { Team.skImp = null; Hud.paint(); return true; }
+    if (a === 'skimportgo') {
+      const P = Team.skImp; if (!P) return true;
+      Team.skBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/skills/import', P.url ? { url: P.url, acknowledge: !!(P.risky && P.risky.length) } : { text: P.raw, acknowledge: !!(P.risky && P.risky.length) });
+      Team.skBusy = false;
+      if (j && j.ok) { Team.skImport = false; Team.skImp = null; await Team.loadSk(true); Team.skFilter = j.skill.status === 'active' ? 'active' : 'disabled'; Team.skOpen = j.skill.id; toast('“' + j.skill.name + '” imported' + (j.skill.status === 'disabled' ? ' — disabled until you enable it' : ''), null, 2200); }
+      Hud.paint(); return true;
+    }
+    if (a === 'skexport') {
+      const r = await fetch('/api/team/skills/export?id=' + encodeURIComponent(b.getAttribute('data-id')), { credentials: 'same-origin', cache: 'no-store' }).catch(() => null);
+      const j = r ? await r.json().catch(() => null) : null;
+      if (!j || !j.ok) { toast((j && j.error) || 'Could not export it.', 'bad', 2200); return true; }
+      try { const url = URL.createObjectURL(new Blob([j.text], { type: 'text/markdown' })); const x = document.createElement('a'); x.href = url; x.download = j.name + '-SKILL.md'; document.body.appendChild(x); x.click(); x.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); } catch (e) {}
+      try { await navigator.clipboard.writeText(j.text); toast('SKILL.md downloaded and copied', null, 1800); } catch (e) { toast('SKILL.md downloaded', null, 1600); }
+      return true;
+    }
     if (a === 'skedit') { Team.skOpen = b.getAttribute('data-id'); Team.skEdit = Team.skOpen; Hud.paint(); return true; }
     if (a === 'skeditcancel') { Team.skEdit = null; Hud.paint(); return true; }
     if (a === 'skfromtask') {
@@ -16966,6 +17070,13 @@ const Team = {
   async skSubmit(kind, f) {
     const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
     if (kind === 'sksearch') { Team.skQ = f.q.value.trim(); await Team.loadSk(true); Hud.paint(); return true; }
+    if (kind === 'skimport') {
+      const url = f.url.value.trim(), text = f.text.value.trim(); if (!url && !text) { toast('Paste a SKILL.md or give a link.', 'warn', 2000); return true; }
+      Team.skBusy = true; Hud.paint();
+      const j = await Team.post('/api/team/skills/import', url ? { url, preview: true } : { text, preview: true });
+      Team.skBusy = false; Team.skImp = j && j.ok ? Object.assign(j, { raw: j.raw || text }) : { error: (j && j.error) || 'Could not read it.' };
+      Hud.paint(); return true;
+    }
     if (kind === 'skcreate') {
       const text = f.text.value.trim(); if (!text) return true;
       Team.skBusy = true; Hud.paint();
@@ -17001,6 +17112,7 @@ const Team = {
     if (a === 'ctall') { Team.ctAll = true; Hud.paint(); return; }
     if (a === 'ctdel') { const j = await Team.post('/api/team/contacts', { op: 'remove', email: b.getAttribute('data-email') }); if (j && j.ok) { Team.data.contacts = j.contacts; Hud.paint(); } return; }
     if (await Team.suClick(a, b)) return;
+    if (await Team.lnClick(a, b)) return;
     if (await Team.ctxClick(a, b)) return;
     if (await Team.memClick(a, b)) return;
     if (await Team.skClick(a, b)) return;
@@ -17078,6 +17190,7 @@ const Team = {
   },
   async change(e) {
     const t = e.target;
+    if (t.matches('[data-ln]')) { await Team.lnChange(t); return; }
     if (t.matches('[data-team-model]')) {
       const id = t.getAttribute('data-team-model'); const j = await Team.post('/api/team/agent/update', { id, model: t.value });
       if (j && j.ok) { Object.assign(Team.agent(id), j.agent); toast('Now thinking with ' + Team.short(j.agent.model), null, 1800); Team.paintRail(); if (Team.sel === id) Hud.paint(); }
@@ -17125,6 +17238,7 @@ const Team = {
     if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
+    if (/^ln/.test(kind)) { try { await Team.lnSubmit(kind, f); } catch (e) { console.warn('[Flow] learn', e); } return; }
     if (kind === 'acccode') {
       const areas = [...f.querySelectorAll('input[name="area"]:checked')].map((x) => x.value);
       const emp = f.kind.value === 'employee';

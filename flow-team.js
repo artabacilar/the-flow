@@ -62,6 +62,7 @@ const catalog = require('./flow-catalog');
 const projectsMod = require('./flow-projects');
 const salesMod = require('./flow-sales');
 const recMod = require('./flow-recordings');
+const learn = require('./flow-learn');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -499,6 +500,7 @@ async function handle(p, req, res, ctx) {
   if (await handleWork(p, req, res, ctx)) return true;
   if (await memory.handle(p, req, res, ctx, memDeps())) return true;
   if (await skills.handle(p, req, res, ctx, skillDeps())) return true;
+  if (await learn.handle(p, req, res, ctx, learnDeps())) return true;
   if (await scripts.handle(p, req, res, ctx, scriptDeps())) return true;
   if (await efficiency.handle(p, req, res, ctx, effDeps())) return true;
   if (await setup.handle(p, req, res, ctx, setupDeps())) return true;
@@ -521,7 +523,7 @@ async function handle(p, req, res, ctx) {
     json(res, 200, { ok: true, agents: list, providers: provs, defaultModel: DEFAULT_MODEL, knowledge: know, usage: use, counts, attention, tasks: tl.slice(-40).reverse(), approvals: ap.filter((x) => x.status === 'pending' || x.status === 'send_failed').slice(-40).reverse(),
       recent: ap.filter((x) => x.status === 'executed').slice(-5).reverse(),
       paused: (await ctx.get('team:paused')) === true, log: (Array.isArray(lg) ? lg : []).slice(-60), templates: TEMPLATE_IDS.map((t) => ({ id: t, name: TEMPLATES[t].name, role: TEMPLATES[t].role })), permissions: PERMISSIONS,
-      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' }, senders: await sendersFor(ctx), contacts: (await contacts(ctx)).slice(0, 300), viewer: ctx.viewer || { member: false, owner: true } });
+      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' }, senders: await sendersFor(ctx), contacts: (await contacts(ctx)).slice(0, 300), viewer: ctx.viewer || { member: false, owner: true }, learn: { pending: ((await learn.state(ctx)).pending || []).length } });
     return true;
   }
 
@@ -1065,6 +1067,7 @@ async function notify(uid, ctx, t0, what) {
   /* the freshest record: the caller's copy may predate the last save */
   const t = (await tasks(ctx)).find((x) => x.id === t0.id) || t0;
   if (what === 'done' && !(t.from && t.from.script)) { try { await scripts.onEvent(ctx, scriptDeps(), uid, 'task.done', { title: t.title }); } catch (e) {} }
+  if (what === 'done' && !(t.from && t.from.script)) { try { if (!ctx.user && uid) ctx.user = await userOf(uid); await learn.note(ctx, learnDeps(), uid, { kind: 'task', task: t.id, steps: (t.steps || []).length }); } catch (e) {} }
   const list = await agents(ctx); const a = list.find((x) => x.id === t.agent) || { name: 'The team' };
   const title = what === 'done' ? a.name + ' is done: ' + t.title : what === 'approval' ? t.title + ' — needs your yes' : what === 'question' ? a.name + ' has a question' : t.title + ' did not finish';
   const body = what === 'question' ? String(t.question || '').slice(0, 160) : what === 'failed' ? String(t.error || '').slice(0, 160) : 'Open the command centre to see it.';
@@ -1098,6 +1101,7 @@ function start(deps) {
   usersKey = deps.usersKey || '';
   rawStore = deps.raw; nsPrefixFn = deps.nsPrefix;
   rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
+  rawSet = (k, v) => deps.raw.set(k, JSON.stringify(v));
   /* the morning briefing: a minute tick, in each person's own clock */
   if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
   bootCtx = (uid) => {
@@ -1501,7 +1505,7 @@ async function tickBriefings(now) {
   }
   return out;
 }
-let usersFn = null, usersKey = '', rawGet = async () => null, briefTimer = null;
+let usersFn = null, usersKey = '', rawGet = async () => null, rawSet = null, briefTimer = null;
 async function userOf(uid) {
   try { const users = (await rawGet(usersKey)) || {}; return Object.values(users).find((u) => u && u.id === uid) || { id: uid }; } catch (e) { return { id: uid }; }
 }
@@ -1633,6 +1637,30 @@ function skillDeps() {
     log: (ctx, who, what) => log(ctx, who, what),
     addKnowledge: async (ctx, k) => { const list = await knowledge(ctx); const item = { id: 'k' + newId(), text: str(k.text, 300), scope: k.scope === 'shared' || /^agent:/.test(String(k.scope || '')) ? k.scope : 'shared', kind: k.kind || 'preference', source: 'you', at: Date.now(), updated: Date.now() }; list.push(item); await ctx.set('team:knowledge', list.slice(-400)); await log(ctx, 'team', 'Preference added from skill feedback: ' + item.text); return item; },
     draft: FAKE ? null : draftSkill, revise: FAKE ? null : reviseSkill, run: runSample
+  };
+}
+/* ---------- the learning loop: what it needs from here --------------------- */
+function learnDeps() {
+  return {
+    chats: (uid) => uid ? { get: (k) => rawGet('__chat:' + uid + ':' + k), set: (k, v) => rawSet ? rawSet('__chat:' + uid + ':' + k, v) : null } : null,
+    tasks: (ctx) => tasks(ctx), knowledge: (ctx) => knowledge(ctx), skills: (ctx) => skills.all(ctx),
+    terms: (t) => memory.terms(t).words, overlap: memory.overlap,
+    skillScore: (s, brief) => skills.score(s, brief), draftFromTask: (t) => skills.draftFromTask(t, [], []), draftFromText: (t) => skills.draftFromText(t),
+    cleanDoc: (d) => skills.cleanDoc(d), secretish: (d) => skills.secretish(d),
+    modelJson: FAKE ? null : (ctx, system, user, max) => modelJson(ctx, system, user, max),
+    addKnowledge: async (ctx, k) => {
+      const list = await knowledge(ctx);
+      const item = { id: 'k' + newId(), text: str(k.text, 300), scope: 'shared', kind: memory.KINDS.indexOf(k.kind) >= 0 ? k.kind : 'fact', source: 'learned', status: 'current', origin: k.origin || null, at: Date.now(), updated: Date.now(), validFrom: Date.now(), history: [] };
+      list.push(item); await ctx.set('team:knowledge', list.slice(-400));
+      return item;
+    },
+    supersede: async (ctx, oldId, newIdv) => {
+      const r = await memory.edit(ctx, memDeps(), { id: oldId, op: 'supersede' });
+      if (r && r.ok) { const list = await knowledge(ctx); const o = list.find((x) => x.id === oldId), n = list.find((x) => x.id === newIdv); if (o) o.supersededBy = newIdv; if (n) n.supersedes = oldId; await ctx.set('team:knowledge', list); }
+      return r;
+    },
+    createSkill: (ctx, b) => skills.create(ctx, skillDeps(), Object.assign({ from: 'learned' }, b)),
+    log: (ctx, who, what) => log(ctx, who, what)
   };
 }
 /* ---------- efficiency: what the review needs from here -------------------- */
@@ -2081,6 +2109,11 @@ async function watchAct(ctx, uid, b) {
   return { error: 'Unknown op.' };
 }
 module.exports.watchView = watchView;
+/* Counted by the chats as they are kept (flow-extras); never throws, never waits. */
+module.exports.learnNote = function (teamCtx, uid, ev) {
+  (async () => { const c = Object.assign({}, teamCtx); try { c.user = await userOf(uid); } catch (e) {} await learn.note(c, learnDeps(), uid, ev); })().catch(() => {});
+};
+module.exports.learn = { view: (ctx) => learn.view(ctx), accept: (ctx, b) => learn.accept(ctx, learnDeps(), b), dismiss: (ctx, b) => learn.dismiss(ctx, learnDeps(), b), review: (ctx, uid) => learn.review(ctx, learnDeps(), uid, 'asked'), chatList: learn.chatList };
 module.exports.watchAct = watchAct;
 
 module.exports.start = start;
