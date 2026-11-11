@@ -216,6 +216,31 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); FlowTodayLook.applyLook(); }); await p.waitForTimeout(800);
   ok('back to Simple: the command centre closes and Simple is as it was — a room one steps into, Memory on the strip, no rail', await p.evaluate(() => !FlowHud.on && !document.getElementById('flow-hud').classList.contains('on') && !!document.querySelector('#today-feed .lk-hud')) && await p.evaluate(async () => { FlowHud.open(); await new Promise((r) => setTimeout(r, 700)); const h = document.getElementById('flow-hud'); const r = !h.classList.contains('hud-merge') && h.querySelectorAll('.hud-ri').length === 0 && !!h.querySelector('.hud-team [data-hud="memory"]') && getComputedStyle(h.querySelector('.hud-x')).display !== 'none'; FlowHud.close(); return r; }));
 
+  console.log('\n— Stop —');
+  await p.evaluate(() => { window.__stopped = 0; FlowSpeech.src = { stop() { window.__stopped++; } }; FlowSpeech.device('Right, the venue is on tomorrow.', 'en', FlowSpeech.token); });
+  await p.waitForTimeout(300);
+  const hs = await p.evaluate(() => { const b = document.getElementById('flow-hush'); const r = b && b.getBoundingClientRect(); return { shown: !!b && !b.hidden && r.height > 20 && r.top >= 0 && r.top < 80, on: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b || b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) }; });
+  ok('while he is talking a Stop button sits on top of the screen', hs.shown && hs.on, hs);
+  await p.click('#flow-hush'); await p.waitForTimeout(1300);
+  ok('Stop silences him at once and puts itself away', await p.evaluate(() => window.__stopped === 1 && !FlowSpeech.speaking() && document.getElementById('flow-hush').hidden));
+  await p.evaluate(() => { FlowSpeech.src = { stop() { window.__stopped++; } }; FlowSpeech.device('And another thing.', 'en', FlowSpeech.token); }); await p.waitForTimeout(300);
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  ok('Esc stops him too', await p.evaluate(() => window.__stopped === 2 && document.getElementById('flow-hush').hidden));
+  console.log('\n— a photo pasted into the console —');
+  let docBody = null;
+  await p.route('**/api/flow/document', (rt) => { if (rt.request().method() === 'POST') { docBody = JSON.parse(rt.request().postData() || '{}'); return rt.fulfill({ status: 202, contentType: 'application/json', body: '{"ok":true,"job":"j1"}' }); } return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'done', say: 'An invitation to the gala on Sunday at seven.', actions: [] }) }); });
+  await p.evaluate(async () => {
+    const cv = document.createElement('canvas'); cv.width = 3200; cv.height = 2000; const g = cv.getContext('2d');
+    for (let i = 0; i < 4000; i++) { g.fillStyle = 'hsl(' + (i * 37 % 360) + ',70%,50%)'; g.fillRect((i * 97) % 3200, (i * 53) % 2000, 40, 40); }
+    const blob = await new Promise((ok) => cv.toBlob(ok, 'image/png'));
+    const f = new File([blob], 'Screenshot 2026-11-11.png', { type: 'image/png' });
+    const dt = new DataTransfer(); dt.items.add(f);
+    document.querySelector('#flow-say #sy-text').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await p.waitForTimeout(4500);
+  const dims = docBody && await p.evaluate(async (d) => { const im = new Image(); await new Promise((ok) => { im.onload = ok; im.src = d; }); return [im.naturalWidth, im.naturalHeight]; }, docBody.data);
+  ok('a pasted screenshot goes to be read — as a JPEG no wider than 2000 px, under the size the model takes', !!docBody && docBody.type === 'image/jpeg' && /\.jpg$/.test(docBody.name) && dims && Math.max(...dims) === 2000 && docBody.data.length < 5 * 1024 * 1024, docBody && { type: docBody.type, name: docBody.name, dims, len: docBody.data.length });
+  await p.unroute('**/api/flow/document');
   ok('no page errors', errs.length === 0, errs);
   console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' passed, ' + fail + ' failed');
   await b.close();
