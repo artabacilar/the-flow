@@ -187,7 +187,7 @@ let post = FAKE ? fakePost : fetchJSON;
 function fakePost(url, opts) {
   const b = JSON.parse(opts.body || '{}');
   const msgs = Array.isArray(b.messages) ? b.messages : [];
-  const system = typeof b.system === 'string' ? b.system : String((msgs[0] && msgs[0].role === 'system' && msgs[0].content) || '');
+  const system = typeof b.system === 'string' ? b.system : Array.isArray(b.system) ? b.system.map((x) => x && x.text || '').join('\n\n') : String((msgs[0] && msgs[0].role === 'system' && msgs[0].content) || '');
   const last0 = msgs.filter((m) => m.role === 'user').pop();
   const last = last0 && Array.isArray(last0.content) ? Object.assign({}, last0, { content: last0.content.filter((c) => c && c.type === 'text').map((c) => c.text).join('\n\n') }) : last0;
   const said = String((last && last.content) || '').split('\n\n').pop();
@@ -271,26 +271,33 @@ async function complete(opts) {
   if (!which) return { error: 'That model is not available here.', status: 0 };
   const P = PROVIDERS[which.provider], key = keyOf(which.provider);
   const maxTokens = Math.max(200, Math.min(8000, opts.maxTokens || 1200));
+  /* The system prompt may come as blocks, some marked for Anthropic's prompt
+     cache (the part that repeats from message to message is then billed at a
+     tenth after the first time). Other providers get the same text joined. */
+  const sysBlocks = Array.isArray(opts.system) ? opts.system.filter((b) => b && b.text) : null;
+  const sysText = sysBlocks ? sysBlocks.map((b) => b.text).join('\n\n') : opts.system;
+  const sysA = sysBlocks ? sysBlocks.map((b) => Object.assign({ type: 'text', text: b.text }, b.cache_control ? { cache_control: b.cache_control } : {})) : opts.system;
+  const usageOf = (u) => ({ in: (u && u.input_tokens) || 0, out: (u && u.output_tokens) || 0, cacheRead: (u && u.cache_read_input_tokens) || 0, cacheWrite: (u && u.cache_creation_input_tokens) || 0 });
   /* Streamed, when the caller wants the words as they are written (Say in
      the app). Only against the real providers; a stand-in or a test's
      poster answers whole, and the answer is then dripped out the same way. */
   const live = typeof opts.onText === 'function' && post === fetchJSON;
   try {
     if (live && P.kind === 'anthropic') {
-      let text = '', inT = 0, outT = 0;
+      let text = '', inT = 0, outT = 0, u0 = null;
       const r = await fetchStream(P.base + '/messages', {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: which.model, max_tokens: maxTokens, system: opts.system, messages: opts.messages, stream: true })
+        body: JSON.stringify({ model: which.model, max_tokens: maxTokens, system: sysA, messages: opts.messages, stream: true })
       }, opts.timeoutMs || 60000, (ev) => {
-        if (ev.type === 'message_start' && ev.message && ev.message.usage) inT = ev.message.usage.input_tokens || 0;
+        if (ev.type === 'message_start' && ev.message && ev.message.usage) { u0 = ev.message.usage; inT = u0.input_tokens || 0; }
         else if (ev.type === 'message_delta' && ev.usage) outT = ev.usage.output_tokens || outT;
         else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; opts.onText(ev.delta.text); }
       });
       if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
-      return { text, usage: { in: inT, out: outT }, provider: which.provider, model: which.model };
+      return { text, usage: Object.assign(usageOf(u0), { in: inT, out: outT }), provider: which.provider, model: which.model };
     }
     if (live) {
-      const msgs0 = [{ role: 'system', content: opts.system }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
+      const msgs0 = [{ role: 'system', content: sysText }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
       const pl = { model: which.model, messages: msgs0, stream: true };
       if (which.provider === 'openai') pl.stream_options = { include_usage: true };
       if (which.provider === 'openai' && /^(gpt-5|o[1-9])/.test(which.model)) pl.max_completion_tokens = maxTokens; else pl.max_tokens = maxTokens;
@@ -308,16 +315,16 @@ async function complete(opts) {
     if (P.kind === 'anthropic') {
       const r = await post(P.base + '/messages', {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: which.model, max_tokens: maxTokens, system: opts.system, messages: opts.messages })
+        body: JSON.stringify({ model: which.model, max_tokens: maxTokens, system: sysA, messages: opts.messages })
       }, opts.timeoutMs || 60000);
       if (r.status < 200 || r.status >= 300) return { error: upstreamError(r), status: r.status };
       const parts = (r.body && Array.isArray(r.body.content)) ? r.body.content : [];
       const u = (r.body && r.body.usage) || {};
       const whole = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
       if (typeof opts.onText === 'function') drip(whole, opts.onText);
-      return { text: whole, usage: { in: u.input_tokens || 0, out: u.output_tokens || 0 }, provider: which.provider, model: which.model };
+      return { text: whole, usage: usageOf(u), provider: which.provider, model: which.model };
     }
-    const msgs = [{ role: 'system', content: opts.system }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
+    const msgs = [{ role: 'system', content: sysText }].concat(opts.messages.map((m) => ({ role: m.role, content: m.content })));
     const payload = { model: which.model, messages: msgs };
     /* the newest OpenAI models refuse max_tokens; the others refuse the new name */
     if (which.provider === 'openai' && /^(gpt-5|o[1-9])/.test(which.model)) payload.max_completion_tokens = maxTokens; else payload.max_tokens = maxTokens;
@@ -1011,7 +1018,8 @@ const PRICES = [
 function costOf(model, u) {
   const p = PRICES.find((row) => row[0].test(String(model || '')));
   if (!p || !u) return null;
-  return ((u.in || 0) * p[1] + (u.out || 0) * p[2]) / 1e6;
+  /* a cache read is a tenth of the input price, writing it a quarter more */
+  return ((u.in || 0) * p[1] + (u.out || 0) * p[2] + (u.cacheRead || 0) * p[1] * 0.1 + (u.cacheWrite || 0) * p[1] * 1.25) / 1e6;
 }
 const monthKey = (d) => 'team:usage:m:' + (d || new Date()).toISOString().slice(0, 7);
 async function monthUsage(ctx) { const v = await ctx.get(monthKey()); return v && typeof v === 'object' ? v : {}; }
@@ -1021,7 +1029,7 @@ async function bumpUsage(ctx, agentId, u, model) {
   await ctx.set(dayKey(), use);
   const mo = await monthUsage(ctx); const mm = mo[agentId] || { calls: 0, in: 0, out: 0, usd: 0, unpriced: 0 };
   const c = costOf(model, u);
-  mo[agentId] = { calls: mm.calls + 1, in: mm.in + ((u && u.in) || 0), out: mm.out + ((u && u.out) || 0), usd: Math.round(((mm.usd || 0) + (c || 0)) * 1e6) / 1e6, unpriced: (mm.unpriced || 0) + (c == null && u ? 1 : 0) };
+  mo[agentId] = { calls: mm.calls + 1, in: mm.in + ((u && u.in) || 0), out: mm.out + ((u && u.out) || 0), cached: (mm.cached || 0) + ((u && u.cacheRead) || 0), usd: Math.round(((mm.usd || 0) + (c || 0)) * 1e6) / 1e6, unpriced: (mm.unpriced || 0) + (c == null && u ? 1 : 0) };
   await ctx.set(monthKey(), mo);
 }
 /* Orchestration settings the efficiency review may change (versioned there). */

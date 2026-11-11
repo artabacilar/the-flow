@@ -2431,7 +2431,9 @@ async function handleDo(p, req, res, ctx) {
     past.length ? 'Conversation so far:\n' + past.map((t) => t.who + ': ' + t.text).join('\n') + '\n' : '',
     'They said: "' + said + '"'
   ].join('\n');
-  const system = [{ type: 'text', text: DO_SYSTEM + '\n' + voice.text }];
+  /* His instructions repeat word for word from one message to the next:
+     marked for the prompt cache, they are billed at a tenth after the first. */
+  const system = [{ type: 'text', text: DO_SYSTEM + '\n' + voice.text, cache_control: { type: 'ephemeral' } }];
   if (snapshot) {
     const data = { type: 'text', text: '# THEIR DATA (read-only, for answering questions)\n\n' + snapshot };
     if (data.text.length >= CACHE_MIN_CHARS) data.cache_control = { type: 'ephemeral' };
@@ -2466,18 +2468,18 @@ async function handleDo(p, req, res, ctx) {
         const now = sayPrefix(soFar).text;
         if (now.length > sent2.length && now.indexOf(sent2) === 0) { sse({ t: 'd', v: now.slice(sent2.length) }); sent2 = now; }
       } : undefined;
-      const r2 = await teamMod.complete({ model: team.model, system: system.map((b) => b.text).join('\n\n'), messages: [{ role: 'user', content: lines }], maxTokens: 3000, timeoutMs: 45000, onText });
+      const r2 = await teamMod.complete({ model: team.model, system, messages: [{ role: 'user', content: lines }], maxTokens: 2000, timeoutMs: 45000, onText });
       if (r2.error) return finish(r2.status === 429 ? 429 : 502, { error: r2.error });
       answer = r2.text;
       try { if (ctx.team && teamMod.bumpUsage) await teamMod.bumpUsage(ctx.team, 'jarvis', r2.usage, r2.model); } catch (e) {}
     } else {
-      const reqBody = { model: CHAT_MODEL, max_tokens: 3000, system, messages: [{ role: 'user', content: lines }] };
+      const reqBody = { model: CHAT_MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: lines }] };
       let r, u = null;
       if (sse) {
-        let sent = '', inTok = 0, outTok = 0;
+        let sent = '', inTok = 0, outTok = 0, cR = 0, cW = 0;
         r = await doStream('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
           Object.assign({ stream: true }, reqBody), (ev) => {
-            if (ev.type === 'message_start' && ev.message && ev.message.usage) inTok = ev.message.usage.input_tokens || 0;
+            if (ev.type === 'message_start' && ev.message && ev.message.usage) { inTok = ev.message.usage.input_tokens || 0; cR = ev.message.usage.cache_read_input_tokens || 0; cW = ev.message.usage.cache_creation_input_tokens || 0; }
             else if (ev.type === 'message_delta' && ev.usage) outTok = ev.usage.output_tokens || outTok;
             else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
               answer += ev.delta.text;
@@ -2485,7 +2487,7 @@ async function handleDo(p, req, res, ctx) {
               if (now.length > sent.length && now.indexOf(sent) === 0) { sse({ t: 'd', v: now.slice(sent.length) }); sent = now; }
             }
           }, 45000);
-        if (r.status === 200) u = { input_tokens: inTok, output_tokens: outTok };
+        if (r.status === 200) u = { input_tokens: inTok, output_tokens: outTok, cache_read_input_tokens: cR, cache_creation_input_tokens: cW };
       } else {
         r = await doPost('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, reqBody, 45000);
       }
@@ -2497,7 +2499,7 @@ async function handleDo(p, req, res, ctx) {
         answer = parts.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
         u = r.body && r.body.usage;
       }
-      try { if (ctx.team && teamMod && teamMod.bumpUsage && u) await teamMod.bumpUsage(ctx.team, 'jarvis', { in: u.input_tokens || 0, out: u.output_tokens || 0 }, CHAT_MODEL); } catch (e) {}
+      try { if (ctx.team && teamMod && teamMod.bumpUsage && u) await teamMod.bumpUsage(ctx.team, 'jarvis', { in: u.input_tokens || 0, out: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, CHAT_MODEL); } catch (e) {}
     }
     const out = parseDo(answer, known);
     if (!out) return finish(502, { error: 'The answer came back in a shape the app could not read. Try again.' });

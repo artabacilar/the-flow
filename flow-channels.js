@@ -409,9 +409,12 @@ async function jarvis(ctx, uid, channel, text, meta) {
   const messages = hist.concat([{ role: 'user', content }]);
   const planner = await plannerView(ctx);
   let recalled = ''; try { if (team.recall && text && text.length > 12) recalled = await team.recall(ctx, text); } catch (e) {}
-  const sys = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot, planner).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA') +
+  /* the long part that repeats from one message to the next goes first, marked for the prompt cache */
+  const sysMain = J_SYSTEM(ctx.user && (ctx.user.name || ctx.user.email), list.filter((a) => !a.archived), know, tl, pending, snapshot, planner).replace('# THEIR DATA', (kb.historyText ? 'SUPERSEDED (no longer true; history only, with dates):\n' + kb.historyText + '\n\n' : '') + '# THEIR DATA');
+  const sysTail = '' +
     (/WHOOP \(by day/.test(snapshot || '') ? '\n\nHOW HE FEELS: asked how he feels or how he is today, read it from WHOOP in THEIR DATA (recovery against his recent days, HRV and resting heart rate against his own baseline, last night\'s sleep, yesterday\'s strain) with his mood entries, say plainly what that probably means for how he feels, and give one sensible suggestion. A read of the numbers, not a diagnosis.' : '') +
     (recalled ? '\n\nFROM HIS RECORDINGS AND MEETINGS (what was actually said; when asked how something is done or what was agreed, answer from these and name where it came from):\n' + recalled : '') + (meta && meta.spoken ? '\n\nSPOKEN REPLY: "say" will be read aloud as a voice note of about ' + meta.spoken.seconds + ' seconds — at most ' + meta.spoken.words + ' words, plain sentences, no lists, no symbols, no URLs.' : '') + (meta && meta.voice ? '\n\nThe message was a voice note, transcribed; a word may be off — ask if something makes no sense.' : '');
+  const sys = [{ type: 'text', text: sysMain, cache_control: { type: 'ephemeral' } }].concat(sysTail.trim() ? [{ type: 'text', text: sysTail.trim() }] : []);
   const r = await team.complete({ model: which.model, system: sys, messages, maxTokens: meta && meta.doc ? 2500 : 1200, timeoutMs: meta && meta.doc ? 150000 : 60000 });
   if (r.error) return r.error;
   await team.bumpUsage(ctx, 'jarvis', r.usage, which.model);
@@ -495,7 +498,8 @@ async function notify(uid, text, opts) {
   if (origin && groups) { const ok = await groups.deliver(origin.channel, origin.to, text); return ok ? 1 : 0; }
   const def = await ctx.get('team:delivery');
   const only = opts && opts.channel ? opts.channel : (typeof def === 'string' && l[def] && l[def].id ? def : null);
-  if (def === 'app' && !(opts && opts.channel)) return 0;
+  /* the app, or push notifications only: nothing is pushed into the chat channels (replies to a message there still go) */
+  if ((def === 'app' || def === 'push') && !(opts && opts.channel)) return 0;
   let n = 0;
   for (const ch of Object.keys(l)) {
     if (!l[ch] || !l[ch].id || ch === 'voice') continue;
