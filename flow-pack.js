@@ -13800,6 +13800,7 @@ const Org = {
     try { body = N.project ? Org.projectView(N.project) : N.person ? Org.personView(N.person) : N.company ? Org.companyView(N.company) : Org.homeView(); } catch (e) { console.warn('[Flow] org', e); body = '<p class="hud-none">Something went wrong drawing this page.</p>'; }
     Hud.set('.hud-left', '<div class="org">' + Org.crumbs() + body + '</div>');
     Hud.set('.hud-right', '');
+    if (N.project) { const p = D.projects.find((x) => x.id === N.project); if (p) { try { Org.wsMount(p); } catch (e) { console.warn('[Flow] project page', e); } } }
     try { Team.paintRail(); } catch (e) {}
   },
   homeView() {
@@ -13881,29 +13882,82 @@ const Org = {
   projectView(pid) {
     const D = Org.d, own = D.me.owner; const p = D.projects.find((x) => x.id === pid);
     if (!p) return '<p class="hud-none">That project is not here.</p>';
-    const ts = D.tasks.filter((t) => t.project === pid && !t.pending);
     const sel = (name, opts, cur) => '<select class="hud-sel" data-team-pjset="' + name + '" data-id="' + esc(p.id) + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
     let h = '<div class="org-title"><h2 data-i18n="off">' + esc(p.name) + '</h2>' + (own ? sel('health', [['on_track', 'On track'], ['at_risk', 'At risk'], ['blocked', 'Blocked']], p.health) + sel('status', [['active', 'Active'], ['paused', 'Paused'], ['done', 'Done']], p.status) +
       '<select class="hud-sel" data-org="pjcompany" data-id="' + esc(p.id) + '"><option value="">No company</option>' + D.companies.map((c) => '<option value="' + esc(c.id) + '"' + (c.id === p.company ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '<option value="__new">+ New company…</option></select>' : '<em class="hud-pjh" data-h="' + esc(p.health) + '">' + esc(Team.PJH[p.health] || 'On track') + '</em>') + '</div>';
     if (own) h += Org.newcoForm();
-    if (p.goal) h += '<p class="hud-pjgoal" data-i18n="off">' + esc(p.goal) + '</p>';
     if (p.state) h += '<p class="hud-pjstate" data-i18n="off"><b>Where it stands.</b> ' + esc(p.state) + '</p>';
     /* who is on it */
     h += '<div class="org-onit"><span class="org-lbl">On it</span>' + (p.people.length ? p.people.map((id) => { const x = D.people.find((y) => y.id === id); return x ? '<span class="org-chip"><i class="org-av sm" data-i18n="off">' + esc(Org.ini(x.name)) + '</i><span data-i18n="off">' + esc(x.name) + '</span>' + (own ? '<button type="button" class="org-chx" data-hud="orgdrop" data-id="' + esc(p.id) + '" data-person="' + esc(id) + '" aria-label="Take ' + esc(x.name) + ' off this project">×</button>' : '') + '</span>' : ''; }).join('') : '<small class="hud-none">No one yet</small>') +
       (own && D.people.some((x) => p.people.indexOf(x.id) < 0) ? '<select class="hud-sel org-addp" data-org="pjadd" data-id="' + esc(p.id) + '"><option value="">+ Add someone</option>' + D.people.filter((x) => p.people.indexOf(x.id) < 0).map((x) => '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>').join('') + '</select>' : '') + '</div>';
-    h += '<div class="org-sum">' + Org.bar(p.counts) + '<span class="org-stat">' + Org.stat(p.counts) + (p.counts.doneWeek ? '<b class="org-n">' + p.counts.doneWeek + ' done this week</b>' : '') + '</span></div>';
-    /* add a task */
-    const canAdd = own || (D.me.person && p.people.indexOf(D.me.person.id) >= 0);
-    if (canAdd) h += '<form data-team="orgtask" data-project="' + esc(p.id) + '" class="org-form org-add"><input class="hud-sel" name="title" maxlength="160" placeholder="A task for this project" required><select class="hud-sel" name="person"><option value="">For…</option>' +
-      p.people.map((id) => '<option value="' + esc(id) + '"' + (D.me.person && D.me.person.id === id ? ' selected' : '') + '>' + esc(Org.personName(id)) + '</option>').join('') + '</select><input class="hud-sel" type="date" name="due" aria-label="Due"><button type="submit" class="hud-btn">Add</button></form>';
     h += Org.pendingBlock(pid);
-    /* the board */
-    const col = (s) => { const list = ts.filter((t) => t.status === s).sort((a, b) => s === 'done' ? (b.doneAt || 0) - (a.doneAt || 0) : (a.due || '9') < (b.due || '9') ? -1 : 1); const shown = s === 'done' ? list.slice(0, 12) : list;
-      return '<div class="org-col" data-s="' + s + '"><h4>' + Org.ST[s] + ' <small>' + list.length + '</small></h4>' + shown.map((t) => Org.tcard(t, false)).join('') + (list.length > shown.length ? '<small class="hud-sub">and ' + (list.length - shown.length) + ' more</small>' : '') + '</div>'; };
-    h += '<div class="org-board">' + ['todo', 'doing', 'blocked', 'done'].map(col).join('') + '</div>';
-    const t = Org.nav.task && ts.find((x) => x.id === Org.nav.task);
+    /* the page itself: the same as Work and Side Project — goal, the problem,
+       the numbers, the pipeline with details, notes — kept on the project */
+    h += '<div class="hud-page org-ws"><div id="org-ws-' + esc(p.id) + '"></div></div>';
+    const t = Org.nav.task && D.tasks.find((x) => x.id === Org.nav.task && x.project === pid);
     if (t) h += Org.taskDetail(t, p);
     return h;
+  },
+  /* ---- the Work page, over a project ---- */
+  ws: {}, wsSnap: {}, wsDirty: {}, wsRun: {}, wsAgain: {}, wsT: {},
+  wsTask(t) {
+    let wk = ''; try { if (t.doneAt) wk = weekId(new Date(t.doneAt)); } catch (e) {}
+    return { id: t.id, text: t.title, status: t.status === 'blocked' ? 'doing' : t.status, prio: t.prio || 'med', due: t.due || '', note: t.note || '', items: JSON.parse(JSON.stringify(t.items || [])), links: (t.links || []).slice(), doneWk: wk };
+  },
+  wsData(p) {
+    const ts = Org.d.tasks.filter((t) => t.project === p.id && !t.pending).sort((a, b) => ((a.ord == null ? -a.at : a.ord) - (b.ord == null ? -b.at : b.ord)));
+    return { northstar: p.goal || '', problem: p.problem || '', notes: p.notes || '', tasks: ts.map(Org.wsTask) };
+  },
+  wsPick(it) { return { text: it.text || '', status: it.status, prio: it.prio || 'med', due: it.due || '', note: it.note || '', items: it.items || [], links: it.links || [] }; },
+  wsSnapOf(d) { const tasks = {}; d.tasks.forEach((it) => { tasks[it.id] = JSON.parse(JSON.stringify(Org.wsPick(it))); }); return { tasks, order: d.tasks.map((x) => x.id), goal: d.northstar || '', problem: d.problem || '', notes: d.notes || '' }; },
+  wsMeta(it) {
+    const D = Org.d; const t = D && D.tasks.find((x) => x.id === it.id); if (!t) return '';
+    const who = D.me.owner ? '<select class="wc-prio org-wsp" data-org="tperson" data-id="' + esc(t.id) + '" aria-label="Who it is for"><option value="">For…</option>' + D.people.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === t.person ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
+      : (t.person ? '<span class="wc-due" data-i18n="off">👤 ' + esc(Org.personName(t.person)) + '</span>' : '');
+    return who + (t.status === 'blocked' ? '<span class="wc-due overdue">Blocked</span>' : '') + '<button type="button" class="wc-btn" data-hud="orgtask" data-id="' + esc(t.id) + '">💬' + ((t.comments || []).length ? ' ' + t.comments.length : '') + '</button>';
+  },
+  wsMount(p) {
+    const id = 'org-ws-' + p.id; const m = document.getElementById(id); if (!m || typeof window.makeWorkspace !== 'function') return;
+    let ws = Org.ws[p.id];
+    if (!ws) { ws = Org.ws[p.id] = window.makeWorkspace({ key: 'orgws_' + p.id, mountId: id, name: p.name, nsPlaceholder: 'Where is this project headed?', data: Org.wsData(p), onSave: (d) => Org.wsSave(p.id, d), metaExtra: (it) => Org.wsMeta(it) }); Org.wsSnap[p.id] = Org.wsSnapOf(ws.get()); }
+    else if (!Org.wsDirty[p.id] && !Org.wsRun[p.id]) { const d = Org.wsData(p); ws.set(d); Org.wsSnap[p.id] = Org.wsSnapOf(d); }
+    ws.render();
+  },
+  wsSave(pid) { Org.wsDirty[pid] = true; clearTimeout(Org.wsT[pid]); Org.wsT[pid] = setTimeout(() => Org.wsFlush(pid), 450); },
+  async wsFlush(pid) {
+    if (Org.wsRun[pid]) { Org.wsAgain[pid] = true; return; }
+    Org.wsRun[pid] = true; Org.wsDirty[pid] = false; let rerender = false;
+    const post = (b) => Team.post('/api/team/org', b);
+    try {
+      const ws = Org.ws[pid]; if (!ws) return; const d = ws.get(); const prev = Org.wsSnap[pid] || { tasks: {}, order: [], goal: '', problem: '', notes: '' };
+      const pj = {}; if ((d.northstar || '') !== prev.goal) pj.goal = d.northstar || ''; if ((d.problem || '') !== prev.problem) pj.problem = d.problem || ''; if ((d.notes || '') !== prev.notes) pj.notes = d.notes || '';
+      if (Object.keys(pj).length) await post(Object.assign({ op: 'project', id: pid }, pj));
+      const seen = new Set();
+      for (let i = 0; i < d.tasks.length; i++) {
+        const it = d.tasks[i]; const cur = Org.wsPick(it); const was = prev.tasks[it.id];
+        if (!was) {
+          const j = await post({ op: 'task', project: pid, title: cur.text, status: cur.status, prio: cur.prio, due: cur.due, note: cur.note, items: cur.items, links: cur.links });
+          if (j && j.ok && j.task) { it.id = j.task.id; rerender = true; } else { d.tasks.splice(i, 1); i--; rerender = true; continue; }
+        } else {
+          const ch = {};
+          for (const k of ['text', 'status', 'prio', 'due', 'note', 'items', 'links']) if (JSON.stringify(cur[k]) !== JSON.stringify(was[k])) ch[k === 'text' ? 'title' : k] = cur[k];
+          if (Object.keys(ch).length) { const j = await post(Object.assign({ op: 'task', id: it.id }, ch)); if (!(j && j.ok)) rerender = true; }
+        }
+        seen.add(it.id);
+      }
+      for (const id of Object.keys(prev.tasks)) if (!seen.has(id)) { const j = await post({ op: 'task', id, remove: true }); if (!(j && j.ok)) rerender = true; }
+      const order = d.tasks.map((x) => x.id);
+      if (JSON.stringify(order) !== JSON.stringify(prev.order)) await post({ op: 'order', project: pid, ids: order });
+      Org.wsSnap[pid] = Org.wsSnapOf(d);
+      await Org.load(true);
+    } catch (e) { console.warn('[Flow] project page', e); rerender = true; }
+    finally {
+      Org.wsRun[pid] = false;
+      if (Org.wsAgain[pid] || Org.wsDirty[pid]) { Org.wsAgain[pid] = false; Org.wsFlush(pid); return; }
+      /* refused or new ids: draw it again from the server's copy, unless someone is typing in it */
+      const m = document.getElementById('org-ws-' + pid); const ae = document.activeElement;
+      if (rerender && m && !(ae && m.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName))) { const p = Org.d.projects.find((x) => x.id === pid); if (p) { const dd = Org.wsData(p); Org.ws[pid].set(dd); Org.wsSnap[pid] = Org.wsSnapOf(dd); Org.ws[pid].render(); } }
+    }
   },
   taskDetail(t, p) {
     const D = Org.d, own = D.me.owner, me = D.me.person;

@@ -40,6 +40,10 @@ const STATUS = ['todo', 'doing', 'blocked', 'done'];
 const STATUS_NAME = { todo: 'To do', doing: 'In progress', blocked: 'Blocked', done: 'Done' };
 const COLORS = ['#3ab0ff', '#7ad6a8', '#ffb35c', '#c79bff', '#ff7a8a', '#5fe0d8', '#f2d45c'];
 const MAX_TASKS = 2000, MAX_COMMENTS = 200, MAX_LOG = 60;
+const PRIO = ['high', 'med', 'low'];
+/* a task's checklist and links, as the Work page keeps them */
+const cleanItems = (v) => (Array.isArray(v) ? v : []).slice(0, 100).map((a) => ({ text: str(a && a.text, 500), done: !!(a && a.done), note: block(a && a.note, 2000) })).filter((a) => a.text);
+const cleanLinks = (v) => (Array.isArray(v) ? v : []).slice(0, 50).map((l) => str(l, 500)).filter((l) => /^https?:\/\//i.test(l));
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 
 async function load(ctx) {
@@ -80,7 +84,7 @@ function counts(list, today) {
     blocked: list.filter((t) => t.status === 'blocked').length, done: list.filter((t) => t.status === 'done').length, doneWeek: list.filter((t) => t.status === 'done' && (t.doneAt || 0) >= wk).length,
     late: list.filter((t) => late(t, today)).length, total: list.length };
 }
-const pub = (t) => ({ id: t.id, title: t.title, note: t.note || '', company: t.company || '', project: t.project || '', person: t.person || '', due: t.due || '', status: t.status, pending: !!t.pending,
+const pub = (t) => ({ id: t.id, title: t.title, note: t.note || '', prio: PRIO.indexOf(t.prio) >= 0 ? t.prio : 'med', items: t.items || [], links: t.links || [], ord: typeof t.ord === 'number' ? t.ord : null, company: t.company || '', project: t.project || '', person: t.person || '', due: t.due || '', status: t.status, pending: !!t.pending,
   source: t.source || null, by: t.by ? { name: t.by.name } : null, at: t.at, upd: t.upd || t.at, doneAt: t.doneAt || 0, comments: (t.comments || []).slice(-50), log: (t.log || []).slice(-20) });
 
 async function view(ctx, opts) {
@@ -102,7 +106,7 @@ async function view(ctx, opts) {
   const peopleIds = new Set(); seeP.forEach((p) => (p.people || []).forEach((id) => peopleIds.add(id)));
   const people = o.people.filter((p) => w.owner || peopleIds.has(p.id) || (w.person && p.id === w.person.id)).map((p) => Object.assign({ id: p.id, name: p.name, role: p.role || '' },
     w.owner ? { email: p.email || '', linked: !!p.uid } : {}, { counts: counts(tasks.filter((t) => t.person === p.id && !t.pending), today) }));
-  const projects = seeP.map((p) => ({ id: p.id, name: p.name, goal: p.goal || '', status: p.status || 'active', health: p.health || 'on_track', state: p.state || '', next: p.next || [],
+  const projects = seeP.map((p) => ({ id: p.id, name: p.name, goal: p.goal || '', problem: typeof p.problem === 'string' ? p.problem : '', notes: typeof p.memo === 'string' ? p.memo : '', status: p.status || 'active', health: p.health || 'on_track', state: p.state || '', next: p.next || [],
     company: p.company || '', people: (p.people || []).filter((id) => o.people.some((x) => x.id === id)), updatedAt: p.updatedAt || 0, counts: counts(tasks.filter((t) => t.project === p.id && !t.pending), today) }));
   const companies = seeC.map((c) => ({ id: c.id, name: c.name, color: c.color, about: c.about || '', projects: projects.filter((p) => p.company === c.id).length,
     people: new Set(projects.filter((p) => p.company === c.id).flatMap((p) => p.people)).size, counts: counts(tasks.filter((t) => t.company === c.id && !t.pending), today) }));
@@ -115,7 +119,7 @@ function addLog(t, name, what) { t.log = (t.log || []).concat([{ at: Date.now(),
 /* A new task, checked. Used by the page, by J.A.R.V.I.S. and by a meeting. */
 async function addTask(ctx, f, w, deps) {
   const o = await load(ctx); const prs = await projectsOf(ctx);
-  const title = str(f.title, 160); if (!title) return { error: 'Give the task a title.', status: 400 };
+  const title = str(f.title, 500); if (!title) return { error: 'Give the task a title.', status: 400 };
   let pr = f.project ? prs.find((p) => p.id === String(f.project) || p.name.toLowerCase() === String(f.project).toLowerCase()) : null;
   if (f.project && !pr) return { error: 'No such project.', status: 404 };
   let person = f.person ? o.people.find((p) => p.id === String(f.person) || p.name.toLowerCase() === String(f.person).toLowerCase() || p.name.split(' ')[0].toLowerCase() === String(f.person).toLowerCase()) : null;
@@ -127,8 +131,9 @@ async function addTask(ctx, f, w, deps) {
     if (person && person.id !== w.person.id && !(pr && onProject(pr, person.id))) return { error: 'They are not on that project.', status: 403 };
   }
   const company = pr ? (pr.company || '') : (f.company && o.companies.some((c) => c.id === f.company) ? f.company : '');
-  const t = { id: newId('t'), title, note: block(f.note, 2000), company, project: pr ? pr.id : '', person: person ? person.id : '', due: isDate(f.due) ? f.due : '',
+  const t = { id: newId('t'), title, note: block(f.note, 4000), prio: PRIO.indexOf(f.prio) >= 0 ? f.prio : 'med', items: cleanItems(f.items), links: cleanLinks(f.links), ord: typeof f.ord === 'number' ? f.ord : -Date.now(), company, project: pr ? pr.id : '', person: person ? person.id : '', due: isDate(f.due) ? f.due : '',
     status: STATUS.indexOf(f.status) >= 0 ? f.status : 'todo', pending: !!f.pending, source: f.source || null, by: { name: str(w.name, 60), uid: w.uid || '' }, at: Date.now(), upd: Date.now(), doneAt: 0, comments: [], log: [] };
+  if (t.status === 'done') t.doneAt = Date.now();
   addLog(t, w.name, f.pending ? 'proposed' + (f.source && f.source.title ? ' from "' + str(f.source.title, 80) + '"' : '') : 'created' + (person ? ' for ' + person.name : ''));
   o.tasks.push(t); await save(ctx, o);
   if (deps && deps.log && !f.pending) { try { await deps.log(ctx, 'jarvis', 'Task "' + title + '"' + (person ? ' for ' + person.name : '') + (pr ? ' on ' + pr.name : '')); } catch (e) {} }
@@ -168,6 +173,22 @@ async function handle(p, req, res, ctx, deps) {
     if (name) x.name = name; if (b.email != null) { if (x.email !== email) x.uid = ''; x.email = email; } if (b.role != null) x.role = str(b.role, 300);
     await save(ctx, o); await done({ person: x }); return true;
   }
+  if (b.op === 'project' && !w.owner && b.id) {
+    /* the people on a project write its goal, the problem and the running notes with him */
+    const pr = prs.find((x) => x.id === b.id);
+    if (!pr || !w.person || !onProject(pr, w.person.id)) { json(res, 403, { error: 'Only the owner can do that.' }); return true; }
+    const keys = Object.keys(b).filter((k) => ['op', 'id', 'goal', 'problem', 'notes'].indexOf(k) < 0);
+    if (keys.length) { json(res, 403, { error: 'Only the owner can do that.' }); return true; }
+    if (b.goal != null) pr.goal = str(b.goal, 600); if (b.problem != null) pr.problem = str(b.problem, 600); if (b.notes != null) pr.memo = block(b.notes, 20000);
+    pr.updatedAt = Date.now(); await saveProjects(ctx, prs); await done({ project: { id: pr.id, name: pr.name } }); return true;
+  }
+  if (b.op === 'order') {
+    /* the board's order, as dragged: every task on the project, top to bottom */
+    const pr = prs.find((x) => x.id === b.project);
+    if (!pr || !(w.owner || (w.person && onProject(pr, w.person.id)))) { json(res, 403, { error: 'Not your project.' }); return true; }
+    (Array.isArray(b.ids) ? b.ids : []).forEach((id, i) => { const t = o.tasks.find((x) => x.id === id && x.project === pr.id); if (t) t.ord = i; });
+    await save(ctx, o); json(res, 200, { ok: true }); return true;
+  }
   if (b.op === 'project') {
     if (ownerOnly()) return true;
     let pr = b.id ? prs.find((x) => x.id === b.id) : null;
@@ -177,7 +198,9 @@ async function handle(p, req, res, ctx, deps) {
       prs.push(pr);
     }
     if (b.name != null && str(b.name, 80)) pr.name = str(b.name, 80);
-    if (b.goal != null) pr.goal = str(b.goal, 300);
+    if (b.goal != null) pr.goal = str(b.goal, 600);
+    if (b.problem != null) pr.problem = str(b.problem, 600);
+    if (b.notes != null) pr.memo = block(b.notes, 20000);
     if (b.company != null) { const c = o.companies.find((x) => x.id === b.company); pr.company = c ? c.id : ''; o.tasks.forEach((t) => { if (t.project === pr.id) t.company = pr.company; }); }
     if (Array.isArray(b.people)) pr.people = b.people.map(String).filter((id, i, a) => o.people.some((x) => x.id === id) && a.indexOf(id) === i);
     if (b.add) { const id = String(b.add); if (o.people.some((x) => x.id === id)) pr.people = (pr.people || []).filter((y) => y !== id).concat([id]); }
@@ -196,8 +219,11 @@ async function handle(p, req, res, ctx, deps) {
     if (b.remove) { if (!(w.owner || (t.by && t.by.uid && t.by.uid === w.uid))) { json(res, 403, { error: 'Only the owner, or whoever made it, can remove a task.' }); return true; } o.tasks = o.tasks.filter((x) => x !== t); await save(ctx, o); await done(); return true; }
     const was = t.status;
     if (STATUS.indexOf(b.status) >= 0 && b.status !== t.status) { t.status = b.status; t.doneAt = b.status === 'done' ? Date.now() : 0; addLog(t, w.name, STATUS_NAME[was] + ' → ' + STATUS_NAME[b.status]); if (b.status === 'done') delete o.nudged[t.id]; }
-    if (b.title != null && str(b.title, 160) && str(b.title, 160) !== t.title) { if (!mineOrMade) { json(res, 403, { error: 'Only the owner, the person it is for, or whoever made it can rename it.' }); return true; } t.title = str(b.title, 160); addLog(t, w.name, 'renamed'); }
-    if (b.note != null && block(b.note, 2000) !== (t.note || '')) { t.note = block(b.note, 2000); addLog(t, w.name, 'changed the note'); }
+    if (b.title != null && str(b.title, 500) && str(b.title, 500) !== t.title) { if (!mineOrMade) { json(res, 403, { error: 'Only the owner, the person it is for, or whoever made it can rename it.' }); return true; } t.title = str(b.title, 500); addLog(t, w.name, 'renamed'); }
+    if (b.note != null && block(b.note, 4000) !== (t.note || '')) { t.note = block(b.note, 4000); addLog(t, w.name, 'changed the note'); }
+    if (PRIO.indexOf(b.prio) >= 0 && b.prio !== t.prio) { t.prio = b.prio; addLog(t, w.name, 'priority ' + b.prio); }
+    if (b.items != null) { const it = cleanItems(b.items); const was = (t.items || []).filter((a) => a.done).length, now = it.filter((a) => a.done).length; t.items = it; if (now !== was) addLog(t, w.name, 'action items ' + now + '/' + it.length); }
+    if (b.links != null) t.links = cleanLinks(b.links);
     if (b.due != null && (isDate(b.due) || b.due === '') && b.due !== t.due) { t.due = b.due; delete o.nudged[t.id]; addLog(t, w.name, b.due ? 'due ' + b.due : 'no due date'); }
     if (b.person != null && String(b.person) !== (t.person || '')) {
       if (!w.owner) { json(res, 403, { error: 'Only the owner gives work to someone else.' }); return true; }

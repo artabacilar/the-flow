@@ -4972,11 +4972,12 @@ function renderBrainstorm(){
 function makeWorkspace(cfg){
   // cfg: {key, mountId, name, nsPlaceholder}
   const KEY=cfg.key; // storage key suffix
-  let data=S.get(KEY, {northstar:'', problem:'', tasks:[], notes:''});
+  // cfg.data / cfg.onSave: the same page over other storage (a project in the command centre)
+  let data=cfg.data || S.get(KEY, {northstar:'', problem:'', tasks:[], notes:''});
   if(!data.tasks) data.tasks=[];
   let nsEditing=false, problemEditing=false, taskEditId=null, openTaskId=null, taskNoteEditId=null, aiNoteEdit=new Set();
   const STATUSES=[['todo','📋 To Do'],['doing','🚧 In Progress'],['done','✅ Done']];
-  function save(){ S.set(KEY, data); }
+  function save(){ if(cfg.onSave) cfg.onSave(data); else S.set(KEY, data); }
   function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function shareText(it){
     let t=cfg.name+' — '+it.text;
@@ -5060,7 +5061,7 @@ function makeWorkspace(cfg){
           cards+=`<div class="ws-card ${st==='done'?'done':''} p-${it.prio||'med'}" data-taskid="${it.id}">
             <div class="wc-top"><div class="wc-grip" title="Drag to reorder">⠿</div><div class="wc-text" data-edittask="${it.id}" title="Click to edit">${esc(it.text)}</div></div>
             <div class="wc-meta">
-              <select class="wc-prio" data-prio="${it.id}"><option value="high"${it.prio==='high'?' selected':''}>High</option><option value="med"${(it.prio||'med')==='med'?' selected':''}>Med</option><option value="low"${it.prio==='low'?' selected':''}>Low</option></select>
+              <select class="wc-prio" data-prio="${it.id}"><option value="high"${it.prio==='high'?' selected':''}>High</option><option value="med"${(it.prio||'med')==='med'?' selected':''}>Med</option><option value="low"${it.prio==='low'?' selected':''}>Low</option></select>${cfg.metaExtra?cfg.metaExtra(it):''}
               ${it.due?`<span class="wc-due ${overdue?'overdue':''}">📅 ${it.due}</span>`:''}
               <button class="wc-btn open-btn" data-opentask="${it.id}">${isOpen?'▾ Close':'▸ Details'}${items.length?' · '+aiDone+'/'+items.length:''}${it.note?' 📝':''}${(it.links||[]).length?' 🔗':''}</button>
               ${st!=='todo'?`<button class="wc-btn" data-move="${it.id}|todo">← To Do</button>`:''}
@@ -5224,8 +5225,9 @@ function makeWorkspace(cfg){
       h.addEventListener('pointercancel',finish);
     });
   }
-  return { render };
+  return { render, get(){ return data; }, set(d){ data=d; } };
 }
+window.makeWorkspace = makeWorkspace;
 const wsABKO = makeWorkspace({key:'work_abko', mountId:'ws-abko', name:'Work', nsPlaceholder:'What are you driving at work right now?'});
 const wsDTC  = makeWorkspace({key:'work_dtc',  mountId:'ws-dtc',  name:'Side Project', nsPlaceholder:'Where is this project headed?'});
 
