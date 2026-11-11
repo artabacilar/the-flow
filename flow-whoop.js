@@ -239,7 +239,8 @@ async function collect(raw, uid, days) {
   };
   const [rec, cyc, slp, wko, body] = await Promise.all([
     all('/v2/recovery'), all('/v2/cycle'), all('/v2/activity/sleep'), all('/v2/activity/workout'),
-    api(raw, uid, '/v2/user/measurement/body').catch((e) => { if (e.code === 'disconnected') throw e; return null; })
+    /* asked for on the next connect: until then WHOOP answers 401 for this one, which is not a disconnection */
+    api(raw, uid, '/v2/user/measurement/body').catch(() => null)
   ]);
 
   /* date → the day's numbers, merged from whichever collections had them. */
