@@ -4535,3 +4535,26 @@ html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rg
 #flow-hud .hud-lncard .hud-sub{margin:6px 0 0}
 #flow-hud .hud-lncard .hud-row{margin-top:8px}
 #flow-hud .hud-sel.hud-sm{width:auto;min-width:0;padding:2px 6px;display:inline-block}
+
+/* ── Pages of his life, full width (11 Nov) ──
+   Today, Plan, Body, Record and Settings show as the Flow always did — the
+   page across the whole window, in the new look — with no orb, no strip of
+   the team and no console. The orb lives in the command centre, with the
+   agents and in the conversation. "Ask J.A.R.V.I.S." (or "Hey Jarvis", or
+   him speaking) brings the console up in the corner over the page. */
+#flow-hud.hud-merge.hud-pagemode{grid-template-columns:172px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"rail top" "rail left"}
+#flow-hud.hud-merge.hud-pagemode :is(.hud-team,.hud-core,.hud-right,.hud-left){display:none!important}
+#flow-hud.hud-merge.hud-pagemode .hud-pagecol{grid-area:left;margin-bottom:0!important;overflow:auto;min-height:0;scrollbar-width:thin}
+#flow-hud.hud-merge.hud-pagemode .hud-page{width:100%;max-width:1240px;margin:0 auto;padding-bottom:40px}
+#flow-hud .hud-pgact{display:inline-flex;align-items:center;gap:8px}
+#flow-hud .hud-pgask.on{border-color:#7fd8ff;color:#7fd8ff}
+html.hud-paged:not(.hud-ask) #flow-say:not([data-sy="listening"]):not([data-sy="thinking"]):not([data-sy="speaking"]) .fn-sheet{display:none!important}
+html.hud-paged #flow-say .fn-sheet{left:auto!important;right:max(16px,env(safe-area-inset-right))!important;transform:none!important;width:min(460px,calc(100vw - 32px))!important;max-height:min(60vh,520px)}
+@media (max-width:900px){
+  #flow-hud.hud-merge.hud-pagemode .hud-pagecol{overflow:visible}
+  html.hud-paged #flow-say .fn-sheet{right:8px!important;left:8px!important;width:auto!important}
+}
+/* no console docked under a page: the page and the rail run to the bottom */
+#flow-hud.hud-merge.hud-pagemode{padding-bottom:max(16px,env(safe-area-inset-bottom))}
+#flow-hud .hud-pgask.on{background:rgba(40,120,255,.18);color:#bfe9ff}
+html.hud-paged #flow-say .fn-sheet{background:rgba(5,11,28,.96)!important;box-shadow:0 18px 60px rgba(0,0,0,.55),0 0 0 1px rgba(110,170,255,.3)!important}

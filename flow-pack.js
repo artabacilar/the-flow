@@ -15071,7 +15071,7 @@ const Hud = {
     if (Hud.merged() && !force) { Hud.home(); return; }
     Hud.unmount(); Hud.page = null; if (Hud.el) Hud.el.classList.remove('hud-pagemode');
     Hud.on = false;
-    document.documentElement.classList.remove('hud-on', 'hud-axis', 'hud-axis-narrow');
+    document.documentElement.classList.remove('hud-on', 'hud-axis', 'hud-axis-narrow', 'hud-paged', 'hud-ask');
     if (Hud.el) Hud.el.classList.remove('on');
     cancelAnimationFrame(Hud.raf); Hud.raf = 0; clearTimeout(Hud.nap); Hud.nap = 0; clearInterval(Hud.timer);
     try { Team.select(null, true); clearTimeout(Team.watchT); Team.openId = null; } catch (e) {}
@@ -15099,6 +15099,7 @@ const Hud = {
       const a = b.getAttribute('data-hud');
       if (a === 'close') Hud.close();
       else if (a === 'home' || a === 'pageclose') Hud.home();
+      else if (a === 'pageask') { const on = document.documentElement.classList.toggle('hud-ask'); b.classList.toggle('on', on); if (on) { try { Say.open({ idle: true }); Say.kb(true); } catch (x) {} } }
       else if (a === 'page') Hud.openPage(b.getAttribute('data-page'));
       else if (a === 'pagetab') Hud.openPage(b.getAttribute('data-group'), b.getAttribute('data-tab'));
       else if (a === 'go') { const t = b.getAttribute('data-to'); if (Hud.merged()) Hud.openPage(Hud.pageGroup(t), t); else { Hud.close(); try { Nav.go(t); } catch (x) {} } }
@@ -15299,6 +15300,12 @@ const Hud = {
      with the rail on the left, a page or a room open, at any window size. */
   align() {
     const root = document.documentElement;
+    /* A page of his life (Today, Plan, Body, Record, Settings) is the page
+       alone, full width, as the Flow always was: no orb, no strip of the
+       team, and J.A.R.V.I.S. only when he is asked or is talking. */
+    const paged = !!(Hud.on && Hud.el && Hud.el.classList.contains('hud-pagemode'));
+    root.classList.toggle('hud-paged', paged);
+    if (!paged) root.classList.remove('hud-ask');
     const c = Hud.on && Hud.el && Hud.el.querySelector('.hud-core');
     const r = c && c.offsetParent !== null ? c.getBoundingClientRect() : null;
     if (!r || !r.width || window.innerWidth <= 900) { root.classList.remove('hud-axis', 'hud-axis-narrow'); return; }
@@ -15387,7 +15394,8 @@ const Hud = {
     const col = Hud.el.querySelector('.hud-pagecol'); if (!col) return;
     const tabs = Hud.PAGES[group];
     col.innerHTML = '<div class="hud-pgh"><div class="hud-pgr"><span class="hud-pgl">' + esc(Hud.PAGE_LABEL[group] || group) + (tabs.length === 1 ? '' : ' · ' + esc(Nav.label(tab))) + '</span>' +
-      '<button type="button" class="hud-ic hud-pgx" data-hud="pageclose" aria-label="Back to the command centre">×</button></div>' +
+      '<span class="hud-pgact"><button type="button" class="hud-tab hud-pgask" data-hud="pageask" data-i18n="off">Ask ' + esc((() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.') + '</button>' +
+      '<button type="button" class="hud-ic hud-pgx" data-hud="pageclose" aria-label="Back to the command centre">×</button></span></div>' +
       (tabs.length > 1 ? '<div class="hud-pgt">' + tabs.map((t) => '<button type="button" class="hud-tab' + (t === tab ? ' on' : '') + '" data-hud="pagetab" data-group="' + group + '" data-tab="' + t + '" data-i18n="off">' + esc(Nav.label(t)) + '</button>').join('') + '</div>' : '') + '</div>' +
       '<div class="hud-page"></div>';
     if (!sec) { col.querySelector('.hud-page').innerHTML = '<p class="hud-none">This page is not here.</p>'; return; }
