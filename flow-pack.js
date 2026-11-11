@@ -13749,7 +13749,7 @@ window.FlowHush = Hush;
    sees only the projects they are on (flow-org decides; this only draws).
    Their open tasks also sit on their own Today. */
 const Org = {
-  d: null, nav: { company: null, project: null, person: null, task: null }, tab: 'projects', classic: false, adding: '', loading: false, mine: null,
+  d: null, nav: { company: null, brand: null, project: null, person: null, task: null }, tab: 'projects', classic: false, adding: '', loading: false, mine: null,
   async load(force) {
     if (Org.d && !force) return Org.d;
     try { const r = await fetch('/api/team/org', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Org.d = j; else Org.d = Org.d || { failed: true, companies: [], projects: [], people: [], tasks: [], me: { owner: false } }; }
@@ -13768,11 +13768,13 @@ const Org = {
   ST: { todo: 'To do', doing: 'In progress', blocked: 'Blocked', done: 'Done' },
   ini(n) { return String(n || '?').split(/\s+/).map((w) => w.charAt(0)).join('').slice(0, 2).toUpperCase(); },
   fmtDue(d) { if (!d) return ''; try { const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) { return d; } },
-  go(nav) { Org.force = true; Org.nav = Object.assign({ company: null, project: null, person: null, task: null }, nav || {}); Org.adding = ''; Hud.paint(); try { const c = Hud.el.querySelector('.hud-left'); if (c) c.scrollTop = 0; } catch (e) {} },
+  go(nav) { Org.force = true; Org.nav = Object.assign({ company: null, brand: null, project: null, person: null, task: null }, nav || {}); Org.adding = ''; Hud.paint(); try { const c = Hud.el.querySelector('.hud-left'); if (c) c.scrollTop = 0; } catch (e) {} },
   crumbs() {
     const D = Org.d, N = Org.nav, bits = ['<button type="button" class="org-cr" data-hud="orggo">Projects</button>'];
     const c = N.company && D.companies.find((x) => x.id === N.company), pr = N.project && D.projects.find((x) => x.id === N.project), pe = N.person && D.people.find((x) => x.id === N.person);
     if (c) bits.push('<button type="button" class="org-cr" data-hud="orggo" data-company="' + esc(c.id) + '" data-i18n="off">' + esc(c.name) + '</button>');
+    const br = N.brand && D.brands.find((x) => x.id === N.brand);
+    if (br) bits.push('<button type="button" class="org-cr' + (N.project ? '' : ' cur') + '" data-hud="orggo" data-company="' + esc(br.company) + '" data-brand="' + esc(br.id) + '" data-i18n="off">' + esc(br.name) + '</button>');
     else if (N.company === '_none') bits.push('<button type="button" class="org-cr" data-hud="orggo" data-company="_none">Not in a company</button>');
     if (pr) bits.push('<span class="org-cr cur" data-i18n="off">' + esc(pr.name) + '</span>');
     if (pe) bits.push('<span class="org-cr cur" data-i18n="off">' + esc(pe.name) + '</span>');
@@ -13797,7 +13799,7 @@ const Org = {
     const D = Org.d;
     if (!D) { Hud.set('.hud-left', '<p class="hud-sub">Looking…</p>'); Hud.set('.hud-right', ''); return; }
     const N = Org.nav; let body = '';
-    try { body = N.project ? Org.projectView(N.project) : N.person ? Org.personView(N.person) : N.company ? Org.companyView(N.company) : Org.homeView(); } catch (e) { console.warn('[Flow] org', e); body = '<p class="hud-none">Something went wrong drawing this page.</p>'; }
+    try { body = N.project ? Org.projectView(N.project) : N.person ? Org.personView(N.person) : N.brand ? Org.brandView(N.brand) : N.company ? Org.companyView(N.company) : Org.homeView(); } catch (e) { console.warn('[Flow] org', e); body = '<p class="hud-none">Something went wrong drawing this page.</p>'; }
     Hud.set('.hud-left', '<div class="org">' + Org.crumbs() + body + '</div>');
     Hud.set('.hud-right', '');
     if (N.project) { const p = D.projects.find((x) => x.id === N.project); if (p) { try { Org.wsMount(p); } catch (e) { console.warn('[Flow] project page', e); } } }
@@ -13848,18 +13850,61 @@ const Org = {
     h += '<div class="hud-pgt org-tabs">' + [['projects', 'Projects · ' + prs.length], ['people', 'People · ' + people.length], ['tasks', 'All tasks']].map(([k, l]) => '<button type="button" class="hud-tab' + (Org.tab === k ? ' on' : '') + '" data-hud="orgtab" data-tab="' + k + '">' + l + '</button>').join('') + '</div>';
     if (Org.tab === 'people') return h + Org.peopleBlock(people, false);
     if (Org.tab === 'tasks') { const ts = D.tasks.filter((t) => !t.pending && prs.some((p) => p.id === t.project)); return h + Org.byPerson(ts); }
-    const card = (p) => '<button type="button" class="org-pr" data-hud="orggo" data-company="' + esc(c.id) + '" data-project="' + esc(p.id) + '"><span class="org-coh"><b data-i18n="off">' + esc(p.name) + '</b><em class="hud-pjh" data-h="' + esc(p.status === 'active' ? p.health : p.status) + '">' + esc(p.status === 'active' ? (Team.PJH[p.health] || 'On track') : p.status === 'done' ? 'Done' : 'Paused') + '</em></span>' +
-      (p.goal ? '<small data-i18n="off">' + esc(p.goal) + '</small>' : '') + Org.bar(p.counts) + '<span class="org-stat">' + Org.stat(p.counts) + '</span>' + Org.faces(p.people) + '</button>';
-    /* the owner files a project from its card: into a company, or a new one */
-    const mover = (p) => !own ? '' : '<label class="org-move"><span>' + (cid === '_none' ? 'Put in' : 'Move to') + '</span><select class="hud-sel" data-org="pjcompany" data-id="' + esc(p.id) + '">' + (cid === '_none' ? '<option value="">Choose a company…</option>' : '') +
-      D.companies.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === p.company ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '<option value="__new">+ New company…</option>' + (cid !== '_none' ? '<option value="">No company</option>' : '') + '</select></label>';
-    const wrap = (p) => own ? '<div class="org-prw">' + card(p) + mover(p) + '</div>' : card(p);
-    if (own) h += Org.newcoForm();
+    if (own) h += Org.newcoForm() + Org.newbrForm();
     if (own && cid === '_none' && !D.companies.length && Org.adding !== 'newco') h += '<p class="hud-sub">You have no companies yet. Pick “+ New company…” under a project to make one and put the project in it.</p>';
-    h += prs.length ? '<div class="org-grid">' + prs.sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.counts.open - a.counts.open).map(wrap).join('') + '</div>' : '<p class="hud-none">No projects here yet.</p>';
-    if (own && cid !== '_none') h += Org.adding === 'project' ? '<form data-team="orgproject" data-company="' + esc(c.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="80" placeholder="Project name, e.g. Goldwell B2B app" required><input class="hud-sel" name="goal" maxlength="300" placeholder="Goal, in one sentence"><button type="submit" class="hud-btn">Add project</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+    /* brands first: each one opens onto its projects */
+    if (cid !== '_none') {
+      const brs = D.brands.filter((x) => x.company === cid);
+      const bcard = (br) => '<button type="button" class="org-co org-br" data-hud="orggo" data-company="' + esc(cid) + '" data-brand="' + esc(br.id) + '" style="--co:' + esc(c.color || '#3ab0ff') + '"><span class="org-coh"><b data-i18n="off">' + esc(br.name) + '</b><small>Brand</small></span>' +
+        (br.about ? '<small data-i18n="off">' + esc(br.about) + '</small>' : '') + Org.bar(br.counts) + '<span class="org-stat">' + br.projects + ' project' + (br.projects === 1 ? '' : 's') + '</span><span class="org-stat">' + Org.stat(br.counts) + '</span></button>';
+      h += '<h3 class="org-h3 org-sec">Brands · ' + brs.length + '</h3>' + (brs.length ? '<div class="org-grid">' + brs.map(bcard).join('') + '</div>' : '<p class="hud-none">' + (own ? 'No brands yet — add Color Naturel, Goldwell, Davines… and put their projects in them.' : 'No brands here.') + '</p>');
+      if (own) h += Org.adding === 'brand' ? '<form data-team="orgbrand" data-company="' + esc(cid) + '" class="org-form"><input class="hud-sel" name="name" maxlength="60" placeholder="Brand name, e.g. Goldwell" required><input class="hud-sel" name="about" maxlength="300" placeholder="What it is, in a line (optional)"><button type="submit" class="hud-btn">Add brand</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+        : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="brand">+ Brand</button></div>';
+    }
+    const loose = prs.filter((p) => !p.brand);
+    h += cid !== '_none' ? '<h3 class="org-h3 org-sec">' + esc(c.name) + ' projects · ' + loose.length + '</h3>' : '';
+    h += Org.projGrid(loose, cid, '');
+    if (own && cid !== '_none') h += Org.adding === 'project' ? '<form data-team="orgproject" data-company="' + esc(c.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="80" placeholder="Project name, e.g. Sales dashboard" required><input class="hud-sel" name="goal" maxlength="300" placeholder="Goal, in one sentence"><button type="submit" class="hud-btn">Add project</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
       : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="project">+ Project</button></div>';
     return h;
+  },
+  /* a brand: its projects */
+  brandView(bid) {
+    const D = Org.d, own = D.me.owner; const br = D.brands.find((x) => x.id === bid); if (!br) return '<p class="hud-none">That brand is not here.</p>';
+    const c = D.companies.find((x) => x.id === br.company) || {};
+    let h = '<div class="org-title" style="--co:' + esc(c.color || '#3ab0ff') + '"><i class="org-dot"></i><h2 data-i18n="off">' + esc(br.name) + '</h2>' + (own ? '<button type="button" class="hud-btn ghost" data-hud="orgbredit">Edit</button>' : '') + '</div>' + (br.about ? '<p class="hud-sub" data-i18n="off">' + esc(br.about) + '</p>' : '');
+    if (own && Org.adding === 'bredit') h += '<form data-team="orgbredit" data-id="' + esc(br.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="60" value="' + esc(br.name) + '" required><input class="hud-sel" name="about" maxlength="300" value="' + esc(br.about || '') + '" placeholder="What it is"><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="orgbrremove" data-id="' + esc(br.id) + '">Remove brand</button></form>';
+    if (own) h += Org.newcoForm() + Org.newbrForm();
+    h += '<div class="org-sum">' + Org.bar(br.counts) + '<span class="org-stat">' + Org.stat(br.counts) + '</span></div>';
+    h += '<h3 class="org-h3 org-sec">Projects · ' + br.projects + '</h3>' + Org.projGrid(D.projects.filter((p) => p.brand === bid), br.company, bid);
+    if (own) h += Org.adding === 'project' ? '<form data-team="orgproject" data-company="' + esc(br.company) + '" data-brand="' + esc(br.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="80" placeholder="Project for ' + esc(br.name) + ', e.g. Creo branding shoot" required><input class="hud-sel" name="goal" maxlength="300" placeholder="Goal, in one sentence"><button type="submit" class="hud-btn">Add project</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+      : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="project">+ Project</button></div>';
+    return h;
+  },
+  /* the project cards, with (for the owner) where it lives and Delete */
+  projGrid(prs, cid, bid) {
+    const D = Org.d, own = D.me.owner;
+    const card = (p) => '<button type="button" class="org-pr" data-hud="orggo" data-company="' + esc(p.company || '_none') + '" data-brand="' + esc(p.brand || '') + '" data-project="' + esc(p.id) + '"><span class="org-coh"><b data-i18n="off">' + esc(p.name) + '</b><em class="hud-pjh" data-h="' + esc(p.status === 'active' ? p.health : p.status) + '">' + esc(p.status === 'active' ? (Team.PJH[p.health] || 'On track') : p.status === 'done' ? 'Done' : 'Paused') + '</em></span>' +
+      (p.goal ? '<small data-i18n="off">' + esc(p.goal) + '</small>' : '') + Org.bar(p.counts) + '<span class="org-stat">' + Org.stat(p.counts) + '</span>' + Org.faces(p.people) + '</button>';
+    const wrap = (p) => own ? '<div class="org-prw">' + card(p) + '<div class="org-prctl">' + Org.mover(p) + '<button type="button" class="hud-btn ghost org-del" data-hud="orgpjdel" data-id="' + esc(p.id) + '" aria-label="Delete ' + esc(p.name) + '">Delete</button></div></div>' : card(p);
+    return prs.length ? '<div class="org-grid">' + prs.sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.counts.open - a.counts.open).map(wrap).join('') + '</div>' : '<p class="hud-none">No projects here yet.</p>';
+  },
+  /* where a project lives: a company, or one of its brands */
+  mover(p) {
+    const D = Org.d; const cur = p.brand ? 'b:' + p.brand : p.company ? 'c:' + p.company : '';
+    let o = '<option value=""' + (cur ? '' : ' selected') + '>' + (cur ? 'No company' : 'Choose where it goes…') + '</option>';
+    for (const c of D.companies) {
+      o += '<optgroup label="' + esc(c.name) + '"><option value="c:' + esc(c.id) + '"' + (cur === 'c:' + c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>' +
+        D.brands.filter((b) => b.company === c.id).map((b) => '<option value="b:' + esc(b.id) + '"' + (cur === 'b:' + b.id ? ' selected' : '') + '>' + esc(c.name) + ' › ' + esc(b.name) + '</option>').join('') +
+        '<option value="__newbrand:' + esc(c.id) + '">+ New brand in ' + esc(c.name) + '…</option></optgroup>';
+    }
+    o += '<option value="__new">+ New company…</option>';
+    return '<label class="org-move"><span>' + (cur ? 'In' : 'Put in') + '</span><select class="hud-sel" data-org="pjcompany" data-id="' + esc(p.id) + '">' + o + '</select></label>';
+  },
+  newbrForm() {
+    if (Org.adding !== 'newbr') return '';
+    const c = Org.d.companies.find((x) => x.id === Org.newbrIn) || {};
+    return '<form data-team="orgnewbr" data-company="' + esc(Org.newbrIn || '') + '" data-project="' + esc(Org.newcoFor || '') + '" class="org-form"><input class="hud-sel" name="name" maxlength="60" placeholder="New brand in ' + esc(c.name || 'the company') + ', e.g. Goldwell" required><button type="submit" class="hud-btn">Add and put “' + esc(Org.projectName(Org.newcoFor) || 'the project') + '” in it</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>';
   },
   newcoForm() {
     if (Org.adding !== 'newco') return '';
@@ -13884,8 +13929,8 @@ const Org = {
     if (!p) return '<p class="hud-none">That project is not here.</p>';
     const sel = (name, opts, cur) => '<select class="hud-sel" data-team-pjset="' + name + '" data-id="' + esc(p.id) + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
     let h = '<div class="org-title"><h2 data-i18n="off">' + esc(p.name) + '</h2>' + (own ? sel('health', [['on_track', 'On track'], ['at_risk', 'At risk'], ['blocked', 'Blocked']], p.health) + sel('status', [['active', 'Active'], ['paused', 'Paused'], ['done', 'Done']], p.status) +
-      '<select class="hud-sel" data-org="pjcompany" data-id="' + esc(p.id) + '"><option value="">No company</option>' + D.companies.map((c) => '<option value="' + esc(c.id) + '"' + (c.id === p.company ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '<option value="__new">+ New company…</option></select>' : '<em class="hud-pjh" data-h="' + esc(p.health) + '">' + esc(Team.PJH[p.health] || 'On track') + '</em>') + '</div>';
-    if (own) h += Org.newcoForm();
+      Org.mover(p) : '<em class="hud-pjh" data-h="' + esc(p.health) + '">' + esc(Team.PJH[p.health] || 'On track') + '</em>') + '</div>';
+    if (own) h += Org.newcoForm() + Org.newbrForm();
     if (p.state) h += '<p class="hud-pjstate" data-i18n="off"><b>Where it stands.</b> ' + esc(p.state) + '</p>';
     /* who is on it */
     h += '<div class="org-onit"><span class="org-lbl">On it</span>' + (p.people.length ? p.people.map((id) => { const x = D.people.find((y) => y.id === id); return x ? '<span class="org-chip"><i class="org-av sm" data-i18n="off">' + esc(Org.ini(x.name)) + '</i><span data-i18n="off">' + esc(x.name) + '</span>' + (own ? '<button type="button" class="org-chx" data-hud="orgdrop" data-id="' + esc(p.id) + '" data-person="' + esc(id) + '" aria-label="Take ' + esc(x.name) + ' off this project">×</button>' : '') + '</span>' : ''; }).join('') : '<small class="hud-none">No one yet</small>') +
@@ -13996,7 +14041,15 @@ const Org = {
   async click(a, b) {
     Org.force = true;
     const id = b.getAttribute('data-id');
-    if (a === 'orggo') { const c = b.getAttribute('data-company'), pr = b.getAttribute('data-project'); if (!pr && c !== Org.nav.company) Org.tab = 'projects'; Org.go({ company: c || null, project: pr || null }); return; }
+    if (a === 'orggo') { const c = b.getAttribute('data-company'), pr = b.getAttribute('data-project'), br = b.getAttribute('data-brand'); if (!pr && c !== Org.nav.company) Org.tab = 'projects'; Org.go({ company: c || null, brand: br || null, project: pr || null }); return; }
+    if (a === 'orgbredit') { Org.adding = Org.adding === 'bredit' ? '' : 'bredit'; Hud.paint(); return; }
+    if (a === 'orgbrremove') { if (!confirm('Remove this brand? Its projects stay, in the company.')) return; const br = Org.d.brands.find((x) => x.id === id); await Org.after(await Team.post('/api/team/org', { op: 'brand', id, remove: true })); Org.go({ company: br ? br.company : null }); return; }
+    if (a === 'orgpjdel') {
+      const p = Org.d.projects.find((x) => x.id === id); if (!p) return;
+      if (!confirm('Delete "' + p.name + '"' + (p.counts.total ? ' and its ' + p.counts.total + ' task' + (p.counts.total === 1 ? '' : 's') : '') + '? This cannot be undone.')) return;
+      const j = await Team.post('/api/team/org', { op: 'project', id, remove: true }); if (j && j.ok) toast('Deleted ' + p.name, null, 1600);
+      if (Org.nav.project === id) Org.nav.project = null; await Org.after(j); return;
+    }
     if (a === 'orgperson') { Org.go({ company: Org.nav.company, person: id }); return; }
     if (a === 'orgtab') { Org.tab = b.getAttribute('data-tab'); Hud.paint(); return; }
     if (a === 'orgclassic') { Org.classic = !Org.classic; if (Org.classic && !Team.pj) { await Team.loadPj(); } Hud.paint(); return; }
@@ -14014,9 +14067,11 @@ const Org = {
   async change(t) {
     const k = t.getAttribute('data-org'), id = t.getAttribute('data-id');
     if (k === 'pjcompany') {
-      if (t.value === '__new') { Org.adding = 'newco'; Org.newcoFor = id; Org.force = true; Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('form[data-team="orgnewco"] input'); if (i) { i.focus(); i.scrollIntoView({ block: 'nearest' }); } }, 30); return; }
-      const name = (Org.d.companies.find((c) => c.id === t.value) || {}).name;
-      const j = await Team.post('/api/team/org', { op: 'project', id, company: t.value });
+      const v = t.value;
+      if (v === '__new' || v.indexOf('__newbrand:') === 0) { Org.adding = v === '__new' ? 'newco' : 'newbr'; Org.newbrIn = v.slice(11); Org.newcoFor = id; Org.force = true; Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('form[data-team="orgnewco"] input, form[data-team="orgnewbr"] input'); if (i) { i.focus(); i.scrollIntoView({ block: 'nearest' }); } }, 30); return; }
+      const body = v.indexOf('b:') === 0 ? { brand: v.slice(2) } : { company: v.indexOf('c:') === 0 ? v.slice(2) : v, brand: '' };
+      const name = body.brand ? (Org.d.brands.find((x) => x.id === body.brand) || {}).name : (Org.d.companies.find((c) => c.id === body.company) || {}).name;
+      const j = await Team.post('/api/team/org', Object.assign({ op: 'project', id }, body));
       if (j && j.ok && name) toast('In ' + name, null, 1400);
       return Org.after(j);
     }
@@ -14029,6 +14084,13 @@ const Org = {
   async submit(kind, f) {
     const v = (n) => (f.elements[n] ? String(f.elements[n].value || '').trim() : '');
     if (kind === 'orgcompany') { const j = await Team.post('/api/team/org', { op: 'company', name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgbrand') { const j = await Team.post('/api/team/org', { op: 'brand', company: f.getAttribute('data-company'), name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgbredit') { const j = await Team.post('/api/team/org', { op: 'brand', id: f.getAttribute('data-id'), name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgnewbr') {
+      const j = await Team.post('/api/team/org', { op: 'brand', company: f.getAttribute('data-company'), name: v('name') });
+      if (j && j.ok && j.brand) { const pid = f.getAttribute('data-project'); if (pid) await Team.post('/api/team/org', { op: 'project', id: pid, brand: j.brand.id }); Org.adding = ''; Org.newcoFor = null; toast('Added ' + j.brand.name, null, 1400); await Org.after(null); }
+      return;
+    }
     if (kind === 'orgnewco') {
       const j = await Team.post('/api/team/org', { op: 'company', name: v('name'), about: v('about') });
       if (j && j.ok && j.company) { const pid = f.getAttribute('data-project'); if (pid) await Team.post('/api/team/org', { op: 'project', id: pid, company: j.company.id }); Org.adding = ''; Org.newcoFor = null; toast('Added ' + j.company.name, null, 1400); await Org.after(null); }
@@ -14037,7 +14099,7 @@ const Org = {
     if (kind === 'orgcoedit') { const j = await Team.post('/api/team/org', { op: 'company', id: f.getAttribute('data-id'), name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
     if (kind === 'orgperson') { const j = await Team.post('/api/team/org', { op: 'person', name: v('name'), email: v('email'), role: v('role') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
     if (kind === 'orgpedit') { const j = await Team.post('/api/team/org', { op: 'person', id: f.getAttribute('data-id'), name: v('name'), email: v('email'), role: v('role') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
-    if (kind === 'orgproject') { const j = await Team.post('/api/team/org', { op: 'project', name: v('name'), goal: v('goal'), company: f.getAttribute('data-company') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); Org.go({ company: f.getAttribute('data-company'), project: j.project.id }); } return; }
+    if (kind === 'orgproject') { const br = f.getAttribute('data-brand') || ''; const j = await Team.post('/api/team/org', Object.assign({ op: 'project', name: v('name'), goal: v('goal'), company: f.getAttribute('data-company') }, br ? { brand: br } : {})); if (j && j.ok) { Org.adding = ''; await Org.after(j); Org.go({ company: f.getAttribute('data-company'), brand: br || null, project: j.project.id }); } return; }
     if (kind === 'orgtask') { const j = await Team.post('/api/team/org', { op: 'task', title: v('title'), person: v('person'), due: v('due'), project: f.getAttribute('data-project') }); if (j && j.ok) { await Org.after(j); setTimeout(() => { const i = Hud.el.querySelector('form[data-team="orgtask"] input[name="title"]'); if (i) i.focus(); }, 30); } return; }
     if (kind === 'orgcomment') { const j = await Team.post('/api/team/org', { op: 'comment', id: f.getAttribute('data-id'), text: v('text') }); if (j && j.ok) await Org.after(j); return; }
   }

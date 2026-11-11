@@ -49,7 +49,7 @@ const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 async function load(ctx) {
   const v = await ctx.get('team:org');
   const o = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  return { companies: Array.isArray(o.companies) ? o.companies : [], people: Array.isArray(o.people) ? o.people : [],
+  return { companies: Array.isArray(o.companies) ? o.companies : [], brands: Array.isArray(o.brands) ? o.brands : [], people: Array.isArray(o.people) ? o.people : [],
     tasks: Array.isArray(o.tasks) ? o.tasks : [], nudged: o.nudged && typeof o.nudged === 'object' ? o.nudged : {}, ticks: o.ticks && typeof o.ticks === 'object' ? o.ticks : {} };
 }
 async function save(ctx, o) {
@@ -102,15 +102,18 @@ async function view(ctx, opts) {
     return { ok: true, me: w.person ? { id: w.person.id, name: w.person.name } : null, today, nudge: w.person ? (o.nudged['@' + w.person.id] || null) : null,
       mine: mine.map((t) => Object.assign(pub(t), { projectName: pn(t.project), companyName: cn(t.company), late: late(t, today) })) };
   }
+  const seeB = o.brands.filter((br) => w.owner || seeP.some((p) => p.brand === br.id));
   const seeC = o.companies.filter((c) => w.owner || seeP.some((p) => p.company === c.id) || tasks.some((t) => t.company === c.id));
   const peopleIds = new Set(); seeP.forEach((p) => (p.people || []).forEach((id) => peopleIds.add(id)));
   const people = o.people.filter((p) => w.owner || peopleIds.has(p.id) || (w.person && p.id === w.person.id)).map((p) => Object.assign({ id: p.id, name: p.name, role: p.role || '' },
     w.owner ? { email: p.email || '', linked: !!p.uid } : {}, { counts: counts(tasks.filter((t) => t.person === p.id && !t.pending), today) }));
   const projects = seeP.map((p) => ({ id: p.id, name: p.name, goal: p.goal || '', problem: typeof p.problem === 'string' ? p.problem : '', notes: typeof p.memo === 'string' ? p.memo : '', status: p.status || 'active', health: p.health || 'on_track', state: p.state || '', next: p.next || [],
-    company: p.company || '', people: (p.people || []).filter((id) => o.people.some((x) => x.id === id)), updatedAt: p.updatedAt || 0, counts: counts(tasks.filter((t) => t.project === p.id && !t.pending), today) }));
+    company: p.company || '', brand: p.brand && o.brands.some((x) => x.id === p.brand) ? p.brand : '', people: (p.people || []).filter((id) => o.people.some((x) => x.id === id)), updatedAt: p.updatedAt || 0, counts: counts(tasks.filter((t) => t.project === p.id && !t.pending), today) }));
   const companies = seeC.map((c) => ({ id: c.id, name: c.name, color: c.color, about: c.about || '', projects: projects.filter((p) => p.company === c.id).length,
     people: new Set(projects.filter((p) => p.company === c.id).flatMap((p) => p.people)).size, counts: counts(tasks.filter((t) => t.company === c.id && !t.pending), today) }));
-  return { ok: true, today, me: { owner: w.owner, person: w.person ? { id: w.person.id, name: w.person.name } : null, name: w.name }, companies, projects, people,
+  const brands = seeB.map((br) => ({ id: br.id, name: br.name, company: br.company, color: br.color || '', about: br.about || '', projects: projects.filter((p) => p.brand === br.id).length,
+    counts: counts(tasks.filter((t) => !t.pending && projects.some((p) => p.brand === br.id && p.id === t.project)), today) }));
+  return { ok: true, today, me: { owner: w.owner, person: w.person ? { id: w.person.id, name: w.person.name } : null, name: w.name }, companies, brands, projects, people,
     tasks: tasks.map((t) => Object.assign(pub(t), { late: late(t, today) })), colors: COLORS, status: STATUS_NAME };
 }
 
@@ -157,7 +160,7 @@ async function handle(p, req, res, ctx, deps) {
   if (b.op === 'company') {
     if (ownerOnly()) return true;
     let c = b.id ? o.companies.find((x) => x.id === b.id) : null;
-    if (b.remove) { if (!c) { json(res, 404, { error: 'No such company.' }); return true; } o.companies = o.companies.filter((x) => x !== c); prs.forEach((x) => { if (x.company === c.id) x.company = ''; }); o.tasks.forEach((t) => { if (t.company === c.id) t.company = ''; }); await saveProjects(ctx, prs); await save(ctx, o); await done(); return true; }
+    if (b.remove) { if (!c) { json(res, 404, { error: 'No such company.' }); return true; } o.companies = o.companies.filter((x) => x !== c); o.brands = o.brands.filter((x) => x.company !== c.id); prs.forEach((x) => { if (x.company === c.id) { x.company = ''; x.brand = ''; } }); o.tasks.forEach((t) => { if (t.company === c.id) t.company = ''; }); await saveProjects(ctx, prs); await save(ctx, o); await done(); return true; }
     const name = str(b.name, 60);
     if (!c) { if (!name) { json(res, 400, { error: 'Give the company a name.' }); return true; } if (o.companies.some((x) => x.name.toLowerCase() === name.toLowerCase())) { json(res, 409, { error: name + ' is already there.' }); return true; } c = { id: newId('c'), name, color: COLORS[o.companies.length % COLORS.length], about: '', at: Date.now() }; o.companies.push(c); }
     if (name) c.name = name; if (b.about != null) c.about = str(b.about, 300); if (/^#[0-9a-f]{6}$/i.test(String(b.color || ''))) c.color = b.color;
@@ -189,19 +192,43 @@ async function handle(p, req, res, ctx, deps) {
     (Array.isArray(b.ids) ? b.ids : []).forEach((id, i) => { const t = o.tasks.find((x) => x.id === id && x.project === pr.id); if (t) t.ord = i; });
     await save(ctx, o); json(res, 200, { ok: true }); return true;
   }
+  if (b.op === 'brand') {
+    /* a brand inside a company (Color Naturel, Goldwell, Davines…); its projects sit inside it */
+    if (ownerOnly()) return true;
+    let br = b.id ? o.brands.find((x) => x.id === b.id) : null;
+    if (b.remove) { if (!br) { json(res, 404, { error: 'No such brand.' }); return true; } o.brands = o.brands.filter((x) => x !== br); prs.forEach((x) => { if (x.brand === br.id) x.brand = ''; }); await saveProjects(ctx, prs); await save(ctx, o); await done(); return true; }
+    const name = str(b.name, 60);
+    if (!br) {
+      const c = o.companies.find((x) => x.id === b.company); if (!c) { json(res, 400, { error: 'Pick the company the brand belongs to.' }); return true; }
+      if (!name) { json(res, 400, { error: 'Give the brand a name.' }); return true; }
+      if (o.brands.some((x) => x.company === c.id && x.name.toLowerCase() === name.toLowerCase())) { json(res, 409, { error: name + ' is already a brand of ' + c.name + '.' }); return true; }
+      br = { id: newId('b'), name, company: c.id, color: '', about: '', at: Date.now() }; o.brands.push(br);
+    }
+    if (name) br.name = name; if (b.about != null) br.about = str(b.about, 300);
+    if (b.company != null && o.companies.some((x) => x.id === b.company) && b.company !== br.company) { br.company = b.company; prs.forEach((x) => { if (x.brand === br.id) { x.company = br.company; o.tasks.forEach((t) => { if (t.project === x.id) t.company = br.company; }); } }); await saveProjects(ctx, prs); }
+    await save(ctx, o); await done({ brand: br }); return true;
+  }
   if (b.op === 'project') {
     if (ownerOnly()) return true;
     let pr = b.id ? prs.find((x) => x.id === b.id) : null;
+    if (b.remove) {
+      /* the project and its tasks go; its meetings and what was learned stay */
+      if (!pr) { json(res, 404, { error: 'No such project.' }); return true; }
+      const n = o.tasks.filter((t) => t.project === pr.id).length;
+      o.tasks = o.tasks.filter((t) => t.project !== pr.id);
+      await saveProjects(ctx, prs.filter((x) => x !== pr)); await save(ctx, o); await done({ removed: n }); return true;
+    }
     if (!pr) {
       const name = str(b.name, 80); if (!name) { json(res, 400, { error: 'Give the project a name.' }); return true; }
-      pr = { id: 'pr' + crypto.randomBytes(5).toString('hex'), name, goal: str(b.goal, 300), status: 'active', health: 'on_track', state: '', next: [], meetings: [], tasks: [], notes: [], facts: [], createdAt: Date.now(), updatedAt: Date.now(), by: 'you', company: '', people: [] };
+      pr = { id: 'pr' + crypto.randomBytes(5).toString('hex'), name, goal: str(b.goal, 300), status: 'active', health: 'on_track', state: '', next: [], meetings: [], tasks: [], notes: [], facts: [], createdAt: Date.now(), updatedAt: Date.now(), by: 'you', company: '', brand: '', people: [] };
       prs.push(pr);
     }
     if (b.name != null && str(b.name, 80)) pr.name = str(b.name, 80);
     if (b.goal != null) pr.goal = str(b.goal, 600);
     if (b.problem != null) pr.problem = str(b.problem, 600);
     if (b.notes != null) pr.memo = block(b.notes, 20000);
-    if (b.company != null) { const c = o.companies.find((x) => x.id === b.company); pr.company = c ? c.id : ''; o.tasks.forEach((t) => { if (t.project === pr.id) t.company = pr.company; }); }
+    if (b.company != null) { const c = o.companies.find((x) => x.id === b.company); pr.company = c ? c.id : ''; if (pr.brand && !o.brands.some((x) => x.id === pr.brand && x.company === pr.company)) pr.brand = ''; o.tasks.forEach((t) => { if (t.project === pr.id) t.company = pr.company; }); }
+    if (b.brand != null) { const br = o.brands.find((x) => x.id === b.brand); pr.brand = br ? br.id : ''; if (br) { pr.company = br.company; o.tasks.forEach((t) => { if (t.project === pr.id) t.company = br.company; }); } }
     if (Array.isArray(b.people)) pr.people = b.people.map(String).filter((id, i, a) => o.people.some((x) => x.id === id) && a.indexOf(id) === i);
     if (b.add) { const id = String(b.add); if (o.people.some((x) => x.id === id)) pr.people = (pr.people || []).filter((y) => y !== id).concat([id]); }
     if (b.drop) pr.people = (pr.people || []).filter((y) => y !== String(b.drop));

@@ -4694,3 +4694,7 @@ html:not(.hud-on) #flow-hush{background:var(--lk-ink,#111);color:var(--lk-bg,#ff
 #flow-hud .org-prw>.org-pr{flex:1}
 #flow-hud .org-move{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(170,200,255,.7);padding:0 4px}
 #flow-hud .org-move .hud-sel{flex:1;padding-top:6px;padding-bottom:6px;font-size:13px}
+#flow-hud .org-prctl{display:flex;align-items:center;gap:6px}
+#flow-hud .org-prctl .org-move{flex:1;min-width:0}
+#flow-hud .org-del{padding:6px 10px;font-size:12px;color:#ff9d90;border-color:rgba(255,122,107,.35)}
+#flow-hud .org-br .org-coh small{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(170,200,255,.55)}
