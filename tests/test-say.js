@@ -35,6 +35,7 @@ const ok = (n, c, d) => { c ? (pass++, console.log('  ✓ ' + n)) : (fail++, con
   ok('only real pages open', parsed.actions.filter((a) => a.type === 'open').map((a) => a.page).join() === 'habits');
   ok('nothing can delete', !parsed.actions.some((a) => a.type === 'delete'));
   ok('prose around the JSON is tolerated, nonsense is not', !!X.parseDo('Sure! {"say":"ok","actions":[]} hope that helps') && X.parseDo('no json here') === null);
+  ok('an answer in plain sentences (no JSON) is kept as what he says, with nothing done', (X.parseDo('Focus on the Goldwell call first, then the booth plan.') || {}).say === 'Focus on the Goldwell call first, then the booth plan.' && X.parseDo('Focus on the Goldwell call first, then the booth plan.').actions.length === 0);
   ok('at most twelve actions', X.parseDo(JSON.stringify({ actions: Array.from({ length: 30 }, (_, i) => ({ type: 'habit', name: 'h' + i })) }), known).actions.length === 12);
 
   console.log('\n— the endpoint —');
