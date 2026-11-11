@@ -759,7 +759,7 @@ canvas{width:100%;height:120px;}
 .wc-ph{border:2px dashed var(--accent);border-radius:10px;margin-bottom:8px;background:rgba(0,147,231,.06);}
 .ws-card .wc-text{flex:1;line-height:1.4;cursor:text;}
 .ws-card.done .wc-text{text-decoration:line-through;color:var(--muted);}
-.ws-card .wc-edit{background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;width:100%;}
+.ws-card .wc-edit{background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;width:100%;resize:none;overflow:hidden;line-height:1.4;white-space:pre-wrap;word-break:break-word;box-sizing:border-box;}
 .ws-card .wc-meta{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}
 .ws-card .wc-due{font-size:11px;color:var(--muted);}
 .ws-card .wc-due.overdue{color:var(--red);font-weight:700;}
@@ -5016,7 +5016,7 @@ function makeWorkspace(cfg){
         const editing=(taskEditId===it.id);
         const overdue=it.due && it.status!=='done' && it.due<todayStr;
         if(editing){
-          cards+=`<div class="ws-card p-${it.prio||'med'}"><input type="text" class="wc-edit" data-edit="${it.id}" value="${esc(it.text)}">
+          cards+=`<div class="ws-card p-${it.prio||'med'}"><textarea class="wc-edit" data-edit="${it.id}" rows="1">${esc(it.text)}</textarea>
             <div class="wc-meta"><button class="wc-btn" data-savetask="${it.id}">✓ Save</button><button class="wc-btn" data-canceltask="${it.id}">Cancel</button></div></div>`;
         } else {
           const items=it.items||[], aiDone=items.filter(a=>a.done).length;
@@ -5122,7 +5122,9 @@ function makeWorkspace(cfg){
     m.querySelectorAll('[data-edittask]').forEach(el=>el.addEventListener('click',()=>{ taskEditId=el.dataset.edittask; render(); }));
     m.querySelectorAll('[data-savetask]').forEach(b=>b.addEventListener('click',()=>{ const id=b.dataset.savetask; const f=m.querySelector('[data-edit="'+id+'"]'); const v=f.value.trim(); const it=data.tasks.find(x=>x.id===id); if(it&&v){ it.text=v; save(); J('planning','✏️ '+cfg.name+' task edited: '+v); } taskEditId=null; render(); }));
     m.querySelectorAll('[data-canceltask]').forEach(b=>b.addEventListener('click',()=>{ taskEditId=null; render(); }));
-    m.querySelectorAll('.wc-edit').forEach(f=>f.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const id=f.dataset.edit; const it=data.tasks.find(x=>x.id===id); const v=f.value.trim(); if(it&&v){ it.text=v; save(); } taskEditId=null; render(); } if(e.key==='Escape'){ taskEditId=null; render(); } }));
+    // the whole text shows while it is edited: the box grows with it (Enter saves, Shift+Enter a new line)
+    m.querySelectorAll('.wc-edit').forEach(f=>{ const fit=()=>{ f.style.height='auto'; f.style.height=(f.scrollHeight+2)+'px'; }; fit(); f.addEventListener('input',fit); setTimeout(()=>{ fit(); f.focus(); f.setSelectionRange(f.value.length,f.value.length); },0); });
+    m.querySelectorAll('.wc-edit').forEach(f=>f.addEventListener('keydown',e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const id=f.dataset.edit; const it=data.tasks.find(x=>x.id===id); const v=f.value.trim(); if(it&&v){ it.text=v; save(); } taskEditId=null; render(); } if(e.key==='Escape'){ taskEditId=null; render(); } }));
     m.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ const [id,to]=b.dataset.move.split('|'); const it=data.tasks.find(x=>x.id===id); if(it){ it.status=to; if(to==='done'){ it.doneWk=weekId(new Date()); J('planning','✅ '+cfg.name+' done: '+it.text); } save(); render(); } }));
     m.querySelectorAll('[data-prio]').forEach(s=>s.addEventListener('change',()=>{ const it=data.tasks.find(x=>x.id===s.dataset.prio); if(it){ it.prio=s.value; save(); render(); } }));
     m.querySelectorAll('[data-deltask]').forEach(b=>b.addEventListener('click',()=>{ data.tasks=data.tasks.filter(x=>x.id!==b.dataset.deltask); if(openTaskId===b.dataset.deltask) openTaskId=null; save(); render(); }));
