@@ -51,6 +51,7 @@ function system(owner) {
     '  "delegate": [ { "agent": "an agent id from TEAM", "title": "short", "brief": "everything needed to do it well: the context from the meeting, who is involved, what a good result looks like, any deadline said", "project": "the project id or name it belongs to" } ],',
     '  "ideas": [ { "title": "an improvement or opportunity for ABKO you noticed", "why": "one sentence" } ],',
     '  "mine": [ { "title": "something HE has to do himself — a call, a visit, a decision, a reply", "date": "YYYY-MM-DD when one was said, else empty", "time": "HH:MM or empty", "note": "who and why, one line" } ]',
+  '  "assign": [ { "person": "a person id from PEOPLE", "title": "what they are to do, short", "date": "YYYY-MM-DD when one was said, else empty", "project": "a project id or name", "note": "the detail that matters, one line" } ],',
     '}',
     'Rules:',
     '· Projects: file the meeting under an existing project when it is the same client, deal or initiative; make a new one only for a distinct initiative. Usually one project, at most three.',
@@ -60,12 +61,14 @@ function system(owner) {
     '· The meeting may be in Turkish, English or both: understand both; write briefs and facts in the language the meeting mostly used.',
     '· Mine (at most 10): only what he himself agreed or was asked to do, in the words of the meeting. Dates relative to TODAY when it says "Friday" or "next week"; empty when none was said.',
     '· It may be a recording or a video rather than a meeting with notes: then the TRANSCRIPT is what was said (speakers may be labelled "Speaker 1", "Speaker 2" — he is usually the one asking or deciding). Work from it the same way.',
+    '· Assign (at most 10): an action item for one of PEOPLE (his colleagues — real people, not the AI team), only when the meeting gives it to them or it plainly falls in their role. They wait for his yes before they reach the person. Empty when PEOPLE is empty or none fit.',
     '· Never invent: if the meeting does not say it, it is not a fact.'
   ].join('\n');
 }
-function userMsg(m, list, agents, know) {
+function userMsg(m, list, agents, know, people) {
   return [
-    'TEAM (id | name | role):', agents.map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('\n') || '(only jarvis)',
+    'PEOPLE (his colleagues — id | name | role):', (people || []).length ? people.map((p) => p.id + ' | ' + p.name + ' | ' + p.role).join('\n') : '(none)',
+    '', 'TEAM (id | name | role):', agents.map((a) => a.id + ' | ' + a.name + ' | ' + a.role).join('\n') || '(only jarvis)',
     '', 'PROJECTS (id | name | goal | where it stands):', list.length ? list.filter((p) => p.status !== 'done').map((p) => p.id + ' | ' + p.name + ' | ' + str(p.goal, 160) + ' | ' + str(p.state, 200)).join('\n') : '(none yet)',
     '', 'TEAM KNOWS (current, shared):', know.length ? know.slice(-60).map((k) => '- ' + str(k.text, 200)).join('\n') : '(nothing yet)',
     '', 'MEETING: ' + m.title + ' — ' + (m.at || ''),
@@ -102,6 +105,7 @@ function cleanRead(j, agentIds) {
     facts: (Array.isArray(j.facts) ? j.facts : []).map((f) => ({ text: str(f && f.text, 300), kind: ['fact', 'rule', 'preference'].indexOf(f && f.kind) >= 0 ? f.kind : 'fact', quote: str(f && f.quote, 240) })).filter((f) => f.text.length > 8 && !/password|şifre|card number|kart numarası|\b\d{13,19}\b/i.test(f.text)).slice(0, MAX_FACTS),
     delegate: (Array.isArray(j.delegate) ? j.delegate : []).map((d) => ({ agent: agentIds.indexOf(str(d && d.agent, 40)) >= 0 ? str(d.agent, 40) : 'jarvis', title: str(d && d.title, 100), brief: block(d && d.brief, 3000), project: str(d && d.project, 80) })).filter((d) => d.title && d.brief.length > 20).slice(0, MAX_TASKS),
     ideas: (Array.isArray(j.ideas) ? j.ideas : []).map((i) => ({ title: str(i && i.title, 140), why: str(i && i.why, 300) })).filter((i) => i.title).slice(0, 3),
+    assign: (Array.isArray(j.assign) ? j.assign : []).map((x) => ({ person: str(x && x.person, 40), title: str(x && x.title, 160), date: /^\d{4}-\d{2}-\d{2}$/.test(String(x && x.date || '')) ? x.date : '', project: str(x && x.project, 80), note: str(x && x.note, 300) })).filter((x) => x.person && x.title).slice(0, 10),
     mine: (Array.isArray(j.mine) ? j.mine : []).map((x) => ({ title: str(x && x.title, 120), date: /^\d{4}-\d{2}-\d{2}$/.test(String(x && x.date || '')) ? x.date : '', time: /^\d{1,2}:\d{2}$/.test(String(x && x.time || '')) ? x.time : '', note: str(x && x.note, 300) })).filter((x) => x.title).slice(0, 10)
   };
   return out;
@@ -129,7 +133,9 @@ async function readMeeting(ctx, deps, uid, m, opts) {
   const owner = ctx.user && (ctx.user.name || ctx.user.email);
   let read = null;
   if (deps.fake) read = fakeRead(m, list, agentList);
-  else read = await deps.modelJson(ctx, system(owner), userMsg(m, list, agentList, know), 8000);
+  let people = []; try { if (deps.orgPeople) people = await deps.orgPeople(ctx); } catch (e) {}
+  if (deps.fake) read.assign = (m.actions || []).filter((a) => a.who && !a.done && people.some((p) => p.name.split(' ')[0].toLowerCase() === String(a.who).split(' ')[0].toLowerCase())).map((a) => ({ person: a.who, title: a.text, date: '', project: '', note: '' }));
+  else read = await deps.modelJson(ctx, system(owner), userMsg(m, list, agentList, know, people), 8000);
   read = cleanRead(read, agentList.map((a) => a.id));
   if (!read) { const w = ctx.lastModelError || 'no answer'; if (deps.log) await deps.log(ctx, 'jarvis', 'Could not read "' + m.title + '": ' + w); return { error: 'J.A.R.V.I.S. could not read that meeting just now: ' + w + '. Press "Let him read it" to try again.', status: 502 }; }
 
@@ -186,8 +192,11 @@ async function readMeeting(ctx, deps, uid, m, opts) {
   }
   if (home && read.ideas.length) home.ideas = read.ideas.concat(home.ideas || []).slice(0, 8);
   await saveProjects(ctx, list);
+  /* his colleagues' action items: proposals on the Projects page, for his yes */
+  let proposed = [];
+  if (deps.orgPropose && read.assign && read.assign.length && !opts.noTasks) { try { proposed = await deps.orgPropose(ctx, read.assign, m, home); } catch (e) {} }
 
-  const rec = { at: now, title: m.title, meetingAt: m.at, summary: read.summary, projects: touched.map((p) => p.id), tasks: started.map((t) => t.id), facts: added, ideas: read.ideas, rocks };
+  const rec = { at: now, title: m.title, meetingAt: m.at, summary: read.summary, projects: touched.map((p) => p.id), tasks: started.map((t) => t.id), facts: added, ideas: read.ideas, rocks, proposed };
   done[m.id] = rec;
   const keys = Object.keys(done); if (keys.length > 200) for (const k of keys.sort((a, b) => done[a].at - done[b].at).slice(0, keys.length - 200)) delete done[k];
   await ctx.set('team:meetproc', done);

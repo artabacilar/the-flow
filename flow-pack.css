@@ -4580,3 +4580,113 @@ html.hud-paged #flow-say .fn-sheet{background:rgba(5,11,28,.96)!important;box-sh
 #flow-hush:focus-visible{outline:2px solid #7fd8ff;outline-offset:2px}
 html:not(.hud-on) #flow-hush{background:var(--lk-ink,#111);color:var(--lk-bg,#fff);border-color:transparent}
 #flow-say .sy-drop .fn-sheet,#flow-say.sy-drop .fn-sheet{outline:2px dashed #7fd8ff;outline-offset:-6px}
+
+/* ── Projects: companies → projects → people and tasks (11 Nov) ──
+   A page to work in, across the window (no orb, like Today and Plan):
+   your companies, a company's projects and people, a project's board. */
+#flow-hud.hud-merge.hud-orgview{grid-template-columns:172px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"rail top" "rail left";padding-bottom:max(16px,env(safe-area-inset-bottom))}
+#flow-hud.hud-merge.hud-orgview :is(.hud-team,.hud-core,.hud-right,.hud-pagecol){display:none!important}
+#flow-hud.hud-merge.hud-orgview .hud-left{grid-area:left;display:block;margin-bottom:0!important;overflow:auto;min-height:0;scrollbar-width:thin}
+#flow-hud .org{max-width:1240px;margin:0 auto;padding:0 6px 40px;color:#dbeaff}
+#flow-hud .org-crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:2;padding:4px 0 10px;margin-bottom:6px;border-bottom:1px solid rgba(110,170,255,.14);background:linear-gradient(180deg,#050b1c 75%,rgba(5,11,28,0))}
+#flow-hud .org-crumbs>i{color:rgba(170,200,255,.45);font-style:normal}
+#flow-hud .org-cr{appearance:none;border:0;background:none;color:#7fd8ff;font:inherit;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;cursor:pointer;padding:4px 2px}
+#flow-hud .org-cr.cur{color:#e8f4ff;cursor:default}
+#flow-hud .org-sp{flex:1}
+#flow-hud .org-h{font-size:20px;font-weight:800;margin:14px 0 12px;color:#e8f4ff}
+#flow-hud .org-h3{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#7fd8ff;margin:0 0 10px}
+#flow-hud .org-h4{font-size:12px;font-weight:700;margin:14px 0 6px;color:rgba(170,210,255,.85)}
+#flow-hud .org-sec{margin:22px 0 0}
+#flow-hud .org-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+#flow-hud :is(.org-co,.org-pr){appearance:none;text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:16px;border:1px solid rgba(110,170,255,.22);background:linear-gradient(180deg,rgba(12,28,62,.66),rgba(6,14,32,.66))}
+#flow-hud :is(.org-co,.org-pr):hover{border-color:rgba(127,216,255,.6)}
+#flow-hud .org-co{border-left:4px solid var(--co,#3ab0ff)}
+#flow-hud .org-co.quiet{opacity:.75;border-left-color:rgba(110,170,255,.3)}
+#flow-hud .org-coh{display:flex;align-items:center;gap:8px;justify-content:space-between}
+#flow-hud .org-coh b{font-size:16px;font-weight:800;color:#e8f4ff}
+#flow-hud :is(.org-co,.org-pr) small{font-size:12.5px;color:rgba(170,200,255,.7);line-height:1.35}
+#flow-hud .org-dot{width:10px;height:10px;border-radius:50%;background:var(--co,#3ab0ff);box-shadow:0 0 10px var(--co,#3ab0ff);flex:none}
+#flow-hud .org-stat{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:rgba(170,200,255,.7)}
+#flow-hud .org-n{font-weight:600;font-size:11.5px;padding:2px 8px;border-radius:999px;background:rgba(40,120,255,.12);color:#cfe6ff}
+#flow-hud .org-n.doing{background:rgba(58,176,255,.2);color:#9fe4ff}
+#flow-hud .org-n.late{background:rgba(255,122,107,.18);color:#ff9d90}
+#flow-hud .org-n.blocked{background:rgba(255,211,107,.16);color:#ffd36b}
+#flow-hud .org-faces{display:flex;gap:-4px}
+#flow-hud .org-faces i,#flow-hud .org-av{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(40,120,255,.25);border:1px solid rgba(127,216,255,.4);color:#e8f4ff;font-size:10.5px;font-weight:800;font-style:normal;margin-right:-4px}
+#flow-hud .org-av{margin-right:0;flex:none}
+#flow-hud .org-av.sm{width:20px;height:20px;font-size:9px}
+#flow-hud .org-av.lg{width:40px;height:40px;font-size:15px}
+#flow-hud .org-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 6px}
+#flow-hud .org-title h2{font-size:22px;font-weight:800;margin:0;color:#e8f4ff;margin-right:auto}
+#flow-hud .org-tabs{margin:12px 0 14px}
+#flow-hud .org-form{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;align-items:center}
+#flow-hud .org-form input[name="title"],#flow-hud .org-form input[name="name"],#flow-hud .org-form input[name="text"]{flex:1 1 240px}
+#flow-hud .org-form input[name="about"],#flow-hud .org-form input[name="goal"],#flow-hud .org-form input[name="role"]{flex:2 1 260px}
+#flow-hud .org-people{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+#flow-hud .org-pe{appearance:none;font:inherit;color:inherit;text-align:left;cursor:pointer;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;padding:12px 14px;border-radius:14px;border:1px solid rgba(110,170,255,.2);background:rgba(8,18,42,.6)}
+#flow-hud .org-pe:hover{border-color:rgba(127,216,255,.55)}
+#flow-hud .org-pe>span:not(.org-stat){display:flex;flex-direction:column;min-width:0}
+#flow-hud .org-pe b{font-size:14px;color:#e8f4ff}
+#flow-hud .org-pe small{font-size:12px;color:rgba(170,200,255,.65);overflow:hidden;text-overflow:ellipsis}
+#flow-hud .org-pe .org-stat{grid-column:1/-1}
+#flow-hud .org-onit{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
+#flow-hud .org-lbl{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(170,200,255,.6);margin-right:4px}
+#flow-hud .org-chip{appearance:none;font:inherit;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:999px;border:1px solid rgba(110,170,255,.3);background:rgba(10,24,52,.7);color:#dbeaff;font-size:13px;cursor:default}
+#flow-hud button.org-chip{cursor:pointer;padding-left:10px}
+#flow-hud .org-chx{appearance:none;border:0;background:none;color:rgba(170,200,255,.6);cursor:pointer;font-size:15px;padding:0 0 0 2px}
+#flow-hud .org-addp{width:auto;min-width:150px}
+#flow-hud .org-sum{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+#flow-hud .org-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px}
+#flow-hud .org-col{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:14px;background:rgba(6,14,32,.55);border:1px solid rgba(110,170,255,.14);min-height:120px}
+#flow-hud .org-col h4{margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7fd8ff;display:flex;justify-content:space-between}
+#flow-hud .org-col[data-s="blocked"] h4{color:#ffd36b}
+#flow-hud .org-col[data-s="done"] h4{color:#6cf0b2}
+#flow-hud .org-t{appearance:none;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid rgba(110,170,255,.2);background:rgba(12,28,62,.7)}
+#flow-hud .org-t:hover,#flow-hud .org-t.sel{border-color:#7fd8ff}
+#flow-hud .org-t.late{border-color:rgba(255,122,107,.55)}
+#flow-hud .org-t[data-s="done"] b{opacity:.7;text-decoration:line-through;text-decoration-color:rgba(108,240,178,.6)}
+#flow-hud .org-t b{font-size:13.5px;font-weight:600;color:#e8f4ff;line-height:1.3}
+#flow-hud .org-t>span{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+#flow-hud .org-t small{font-size:11.5px;color:rgba(170,200,255,.7)}
+#flow-hud .org-t .org-due{color:#cfe6ff}
+#flow-hud .org-t.late .org-due{color:#ff9d90}
+#flow-hud .org-st[data-s="doing"]{color:#9fe4ff}#flow-hud .org-st[data-s="blocked"]{color:#ffd36b}#flow-hud .org-st[data-s="done"]{color:#6cf0b2}
+#flow-hud .org-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+#flow-hud .org-detail{margin-top:16px;padding:16px;border-radius:16px;border:1px solid rgba(127,216,255,.45);background:rgba(8,20,46,.85)}
+#flow-hud .org-dh{display:flex;gap:8px;align-items:center}
+#flow-hud .org-tt{flex:1;font-size:16px;font-weight:700}
+#flow-hud .org-stbtns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+#flow-hud .org-meta{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13px;color:rgba(170,200,255,.8);margin-bottom:10px}
+#flow-hud .org-meta label{display:inline-flex;gap:8px;align-items:center}
+#flow-hud .org-meta select,#flow-hud .org-meta input{width:auto}
+#flow-hud .org-note{width:100%;min-height:70px;resize:vertical}
+#flow-hud .org-com{padding:8px 0;border-top:1px solid rgba(110,170,255,.1)}
+#flow-hud .org-com b{font-size:13px;color:#e8f4ff;margin-right:8px}
+#flow-hud .org-com small{font-size:11px;color:rgba(170,200,255,.55)}
+#flow-hud .org-com p{margin:4px 0 0;font-size:13.5px;white-space:pre-wrap}
+#flow-hud .org-log summary,#flow-hud .org-done summary{cursor:pointer;font-size:12px;color:rgba(170,200,255,.7);margin-top:10px}
+#flow-hud .org-pend{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;border:1px dashed rgba(255,211,107,.45);background:rgba(40,32,8,.25);margin-bottom:8px}
+#flow-hud .org-pend>span{flex:1 1 260px;display:flex;flex-direction:column}
+#flow-hud .org-pend small{font-size:12px;color:rgba(170,200,255,.65)}
+#flow-hud .org-pend select{width:auto}
+#flow-hud .org-back{margin:0 0 10px}
+@media (max-width:900px){
+  #flow-hud.hud-merge.hud-orgview .hud-left{order:2;flex:none;width:100%;overflow:visible}
+  #flow-hud .org-board{grid-template-columns:1fr 1fr}
+}
+@media (max-width:560px){ #flow-hud .org-board{grid-template-columns:1fr} #flow-hud .org-grid,#flow-hud .org-people,#flow-hud .org-list{grid-template-columns:1fr} }
+/* a colleague's work, on their Today */
+#flow-work .ow-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line,rgba(127,127,127,.18))}
+#flow-work .ow-row:first-of-type{border-top:0}
+#flow-work .ow-t{flex:1;min-width:0;display:flex;flex-direction:column}
+#flow-work .ow-t small{opacity:.7;font-size:12px}
+#flow-work .ow-a{display:flex;gap:6px;align-items:center}
+#flow-work .ow-st{font-size:12px;opacity:.75}
+#flow-work .ow-late{color:#e5534b}
+#flow-hud .org .hud-sel{width:auto;max-width:100%;min-width:0}
+#flow-hud .org .org-title .hud-sel{padding-top:6px;padding-bottom:6px;font-size:13px}
+#flow-hud .org .org-form input[name="title"],#flow-hud .org .org-form input[name="text"],#flow-hud .org .org-form input[name="name"]{flex:1 1 260px}
+#flow-hud .org .org-form select[name="person"]{flex:0 1 180px}
+#flow-hud .org .org-form input[type="date"]{flex:0 1 170px}
+#flow-hud .org .org-note,#flow-hud .org .org-tt{width:100%}
+#flow-hud .org .org-dh .org-tt{width:auto;flex:1}

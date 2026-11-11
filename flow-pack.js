@@ -8854,7 +8854,7 @@ const WeekPlan = {
     });
     const feed = document.getElementById('today-feed');
     if (feed && window.MutationObserver) {
-      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} try { Inbox.paintToday(); } catch (e) {} try { Markets.widgetRow(); } catch (e) {} })
+      new MutationObserver(() => { if (!feed.querySelector('#td-weekplan')) WeekPlan.paintCard(); TodayFix.paint(); try { Meetings.paint(); } catch (e) {} try { Inbox.paintToday(); } catch (e) {} try { OrgWork.paintToday(); } catch (e) {} try { Markets.widgetRow(); } catch (e) {} })
         .observe(feed, { childList: true });
     }
     WeekPlan.paintCard(); TodayFix.paint();
@@ -13741,6 +13741,266 @@ const Hush = {
   }
 };
 window.FlowHush = Hush;
+/* ── The organisation: companies → projects → people and their tasks ──
+   Projects in the command centre is a page you drill into: your companies
+   (ABKO, Revelle AI, Yuum…), then a company's projects and people, then a
+   project's board — To do, In progress, Blocked, Done — where the people on
+   it work together: they move tasks along, comment, add tasks. A colleague
+   sees only the projects they are on (flow-org decides; this only draws).
+   Their open tasks also sit on their own Today. */
+const Org = {
+  d: null, nav: { company: null, project: null, person: null, task: null }, tab: 'projects', classic: false, adding: '', loading: false, mine: null,
+  async load(force) {
+    if (Org.d && !force) return Org.d;
+    try { const r = await fetch('/api/team/org', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Org.d = j; else Org.d = Org.d || { failed: true, companies: [], projects: [], people: [], tasks: [], me: { owner: false } }; }
+    catch (e) { Org.d = Org.d || { failed: true, companies: [], projects: [], people: [], tasks: [], me: { owner: false } }; }
+    return Org.d;
+  },
+  personName(id) { const p = Org.d && Org.d.people.find((x) => x.id === id || (x.name || '').toLowerCase() === String(id || '').toLowerCase()); return p ? p.name : ''; },
+  projectName(id) { const p = Org.d && Org.d.projects.find((x) => x.id === id); return p ? p.name : ''; },
+  /* J.A.R.V.I.S. gives a task: "give Eren the Goldwell login bug for Friday" */
+  async assign(a) {
+    await Org.load();
+    const j = await Team.post('/api/team/org', { op: 'task', title: a.title, person: a.person, project: a.project || '', due: a.date || '', note: a.note || '' });
+    if (j && j.ok) { if (j.view) Org.d = j.view; try { if (Hud.on && Team.sel === 'projects') Hud.paint(); } catch (e) {} }
+    return j;
+  },
+  ST: { todo: 'To do', doing: 'In progress', blocked: 'Blocked', done: 'Done' },
+  ini(n) { return String(n || '?').split(/\s+/).map((w) => w.charAt(0)).join('').slice(0, 2).toUpperCase(); },
+  fmtDue(d) { if (!d) return ''; try { const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) { return d; } },
+  go(nav) { Org.force = true; Org.nav = Object.assign({ company: null, project: null, person: null, task: null }, nav || {}); Org.adding = ''; Hud.paint(); try { const c = Hud.el.querySelector('.hud-left'); if (c) c.scrollTop = 0; } catch (e) {} },
+  crumbs() {
+    const D = Org.d, N = Org.nav, bits = ['<button type="button" class="org-cr" data-hud="orggo">Projects</button>'];
+    const c = N.company && D.companies.find((x) => x.id === N.company), pr = N.project && D.projects.find((x) => x.id === N.project), pe = N.person && D.people.find((x) => x.id === N.person);
+    if (c) bits.push('<button type="button" class="org-cr" data-hud="orggo" data-company="' + esc(c.id) + '" data-i18n="off">' + esc(c.name) + '</button>');
+    else if (N.company === '_none') bits.push('<button type="button" class="org-cr" data-hud="orggo" data-company="_none">Not in a company</button>');
+    if (pr) bits.push('<span class="org-cr cur" data-i18n="off">' + esc(pr.name) + '</span>');
+    if (pe) bits.push('<span class="org-cr cur" data-i18n="off">' + esc(pe.name) + '</span>');
+    return '<nav class="org-crumbs" aria-label="Where you are">' + bits.join('<i>›</i>') + '<span class="org-sp"></span>' +
+      (D.me.owner ? '<button type="button" class="hud-tab' + (Org.classic ? ' on' : '') + '" data-hud="orgclassic">Meetings & J.A.R.V.I.S.\'s work</button>' : '') +
+      '<button type="button" class="hud-tab hud-pgask" data-hud="pageask">Ask J.A.R.V.I.S.</button></nav>';
+  },
+  stat(c) { return (c.doing ? '<b class="org-n doing">' + c.doing + ' in progress</b>' : '') + (c.late ? '<b class="org-n late">' + c.late + ' late</b>' : '') + (c.blocked ? '<b class="org-n blocked">' + c.blocked + ' blocked</b>' : '') + '<b class="org-n">' + c.done + '/' + c.total + ' done</b>'; },
+  bar(c) { return '<i class="hud-pjbar"><b style="width:' + (c.total ? Math.round(c.done / c.total * 100) : 0) + '%"></b></i>'; },
+  faces(ids) { return '<span class="org-faces">' + ids.slice(0, 6).map((id) => { const p = Org.d.people.find((x) => x.id === id); return p ? '<i title="' + esc(p.name) + '" data-i18n="off">' + esc(Org.ini(p.name)) + '</i>' : ''; }).join('') + (ids.length > 6 ? '<i>+' + (ids.length - 6) + '</i>' : '') + '</span>'; },
+  paint() {
+    Hud.el.classList.add('hud-memview');
+    if (!Org.d && !Org.loading) { Org.loading = true; Org.load(true).then(() => { Org.loading = false; if (Hud.on && Team.sel === 'projects') Hud.paint(); }); }
+    Hud.el.querySelector('.hud-brand b').textContent = 'Projects';
+    Hud.el.querySelector('.hud-brand span').textContent = 'Your companies, their projects, and the people on them';
+    if (Org.classic && Org.d && Org.d.me.owner) { Hud.el.classList.remove('hud-orgview'); Team.paintProjects(); const l = Hud.el.querySelector('.hud-left'); if (l) l.insertAdjacentHTML('afterbegin', '<div class="org-back"><button type="button" class="hud-btn ghost" data-hud="orgclassic">← Back to your companies</button></div>'); return; }
+    Hud.el.classList.add('hud-orgview');
+    /* the clock repaints the room every half minute: never under someone typing */
+    const ae = document.activeElement;
+    if (!Org.force && ae && ae.closest && ae.closest('#flow-hud .org') && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+    Org.force = false;
+    const D = Org.d;
+    if (!D) { Hud.set('.hud-left', '<p class="hud-sub">Looking…</p>'); Hud.set('.hud-right', ''); return; }
+    const N = Org.nav; let body = '';
+    try { body = N.project ? Org.projectView(N.project) : N.person ? Org.personView(N.person) : N.company ? Org.companyView(N.company) : Org.homeView(); } catch (e) { console.warn('[Flow] org', e); body = '<p class="hud-none">Something went wrong drawing this page.</p>'; }
+    Hud.set('.hud-left', '<div class="org">' + Org.crumbs() + body + '</div>');
+    Hud.set('.hud-right', '');
+    try { Team.paintRail(); } catch (e) {}
+  },
+  homeView() {
+    const D = Org.d, own = D.me.owner;
+    const card = (c) => '<button type="button" class="org-co" data-hud="orggo" data-company="' + esc(c.id) + '" style="--co:' + esc(c.color || '#3ab0ff') + '"><span class="org-coh"><i class="org-dot"></i><b data-i18n="off">' + esc(c.name) + '</b></span>' +
+      (c.about ? '<small data-i18n="off">' + esc(c.about) + '</small>' : '') + Org.bar(c.counts) + '<span class="org-stat">' + c.projects + ' project' + (c.projects === 1 ? '' : 's') + ' · ' + c.people + ' ' + (c.people === 1 ? 'person' : 'people') + '</span><span class="org-stat">' + Org.stat(c.counts) + '</span></button>';
+    const unfiled = D.projects.filter((p) => !p.company);
+    let h = '<h2 class="org-h">' + (own ? 'Your companies' : 'Your work') + '</h2>';
+    h += D.companies.length ? '<div class="org-grid">' + D.companies.map(card).join('') + (unfiled.length && own ? '<button type="button" class="org-co quiet" data-hud="orggo" data-company="_none"><span class="org-coh"><b>Not in a company yet</b></span><small>' + unfiled.length + ' project' + (unfiled.length === 1 ? '' : 's') + ' to file — open and pick a company for each</small></button>' : '') + '</div>'
+      : '<p class="hud-none">' + (own ? 'No companies yet. Add your first one — ABKO, Revelle AI, Yuum, BiovaLab… — then its projects and the people on them.' : 'You are not on a project yet. The owner adds you to the ones you work on.') + '</p>';
+    if (!own && D.people.length && D.me.person) h += Org.mineBlock(D.me.person.id);
+    if (own) {
+      h += Org.adding === 'company' ? '<form data-team="orgcompany" class="org-form"><input class="hud-sel" name="name" maxlength="60" placeholder="Company name, e.g. Revelle AI" required><input class="hud-sel" name="about" maxlength="300" placeholder="What it is, in a line (optional)"><button type="submit" class="hud-btn">Add company</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+        : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="company">+ Company</button></div>';
+      h += Org.pendingBlock(null);
+      h += Org.peopleBlock(D.people, true);
+    }
+    return h;
+  },
+  pendingBlock(projectId) {
+    const D = Org.d; if (!D.me.owner) return '';
+    const list = D.tasks.filter((t) => t.pending && (!projectId || t.project === projectId)); if (!list.length) return '';
+    const opts = (cur) => D.people.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+    return '<section class="org-sec"><h3 class="org-h3">From your meetings · waiting for your yes · ' + list.length + '</h3>' + list.map((t) => '<div class="org-pend"><span><b data-i18n="off">' + esc(t.title) + '</b><small data-i18n="off">' + esc((t.source && t.source.title) ? 'From "' + t.source.title + '"' : '') + (Org.projectName(t.project) ? ' · ' + esc(Org.projectName(t.project)) : '') + (t.due ? ' · due ' + esc(Org.fmtDue(t.due)) : '') + '</small></span>' +
+      '<select class="hud-sel" data-org="pendwho" data-id="' + esc(t.id) + '">' + opts(t.person) + '</select><button type="button" class="hud-btn" data-hud="orgpend" data-yes="1" data-id="' + esc(t.id) + '">Give it</button><button type="button" class="hud-btn ghost" data-hud="orgpend" data-id="' + esc(t.id) + '">Dismiss</button></div>').join('') + '</section>';
+  },
+  peopleBlock(people, withForm) {
+    const D = Org.d, own = D.me.owner;
+    const row = (p) => '<button type="button" class="org-pe" data-hud="orgperson" data-id="' + esc(p.id) + '"><i class="org-av" data-i18n="off">' + esc(Org.ini(p.name)) + '</i><span><b data-i18n="off">' + esc(p.name) + '</b><small data-i18n="off">' + esc(p.role || '') + '</small>' +
+      (own && p.email ? '<small data-i18n="off">' + esc(p.email) + (p.linked ? ' · signed in' : ' · not signed in yet') + '</small>' : '') + '</span><span class="org-stat">' + Org.stat(p.counts) + '</span></button>';
+    let h = '<section class="org-sec"><h3 class="org-h3">People · ' + people.length + '</h3>' + (people.length ? '<div class="org-people">' + people.map(row).join('') + '</div>' : '<p class="hud-none">' + (own ? 'No one yet. Add a colleague with the email they sign in with; give them an employee access code from Access & organization.' : 'No one else on your projects yet.') + '</p>');
+    if (own && withForm) h += Org.adding === 'person' ? '<form data-team="orgperson" class="org-form"><input class="hud-sel" name="name" maxlength="60" placeholder="Name, e.g. Eren Karaköse" required><input class="hud-sel" name="email" type="email" maxlength="120" placeholder="The email they sign in with"><input class="hud-sel" name="role" maxlength="300" placeholder="What they do, e.g. websites, B2B apps, IT"><button type="submit" class="hud-btn">Add person</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+      : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="person">+ Person</button></div>';
+    return h + '</section>';
+  },
+  companyView(cid) {
+    const D = Org.d, own = D.me.owner;
+    const c = cid === '_none' ? { id: '_none', name: 'Not in a company yet', about: '', color: '#6a7c9a' } : D.companies.find((x) => x.id === cid);
+    if (!c) return '<p class="hud-none">That company is not here.</p>';
+    const prs = D.projects.filter((p) => cid === '_none' ? !p.company : p.company === cid);
+    const pIds = new Set(prs.flatMap((p) => p.people));
+    const people = D.people.filter((p) => pIds.has(p.id));
+    let h = '<div class="org-title" style="--co:' + esc(c.color || '#3ab0ff') + '"><i class="org-dot"></i><h2 data-i18n="off">' + esc(c.name) + '</h2>' + (own && cid !== '_none' ? '<button type="button" class="hud-btn ghost" data-hud="orgcoedit" data-id="' + esc(c.id) + '">Edit</button>' : '') + '</div>' + (c.about ? '<p class="hud-sub" data-i18n="off">' + esc(c.about) + '</p>' : '');
+    if (Org.adding === 'coedit') h += '<form data-team="orgcoedit" data-id="' + esc(c.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="60" value="' + esc(c.name) + '" required><input class="hud-sel" name="about" maxlength="300" value="' + esc(c.about || '') + '" placeholder="What it is"><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="orgcoremove" data-id="' + esc(c.id) + '">Remove company</button></form>';
+    h += '<div class="hud-pgt org-tabs">' + [['projects', 'Projects · ' + prs.length], ['people', 'People · ' + people.length], ['tasks', 'All tasks']].map(([k, l]) => '<button type="button" class="hud-tab' + (Org.tab === k ? ' on' : '') + '" data-hud="orgtab" data-tab="' + k + '">' + l + '</button>').join('') + '</div>';
+    if (Org.tab === 'people') return h + Org.peopleBlock(people, false);
+    if (Org.tab === 'tasks') { const ts = D.tasks.filter((t) => !t.pending && prs.some((p) => p.id === t.project)); return h + Org.byPerson(ts); }
+    const card = (p) => '<button type="button" class="org-pr" data-hud="orggo" data-company="' + esc(c.id) + '" data-project="' + esc(p.id) + '"><span class="org-coh"><b data-i18n="off">' + esc(p.name) + '</b><em class="hud-pjh" data-h="' + esc(p.status === 'active' ? p.health : p.status) + '">' + esc(p.status === 'active' ? (Team.PJH[p.health] || 'On track') : p.status === 'done' ? 'Done' : 'Paused') + '</em></span>' +
+      (p.goal ? '<small data-i18n="off">' + esc(p.goal) + '</small>' : '') + Org.bar(p.counts) + '<span class="org-stat">' + Org.stat(p.counts) + '</span>' + Org.faces(p.people) + '</button>';
+    h += prs.length ? '<div class="org-grid">' + prs.sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.counts.open - a.counts.open).map(card).join('') + '</div>' : '<p class="hud-none">No projects here yet.</p>';
+    if (own && cid !== '_none') h += Org.adding === 'project' ? '<form data-team="orgproject" data-company="' + esc(c.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="80" placeholder="Project name, e.g. Goldwell B2B app" required><input class="hud-sel" name="goal" maxlength="300" placeholder="Goal, in one sentence"><button type="submit" class="hud-btn">Add project</button><button type="button" class="hud-btn ghost" data-hud="orgadd" data-what="">Cancel</button></form>'
+      : '<div class="hud-row"><button type="button" class="hud-btn" data-hud="orgadd" data-what="project">+ Project</button></div>';
+    return h;
+  },
+  byPerson(ts) {
+    const D = Org.d; const groups = {};
+    ts.forEach((t) => { (groups[t.person || '_'] = groups[t.person || '_'] || []).push(t); });
+    const keys = Object.keys(groups); if (!keys.length) return '<p class="hud-none">No tasks yet.</p>';
+    return keys.map((k) => '<section class="org-sec"><h3 class="org-h3" data-i18n="off">' + esc(k === '_' ? 'Not given to anyone' : Org.personName(k)) + '</h3>' + Org.list(groups[k].filter((t) => t.status !== 'done')) + (groups[k].some((t) => t.status === 'done') ? '<details class="org-done"><summary>Done · ' + groups[k].filter((t) => t.status === 'done').length + '</summary>' + Org.list(groups[k].filter((t) => t.status === 'done')) + '</details>' : '') + '</section>').join('');
+  },
+  list(ts) { return ts.length ? '<div class="org-list">' + ts.map((t) => Org.tcard(t, true)).join('') + '</div>' : '<p class="hud-none">Nothing open.</p>'; },
+  tcard(t, wide) {
+    const who = Org.personName(t.person);
+    return '<button type="button" class="org-t' + (Org.nav.task === t.id ? ' sel' : '') + (t.late ? ' late' : '') + '" data-hud="orgtask" data-id="' + esc(t.id) + '" data-s="' + esc(t.status) + '"><b data-i18n="off">' + esc(t.title) + '</b><span>' +
+      (who ? '<i class="org-av sm" data-i18n="off">' + esc(Org.ini(who)) + '</i><small data-i18n="off">' + esc(who) + '</small>' : '<small>Not given to anyone</small>') +
+      (t.due ? '<small class="org-due">' + (t.late ? 'late · ' : '') + esc(Org.fmtDue(t.due)) + '</small>' : '') + (wide ? '<small class="org-st" data-s="' + esc(t.status) + '">' + Org.ST[t.status] + '</small>' : '') + (wide && Org.projectName(t.project) ? '<small data-i18n="off">' + esc(Org.projectName(t.project)) + '</small>' : '') +
+      ((t.comments || []).length ? '<small>💬 ' + t.comments.length + '</small>' : '') + '</span></button>';
+  },
+  projectView(pid) {
+    const D = Org.d, own = D.me.owner; const p = D.projects.find((x) => x.id === pid);
+    if (!p) return '<p class="hud-none">That project is not here.</p>';
+    const ts = D.tasks.filter((t) => t.project === pid && !t.pending);
+    const sel = (name, opts, cur) => '<select class="hud-sel" data-team-pjset="' + name + '" data-id="' + esc(p.id) + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+    let h = '<div class="org-title"><h2 data-i18n="off">' + esc(p.name) + '</h2>' + (own ? sel('health', [['on_track', 'On track'], ['at_risk', 'At risk'], ['blocked', 'Blocked']], p.health) + sel('status', [['active', 'Active'], ['paused', 'Paused'], ['done', 'Done']], p.status) +
+      '<select class="hud-sel" data-org="pjcompany" data-id="' + esc(p.id) + '"><option value="">No company</option>' + D.companies.map((c) => '<option value="' + esc(c.id) + '"' + (c.id === p.company ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>' : '<em class="hud-pjh" data-h="' + esc(p.health) + '">' + esc(Team.PJH[p.health] || 'On track') + '</em>') + '</div>';
+    if (p.goal) h += '<p class="hud-pjgoal" data-i18n="off">' + esc(p.goal) + '</p>';
+    if (p.state) h += '<p class="hud-pjstate" data-i18n="off"><b>Where it stands.</b> ' + esc(p.state) + '</p>';
+    /* who is on it */
+    h += '<div class="org-onit"><span class="org-lbl">On it</span>' + (p.people.length ? p.people.map((id) => { const x = D.people.find((y) => y.id === id); return x ? '<span class="org-chip"><i class="org-av sm" data-i18n="off">' + esc(Org.ini(x.name)) + '</i><span data-i18n="off">' + esc(x.name) + '</span>' + (own ? '<button type="button" class="org-chx" data-hud="orgdrop" data-id="' + esc(p.id) + '" data-person="' + esc(id) + '" aria-label="Take ' + esc(x.name) + ' off this project">×</button>' : '') + '</span>' : ''; }).join('') : '<small class="hud-none">No one yet</small>') +
+      (own && D.people.some((x) => p.people.indexOf(x.id) < 0) ? '<select class="hud-sel org-addp" data-org="pjadd" data-id="' + esc(p.id) + '"><option value="">+ Add someone</option>' + D.people.filter((x) => p.people.indexOf(x.id) < 0).map((x) => '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>').join('') + '</select>' : '') + '</div>';
+    h += '<div class="org-sum">' + Org.bar(p.counts) + '<span class="org-stat">' + Org.stat(p.counts) + (p.counts.doneWeek ? '<b class="org-n">' + p.counts.doneWeek + ' done this week</b>' : '') + '</span></div>';
+    /* add a task */
+    const canAdd = own || (D.me.person && p.people.indexOf(D.me.person.id) >= 0);
+    if (canAdd) h += '<form data-team="orgtask" data-project="' + esc(p.id) + '" class="org-form org-add"><input class="hud-sel" name="title" maxlength="160" placeholder="A task for this project" required><select class="hud-sel" name="person"><option value="">For…</option>' +
+      p.people.map((id) => '<option value="' + esc(id) + '"' + (D.me.person && D.me.person.id === id ? ' selected' : '') + '>' + esc(Org.personName(id)) + '</option>').join('') + '</select><input class="hud-sel" type="date" name="due" aria-label="Due"><button type="submit" class="hud-btn">Add</button></form>';
+    h += Org.pendingBlock(pid);
+    /* the board */
+    const col = (s) => { const list = ts.filter((t) => t.status === s).sort((a, b) => s === 'done' ? (b.doneAt || 0) - (a.doneAt || 0) : (a.due || '9') < (b.due || '9') ? -1 : 1); const shown = s === 'done' ? list.slice(0, 12) : list;
+      return '<div class="org-col" data-s="' + s + '"><h4>' + Org.ST[s] + ' <small>' + list.length + '</small></h4>' + shown.map((t) => Org.tcard(t, false)).join('') + (list.length > shown.length ? '<small class="hud-sub">and ' + (list.length - shown.length) + ' more</small>' : '') + '</div>'; };
+    h += '<div class="org-board">' + ['todo', 'doing', 'blocked', 'done'].map(col).join('') + '</div>';
+    const t = Org.nav.task && ts.find((x) => x.id === Org.nav.task);
+    if (t) h += Org.taskDetail(t, p);
+    return h;
+  },
+  taskDetail(t, p) {
+    const D = Org.d, own = D.me.owner, me = D.me.person;
+    const mine = own || (me && t.person === me.id);
+    const st = '<div class="org-stbtns">' + ['todo', 'doing', 'blocked', 'done'].map((s) => '<button type="button" class="hud-tab' + (t.status === s ? ' on' : '') + '" data-hud="orgstatus" data-id="' + esc(t.id) + '" data-s="' + s + '">' + Org.ST[s] + '</button>').join('') + '</div>';
+    const who = own ? '<select class="hud-sel" data-org="tperson" data-id="' + esc(t.id) + '"><option value="">Not given to anyone</option>' + D.people.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === t.person ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' : '<span data-i18n="off">' + esc(Org.personName(t.person) || 'Not given to anyone') + '</span>';
+    const com = (t.comments || []).map((c) => '<div class="org-com"><b data-i18n="off">' + esc(c.name) + '</b><small>' + esc(Team.when(c.at)) + '</small><p data-i18n="off">' + esc(c.text) + '</p></div>').join('');
+    const log = (t.log || []).slice().reverse().slice(0, 8).map((l) => '<li data-i18n="off">' + esc(l.name) + ' — ' + esc(l.what) + ' <small>' + esc(Team.when(l.at)) + '</small></li>').join('');
+    return '<section class="org-detail" id="org-detail"><div class="org-dh"><input class="hud-sel org-tt" data-org="ttitle" data-id="' + esc(t.id) + '" value="' + esc(t.title) + '" maxlength="160"' + (mine || (t.by && D.me.name === t.by.name) ? '' : ' readonly') + '><button type="button" class="hud-ic" data-hud="orgtask" data-id="' + esc(t.id) + '" aria-label="Close">×</button></div>' + st +
+      '<div class="org-meta"><label>For ' + who + '</label><label>Due <input class="hud-sel" type="date" data-org="tdue" data-id="' + esc(t.id) + '" value="' + esc(t.due || '') + '"></label>' + (t.source && t.source.title ? '<small data-i18n="off">From "' + esc(t.source.title) + '"</small>' : '') + (t.by ? '<small data-i18n="off">Made by ' + esc(t.by.name) + ' · ' + esc(Team.when(t.at)) + '</small>' : '') + '</div>' +
+      '<textarea class="hud-sel org-note" data-org="tnote" data-id="' + esc(t.id) + '" rows="3" maxlength="2000" placeholder="Details, links, what done looks like">' + esc(t.note || '') + '</textarea>' +
+      '<h4 class="org-h4">Comments · ' + (t.comments || []).length + '</h4>' + (com || '<p class="hud-none">No comments yet.</p>') +
+      '<form data-team="orgcomment" data-id="' + esc(t.id) + '" class="org-form"><input class="hud-sel" name="text" maxlength="1500" placeholder="Write an update or a question" required><button type="submit" class="hud-btn">Send</button></form>' +
+      (log ? '<details class="org-log"><summary>What changed</summary><ul class="hud-ev">' + log + '</ul></details>' : '') +
+      (own || (t.by && D.me.name === t.by.name) ? '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="orgtremove" data-id="' + esc(t.id) + '">Remove task</button></div>' : '') + '</section>';
+  },
+  personView(pid) {
+    const D = Org.d; const p = D.people.find((x) => x.id === pid); if (!p) return '<p class="hud-none">That person is not here.</p>';
+    const own = D.me.owner;
+    let h = '<div class="org-title"><i class="org-av lg" data-i18n="off">' + esc(Org.ini(p.name)) + '</i><h2 data-i18n="off">' + esc(p.name) + '</h2>' + (own ? '<button type="button" class="hud-btn ghost" data-hud="orgpedit">Edit</button>' : '') + '</div>' + (p.role ? '<p class="hud-sub" data-i18n="off">' + esc(p.role) + '</p>' : '');
+    if (own && Org.adding === 'pedit') h += '<form data-team="orgpedit" data-id="' + esc(p.id) + '" class="org-form"><input class="hud-sel" name="name" maxlength="60" value="' + esc(p.name) + '" required><input class="hud-sel" name="email" type="email" maxlength="120" value="' + esc(p.email || '') + '" placeholder="The email they sign in with"><input class="hud-sel" name="role" maxlength="300" value="' + esc(p.role || '') + '" placeholder="What they do"><button type="submit" class="hud-btn">Save</button><button type="button" class="hud-btn ghost" data-hud="orgpremove" data-id="' + esc(p.id) + '">Remove person</button></form>';
+    const on = D.projects.filter((x) => x.people.indexOf(pid) >= 0);
+    h += '<div class="org-sum"><span class="org-stat">' + Org.stat(p.counts) + (p.counts.doneWeek ? '<b class="org-n">' + p.counts.doneWeek + ' done this week</b>' : '') + '</span></div>';
+    h += '<div class="org-onit"><span class="org-lbl">Projects</span>' + (on.length ? on.map((x) => '<button type="button" class="org-chip" data-hud="orggo" data-company="' + esc(x.company || '_none') + '" data-project="' + esc(x.id) + '" data-i18n="off">' + esc(x.name) + '</button>').join('') : '<small class="hud-none">Not on a project yet — add them from a project page.</small>') + '</div>';
+    return h + Org.mineBlock(pid);
+  },
+  mineBlock(pid) {
+    const ts = Org.d.tasks.filter((t) => t.person === pid && !t.pending);
+    const sec = (title, list) => list.length ? '<section class="org-sec"><h3 class="org-h3">' + title + ' · ' + list.length + '</h3>' + Org.list(list) + '</section>' : '';
+    const wk = Date.now() - 7 * 86400000;
+    return sec('In progress', ts.filter((t) => t.status === 'doing')) + sec('Late', ts.filter((t) => t.late && t.status !== 'doing')) + sec('Blocked', ts.filter((t) => t.status === 'blocked' && !t.late)) +
+      sec('To do', ts.filter((t) => t.status === 'todo' && !t.late)) + sec('Done this week', ts.filter((t) => t.status === 'done' && (t.doneAt || 0) >= wk)) + (ts.length ? '' : '<p class="hud-none">No tasks yet.</p>');
+  },
+  /* clicks, changes, forms */
+  async after(j) { Org.force = true; if (j && j.ok && j.view) Org.d = j.view; else await Org.load(true); Hud.paint(); try { OrgWork.load().then(() => OrgWork.paintToday()); } catch (e) {} },
+  async click(a, b) {
+    Org.force = true;
+    const id = b.getAttribute('data-id');
+    if (a === 'orggo') { const c = b.getAttribute('data-company'), pr = b.getAttribute('data-project'); if (!pr && c !== Org.nav.company) Org.tab = 'projects'; Org.go({ company: c || null, project: pr || null }); return; }
+    if (a === 'orgperson') { Org.go({ company: Org.nav.company, person: id }); return; }
+    if (a === 'orgtab') { Org.tab = b.getAttribute('data-tab'); Hud.paint(); return; }
+    if (a === 'orgclassic') { Org.classic = !Org.classic; if (Org.classic && !Team.pj) { await Team.loadPj(); } Hud.paint(); return; }
+    if (a === 'orgadd') { Org.adding = b.getAttribute('data-what') || ''; Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('.org-form input'); if (i) i.focus(); }, 30); return; }
+    if (a === 'orgcoedit') { Org.adding = Org.adding === 'coedit' ? '' : 'coedit'; Hud.paint(); return; }
+    if (a === 'orgpedit') { Org.adding = Org.adding === 'pedit' ? '' : 'pedit'; Hud.paint(); return; }
+    if (a === 'orgcoremove') { if (!confirm('Remove this company? Its projects and tasks stay — they move to "Not in a company yet".')) return; await Org.after(await Team.post('/api/team/org', { op: 'company', id, remove: true })); Org.go({}); return; }
+    if (a === 'orgpremove') { if (!confirm('Remove this person? Their tasks stay, given to no one.')) return; await Org.after(await Team.post('/api/team/org', { op: 'person', id, remove: true })); Org.go({}); return; }
+    if (a === 'orgtask') { Org.nav.task = Org.nav.task === id ? null : id; Hud.paint(); if (Org.nav.task) setTimeout(() => { const d = Hud.el.querySelector('#org-detail'); if (d) d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 40); return; }
+    if (a === 'orgstatus') { await Org.after(await Team.post('/api/team/org', { op: 'task', id, status: b.getAttribute('data-s') })); return; }
+    if (a === 'orgtremove') { if (!confirm('Remove this task?')) return; Org.nav.task = null; await Org.after(await Team.post('/api/team/org', { op: 'task', id, remove: true })); return; }
+    if (a === 'orgdrop') { await Org.after(await Team.post('/api/team/org', { op: 'project', id, drop: b.getAttribute('data-person') })); return; }
+    if (a === 'orgpend') { const s = Hud.el.querySelector('[data-org="pendwho"][data-id="' + id + '"]'); await Org.after(await Team.post('/api/team/org', { op: 'pending', id, yes: b.getAttribute('data-yes') === '1', person: s ? s.value : undefined })); return; }
+  },
+  async change(t) {
+    const k = t.getAttribute('data-org'), id = t.getAttribute('data-id');
+    if (k === 'pjcompany') return Org.after(await Team.post('/api/team/org', { op: 'project', id, company: t.value }));
+    if (k === 'pjadd') { if (!t.value) return; return Org.after(await Team.post('/api/team/org', { op: 'project', id, add: t.value })); }
+    if (k === 'tperson') return Org.after(await Team.post('/api/team/org', { op: 'task', id, person: t.value }));
+    if (k === 'tdue') return Org.after(await Team.post('/api/team/org', { op: 'task', id, due: t.value }));
+    if (k === 'ttitle') return Org.after(await Team.post('/api/team/org', { op: 'task', id, title: t.value }));
+    if (k === 'tnote') return Org.after(await Team.post('/api/team/org', { op: 'task', id, note: t.value }));
+  },
+  async submit(kind, f) {
+    const v = (n) => (f.elements[n] ? String(f.elements[n].value || '').trim() : '');
+    if (kind === 'orgcompany') { const j = await Team.post('/api/team/org', { op: 'company', name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgcoedit') { const j = await Team.post('/api/team/org', { op: 'company', id: f.getAttribute('data-id'), name: v('name'), about: v('about') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgperson') { const j = await Team.post('/api/team/org', { op: 'person', name: v('name'), email: v('email'), role: v('role') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgpedit') { const j = await Team.post('/api/team/org', { op: 'person', id: f.getAttribute('data-id'), name: v('name'), email: v('email'), role: v('role') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); } return; }
+    if (kind === 'orgproject') { const j = await Team.post('/api/team/org', { op: 'project', name: v('name'), goal: v('goal'), company: f.getAttribute('data-company') }); if (j && j.ok) { Org.adding = ''; await Org.after(j); Org.go({ company: f.getAttribute('data-company'), project: j.project.id }); } return; }
+    if (kind === 'orgtask') { const j = await Team.post('/api/team/org', { op: 'task', title: v('title'), person: v('person'), due: v('due'), project: f.getAttribute('data-project') }); if (j && j.ok) { await Org.after(j); setTimeout(() => { const i = Hud.el.querySelector('form[data-team="orgtask"] input[name="title"]'); if (i) i.focus(); }, 30); } return; }
+    if (kind === 'orgcomment') { const j = await Team.post('/api/team/org', { op: 'comment', id: f.getAttribute('data-id'), text: v('text') }); if (j && j.ok) await Org.after(j); return; }
+  }
+};
+window.FlowOrg = Org;
+/* A colleague's own open tasks, on their Today: what is theirs to do, from
+   which project, how late — moved along from here without opening Projects. */
+const OrgWork = {
+  d: null, t: 0,
+  async load() {
+    try { const r = await fetch('/api/team/org?mine=1', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); OrgWork.d = r.ok && j && j.ok ? j : null; } catch (e) { OrgWork.d = null; }
+    return OrgWork.d;
+  },
+  boot() { OrgWork.load().then(() => OrgWork.paintToday()).catch(() => {}); clearInterval(OrgWork.t); OrgWork.t = setInterval(() => { if (document.visibilityState === 'visible') OrgWork.load().then(() => OrgWork.paintToday()).catch(() => {}); }, 5 * 60 * 1000); },
+  paintToday() {
+    const feed = document.getElementById('today-feed'); if (!feed) return;
+    let wrap = feed.querySelector('#td-work');
+    const D = OrgWork.d; const list = D && D.me ? D.mine : [];
+    if (!list || !list.length) { if (wrap) wrap.remove(); return; }
+    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.due, t.title])) + (D.nudge ? D.nudge.date : '');
+    if (wrap && wrap.getAttribute('data-sig') === sig) return;
+    if (!wrap) { wrap = document.createElement('div'); wrap.id = 'td-work'; const after = feed.querySelector('#td-inbox') || feed.querySelector('#td-weekplan'); if (after && after.nextSibling) feed.insertBefore(wrap, after.nextSibling); else feed.insertBefore(wrap, feed.firstChild); }
+    wrap.setAttribute('data-sig', sig);
+    const lateN = list.filter((t) => t.late).length;
+    wrap.innerHTML = '<div class="flow-card flow-x" id="flow-work"><h3>🧩 Your work · ' + list.length + (lateN ? ' · <span class="ow-late">' + lateN + ' late</span>' : '') + '</h3>' +
+      list.slice(0, 12).map((t) => '<div class="ow-row" data-id="' + esc(t.id) + '"><div class="ow-t"><b data-i18n="off">' + esc(t.title) + '</b><small data-i18n="off">' + esc([t.companyName, t.projectName].filter(Boolean).join(' · ')) + (t.due ? ' · ' + (t.late ? 'late, was due ' : 'due ') + esc(Org.fmtDue(t.due)) : '') + '</small></div>' +
+        '<div class="ow-a">' + (t.status !== 'doing' ? '<button class="flow-btn small" data-ow="doing">Start</button>' : '<span class="ow-st">In progress</span>') + '<button class="flow-btn small primary" data-ow="done">Done</button></div></div>').join('') +
+      '<button class="flow-btn small ghost" data-ow="open">Open Projects</button></div>';
+    wrap.querySelector('#flow-work').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-ow]'); if (!b) return;
+      const k = b.getAttribute('data-ow');
+      if (k === 'open') { try { if (!Hud.on) Hud.open(); await Team.select('projects', true); Team.paintRail(); Hud.paint(); Hud.paintNav(); } catch (x) {} return; }
+      const id = b.closest('.ow-row').getAttribute('data-id'); b.disabled = true;
+      const j = await Team.post('/api/team/org', { op: 'task', id, status: k });
+      if (j && j.ok) { if (k === 'done') toast('Done — nice.', null, 1400); if (j.view) Org.d = j.view; await OrgWork.load(); OrgWork.paintToday(); try { if (Hud.on && Team.sel === 'projects') Hud.paint(); } catch (x) {} } else b.disabled = false;
+    });
+  }
+};
+window.FlowOrgWork = OrgWork;
 (() => {
   const play = Speech.play, device = Speech.device;
   if (play) Speech.play = function () { try { Hush.watch(); } catch (e) {} return play.apply(this, arguments); };
@@ -14634,6 +14894,7 @@ const Say = {
         else if (a.type === 'style') { await Settings.set('asstStyle', a.style); Say.prefsPaint(); did.push(a.style === 'loose' ? 'Loose mode' : 'Butler mode'); }
         else if (a.type === 'ride') { Say.openRide(a); did.push((tr ? 'Uber hazır: ' : 'Uber ready to confirm: ') + a.to); }
         else if (a.type === 'delegate') { const j = await Team.delegate(a.brief, a.title); if (j && j.ok) did.push((tr ? 'Ekibe verildi: ' : 'With the team: ') + (a.title || a.brief.slice(0, 60))); }
+        else if (a.type === 'assign') { const j = await Org.assign(a); if (j && j.ok) did.push((tr ? 'Görev verildi: ' : 'Given to ') + (j.person || '') + ': ' + a.title); else if (j && j.error) did.push(j.error); }
       } catch (e) { console.warn('[Flow] say', a.type, e); }
     }
     if (journal) { try { await Journal.save(); Journal.rerender(); } catch (e) {} }
@@ -14979,6 +15240,7 @@ const Say = {
     if (a.type === 'style') return '<div class="sy-card">' + head('Manner', a.style === 'loose' ? 'Loose' : 'Butler') + '</div>';
     if (a.type === 'delegate') return '<div class="sy-card">' + head('To the team', a.title || '') + '<textarea class="flow-in" rows="3" data-sy-edit="brief" data-i="' + i + '">' + esc(a.brief) + '</textarea><div class="sy-note">J.A.R.V.I.S. picks who does it; they work in the background and come back to you.</div></div>';
     if (a.type === 'forget') { const m = Say.memory().find((x) => x.id === a.memory); return '<div class="sy-card">' + head('Forget', m ? m.text : '') + '</div>'; }
+    if (a.type === 'assign') { const who = Org.personName(a.person) || a.name || a.person; return '<div class="sy-card">' + head('Task for ' + who, '') + '<input class="flow-in" data-sy-edit="title" data-i="' + i + '" value="' + esc(a.title) + '">' + (Org.projectName(a.project) ? '<div class="sy-note" data-i18n="off">' + esc(Org.projectName(a.project)) + '</div>' : '') + Say.dayChips(i, a.date) + '</div>'; }
     return '';
   },
   paintPlan() {
@@ -15042,6 +15304,7 @@ const Say = {
           else if (a.type === 'style') { await Settings.set('asstStyle', a.style); did++; }
           else if (a.type === 'ride') { did++; }
           else if (a.type === 'delegate') { const j = await Team.delegate(a.brief, a.title); if (j && j.ok) { did++; handed = j.say || handed; } }
+          else if (a.type === 'assign') { const j = await Org.assign(a); if (j && j.ok) did++; }
         } catch (e) { console.warn('[Flow] say', a.type, e); }
       }
       if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
@@ -15236,15 +15499,16 @@ const Hud = {
   },
   paintNow() {
     if (!Hud.el) return;
+    if (Team.sel !== 'projects') Hud.el.classList.remove('hud-orgview');
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     /* One of the team selected: their workspace, not the day. */
     if (Team.sel === 'memory') { try { Team.paintMemory(); } catch (e) { console.warn('[Flow] memory', e); } return; }
     if (Team.sel === 'skills') { try { Team.paintSkills(); } catch (e) { console.warn('[Flow] skills', e); } return; }
     if (Team.sel === 'scripts') { try { Team.paintScripts(); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (Team.sel === 'efficiency') { try { Team.paintEfficiency(); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
-    if (Team.sel === 'projects') { try { Team.paintProjects(); } catch (e) { console.warn('[Flow] projects', e); } return; }
+    if (Team.sel === 'projects') { try { Org.paint(); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (Team.sel === 'setup') { try { Team.paintSetup(); } catch (e) { console.warn('[Flow] setup', e); } return; }
-    Hud.el.classList.remove('hud-memview');
+    Hud.el.classList.remove('hud-memview', 'hud-orgview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
     Hud.el.querySelector('.hud-brand b').textContent = nm;
     Hud.el.querySelector('.hud-brand span').textContent = 'Command centre';
@@ -15406,7 +15670,7 @@ const Hud = {
     /* A page of his life (Today, Plan, Body, Record, Settings) is the page
        alone, full width, as the Flow always was: no orb, no strip of the
        team, and J.A.R.V.I.S. only when he is asked or is talking. */
-    const paged = !!(Hud.on && Hud.el && Hud.el.classList.contains('hud-pagemode'));
+    const paged = !!(Hud.on && Hud.el && (Hud.el.classList.contains('hud-pagemode') || Hud.el.classList.contains('hud-orgview')));
     root.classList.toggle('hud-paged', paged);
     if (!paged) root.classList.remove('hud-ask');
     const c = Hud.on && Hud.el && Hud.el.querySelector('.hud-core');
@@ -17221,6 +17485,7 @@ const Team = {
     if (a === 'add') { if (Team.sel && Team.sel !== 'jarvis') await Team.select('jarvis', true); Team.adding = true; Team.paintRail(); Hud.paint(); setTimeout(() => { const i = Hud.el.querySelector('[data-team="add"] input'); if (i) i.focus(); }, 60); return; }
     if (a === 'addcancel') { Team.adding = false; Hud.paint(); return; }
     if (a === 'memory' || a === 'skills' || a === 'scripts' || a === 'efficiency' || a === 'setup' || a === 'projects') { await Team.select(a, true); Team.paintRail(); Hud.paint(); Hud.paintNav(); return; }
+    if (/^org/.test(a)) { try { await Org.click(a, b); } catch (e) { console.warn('[Flow] org', e); } return; }
     if (await Team.pjClick(a, b)) return;
     if (a === 'recdel') { await Team.post('/api/team/recordings', { op: 'remove', id: b.getAttribute('data-id') }); await Team.loadRecs(true); Hud.paint(); return; }
     if (a === 'ctall') { Team.ctAll = true; Hud.paint(); return; }
@@ -17328,6 +17593,8 @@ const Team = {
     if (t.matches('[data-ap-from]')) { Team.fromPick = Team.fromPick || {}; Team.fromPick[t.getAttribute('data-ap-from')] = t.value; const card = t.closest('.hud-ap'); const note = card && card.querySelector('.hud-sub:not(.hud-apfrom)'); if (note && t.value !== 'flow') note.textContent = 'Approving sends it now — once, exactly as shown — from ' + t.options[t.selectedIndex].text.replace(/ · (Google|Outlook)$/, '') + ', and it lands in that account\'s Sent folder.'; const btn = card && card.querySelector('[data-hud="approve"]'); if (btn && t.value !== 'flow') btn.textContent = 'Approve and send'; return; }
     if (t.matches('[data-team-sales]')) { const f = t.files && t.files[0]; t.value = ''; await Team.salesUpload(f); return; }
     if (t.matches('[data-team-pj]')) { const k = t.getAttribute('data-team-pj'); const j = await Team.post('/api/team/projects', { op: 'settings', [k]: !!t.checked }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); toast(t.checked ? 'On' : 'Off', null, 1600); } return; }
+    if (t.matches('[data-org]')) { try { await Org.change(t); } catch (e) { console.warn('[Flow] org', e); } return; }
+    if (t.matches('[data-team-pjset]') && Team.sel === 'projects' && !Org.classic) { const k = t.getAttribute('data-team-pjset'); await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); Team.pj = null; await Org.after(null); return; }
     if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
     if (t.matches('[data-team-eff]')) { const k = t.getAttribute('data-team-eff'); const j = await Team.post('/api/team/efficiency/settings', { [k]: !!t.checked }); if (j && j.ok) { await Team.loadEf(true); toast(t.checked ? 'On — one-step delegations skip the hand-over call' : 'Off', null, 2000); } return; }
     if (t.matches('[data-hud-toggle="efdismissed"]')) { Team.efShowDismissed = !!t.checked; Hud.paint(); return; }
@@ -17349,6 +17616,7 @@ const Team = {
     if (/^sc/.test(kind)) { try { await Team.scSubmit(kind, f); } catch (e) { console.warn('[Flow] scripts', e); } return; }
     if (/^ef/.test(kind)) { try { await Team.efSubmit(kind, f); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
     if (kind === 'ctadd') { const j = await Team.post('/api/team/contacts', { name: f.name.value.trim(), email: f.email.value.trim() }); if (j && j.ok) { Team.data.contacts = j.contacts; toast('Saved: ' + j.contact.email, null, 1800); Hud.paint(); } return; }
+    if (/^org/.test(kind)) { try { await Org.submit(kind, f); } catch (e) { console.warn('[Flow] org', e); } return; }
     if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
@@ -21804,6 +22072,7 @@ async function boot() {
      a tab nobody has visited since March. Two small reads. */
   Audit.load().then(() => { try { AuditNudge.apply(); } catch (e) {} }).catch(() => {});
   Inbox.load().then(() => { try { Inbox.paintToday(); } catch (e) {} }).catch(() => {});
+  try { OrgWork.boot(); } catch (e) {}
   Markets.mount().catch(() => {});
 
   // time chips everywhere

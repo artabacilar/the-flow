@@ -85,6 +85,8 @@ module.exports = function make(d) {
   function teamScope(m, p, method) {
     if (!m) return null;
     if (OWNER_ONLY.some((re) => re.test(p)) && method !== 'GET') return { deny: 'Only the owner can do that.' };
+    /* the organisation: every colleague, filtered to the projects they are on (flow-org) */
+    if (p === '/api/team/org') return { ok: true };
     if (/^\/api\/team\/(projects)/.test(p)) return m.areas.indexOf('projects') >= 0 ? { ok: true } : { deny: 'Projects are not shared with you.' };
     if (/^\/api\/team\/(sales)/.test(p)) return m.areas.indexOf('sales') >= 0 ? { ok: true } : { deny: 'Sales and finance are not shared with you.' };
     if ((p === '/api/team' || p === '/api/team/connectors') && method === 'GET') return { ok: true };   /* enough to draw the room */

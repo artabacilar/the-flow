@@ -63,6 +63,7 @@ const projectsMod = require('./flow-projects');
 const salesMod = require('./flow-sales');
 const recMod = require('./flow-recordings');
 const learn = require('./flow-learn');
+const orgMod = require('./flow-org');
 
 /* ---------- providers --------------------------------------------------- */
 const PROVIDERS = {
@@ -509,6 +510,7 @@ async function handle(p, req, res, ctx) {
   if (await catalog.handle(p, req, res, ctx)) return true;
   if (await plugins.handle(p, req, res, ctx, { log })) return true;
   if (await handleRank(p, req, res, ctx)) return true;
+  if (await orgMod.handle(p, req, res, ctx, orgDeps())) return true;
   if (await projectsMod.handle(p, req, res, ctx, projDeps())) return true;
   if (await salesMod.handle(p, req, res, ctx, salesDeps())) return true;
   if (await recMod.handle(p, req, res, ctx, recDeps())) return true;
@@ -1103,7 +1105,7 @@ function start(deps) {
   rawGet = async (k) => { const v = await deps.raw.get(k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
   rawSet = (k, v) => deps.raw.set(k, JSON.stringify(v));
   /* the morning briefing: a minute tick, in each person's own clock */
-  if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
+  if (!briefTimer) { briefTimer = setInterval(() => { tickBriefings().catch(() => {}); tickScripts().catch(() => {}); tickOrg().catch(() => {}); }, 60 * 1000); if (briefTimer.unref) briefTimer.unref(); }
   bootCtx = (uid) => {
     const pre = deps.nsPrefix(uid);
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
@@ -1759,9 +1761,36 @@ function ctxDeps() {
   };
 }
 /* ---------- projects and meetings: what flow-projects needs from here ------- */
+/* the organisation: companies, projects, people and their tasks (flow-org) */
+function orgDeps() {
+  return {
+    log: (ctx, who, what) => log(ctx, who, what), userTz: (ctx) => userTz(ctx),
+    tell: async (uid, title, body) => { if (pushTo && uid) { try { await pushTo(uid, { title: str(title, 80), body: str(body, 170), thread: 'team', data: { team: 'org' } }); } catch (e) {} } },
+    channels: channelsTo ? (uid, text) => channelsTo(uid, text, { what: 'team' }) : null
+  };
+}
+/* each morning: reminders for late tasks; Monday: the team's week, to him */
+async function tickOrg(now) {
+  if (!bootCtx || !usersFn) return [];
+  now = now || new Date();
+  let ids = []; try { ids = await usersFn(); } catch (e) { return []; }
+  const out = [];
+  for (const uid of ids) {
+    try {
+      const ctx = bootCtx(uid); const o = await ctx.get('team:org');
+      if (!o || !Array.isArray(o.people) || !o.people.length) continue;
+      ctx.user = await userOf(uid);
+      const L = localParts(await userTz(ctx), now);
+      const r = await orgMod.tick(ctx, uid, orgDeps(), L); if (r) out.push(Object.assign({ uid }, r));
+    } catch (e) { out.push({ uid, error: e && e.message }); }
+  }
+  return out;
+}
 function projDeps() {
   return {
     fake: FAKE,
+    orgPropose: (ctx, items, m, home) => orgMod.propose(ctx, items, m, home, { log: (c, w, x) => log(c, w, x) }),
+    orgPeople: async (ctx) => { try { const o = await orgMod.load(ctx); return o.people.map((p) => ({ id: p.id, name: p.name, role: p.role || '' })); } catch (e) { return []; } },
     agents: (ctx) => agents(ctx), knowledge: (ctx) => knowledge(ctx), tasks: (ctx) => tasks(ctx),
     modelJson: (ctx, system, user, maxTokens) => modelJson(ctx, system, user, maxTokens, null, { timeoutMs: 170000, repair: true }),
     newTask: (ctx, uid, f) => newTask(ctx, uid, f),
@@ -2157,7 +2186,8 @@ async function forJarvis(ctx) {
     const history = kb.historyText;
     const paused = (await ctx.get('team:paused')) === true;
     let projects = ''; try { projects = await projectsMod.brief(ctx); } catch (e) {}
-    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused, projects };
+    let org = ''; try { org = await orgMod.brief(ctx); } catch (e) {}
+    return { model: j && j.model && j.model !== DEFAULT_MODEL ? j.model : '', shared, history, superseded: kb.old.map((k) => k.id), paused, projects, org };
   } catch (e) { return { model: '', shared: [], paused: false }; }
 }
 
@@ -2166,6 +2196,7 @@ module.exports.complete = complete;
 module.exports.resolveModel = resolveModel;
 module.exports.providers = providers;
 module.exports.forJarvis = forJarvis;
+module.exports.tickOrg = tickOrg;
 module.exports.meetingsFiled = meetingsFiled;
 module.exports.salesIngest = salesIngest;
 module.exports.recordingIngest = recordingIngest;

@@ -2091,7 +2091,7 @@ let doPost = (...a) => postJSON(...a);
 /* The streamed twin, swappable the same way so the tests never call out. */
 let doStream = (...a) => postStream(...a);
 const DO_PAGES = ['today', 'compass', 'quad', 'habits', 'journal', 'training', 'diet', 'sleep', 'finance', 'time', 'brainstorm', 'settings'];
-const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style', 'delegate'];
+const DO_TYPES = ['rock', 'habit', 'tick', 'journal', 'move', 'done', 'open', 'remember', 'forget', 'ride', 'style', 'delegate', 'assign'];
 
 const DO_SYSTEM = [
   'You are the voice assistant inside The Flow, a personal planner. The person has just spoken (or typed) one request.',
@@ -2114,7 +2114,8 @@ const DO_SYSTEM = [
   '    { "type": "forget",  "memory": "<memory id from the list>" },',
   '    { "type": "ride",    "to": "where they want to go — a full address if WHAT YOU KNOW gives one", "from": "" },',
   '    { "type": "style",   "style": "loose or butler" },',
-  '    { "type": "delegate", "title": "Reply to the refund question", "brief": "everything the team needs to do it, in full" }',
+  '    { "type": "delegate", "title": "Reply to the refund question", "brief": "everything the team needs to do it, in full" },',
+  '    { "type": "assign", "person": "a person id from PEOPLE", "title": "Fix the Goldwell app login", "date": "YYYY-MM-DD or empty", "project": "a project id from PEOPLE, or empty", "note": "" }',
   '  ]',
   '}',
   '',
@@ -2131,6 +2132,8 @@ const DO_SYSTEM = [
   '· ride: they want a taxi, a car or an Uber ("get me a car to the studio", "Uber home"). "to" is the place, resolved from WHAT YOU KNOW when you can ("home", "the studio" → its address); "from" stays empty unless they name a pickup other than where they are. The app opens Uber with the route filled in and they confirm the ride there — "say" says so ("Uber is ready to take you to the studio — just confirm."), never that a car is booked.',
   '· style: they ask you to change how you talk — looser, swear, hype, "talk normal", "be proper", "butler mode". "loose" or "butler". Saved at once; "say" answers in the new style.',
   '· delegate: work for YOUR TEAM rather than a change to the planner — drafting, replying, analysing, researching, checking, preparing ("have Sarah draft a reply", "ask Bobby to check the ads", "get the team to prepare the candidate summaries", "write me a proposal for…"). "brief" carries every detail they gave; "title" is short. The app hands it to the team, who work in the background and come back; "say" says who is on it or that the team will take it. Never for tasks on their own list (that is rock) or things only they can do.',
+  '· assign: a task for one of his colleagues in PEOPLE (real people — "give Eren the Goldwell login bug for Friday", "Efe should post the launch on Goldwell\'s Instagram"). Pick the person\'s id and, when it is clear, the project they are on. It goes on their task list and they are told. Not for the AI team (that is delegate), not for his own things (those are rocks). Only when PEOPLE lists them.',
+  '· "Where is Eren with…", "what is Efe working on": answer from PEOPLE — what is in progress, late, done this week.',
   '· When the only actions are remember/forget, they are saved at once: "say" confirms it as done ("Noted, sir — I shall remember that."). Do not repeat back sensitive details.',
   '· WHAT YOU KNOW ABOUT THEM (below) is what they told you before. Use it naturally where it helps — never recite it, and never contradict it without asking.',
   '',
@@ -2363,6 +2366,9 @@ function parseDo(text, known, max) {
       if (a.style === 'loose' || a.style === 'butler') out.push({ type: 'style', style: a.style });
     } else if (a.type === 'delegate') {
       const brief = String(a.brief == null ? '' : a.brief).trim().slice(0, 4000); if (brief) out.push({ type: 'delegate', title: str(a.title, 120) || str(brief, 80), brief });
+    } else if (a.type === 'assign') {
+      const title = str(a.title, 160), person = str(a.person, 40);
+      if (title && person) out.push({ type: 'assign', person, title, date: /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || '')) ? a.date : '', project: str(a.project, 40), note: str(a.note, 300), name: str(a.name, 60) });
     }
   }
   return { say: str(j.say, 900), actions: out, end: j.end === true, ask: j.ask === true && !out.length };
@@ -2439,6 +2445,7 @@ async function handleDo(p, req, res, ctx) {
     team.shared.length ? 'WHAT THE TEAM KNOWS (shared business knowledge, current, read-only here — id | fact):\n' + team.shared.map((k) => k.id + ' | ' + k.text).join('\n') : '',
     team.history ? 'SUPERSEDED (no longer true — only for questions about the past, with the dates; never state these as current):\n' + team.history : '',
     team.projects ? 'PROJECTS (id | name | health | where it stands | next) — the work J.A.R.V.I.S. is running for them; answer "where am I with…" from here:\n' + team.projects : '',
+    team.org ? 'PEOPLE (his colleagues — id | name | role | projects they are on | their tasks):\n' + team.org : '',
     team.recalled ? 'FROM HIS RECORDINGS AND MEETINGS (what was actually said; when the question is about how something is done or what was agreed, answer from these and name the recording or meeting it came from — "In the 9 Nov sales meeting…"):\n' + team.recalled : '',
     '',
     onWatch ? 'Asked on their Apple Watch: answer briefly (two short sentences), and propose NO actions. If they want something added or changed, say they can use Add by voice on the watch, or ask in the app.\n' : '',

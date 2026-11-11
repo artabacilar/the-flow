@@ -1751,7 +1751,7 @@ async function gate(req, res) {
       if (sc.deny) { json(res, 403, { error: sc.deny }); return true; }
       const oid = await access.ownerUid();
       const users = await getJSON(USERS_KEY, {}); const o = Object.values(users).find((x) => x.id === oid);
-      if (o) { who = { id: o.id, email: o.email, name: o.name, owner: false }; viewer = { member: true, id: me.id, name: me.name, areas: mem.areas, org: o.name }; }
+      if (o) { who = { id: o.id, email: o.email, name: o.name, owner: false }; viewer = { member: true, id: me.id, name: me.name, email: me.email, areas: mem.areas, org: o.name }; }
     }
     const pre = nsPrefix(who.id);
     try {
