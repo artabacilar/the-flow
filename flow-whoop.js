@@ -153,12 +153,26 @@ function shape(data, previous) {
    Answers null when there is no connection, or when the refresh was refused
    — which is what happens after somebody revokes access from WHOOP's side,
    and is a disconnection rather than an error to retry. */
+/* One refresh at a time per person. A sync asks for five collections at
+   once, and each asks for a token: when the hour was up, all five used to
+   refresh in parallel with the same refresh token. WHOOP rotates it on use,
+   so the first succeeded and the other four were refused — and a refused
+   refresh was taken for a revocation, which threw the connection away. That
+   is why WHOOP kept asking to be signed in again: about an hour after each
+   connect. Now the others wait for the one refresh and share its token. */
+const refreshing = new Map();
 async function accessToken(raw, uid) {
   const tok = await readJSON(raw, TOK(uid), null);
   if (!tok || !tok.access) return null;
   if (Date.now() < tok.exp - EARLY_MS) return tok.access;
   if (!tok.refresh) return null;
-
+  const key = String(uid);
+  if (refreshing.has(key)) return refreshing.get(key);
+  const p = refreshNow(raw, uid, tok).finally(() => refreshing.delete(key));
+  refreshing.set(key, p);
+  return p;
+}
+async function refreshNow(raw, uid, tok) {
   let fresh;
   try {
     fresh = await exchange({
@@ -170,10 +184,14 @@ async function accessToken(raw, uid) {
     });
   } catch (e) {
     /* 400 and 401 from the token endpoint mean this refresh token is no
-       longer good — revoked, or already spent. Anything else (a timeout,
-       a 5xx) is WHOOP having a bad minute and must not throw the connection
-       away: the person would have to reconnect because of a blip. */
+       longer good — revoked, or already spent. Before calling it a
+       revocation, look again: if a newer token was saved meanwhile (another
+       request, another server), this one was simply spent, and the
+       connection is fine. Anything else (a timeout, a 5xx) is WHOOP having a
+       bad minute and must not throw the connection away. */
     if (e.status === 400 || e.status === 401) {
+      const now = await readJSON(raw, TOK(uid), null);
+      if (now && now.access && now.refresh && now.refresh !== tok.refresh) return Date.now() < now.exp - EARLY_MS ? now.access : null;
       await writeJSON(raw, TOK(uid), Object.assign({}, tok, {
         access: null, refresh: null, revoked: new Date().toISOString()
       }));
