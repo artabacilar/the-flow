@@ -1,0 +1,44 @@
+/* Where the CPU goes in the command centre (a measurement, not a test). */
+const submitAuth = require('./submit-auth.js');
+const { chromium } = require('playwright');
+const H = 'http://localhost:4222';
+(async () => {
+  const b = await chromium.launch();
+  const ctx = await b.newContext({ viewport: { width: 1512, height: 945 }, deviceScaleFactor: 2 });
+  const p = await ctx.newPage();
+  await p.goto(H + '/', { waitUntil: 'load' }); await p.waitForTimeout(2500);
+  await p.click('#fa-alt', { timeout: 2500 }).catch(() => {});
+  await p.fill('#fa-email', process.env.FLOW_OWNER_EMAIL); await p.fill('#fa-name', 'Artur'); await p.fill('#fa-pw', 'a properly long password');
+  await submitAuth(p); await p.waitForTimeout(4500);
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', false); Flow.Settings.reflect(); FlowTodayLook.applyLook(); });
+  await p.waitForTimeout(4000);
+  const cdp = await ctx.newCDPSession(p);
+  await cdp.send('Performance.enable');
+  const m = async () => { const r = await cdp.send('Performance.getMetrics'); const o = {}; for (const x of r.metrics) o[x.name] = x.value; return o; };
+  const phase = async (name, fn, secs) => {
+    await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start');
+    const a = await m(); const t0 = Date.now();
+    if (process.env.FRAMES) await p.evaluate(() => { window.__fr = []; let last = performance.now(); const f = (t) => { window.__fr.push(t - last); last = t; if (window.__frOn) requestAnimationFrame(f); }; window.__frOn = true; requestAnimationFrame(f); });
+    await fn(); await p.waitForTimeout(secs * 1000);
+    const fr = await p.evaluate(() => { window.__frOn = false; const f = (window.__fr || []).slice(1); f.sort((x, y) => x - y); return { n: f.length, p50: f[f.length >> 1], p95: f[Math.floor(f.length * .95)], long: f.filter((x) => x > 50).length }; });
+    const z = await m(); const dt = (Date.now() - t0) / 1000;
+    const { profile } = await cdp.send('Profiler.stop');
+    const self = {}; const byId = {}; for (const n of profile.nodes) byId[n.id] = n;
+    const dts = profile.timeDeltas; profile.samples.forEach((id, i) => { const n = byId[id]; const k = n.callFrame.functionName + ' ' + (n.callFrame.url || '').split('/').pop() + ':' + n.callFrame.lineNumber; self[k] = (self[k] || 0) + (dts[i] || 0) / 1000; });
+    const top = Object.entries(self).sort((x, y) => y[1] - x[1]).slice(0, 14).map(([k, v]) => (v / dt).toFixed(1) + 'ms/s ' + k);
+    console.log('\n## ' + name + ' — main thread busy ' + ((z.TaskDuration - a.TaskDuration) / dt * 100).toFixed(1) + '%  script ' + ((z.ScriptDuration - a.ScriptDuration) / dt * 100).toFixed(1) + '%  layout ' + ((z.LayoutDuration - a.LayoutDuration) / dt * 100).toFixed(1) + '%  style ' + ((z.RecalcStyleDuration - a.RecalcStyleDuration) / dt * 100).toFixed(1) + '%  layouts ' + (z.LayoutCount - a.LayoutCount) + ' styles ' + (z.RecalcStyleCount - a.RecalcStyleCount) + '  frames ' + JSON.stringify(fr));
+    console.log(top.join('\n'));
+  };
+  const anims = await p.evaluate(() => document.getAnimations().map((a) => { const t = a.effect && a.effect.target; return (a.animationName || a.constructor.name) + ' on ' + (t ? (t.id ? '#' + t.id : '') + '.' + String(t.className && t.className.baseVal !== undefined ? t.className.baseVal : t.className).split(' ').join('.') + (t.closest('#flow-hud') ? ' [hud]' : t.closest('#flow-say') ? ' [say]' : '') : '?') + ' ' + (a.effect.getKeyframes ? Object.keys(a.effect.getKeyframes()[0] || {}).filter((k) => !/offset|easing|composite|computed/.test(k)).join(',') : ''); }));
+  console.log('running animations: ' + anims.length + '\n  ' + anims.join('\n  '));
+  await phase('home idle', async () => {}, 8);
+  await phase('home, scrolling right column', async () => { await p.mouse.move(1350, 500); for (let i = 0; i < 40; i++) { await p.mouse.wheel(0, i % 20 < 10 ? 120 : -120); await p.waitForTimeout(100); } }, 1);
+  await p.focus('#sy-text').catch((e) => console.log('no focus', e.message));
+  await phase('home, console focused, idle', async () => {}, 5);
+  await phase('home, console focused, scrolling right column', async () => { await p.mouse.move(1350, 500); for (let i = 0; i < 40; i++) { await p.mouse.wheel(0, i % 20 < 10 ? 120 : -120); await p.waitForTimeout(100); } }, 1);
+  await p.evaluate(() => document.activeElement && document.activeElement.blur());
+  await p.click('#flow-hud [data-hud="page"][data-page="focus"]'); await p.waitForTimeout(1500);
+  await phase('Plan page idle', async () => {}, 6);
+  await phase('Plan page scroll', async () => { await p.mouse.move(700, 500); for (let i = 0; i < 40; i++) { await p.mouse.wheel(0, i % 20 < 10 ? 150 : -150); await p.waitForTimeout(100); } }, 1);
+  await b.close();
+})().catch((e) => { console.error(e); process.exit(1); });
