@@ -400,7 +400,9 @@ async function knowledge(ctx) { const v = await ctx.get('team:knowledge'); retur
 async function thread(ctx, id) { const v = await ctx.get('team:thread:' + id); return Array.isArray(v) ? v : []; }
 async function log(ctx, agent, what) {
   const v = await ctx.get('team:log'); const list = Array.isArray(v) ? v : [];
-  list.push({ at: Date.now(), agent: str(agent, 40), what: str(what, 300) });
+  /* an employee's doing is logged under their name */
+  const by = ctx.viewer && ctx.viewer.member ? ' — ' + str(ctx.viewer.name, 40) : '';
+  list.push({ at: Date.now(), agent: str(agent, 40), what: str(what, 300 - by.length) + by });
   await ctx.set('team:log', list.slice(-300));
 }
 const dayKey = () => 'team:usage:' + new Date().toISOString().slice(0, 10);
@@ -512,7 +514,7 @@ async function handle(p, req, res, ctx) {
     json(res, 200, { ok: true, agents: list, providers: provs, defaultModel: DEFAULT_MODEL, knowledge: know, usage: use, counts, attention, tasks: tl.slice(-40).reverse(), approvals: ap.filter((x) => x.status === 'pending' || x.status === 'send_failed').slice(-40).reverse(),
       recent: ap.filter((x) => x.status === 'executed').slice(-5).reverse(),
       paused: (await ctx.get('team:paused')) === true, log: (Array.isArray(lg) ? lg : []).slice(-60), templates: TEMPLATE_IDS.map((t) => ({ id: t, name: TEMPLATES[t].name, role: TEMPLATES[t].role })), permissions: PERMISSIONS,
-      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' }, senders: await sendersFor(ctx), contacts: (await contacts(ctx)).slice(0, 300) });
+      budget: await budget(ctx), brief: { on: bs.on !== false, at: bs.at || '08:00', lastAt: bs.last ? bs.last.at : 0 }, tools: { email: mailReady(), browser: B ? B.available().mode : 'none' }, senders: await sendersFor(ctx), contacts: (await contacts(ctx)).slice(0, 300), viewer: ctx.viewer || { member: false, owner: true } });
     return true;
   }
 

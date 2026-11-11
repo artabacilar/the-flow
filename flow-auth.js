@@ -257,6 +257,9 @@ async function getJSON(key, fallback) {
 }
 const setJSON = (key, val) => raw.set(key, JSON.stringify(val));
 
+/* Who may use this Flow, and the organization (flow-access.js). */
+const access = require('./flow-access')({ getJSON, setJSON, get raw() { return raw; }, USERS_KEY });
+
 /* ---------- passwords ---------------------------------------------------- */
 function hashPassword(password, salt) {
   return crypto.pbkdf2Sync(String(password), salt, ITER, KEYLEN, DIGEST).toString('hex');
@@ -538,7 +541,10 @@ async function currentUser(req) {
   if (s.expires && Date.now() > s.expires) { await raw.set(SESS(token), ''); return null; }
   const users = await getJSON(USERS_KEY, {});
   const u = Object.values(users).find(x => x.id === s.uid);
-  return u ? { id: u.id, email: u.email, name: u.name, owner: !!u.owner, created: u.created || null, token } : null;
+  if (!u) return null;
+  /* A private Flow: a session of someone no longer let in ends here. */
+  if (!u.owner && !(await access.allowed(u))) { await raw.set(SESS(token), ''); return null; }
+  return { id: u.id, email: u.email, name: u.name, owner: !!u.owner, created: u.created || null, token };
 }
 
 /* ---------- one-time migration of today's data --------------------------- */
@@ -1729,13 +1735,28 @@ async function gate(req, res) {
     }
   }
 
+  if (p === '/api/access') {
+    const me = await currentUser(req);
+    return await access.handle(p, req, res, { json, readBody, user: me });
+  }
+
   if (team && p.indexOf('/api/team') === 0) {
     const me = await currentUser(req);
     if (!me) { json(res, 401, { error: 'Sign in first.' }); return true; }
-    const pre = nsPrefix(me.id);
+    /* An employee works in the owner's workspace, in the areas shared with them. */
+    let who = me, viewer = { member: false, owner: !!me.owner, name: me.name };
+    const mem = me.owner ? null : await access.member(me.id);
+    if (mem) {
+      const sc = access.teamScope(mem, p, req.method);
+      if (sc.deny) { json(res, 403, { error: sc.deny }); return true; }
+      const oid = await access.ownerUid();
+      const users = await getJSON(USERS_KEY, {}); const o = Object.values(users).find((x) => x.id === oid);
+      if (o) { who = { id: o.id, email: o.email, name: o.name, owner: false }; viewer = { member: true, id: me.id, name: me.name, areas: mem.areas, org: o.name }; }
+    }
+    const pre = nsPrefix(who.id);
     try {
       const done = await team.handle(p, req, res, {
-        json, readBody, query: u.searchParams, user: me,
+        json, readBody, query: u.searchParams, user: who, viewer,
         get: (k) => getJSON(pre + k, null), set: (k, v) => setJSON(pre + k, v)
       });
       if (done) return true;
@@ -1757,7 +1778,9 @@ async function gate(req, res) {
         json(res, 402, plus.refusal(plus.PLUS_ONLY[p]));
         return true;
       }
-      const preT = nsPrefix(me.id);
+      let preT = nsPrefix(me.id);
+      /* an employee with J.A.R.V.I.S. shared talks to the organization's team */
+      if (!me.owner) { const mem = await access.member(me.id); if (mem && mem.areas.indexOf('team') >= 0) { const oid = await access.ownerUid(); if (oid) preT = nsPrefix(oid); } }
       const done = await extras.handle(p, req, res, {
         json, readBody, user: me, mine: mineFor(me.id), plan,
         /* his team: shared knowledge and the model he is set to */
@@ -1816,7 +1839,8 @@ async function gate(req, res) {
       try { started = await seedStarter(me.id, me.name, langOf(req, null)); } catch (e) { started = 0; }
     }
 
-    json(res, 200, { ok: true, user: { id: me.id, email: me.email, name: me.name, owner: me.owner, created: me.created || null }, seed, healed, packHealed, started,
+    const mem = me.owner ? null : await access.member(me.id);
+    json(res, 200, { ok: true, user: { id: me.id, email: me.email, name: me.name, owner: me.owner, created: me.created || null, member: mem ? { areas: mem.areas } : null }, seed, healed, packHealed, started,
       /* New accounts start in Simple only when this Flow says so (FLOW_SIMPLE_DEFAULT on the server); off, they start in Advanced as they always did. */
       simpleDefault: !!process.env.FLOW_SIMPLE_DEFAULT });
     return true;
@@ -1879,7 +1903,12 @@ async function gate(req, res) {
     if (first && OWNER_EMAIL && email !== OWNER_EMAIL) {
       return json(res, 403, { error: 'This Flow is reserved for its owner. Ask them to invite you once they have set it up.' }), true;
     }
-    if (!first && INVITE && String(b.invite || '') !== INVITE) {
+    /* Private: an access code is the only way in; otherwise the invite code as before. */
+    const sc = first ? { private: false, code: null } : await access.signupCode(b.access || b.invite);
+    if (!first && sc.private && !sc.code && !(OWNER_EMAIL && email === OWNER_EMAIL)) {
+      return json(res, 403, { error: 'This Flow is private. Enter the access code you were given.', needCode: true }), true;
+    }
+    if (!first && !sc.code && !sc.private && INVITE && String(b.invite || '') !== INVITE) {
       return json(res, 403, { error: 'That invite code is not right.' }), true;
     }
     if (users[email]) return json(res, 409, { error: 'There is already an account with that email.' }), true;
@@ -1921,6 +1950,7 @@ async function gate(req, res) {
        left holding a password for an account that does not exist, which is
        far worse than opening onto a blank week. */
     if (adopted === 0) await seedStarter(id, name, langOf(req, b.lang));
+    if (sc.code) await access.gate(users[email], sc.code.code);
 
     const { token, expires } = await newSession(id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(id, SESSION_DAYS * 86400)]);
@@ -1939,6 +1969,7 @@ async function gate(req, res) {
                    : (hashPassword(String(b.password || ''), 'decoy'), false);
     if (!ok) return json(res, 401, { error: 'Wrong email or password.' }), true;
 
+    { const g = await access.gate(rec, b.access); if (!g.ok) return json(res, 403, { error: g.error, needCode: true }), true; }
     if (rec.owner) await adoptLegacyKeys(rec.id);
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
@@ -2027,6 +2058,7 @@ async function gate(req, res) {
     rec.hash = hashPassword(next, rec.salt);
     await setJSON(USERS_KEY, users);
     await dropAllSessions(rec.id);
+    { const g = await access.gate(rec, b.access); if (!g.ok) return json(res, 403, { error: 'Your password is changed. ' + g.error, needCode: true }), true; }
 
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);
@@ -2113,6 +2145,7 @@ async function gate(req, res) {
     rec.hash = hashPassword(next, rec.salt);
     await setJSON(USERS_KEY, users);
     await dropAllSessions(rec.id);
+    { const g = await access.gate(rec, b.access); if (!g.ok) return json(res, 403, { error: 'Your password is changed. ' + g.error, needCode: true }), true; }
 
     const { token, expires } = await newSession(rec.id);
     res.setHeader('Set-Cookie', [sessionCookie(token, SESSION_DAYS * 86400), acctCookie(rec.id, SESSION_DAYS * 86400)]);

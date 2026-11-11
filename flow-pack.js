@@ -7292,7 +7292,7 @@ const Auth = {
       body: JSON.stringify(body || {})
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || ('Something went wrong (' + r.status + ')'));
+    if (!r.ok) { const e = new Error(j.error || ('Something went wrong (' + r.status + ')')); e.needCode = !!j.needCode; throw e; }
     return j;
   },
 
@@ -7335,6 +7335,11 @@ const Auth = {
         <div id="fa-invwrap" hidden>
           <label class="flow-label" for="fa-inv">Invite code</label>
           <input class="flow-in" id="fa-inv" type="text" placeholder="The code you were given">
+        </div>
+        <div id="fa-acwrap" hidden>
+          <label class="flow-label" for="fa-ac">Access code</label>
+          <input class="flow-in" id="fa-ac" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
+          <p class="fa-fine" style="margin:6px 0 0">This Flow is private. The owner gives each person their own code.</p>
         </div>
         <div id="fa-rcwrap" hidden>
           <label class="flow-label" for="fa-rc">Recovery code</label>
@@ -7459,6 +7464,7 @@ const Auth = {
           try { payload.lang = (typeof Lang !== 'undefined' && Lang.current) || ''; } catch (e) {}
         }
         if (mode === 'recover') payload.code = $('#fa-rc', el).value;
+        { const ac = $('#fa-ac', el); if (ac && ac.value.trim()) payload.access = ac.value.trim(); }
         const j = await Auth.post(
           mode === 'signup'  ? '/api/auth/signup'  :
           mode === 'recover' ? '/api/auth/recover' : '/api/auth/login', payload);
@@ -7483,6 +7489,8 @@ const Auth = {
       } catch (e) {
         err.textContent = e.message; err.hidden = false;
         btn.disabled = false; btn.textContent = was;
+        /* private: the code field appears, keeping what they typed */
+        if (e.needCode) { const w = $('#fa-acwrap', el); if (w) { w.hidden = false; setTimeout(() => { try { $('#fa-ac', el).focus(); } catch (x) {} }, 30); } }
       }
     };
     const guestBtn = $('#fa-guest', el);
@@ -15631,7 +15639,9 @@ const Team = {
     if (!Team.data) return '';
     const j = Team.agent('jarvis'); if (!j) return '';
     if (Team.adding) return Team.addPanel();
-    return Team.suPanel() + Team.approvalsPanel() + Team.recordingsPanel() + Team.contactsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
+    const V = Team.data.viewer || {};
+    if (V.member) return Team.memberHome(V);
+    return Team.suPanel() + Team.approvalsPanel() + Team.accessPanel() + Team.recordingsPanel() + Team.contactsPanel() + Team.mailPanel() + Team.suggestPanel() + Team.discoveryPanel() + Team.tasksPanel(null) +
       Hud.panel('jmodel', 'J.A.R.V.I.S. thinks with', '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(j) + '</label>') +
       Team.briefPanel() +
       Team.channelsPanel() +
@@ -15700,6 +15710,33 @@ const Team = {
     Team.plP = (async () => { try { const r = await fetch('/api/team/plugins', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.pl = j; } catch (e) {} Team.plP = null; return Team.pl; })();
     return Team.plP;
   },
+  /* ---- an employee's room: the organization's areas, nothing of the owner's own ---- */
+  memberHome(V) {
+    const A = V.areas || [];
+    const names = { projects: 'Projects & tasks', team: 'J.A.R.V.I.S. & the team', sales: 'Sales & finance' };
+    const head = Hud.panel('org', esc(V.org || 'The organization'), '<p class="hud-sub" data-i18n="off">You are working in ' + esc(V.org || 'the owner') + '\'s organization. Shared with you: ' + A.map((a) => names[a] || a).join(', ') + '. What you change is logged under your name; anything that goes out (emails, tool calls) waits for ' + esc(V.org || 'the owner') + '\'s yes.</p>' +
+      '<div class="hud-row hud-wrap">' + (A.indexOf('projects') >= 0 ? '<button type="button" class="hud-btn" data-hud="projects">Open Projects</button>' : '') + (A.indexOf('sales') >= 0 ? '<button type="button" class="hud-btn ghost" data-hud="orgsales" style="margin-top:0">Sales & finance</button>' : '') + '</div>');
+    return head + (A.indexOf('team') >= 0 ? Team.suggestPanel() + Team.tasksPanel(null) + Team.recordingsPanel() + Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), '')) : (A.indexOf('projects') >= 0 ? Team.tasksPanel(null) : ''));
+  },
+  /* ---- who may use this Flow, and the organization (owner only) ---- */
+  acc: null,
+  async loadAcc() { try { const r = await fetch('/api/access', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.acc = j; } catch (e) {} return Team.acc; },
+  accessPanel() {
+    if (!Team.acc) { if (!Team.accBusy) { Team.accBusy = true; Team.loadAcc().then(() => { Team.accBusy = false; if (Hud.on) Hud.paint(); }); } return Hud.panel('access', 'Access & organization', '<p class="hud-sub">Looking…</p>'); }
+    const A = Team.acc; const AN = {}; (A.areas || []).forEach((x) => { AN[x.id] = x.name; });
+    const top = '<div class="hud-r hud-lg"><span data-i18n="off">' + (A.private ? 'Private — only you, and the people you let in with a code' : 'Open — anyone with the invite code can make an account') + '<small>' + (A.private && A.since ? 'Since ' + esc(new Date(A.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) + ' · ' : '') + A.counts.people + ' other account' + (A.counts.people === 1 ? '' : 's') + ', ' + A.counts.allowed + ' let in, ' + A.counts.members + ' employee' + (A.counts.members === 1 ? '' : 's') + '</small></span><button type="button" class="hud-btn' + (A.private ? ' ghost' : '') + '" data-hud="accpriv" data-on="' + (A.private ? '0' : '1') + '" style="margin-top:0">' + (A.private ? 'Open it again' : 'Make it private') + '</button></div>';
+    const made = Team.accMade ? '<div class="hud-code" data-i18n="off">' + esc(Team.accMade) + '</div><p class="hud-sub">Give this code to that person. They enter it when they sign in or create their account.</p>' : '';
+    const form = '<form class="hud-skform" data-team="acccode"><div class="hud-ph">New access code</div><label class="hud-opt"><span>For</span><input name="label" maxlength="60" placeholder="e.g. Azize, or App Review"></label>' +
+      '<label class="hud-opt"><span>Kind</span><select class="hud-sel" name="kind"><option value="employee">Employee — works in your organization</option><option value="guest">Guest — their own Flow only</option></select></label>' +
+      '<div class="hud-opt"><span>Employee sees</span><div class="hud-row hud-wrap">' + (A.areas || []).map((x) => '<label class="hud-chk"><input type="checkbox" name="area" value="' + esc(x.id) + '" checked> ' + esc(x.name) + '</label>').join('') + '</div></div>' +
+      '<label class="hud-opt"><span>Can be used</span><select class="hud-sel" name="max"><option value="1">Once (one person)</option><option value="5">5 times</option><option value="20">20 times</option></select></label>' +
+      '<div class="hud-row"><button type="submit" class="hud-btn">Make a code</button></div></form>';
+    const codes = (A.codes || []).map((c) => '<div class="hud-r"><span data-i18n="off"><code>' + esc(c.code) + '</code> · ' + esc(c.label) + '<small>' + c.uses + ' of ' + c.max + ' used · ' + (c.org ? 'employee: ' + c.org.areas.map((a) => AN[a] || a).join(', ') : 'guest') + '</small></span><button type="button" class="hud-btn ghost" data-hud="accwithdraw" data-code="' + esc(c.code) + '" style="margin-top:0">Withdraw</button></div>').join('');
+    const people = (A.people || []).map((p) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(p.name || p.email) + '<small>' + esc(p.email) + ' · ' + (p.member ? 'employee' : p.allowed ? 'let in' : (A.private ? 'signed out — not let in' : 'own account')) + '</small>' +
+      (p.allowed || p.member ? '<span class="hud-row hud-wrap">' + (A.areas || []).map((x) => '<label class="hud-chk"><input type="checkbox" data-acc-area="' + esc(p.id) + '" value="' + esc(x.id) + '"' + (p.member && p.member.areas.indexOf(x.id) >= 0 ? ' checked' : '') + '> ' + esc(x.name) + '</label>').join('') + '</span>' : '') + '</span>' +
+      (p.allowed || p.member ? '<button type="button" class="hud-btn ghost" data-hud="accremove" data-uid="' + esc(p.id) + '" style="margin-top:0">Remove</button>' : '') + '</div>').join('');
+    return Hud.panel('access', 'Access & organization', top + made + form + (codes ? '<div class="hud-ph" style="margin-top:10px">Codes</div>' + codes : '') + (people ? '<div class="hud-ph" style="margin-top:10px">People</div>' + people : '') + '<p class="hud-sub">Employees work in your Projects, J.A.R.V.I.S. and Sales — whichever you tick — and every change shows who made it. Approving what goes out, the money limit, plugins and connections stay yours.</p>');
+  },
   /* ---- the plugin catalogue: every remote server in the MCP Registry ---- */
   cat: { q: '', cat: 'All', items: [], total: 0, count: 0, cats: {}, busy: false, open: false, loaded: false },
   async loadCat(reset) {
@@ -15719,7 +15756,8 @@ const Team = {
   },
   catRow(x) {
     const need = x.needs && x.needs.length ? 'needs a key (' + esc(x.needs[0].header) + ')' : 'no key published — may sign you in';
-    return '<div class="hud-r hud-lg hud-catr"><span data-i18n="off"><b>' + esc(x.title) + '</b> <i class="hud-skc">' + esc(x.cat) + '</i><small>' + esc(x.description || '') + '</small><small class="hud-cath">' + esc(x.host) + ' · ' + need + (x.website ? ' · <a href="' + esc(x.website) + '" target="_blank" rel="noopener">site ↗</a>' : '') + '</small></span>' +
+    const logo = '<span class="hud-catlogo" aria-hidden="true">' + esc((x.title || '?').trim().charAt(0).toUpperCase()) + '<img alt="" loading="lazy" decoding="async" src="/api/team/plugins/icon?id=' + encodeURIComponent(x.id) + '" onload="this.parentNode.classList.add(\'has\')" onerror="this.remove()"></span>';
+    return '<div class="hud-r hud-lg hud-catr">' + logo + '<span data-i18n="off"><b>' + esc(x.title) + '</b> <i class="hud-skc">' + esc(x.cat) + '</i><small>' + esc(x.description || '') + '</small><small class="hud-cath">' + esc(x.host) + ' · ' + need + (x.website ? ' · <a href="' + esc(x.website) + '" target="_blank" rel="noopener">site ↗</a>' : '') + '</small></span>' +
       ((Team.pl && (Team.pl.connected || []).some((p) => p.url === x.url)) ? '<em class="hud-badge" data-st="working">Added</em>' : '<button type="button" class="hud-btn ghost" data-hud="catadd" data-url="' + esc(x.url) + '" style="margin-top:0">Connect</button>') + '</div>';
   },
   catListHtml() {
@@ -16975,6 +17013,16 @@ const Team = {
     if (a === 'task') { Team.openTask(b.getAttribute('data-id')); return; }
     if (a === 'chopen') { const ch = b.getAttribute('data-ch'); Team.chanOpen = Team.chanOpen === ch ? null : ch; Hud.paint(); return; }
     if (a === 'plopen') { const id = b.getAttribute('data-id'); Team.plOpen = Team.plOpen === id ? null : id; Hud.paint(); return; }
+    if (a === 'accpriv') {
+      const on = b.getAttribute('data-on') === '1';
+      if (on && !confirm('Make The Flow private? Everyone but you is signed out now, and can only come back with an access code you give them. Their data is kept.')) return;
+      b.disabled = true; const j = await Team.post('/api/access', { op: 'private', on });
+      if (j && j.ok) { Team.acc = j; toast(on ? 'Private — ' + (j.signedOut || 0) + ' session' + (j.signedOut === 1 ? '' : 's') + ' signed out' : 'Open again', null, 3200); } else if (j && j.error) Say.state(j.error);
+      Hud.paint(); return;
+    }
+    if (a === 'accwithdraw') { const j = await Team.post('/api/access', { op: 'withdraw', code: b.getAttribute('data-code') }); if (j && j.ok) Team.acc = j; Team.accMade = null; Hud.paint(); return; }
+    if (a === 'accremove') { if (!confirm('Remove this person? They are signed out and need a new code to come back.')) return; const j = await Team.post('/api/access', { op: 'remove', uid: b.getAttribute('data-uid') }); if (j && j.ok) Team.acc = j; Hud.paint(); return; }
+    if (a === 'orgsales') { const f = (Team.data.agents || []).find((x) => Team.isFinance(x)); if (f) { await Team.select(f.id, true); Team.paintRail(); Hud.paint(); } else toast('No finance assistant in the team yet.', null, 2400); return; }
     if (a === 'catopen') { Team.cat.open = true; Hud.paint(); const g = Hud.el.querySelector('[data-k="catalog"]'); if (g) g.scrollIntoView({ block: 'start' }); return; }
     if (a === 'catclose') { Team.cat.open = false; Hud.paint(); return; }
     if (a === 'catmore') { b.disabled = true; await Team.loadCat(false); return; }
@@ -17056,6 +17104,11 @@ const Team = {
     if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
     if (t.matches('[data-team-eff]')) { const k = t.getAttribute('data-team-eff'); const j = await Team.post('/api/team/efficiency/settings', { [k]: !!t.checked }); if (j && j.ok) { await Team.loadEf(true); toast(t.checked ? 'On — one-step delegations skip the hand-over call' : 'Off', null, 2000); } return; }
     if (t.matches('[data-hud-toggle="efdismissed"]')) { Team.efShowDismissed = !!t.checked; Hud.paint(); return; }
+    if (t.matches('[data-acc-area]')) {
+      const uid = t.getAttribute('data-acc-area'); const areas = [...Hud.el.querySelectorAll('[data-acc-area="' + uid + '"]:checked')].map((x) => x.value);
+      const j = await Team.post('/api/access', { op: 'member', uid, areas }); if (j && j.ok) { Team.acc = j; toast(areas.length ? 'Shared: ' + areas.length + ' area' + (areas.length === 1 ? '' : 's') : 'No longer an employee', null, 1800); }
+      Hud.paint(); return;
+    }
     if (t.matches('[data-team-catc]')) { Team.cat.cat = t.value; await Team.loadCat(true); return; }
     if (t.matches('[data-team-limit]')) {
       const j = await Team.post('/api/team/limits', { monthlyUsd: +t.value });
@@ -17072,6 +17125,13 @@ const Team = {
     if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
+    if (kind === 'acccode') {
+      const areas = [...f.querySelectorAll('input[name="area"]:checked')].map((x) => x.value);
+      const emp = f.kind.value === 'employee';
+      const j = await Team.post('/api/access', { op: 'code', label: f.label.value.trim(), max: +f.max.value, org: emp ? { areas } : null });
+      if (j && j.ok) { Team.acc = j; Team.accMade = j.code; } else if (j && j.error) Say.state(j.error);
+      Hud.paint(); return;
+    }
     if (kind === 'pladd') { const url = f.url.value.trim(); if (!url) return; const j = await Team.post('/api/team/plugins', { op: 'add', name: f.name.value.trim(), url, envVar: f.envVar.value.trim(), mode: f.mode.value, dir: f.dir ? f.dir.value : '', header: f.header ? f.header.value : '', source: f.header && f.header.value ? 'registry' : '' }); if (j && j.ok) { Team.plNew = null; Team.plOpen = j.plugin.id; if (j.signin || j.signinError) Team.plAfter(j); else toast(j.plugin.status === 'working' ? j.plugin.name + ' connected — ' + j.plugin.tools.length + ' tools' : j.plugin.name + ': ' + (j.plugin.error || j.plugin.status), null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
     if (kind === 'mailrevise') { const text = f.text.value.trim(); if (!text) return; const j = await Team.post('/api/team/mail', { op: 'revise', id: f.getAttribute('data-id'), text }); if (j && j.ok) { Team.mlRevise = null; if (j.tone) toast('Kept as a rule for every email: ' + j.tone, null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadMail(true); Hud.paint(); return; }
     if (kind === 'mailpolicy') { const j = await Team.post('/api/team/mail', { op: 'policy', enabled: true, senders: f.senders.value, maxPerDay: f.maxPerDay.value, days: f.days.value }); if (j && j.error) Say.state(j.error); else toast('Auto-send on, bounded', null, 1800); await Team.loadMail(true); Hud.paint(); return; }

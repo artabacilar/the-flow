@@ -56,6 +56,7 @@ function shape(s) {
     id: str(sv.name, 160), title, description, url, host,
     website: /^https:\/\//.test(String(sv.websiteUrl || '')) ? str(sv.websiteUrl, 300) : '',
     version: str(sv.version, 20), sse: /sse/i.test(String(rm.type || '')),
+    icon: (() => { const ic = (Array.isArray(sv.icons) ? sv.icons : []).find((i) => i && /^https:\/\//i.test(String(i.src || ''))); return ic ? str(ic.src, 400) : ''; })(),
     needs: hdrs.map((h) => ({ header: str(h.name, 60), secret: !!h.isSecret, about: str(h.description, 140) })),
     cat: catOf(title + ' ' + description + ' ' + sv.name)
   };
@@ -122,11 +123,54 @@ async function search(q, cat, offset, limit) {
 }
 function byUrl(url) { return st.byUrl.get(String(url || '')) || null; }
 
+/* ---------- logos ----------
+   Fetched by the server, not the viewer's browser: the publisher's own
+   icon, else its site's favicon, else the server's. Kept in memory a day
+   (misses too), at most 250 KB each, images only. Served from here with
+   no script able to run, whatever the file is. */
+const ICON_MAX = 250 * 1024, ICON_KEEP = 800, ICON_TTL = 24 * 3600 * 1000;
+const icons = new Map();
+/* the stand-in: about half the made-up servers have a logo */
+function fakeHasIcon(id) { let n = 0; for (const c of String(id)) n += c.charCodeAt(0); return n % 2 === 0; }
+async function grab(u) {
+  if (!/^https:\/\//i.test(u)) return null;
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 6000);
+  try {
+    const r = await fetch(u, { signal: ac.signal, redirect: 'follow', headers: { accept: 'image/*' } });
+    const type = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!r.ok || !/^image\/(png|jpeg|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon|avif)$/.test(type)) return null;
+    const len = Number(r.headers.get('content-length') || 0); if (len > ICON_MAX) return null;
+    const buf = Buffer.from(await r.arrayBuffer()); if (!buf.length || buf.length > ICON_MAX) return null;
+    return { type, buf };
+  } catch (e) { return null; } finally { clearTimeout(t); }
+}
+async function iconFor(id) {
+  const x = st.list.find((i) => i.id === id); if (!x) return null;
+  const have = icons.get(id); if (have && Date.now() - have.at < ICON_TTL) return have.img;
+  let img = null;
+  if (FAKE) img = fakeHasIcon(id) ? { type: 'image/svg+xml', buf: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#7fd8ff"/></svg>') } : null;
+  else {
+    const tries = [x.icon];
+    try { if (x.website) tries.push(new URL(x.website).origin + '/favicon.ico'); } catch (e) {}
+    tries.push('https://' + x.host + '/favicon.ico');
+    for (const u of tries) { if (u && (img = await grab(u))) break; }
+  }
+  icons.set(id, { at: Date.now(), img }); while (icons.size > ICON_KEEP) icons.delete(icons.keys().next().value);
+  return img;
+}
+
 async function handle(p, req, res, ctx) {
+  if (p === '/api/team/plugins/icon' && req.method === 'GET') {
+    const q0 = ctx.query || new URL(req.url, 'http://x').searchParams;
+    const img = await iconFor(String(q0.get('id') || ''));
+    if (!img) { res.writeHead(404, { 'Cache-Control': 'private, max-age=86400' }); res.end(); return true; }
+    res.writeHead(200, { 'Content-Type': img.type, 'Content-Length': img.buf.length, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" });
+    res.end(img.buf); return true;
+  }
   if (p !== '/api/team/plugins/catalog' || req.method !== 'GET') return false;
   const q = ctx.query || new URL(req.url, 'http://x').searchParams;
   ctx.json(res, 200, Object.assign({ ok: true, source: 'The official MCP Registry (registry.modelcontextprotocol.io)' }, await search(q.get('q'), q.get('cat'), q.get('offset'), q.get('limit'))));
   return true;
 }
 
-module.exports = { handle, search, byUrl, ensure, shape, catOf, CATS: CATS.map((c) => c[0]).concat('Other'), _st: st };
+module.exports = { fakeHasIcon, handle, search, byUrl, ensure, shape, catOf, CATS: CATS.map((c) => c[0]).concat('Other'), _st: st };
