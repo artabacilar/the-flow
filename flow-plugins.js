@@ -52,7 +52,7 @@ async function byId(ctx, id) { return (await all(ctx)).find((p) => p.id === id) 
 /* ---------- the MCP client (Streamable HTTP) -------------------------------- */
 function headersFor(p) {
   const h = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
-  if (p.envVar) { const tok = env(p.envVar); if (tok) h.authorization = 'Bearer ' + tok; }
+  if (p.envVar) { const tok = env(p.envVar); if (tok) { if (p.header && p.header.toLowerCase() !== 'authorization') h[p.header.toLowerCase()] = tok; else h.authorization = (/^(bearer|basic|token) /i.test(tok) ? '' : 'Bearer ') + tok; } }
   else if (p.oauth && p.oauth.access) h.authorization = 'Bearer ' + p.oauth.access;
   if (p.session) h['mcp-session-id'] = p.session;
   h['mcp-protocol-version'] = PROTOCOL;
@@ -141,12 +141,14 @@ async function add(ctx, deps, b) {
   const url = str(b.url, 500);
   if (!/^https:\/\/[^\s]+$/i.test(url) && !(FAKE && /^https?:\/\//.test(url))) return { error: 'An MCP server is an https:// address.', status: 400 };
   const envVar = str(b.envVar, 60).replace(/[^A-Z0-9_]/gi, '').toUpperCase();
+  /* the header a key goes in, as the server published it (X-API-Key…); Authorization: Bearer when none */
+  const header = /^[A-Za-z0-9-]{1,60}$/.test(String(b.header || '')) ? String(b.header) : '';
   if (b.token || b.secret || b.apiKey) return { error: 'Never paste a token here. Put it in Render as a variable and give me the variable\'s NAME.', status: 400 };
   const list = await all(ctx);
   if (list.some((p) => p.url === url)) return { error: 'That server is already connected.', status: 409 };
   if (list.length >= 40) return { error: 'Forty plugins is the ceiling.', status: 400 };
   const dir = DIRECTORY.find((d) => d.url && d.url === url) || DIRECTORY.find((d) => d.id === String(b.dir || '') && d.paste);
-  const p = { id: 'pl' + newId(), name: str(b.name || (dir && dir.name) || url.replace(/^https?:\/\//, '').split('/')[0], 60), url, envVar, mode: b.mode === 'read' ? 'read' : 'approve', agents: Array.isArray(b.agents) ? b.agents.map((x) => str(x, 40)).slice(0, 24) : [], status: 'connecting', tools: [], addedAt: Date.now(), calls: 0, directory: dir ? dir.id : '' };
+  const p = { id: 'pl' + newId(), name: str(b.name || (dir && dir.name) || url.replace(/^https?:\/\//, '').split('/')[0], 60), url, envVar, mode: b.mode === 'read' ? 'read' : 'approve', agents: Array.isArray(b.agents) ? b.agents.map((x) => str(x, 40)).slice(0, 24) : [], status: 'connecting', tools: [], addedAt: Date.now(), calls: 0, directory: dir ? dir.id : '', header, source: b.source === 'registry' ? 'registry' : '' };
   await connect(ctx, p);
   list.push(p); await saveAll(ctx, list);
   if (deps.log) await deps.log(ctx, 'team', 'Plugin ' + (p.status === 'working' ? 'connected' : 'added, ' + p.status) + ': ' + p.name + (p.tools.length ? ' (' + p.tools.length + ' tools)' : '') + '.');
@@ -187,7 +189,7 @@ async function finish(ctx, deps, id, oauth) {
   if (deps && deps.log) await deps.log(ctx, 'team', 'Signed in to ' + p.name + (p.status === 'working' ? ' — ' + p.tools.length + ' tools ready' : ' — ' + (p.error || p.status)) + '.');
   return { plugin: pub(p) };
 }
-function pub(p) { return { id: p.id, name: p.name, url: p.url, envVar: p.envVar, mode: p.mode, agents: p.agents, status: p.status, error: p.error || '', tools: p.tools || [], server: p.server || null, checkedAt: p.checkedAt, calls: p.calls || 0, lastCall: p.lastCall || null, directory: p.directory || '', signedIn: !!(p.oauth && p.oauth.access), since: p.oauth ? p.oauth.since || 0 : 0 }; }
+function pub(p) { return { id: p.id, name: p.name, url: p.url, envVar: p.envVar, mode: p.mode, agents: p.agents, status: p.status, error: p.error || '', tools: p.tools || [], server: p.server || null, checkedAt: p.checkedAt, calls: p.calls || 0, lastCall: p.lastCall || null, directory: p.directory || '', header: p.header || '', source: p.source || '', signedIn: !!(p.oauth && p.oauth.access), since: p.oauth ? p.oauth.since || 0 : 0 }; }
 
 /* ---------- the catalogue ------------------------------------------------------ */
 async function catalogue(ctx) {

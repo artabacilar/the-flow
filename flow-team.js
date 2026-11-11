@@ -58,6 +58,7 @@ const context = require('./flow-context');
 const mail = require('./flow-mail');
 const plugins = require('./flow-plugins');
 const mcpauth = require('./flow-mcpauth');
+const catalog = require('./flow-catalog');
 const projectsMod = require('./flow-projects');
 const salesMod = require('./flow-sales');
 const recMod = require('./flow-recordings');
@@ -494,6 +495,7 @@ async function handle(p, req, res, ctx) {
   if (await setup.handle(p, req, res, ctx, setupDeps())) return true;
   if (await context.handle(p, req, res, ctx, ctxDeps())) return true;
   if (await handleMail(p, req, res, ctx)) return true;
+  if (await catalog.handle(p, req, res, ctx)) return true;
   if (await plugins.handle(p, req, res, ctx, { log })) return true;
   if (await handleRank(p, req, res, ctx)) return true;
   if (await projectsMod.handle(p, req, res, ctx, projDeps())) return true;
@@ -1093,6 +1095,8 @@ function start(deps) {
     const getJSON = async (k) => { const v = await deps.raw.get(pre + k); if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch (e) { return null; } };
     return { get: getJSON, set: (k, v) => deps.raw.set(pre + k, JSON.stringify(v)), user: null };
   };
+  /* the plugin catalogue is read in the background, so the first look is quick */
+  if (process.env.FLOW_TEAM_FAKE !== '1') setTimeout(() => { catalog.ensure().catch(() => {}); }, 15000);
   mcpauth.setStore({ raw: deps.raw, ctxFor: (uid) => { const c = bootCtx(uid); c.user = { id: uid }; return c; } });
   (async () => {
     try {

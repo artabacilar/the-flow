@@ -15079,6 +15079,7 @@ const Hud = {
       else { try { Team.click(a, b, e); } catch (x) { console.warn('[Flow] team', x); } }
     });
     el.addEventListener('change', (e) => { try { Team.change(e); } catch (x) { console.warn('[Flow] team', x); } });
+    el.addEventListener('input', (e) => { const t = e.target; if (t && t.matches && t.matches('[data-team-catq]')) { clearTimeout(Team.catT); Team.catT = setTimeout(() => { Team.cat.q = t.value; Team.loadCat(true); }, 250); } });
     el.addEventListener('submit', (e) => { const f = e.target.closest('form[data-team]'); if (!f) return; e.preventDefault(); f.__submitter = e.submitter || null; try { Team.submit(f); } catch (x) { console.warn('[Flow] team', x); } });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Hud.on && (Hud.merged() || !(Say.el && Say.el.classList.contains('on')))) { if (Hud.merged() && !Hud.page && (!Team.sel || Team.sel === 'jarvis')) return; Hud.close(); } });
     document.body.appendChild(el);
@@ -15638,6 +15639,7 @@ const Team = {
       Team.groupsPanel() +
       Team.connectorsPanel() +
       Team.pluginsPanel() +
+      Team.catalogPanel() +
       Team.usagePanel() +
       Hud.panel('know', 'What the team knows', Team.knowList('shared', Team.know('shared'), ''));
   },
@@ -15698,6 +15700,63 @@ const Team = {
     Team.plP = (async () => { try { const r = await fetch('/api/team/plugins', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => null); if (r.ok && j && j.ok) Team.pl = j; } catch (e) {} Team.plP = null; return Team.pl; })();
     return Team.plP;
   },
+  /* ---- the plugin catalogue: every remote server in the MCP Registry ---- */
+  cat: { q: '', cat: 'All', items: [], total: 0, count: 0, cats: {}, busy: false, open: false, loaded: false },
+  async loadCat(reset) {
+    const C = Team.cat; if (C.busy && !reset) return;
+    if (!C.loaded) C.painted = false;
+    C.busy = true; const off = reset ? 0 : C.items.length; const my = (C.seq = (C.seq || 0) + 1);
+    Team.catPaintList();
+    try {
+      const r = await fetch('/api/team/plugins/catalog?limit=40&offset=' + off + '&q=' + encodeURIComponent(C.q || '') + '&cat=' + encodeURIComponent(C.cat || 'All'), { credentials: 'same-origin', cache: 'no-store' });
+      const j = await r.json().catch(() => null);
+      if (my !== C.seq) return;
+      if (r.ok && j && j.ok) { C.items = reset ? j.items : C.items.concat(j.items); C.total = j.total; C.count = j.count; C.cats = j.cats || {}; C.updated = j.updated; C.loadingSrv = j.loading; C.error = j.error || ''; C.loaded = true; }
+    } catch (e) {}
+    if (my === C.seq) C.busy = false;
+    /* the first answer fills the title and the shelves: paint the panel once; after that only the list changes (the search box keeps its focus) */
+    if (C.loaded && !C.painted) { C.painted = true; if (Hud.on) Hud.paint(); } else Team.catPaintList();
+  },
+  catRow(x) {
+    const need = x.needs && x.needs.length ? 'needs a key (' + esc(x.needs[0].header) + ')' : 'no key published — may sign you in';
+    return '<div class="hud-r hud-lg hud-catr"><span data-i18n="off"><b>' + esc(x.title) + '</b> <i class="hud-skc">' + esc(x.cat) + '</i><small>' + esc(x.description || '') + '</small><small class="hud-cath">' + esc(x.host) + ' · ' + need + (x.website ? ' · <a href="' + esc(x.website) + '" target="_blank" rel="noopener">site ↗</a>' : '') + '</small></span>' +
+      ((Team.pl && (Team.pl.connected || []).some((p) => p.url === x.url)) ? '<em class="hud-badge" data-st="working">Added</em>' : '<button type="button" class="hud-btn ghost" data-hud="catadd" data-url="' + esc(x.url) + '" style="margin-top:0">Connect</button>') + '</div>';
+  },
+  catListHtml() {
+    const C = Team.cat;
+    if (!C.loaded) return '<p class="hud-sub">' + (C.busy ? 'Reading the MCP Registry…' : '') + '</p>';
+    const head = '<p class="hud-sub" data-i18n="off">' + C.count.toLocaleString('en-GB') + (C.q || C.cat !== 'All' ? ' of ' + C.total.toLocaleString('en-GB') : '') + ' plugins' + (C.loadingSrv ? ' — still arriving' : '') + (C.error ? ' · ' + esc(C.error) : '') + '</p>';
+    const rows = C.items.map(Team.catRow).join('') || '<p class="hud-none">Nothing matches.</p>';
+    const more = C.items.length < C.count ? '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="catmore"' + (C.busy ? ' disabled' : '') + '>Show more (' + (C.count - C.items.length).toLocaleString('en-GB') + ' left)</button></div>' : '';
+    return head + rows + more;
+  },
+  catPaintList() { const box = Hud.el && Hud.el.querySelector('.hud-catl'); if (box) box.innerHTML = Team.catListHtml(); },
+  catalogPanel() {
+    const C = Team.cat;
+    if (!C.open) return '';
+    if (!C.loaded && !C.busy) Team.loadCat(true);
+    const cats = ['All'].concat(Object.keys(C.cats || {}).sort((a, b) => (C.cats[b] || 0) - (C.cats[a] || 0)));
+    const body = '<p class="hud-sub">Every server in the official MCP Registry that runs on the internet. Listed is not working: each is its publisher\'s, connecting one lists its tools, and anything that acts still waits for your yes. Keys go in Render, never here.</p>' +
+      '<div class="hud-row hud-wrap"><input class="hud-catq" type="search" data-team-catq value="' + esc(C.q || '') + '" placeholder="Search — e.g. QuickBooks, Instagram, invoices, weather" aria-label="Search plugins" autocomplete="off">' +
+      '<select class="hud-sel" data-team-catc aria-label="Category">' + cats.map((c) => '<option value="' + esc(c) + '"' + (c === C.cat ? ' selected' : '') + '>' + esc(c) + (C.cats && C.cats[c] ? ' (' + C.cats[c] + ')' : '') + '</option>').join('') + '</select></div>' +
+      '<div class="hud-catl">' + Team.catListHtml() + '</div>' +
+      '<div class="hud-row"><button type="button" class="hud-btn ghost" data-hud="catclose">Close the catalogue</button></div>';
+    return Hud.panel('catalog', 'Plugin catalogue' + (C.total ? ' · ' + C.total.toLocaleString('en-GB') : ''), body);
+  },
+  async catAdd(url) {
+    const x = (Team.cat.items || []).find((i) => i.url === url); if (!x) return;
+    if (x.needs && x.needs.length) {
+      /* a key it needs: the form, filled in — the variable's NAME, never the key */
+      const envName = (x.host.split('.').slice(-2, -1)[0] || x.title).toUpperCase().replace(/[^A-Z0-9]+/g, '_') + '_MCP_KEY';
+      Team.plNew = { name: x.title, url: x.url, env: envName, header: x.needs[0].header };
+      Hud.paint(); const f = Hud.el.querySelector('form[data-team="pladd"]'); if (f) f.scrollIntoView({ block: 'center' });
+      Say.state('Put the key in Render as ' + envName + ', then press Connect.');
+      return;
+    }
+    const j = await Team.post('/api/team/plugins', { op: 'add', name: x.title, url: x.url, mode: 'approve', source: 'registry' });
+    Team.plAfter(j); await Team.loadPlugins(true); Team.conn = null; Hud.paint();
+    if (j && j.plugin) { const p = Hud.el.querySelector('[data-k="plugins"]'); if (p) p.scrollIntoView({ block: 'start' }); }
+  },
   /* One-click sign-in: the server's own sign-in page, opened from a real tap
      (an app's web view only opens a window from one), then watched until
      the plugin lists its tools. */
@@ -15733,9 +15792,9 @@ const Team = {
     const dir = (P.directory || []).map((d) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(d.name) + '<small>' + esc(d.note) + ' · ' + (d.auth === 'oauth' ? 'signs you in itself' : d.auth === 'bearer' ? 'needs ' + esc(d.envHint || 'a token variable') + ' in Render' : 'no sign-in') + '</small></span>' + (d.needs && d.needs.length ? '<small class="hud-alert" data-i18n="off">Missing in Render: ' + esc(d.needs.join(', ')) + '</small>' : '') + (d.auth === 'oauth' && d.url ? '<button type="button" class="hud-btn" data-hud="plsign" data-url="' + esc(d.url) + '" data-name="' + esc(d.name) + '" data-dir="' + esc(d.id) + '" style="margin-top:0">Sign in</button>' : '<button type="button" class="hud-btn ghost" data-hud="pluse" data-url="' + esc(d.url) + '" data-name="' + esc(d.name) + '" data-env="' + esc(d.envHint || '') + '" data-dir="' + esc(d.paste ? d.id : '') + '" style="margin-top:0">' + (d.paste ? 'Paste its address' : 'Connect') + '</button>') + '</div>').join('');
     const plat = (P.platforms || []).map((x) => '<div class="hud-r hud-lg"><span data-i18n="off">' + esc(x.name) + '<small>' + esc(x.note) + (x.env && x.env.length ? ' Missing in Render: ' + esc(x.env.join(', ')) : '') + '</small></span><em class="hud-badge" data-st="' + esc(x.status) + '">' + esc(Team.CH_STATUS[x.status] || x.status) + '</em></div>').join('');
     const pre = Team.plNew || {};
-    const form = '<form class="hud-skform" data-team="pladd"><input type="hidden" name="dir" value="' + esc(pre.dir || '') + '"><div class="hud-ph">Connect an MCP server</div><label class="hud-opt"><span>Name</span><input name="name" value="' + esc(pre.name || '') + '" maxlength="60" placeholder="e.g. Notion"></label><label class="hud-opt"><span>Server address (https://…)</span><input name="url" value="' + esc(pre.url || '') + '" placeholder="https://mcp.example.com/mcp" required></label><p class="hud-sub">A server that signs you in itself (Notion, Linear, Wispr Flow…) needs no token: leave it empty and you get a Sign in button.</p><label class="hud-opt"><span>Token: the NAME of a Render variable (never the token itself)</span><input name="envVar" value="' + esc(pre.env || '') + '" placeholder="e.g. NOTION_MCP_TOKEN" pattern="[A-Za-z0-9_]*"></label><label class="hud-opt"><span>Mode</span><select class="hud-sel" name="mode"><option value="approve">Every call needs my yes</option><option value="read">Reading tools run at once; actions need my yes</option></select></label><div class="hud-row"><button type="submit" class="hud-btn">Connect</button></div></form>';
+    const form = '<form class="hud-skform" data-team="pladd"><input type="hidden" name="dir" value="' + esc(pre.dir || '') + '"><input type="hidden" name="header" value="' + esc(pre.header || '') + '"><div class="hud-ph">Connect an MCP server</div><label class="hud-opt"><span>Name</span><input name="name" value="' + esc(pre.name || '') + '" maxlength="60" placeholder="e.g. Notion"></label><label class="hud-opt"><span>Server address (https://…)</span><input name="url" value="' + esc(pre.url || '') + '" placeholder="https://mcp.example.com/mcp" required></label><p class="hud-sub">A server that signs you in itself (Notion, Linear, Wispr Flow…) needs no token: leave it empty and you get a Sign in button.</p><label class="hud-opt"><span>Token: the NAME of a Render variable (never the token itself)</span><input name="envVar" value="' + esc(pre.env || '') + '" placeholder="e.g. NOTION_MCP_TOKEN" pattern="[A-Za-z0-9_]*"></label><label class="hud-opt"><span>Mode</span><select class="hud-sel" name="mode"><option value="approve">Every call needs my yes</option><option value="read">Reading tools run at once; actions need my yes</option></select></label><div class="hud-row"><button type="submit" class="hud-btn">Connect</button></div></form>';
     const head = (c.working || 0) + ' connected · ' + (c.tools || 0) + ' tools · ' + (c.awaiting || 0) + ' awaiting a variable · ' + (c.available || 0) + ' in the directory';
-    return Hud.panel('plugins', 'Plugins' + (c.working ? ' · ' + c.working : ''), '<p class="hud-sub" data-i18n="off">' + esc(head) + '. Any MCP server is a plugin; agents call its tools from their work, behind the same yes as an email. Keys stay in Render.</p>' + conn + (P.directory && P.directory.length ? '<div class="hud-ph" style="margin-top:10px">Directory</div>' + dir : '') + '<div class="hud-ph" style="margin-top:10px">Platforms</div>' + plat + form);
+    return Hud.panel('plugins', 'Plugins' + (c.working ? ' · ' + c.working : ''), '<p class="hud-sub" data-i18n="off">' + esc(head) + '. Any MCP server is a plugin; agents call its tools from their work, behind the same yes as an email. Keys stay in Render.</p>' + conn + (P.directory && P.directory.length ? '<div class="hud-ph" style="margin-top:10px">Directory</div>' + dir : '') + '<div class="hud-row"><button type="button" class="hud-btn" data-hud="catopen">Browse all plugins' + (Team.cat.total ? ' (' + Team.cat.total.toLocaleString('en-GB') + ')' : ' — thousands') + '</button></div>' + '<div class="hud-ph" style="margin-top:10px">Platforms</div>' + plat + form);
   },
   /* ---- this month's cost ---- */
   use: null, useBusy: null,
@@ -16916,6 +16975,10 @@ const Team = {
     if (a === 'task') { Team.openTask(b.getAttribute('data-id')); return; }
     if (a === 'chopen') { const ch = b.getAttribute('data-ch'); Team.chanOpen = Team.chanOpen === ch ? null : ch; Hud.paint(); return; }
     if (a === 'plopen') { const id = b.getAttribute('data-id'); Team.plOpen = Team.plOpen === id ? null : id; Hud.paint(); return; }
+    if (a === 'catopen') { Team.cat.open = true; Hud.paint(); const g = Hud.el.querySelector('[data-k="catalog"]'); if (g) g.scrollIntoView({ block: 'start' }); return; }
+    if (a === 'catclose') { Team.cat.open = false; Hud.paint(); return; }
+    if (a === 'catmore') { b.disabled = true; await Team.loadCat(false); return; }
+    if (a === 'catadd') { b.disabled = true; await Team.catAdd(b.getAttribute('data-url')); return; }
     if (a === 'plsign') { b.disabled = true; const j = await Team.post('/api/team/plugins', { op: 'add', name: b.getAttribute('data-name'), url: b.getAttribute('data-url'), dir: b.getAttribute('data-dir'), mode: 'approve' }); b.disabled = false; Team.plAfter(j); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
     if (a === 'plsignin') { b.disabled = true; const j = await Team.post('/api/team/plugins', { op: 'signin', id: b.getAttribute('data-id') }); b.disabled = false; Team.plAfter(j); await Team.loadPlugins(true); Hud.paint(); return; }
     if (a === 'plgo') { const s = Team.plSign; if (!s || s.expires < Date.now()) { Team.plSign = null; Say.state('That sign-in link expired — press Sign in again.'); Hud.paint(); return; } window.open(s.url, '_blank'); Team.plSign = null; toast('Finish signing in there, then come back here.', null, 4000); Team.plWatch(s.id); Hud.paint(); return; }
@@ -16993,6 +17056,7 @@ const Team = {
     if (t.matches('[data-team-pjset]')) { const k = t.getAttribute('data-team-pjset'); const j = await Team.post('/api/team/projects', { op: 'update', id: t.getAttribute('data-id'), [k]: t.value }); if (j && j.ok) { if (j.view) Team.pj = j.view; else await Team.loadPj(true); Hud.paint(); } return; }
     if (t.matches('[data-team-eff]')) { const k = t.getAttribute('data-team-eff'); const j = await Team.post('/api/team/efficiency/settings', { [k]: !!t.checked }); if (j && j.ok) { await Team.loadEf(true); toast(t.checked ? 'On — one-step delegations skip the hand-over call' : 'Off', null, 2000); } return; }
     if (t.matches('[data-hud-toggle="efdismissed"]')) { Team.efShowDismissed = !!t.checked; Hud.paint(); return; }
+    if (t.matches('[data-team-catc]')) { Team.cat.cat = t.value; await Team.loadCat(true); return; }
     if (t.matches('[data-team-limit]')) {
       const j = await Team.post('/api/team/limits', { monthlyUsd: +t.value });
       if (j && j.ok) { await Team.loadUsage(true); await Team.load(true); Hud.paint(); toast(j.limit ? 'Monthly limit $' + j.limit : 'No monthly limit', null, 1600); }
@@ -17008,7 +17072,7 @@ const Team = {
     if (/^pj/.test(kind)) { try { await Team.pjSubmit(kind, f); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (/^su/.test(kind)) { try { await Team.suSubmit(kind, f); } catch (e) { console.warn('[Flow] setup', e); } return; }
     if (/^(ctx|disc)/.test(kind)) { try { await Team.ctxSubmit(kind, f); } catch (e) { console.warn('[Flow] context', e); } return; }
-    if (kind === 'pladd') { const url = f.url.value.trim(); if (!url) return; const j = await Team.post('/api/team/plugins', { op: 'add', name: f.name.value.trim(), url, envVar: f.envVar.value.trim(), mode: f.mode.value, dir: f.dir ? f.dir.value : '' }); if (j && j.ok) { Team.plNew = null; Team.plOpen = j.plugin.id; if (j.signin || j.signinError) Team.plAfter(j); else toast(j.plugin.status === 'working' ? j.plugin.name + ' connected — ' + j.plugin.tools.length + ' tools' : j.plugin.name + ': ' + (j.plugin.error || j.plugin.status), null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
+    if (kind === 'pladd') { const url = f.url.value.trim(); if (!url) return; const j = await Team.post('/api/team/plugins', { op: 'add', name: f.name.value.trim(), url, envVar: f.envVar.value.trim(), mode: f.mode.value, dir: f.dir ? f.dir.value : '', header: f.header ? f.header.value : '', source: f.header && f.header.value ? 'registry' : '' }); if (j && j.ok) { Team.plNew = null; Team.plOpen = j.plugin.id; if (j.signin || j.signinError) Team.plAfter(j); else toast(j.plugin.status === 'working' ? j.plugin.name + ' connected — ' + j.plugin.tools.length + ' tools' : j.plugin.name + ': ' + (j.plugin.error || j.plugin.status), null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadPlugins(true); Team.conn = null; Hud.paint(); return; }
     if (kind === 'mailrevise') { const text = f.text.value.trim(); if (!text) return; const j = await Team.post('/api/team/mail', { op: 'revise', id: f.getAttribute('data-id'), text }); if (j && j.ok) { Team.mlRevise = null; if (j.tone) toast('Kept as a rule for every email: ' + j.tone, null, 2600); } else if (j && j.error) Say.state(j.error); await Team.loadMail(true); Hud.paint(); return; }
     if (kind === 'mailpolicy') { const j = await Team.post('/api/team/mail', { op: 'policy', enabled: true, senders: f.senders.value, maxPerDay: f.maxPerDay.value, days: f.days.value }); if (j && j.error) Say.state(j.error); else toast('Auto-send on, bounded', null, 1800); await Team.loadMail(true); Hud.paint(); return; }
     if (kind === 'voiceset') { const patch = { preset: f.preset.value, replies: f.replies.value, length: f.length.value }; if (f.voiceId.value.trim()) { patch.voiceId = f.voiceId.value.trim(); patch.provider = 'elevenlabs'; delete patch.preset; } else patch.voiceId = ''; const j = await Team.post('/api/channels/me/voice', { level: 'default', patch }); if (j && j.ok) { await Team.loadChannels(true); Hud.paint(); toast('Voice saved', null, 1400); } else if (j && j.error) Say.state(j.error); return; }

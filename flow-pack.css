@@ -4511,3 +4511,8 @@ html.hud-on #flow-say .sy-b.u{background:rgba(40,120,255,.2);border:1px solid rg
 #flow-hud [data-k="contacts"] .hud-r .hud-btn{min-height:28px;padding:2px 10px}
 #flow-hud [data-k="contacts"] .hud-r span{min-width:0;overflow-wrap:anywhere}
 #flow-hud [data-k="recordings"] label.hud-btn{display:inline-flex;align-items:center;margin:10px 0 12px}
+/* the plugin catalogue */
+#flow-hud .hud-catq{flex:1 1 220px;min-width:0;padding:9px 12px;border-radius:10px;border:1px solid rgba(127,216,255,.28);background:rgba(4,10,24,.6);color:inherit;font:inherit}
+#flow-hud .hud-catr small.hud-cath{opacity:.7;font-size:11.5px}
+#flow-hud .hud-catr small.hud-cath a{color:#7fd8ff}
+#flow-hud .hud-catr > span{min-width:0;overflow-wrap:anywhere}
