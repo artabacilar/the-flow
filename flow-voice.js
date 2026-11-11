@@ -394,7 +394,7 @@
     ui.mic.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      if (Voice.listening) Voice.stop(); else Voice.start(ui.field);
+      if (Voice.listening) Voice.stop(); else Voice.start(ui.field); kick();
     });
 
     ui.bubble = el('div', 'fv-bubble');
@@ -461,8 +461,21 @@
                               : ((window.innerHeight - bh - 24) + 'px');
   }
 
+  /* Every frame only while it is listening or showing words — that is when
+     the bubble changes. Otherwise a look four times a second, and at once
+     on any scroll or resize: a focused field used to cost a layout read and
+     style writes on every frame (120 a second on a ProMotion Mac), for as
+     long as the caret sat in it, which on the command centre is always. */
   function follow() {
+    ui.frame = 0; clearTimeout(ui.slow); ui.slow = 0;
+    if (!ui.field) return;
     place();
+    if ((Voice.listening && !Voice.sink) || (ui.bubble && !ui.bubble.hidden)) ui.frame = window.requestAnimationFrame(follow);
+    else ui.slow = setTimeout(follow, 250);
+  }
+  function kick() {
+    if (!ui.field || ui.frame) return;
+    clearTimeout(ui.slow); ui.slow = 0;
     ui.frame = window.requestAnimationFrame(follow);
   }
 
@@ -491,6 +504,7 @@
     if (ui.mic) ui.mic.classList.remove('on');
     if (ui.bubble) ui.bubble.hidden = true;
     if (ui.frame) { window.cancelAnimationFrame(ui.frame); ui.frame = 0; }
+    clearTimeout(ui.slow); ui.slow = 0;
   }
 
   /* A pending "clear the error in a moment" timer. Held here so a new turn
@@ -730,6 +744,8 @@
   function boot() {
     if (!backend()) return;          /* no mic, no button, no listeners */
 
+    doc.addEventListener('scroll', kick, { capture: true, passive: true });
+    window.addEventListener('resize', kick);
     doc.addEventListener('focusin', function (e) {
       var f = e.target;
       if (wants(f)) attach(f);

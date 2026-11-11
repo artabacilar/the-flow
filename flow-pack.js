@@ -15221,6 +15221,7 @@ const Hud = {
      no more — and busy at 60 at most, on a 120 Hz screen too. The wake ear,
      the microphone and the rest of the page share this CPU. */
   wake() { clearTimeout(Hud.nap); Hud.nap = 0; if (Hud.on && !Hud.raf) Hud.raf = requestAnimationFrame(Hud.frame); },
+  hush() { Hud.quietUntil = Date.now() + 260; },
   watchOrb(cv) {
     try { if (Hud.io) Hud.io.disconnect(); } catch (e) {}
     Hud.io = null; Hud.seen = true;
@@ -15228,14 +15229,26 @@ const Hud = {
     try { Hud.io = new IntersectionObserver((es) => { for (const e of es) Hud.seen = e.isIntersecting; if (Hud.seen) Hud.wake(); }); Hud.io.observe(cv); } catch (e) { Hud.seen = true; }
   },
   FRAME_IDLE: 48, FRAME_BUSY: 15, seen: true, PX_BUDGET: 520000,
+  /* Asleep between frames, not spinning: a frame is asked for only when one
+     is due. Asking every vsync (120 a second on a ProMotion Mac) to draw one
+     in six woke the whole page — style, layout, the Mac's compositor — 120
+     times a second for nothing. While a column is being scrolled the orb
+     holds still, so the scroll gets the machine; with the window in the
+     background it turns at a few frames a second. */
+  quietUntil: 0, FRAME_AWAY: 220,
+  later(ms) { clearTimeout(Hud.nap); Hud.nap = setTimeout(Hud.wake, Math.max(0, ms)); },
   frame(now) {
     if (!Hud.on) return;
     Hud.raf = 0;
-    if (document.hidden || !Hud.seen) { clearTimeout(Hud.nap); Hud.nap = setTimeout(Hud.wake, 300); return; }
-    Hud.raf = requestAnimationFrame(Hud.frame);
+    if (document.hidden || !Hud.seen) { Hud.later(300); return; }
     const st = Hud.state();
     const idle = st === 'idle';
-    if (now - (Hud.lastDraw || 0) < (idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY)) return;
+    const quiet = Hud.quietUntil - Date.now(); if (quiet > 0) { Hud.later(quiet + 20); return; }
+    let away = false; try { away = idle && !document.hasFocus(); } catch (e) {}
+    const every = away ? Hud.FRAME_AWAY : idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY;
+    const wait = every - (now - (Hud.lastDraw || 0));
+    if (wait > 2) { if (wait > 12) Hud.later(wait - 8); else Hud.raf = requestAnimationFrame(Hud.frame); return; }
+    if (idle) Hud.later(every - 8); else Hud.raf = requestAnimationFrame(Hud.frame);
     Hud.lastDraw = now;
     let cv = Hud.cv; if (!cv || !cv.isConnected) { cv = Hud.cv = Hud.el.querySelector('.hud-orb'); Hud.g = null; Hud.watchOrb(cv); } if (!cv) return;
     /* A pixel budget, not the screen's density: the dots are soft points of
@@ -15438,6 +15451,9 @@ const Hud = {
     document.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'j' || e.key === 'J')) { if (Hud.merged()) return; e.preventDefault(); if (Hud.on) Hud.close(); else Hud.open(); }
     });
+    /* scrolling anywhere: the orb holds still until it stops */
+    const hush = () => { if (Hud.on) Hud.hush(); };
+    ['wheel', 'scroll', 'touchmove'].forEach((ev) => document.addEventListener(ev, hush, { capture: true, passive: true }));
     try { if (/[?&]jarvis=1\b/.test(location.search)) setTimeout(() => Hud.open(), 1400); } catch (e) {}
     setTimeout(() => { try { Hud.sync(); } catch (e) { console.warn('[Flow] hud', e); } }, 900);
   }

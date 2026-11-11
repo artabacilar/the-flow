@@ -4558,3 +4558,13 @@ html.hud-paged #flow-say .fn-sheet{left:auto!important;right:max(16px,env(safe-a
 #flow-hud.hud-merge.hud-pagemode{padding-bottom:max(16px,env(safe-area-inset-bottom))}
 #flow-hud .hud-pgask.on{background:rgba(40,120,255,.18);color:#bfe9ff}
 html.hud-paged #flow-say .fn-sheet{background:rgba(5,11,28,.96)!important;box-shadow:0 18px 60px rgba(0,0,0,.55),0 0 0 1px rgba(110,170,255,.3)!important}
+
+/* ── Lighter on the Mac (11 Nov) ──
+   The grid behind the room is painted once with the room, not kept as a
+   window-sized masked layer the compositor blends on every frame; the
+   panels drop the soft inner glow WebKit repaints as a column scrolls; each
+   column keeps its layout and paint to itself, so a change in one (a clock,
+   a status, a list loading) repaints that column and not the room. */
+#flow-hud .hud-grid{will-change:auto;transform:none}
+#flow-hud .hud-p{box-shadow:none}
+#flow-hud .hud-col{contain:layout paint}
