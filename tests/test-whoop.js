@@ -141,6 +141,34 @@ function fakeFetch(routes) {
     ok('a refused refresh clears the connection', after.refresh === null && after.access === null, after);
     ok('and records when', !!after.revoked);
   }
+  {
+    /* A sync asks for several collections at once. When the hour is up they
+       must share one refresh: WHOOP spends a refresh token on use, so a
+       second refresh with it is refused — and that used to sign him out. */
+    const raw = memStore();
+    await writeJSON(raw, TOK('8'), { access: 'stale', refresh: 'r1', exp: Date.now() - 1000 });
+    let tokenCalls = 0; const used = new Set();
+    global.fetch = async (u, init) => {
+      if (String(u).indexOf('/oauth2/token') >= 0) {
+        tokenCalls++; const rt = new URLSearchParams(init.body).get('refresh_token');
+        await new Promise((r) => setTimeout(r, 30));
+        if (used.has(rt)) return { ok: false, status: 400, async text() { return '{"error":"invalid_grant"}'; } };
+        used.add(rt); const body = JSON.stringify({ access_token: 'a-' + tokenCalls, refresh_token: 'r' + (tokenCalls + 1), expires_in: 3600 });
+        return { ok: true, status: 200, async text() { return body; } };
+      }
+      throw new Error('unexpected ' + u);
+    };
+    const got = await Promise.all([1, 2, 3, 4, 5].map(() => accessToken(raw, '8')));
+    const after = await readJSON(raw, TOK('8'), {});
+    ok('five requests at once after the hour: one refresh, one token for all, still connected', tokenCalls === 1 && got.every((g) => g === 'a-1') && after.refresh === 'r2' && !after.revoked, { tokenCalls, got, after });
+    /* and if another server already spent it, a refusal is not a revocation */
+    await writeJSON(raw, TOK('8'), { access: 'stale', refresh: 'r2', exp: Date.now() - 1000 });
+    const p1 = accessToken(raw, '8');
+    await writeJSON(raw, TOK('8'), { access: 'other', refresh: 'r9', exp: Date.now() + 3600000 });
+    used.add('r2');
+    const g2 = await p1; const after2 = await readJSON(raw, TOK('8'), {});
+    ok('a refresh refused because a newer token was saved meanwhile keeps the connection', g2 === 'other' && after2.refresh === 'r9' && !after2.revoked, { g2, after2 });
+  }
 
   /* ------------------------------------------------------------------ *
    * Reading a week
