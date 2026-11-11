@@ -4690,3 +4690,7 @@ html:not(.hud-on) #flow-hush{background:var(--lk-ink,#111);color:var(--lk-bg,#ff
 #flow-hud .org .org-form input[type="date"]{flex:0 1 170px}
 #flow-hud .org .org-note,#flow-hud .org .org-tt{width:100%}
 #flow-hud .org .org-dh .org-tt{width:auto;flex:1}
+#flow-hud .org-prw{display:flex;flex-direction:column;gap:6px}
+#flow-hud .org-prw>.org-pr{flex:1}
+#flow-hud .org-move{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(170,200,255,.7);padding:0 4px}
+#flow-hud .org-move .hud-sel{flex:1;padding-top:6px;padding-bottom:6px;font-size:13px}
