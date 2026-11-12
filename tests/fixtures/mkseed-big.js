@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const uid = 'a1b2c3d4e5f60718293a', salt = crypto.randomBytes(16).toString('hex');
 
 const journal = [];
-for (let i = 0; i < 400; i++) {
+for (let i = 0; i < (+process.env.JN || 400); i++) {
   journal.push({ t: '2026-0' + (1 + (i % 9)) + '-1' + (i % 9), txt: 'A journal entry with a realistic amount of text in it, number ' + i + '. ' + 'x'.repeat(2200), prompts: {}, mood: 1 + (i % 5), energy: 1 + (i % 5) });
 }
 const log = [];
