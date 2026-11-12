@@ -19379,6 +19379,11 @@ const Nav = {
     const wrap = document.createElement('div');
     wrap.id = 'flow-capture';
     wrap.className = 'fn-sheetwrap';
+    /* Open or not, said once on <html>. The stylesheet used to ask
+       body:has(#flow-capture.on) — and Safari's engine answers that by
+       re-checking the whole page on every change anywhere in it, the clock
+       ticking included. */
+    try { new MutationObserver(() => document.documentElement.classList.toggle('fn-cap-open', wrap.classList.contains('on') && !wrap.classList.contains('note'))).observe(wrap, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
     wrap.innerHTML =
       '<div class="fn-scrim" data-fn-close="1"></div>' +
       '<div class="fn-sheet" role="dialog" aria-label="Capture" aria-modal="true">' +

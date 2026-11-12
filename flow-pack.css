@@ -2808,7 +2808,7 @@ html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-row.done .b
   html[data-flow-theme][data-flow-look="new"] #flow-tabbar button .fn-lb{font-size:10.5px;font-weight:650}
   html[data-flow-theme][data-flow-look="new"] #flow-tabbar .fn-cap .fn-knob{width:56px;height:56px;border-radius:50%;margin-top:-26px;background:var(--lk-coral);color:var(--lk-coral-ink);box-shadow:0 8px 24px rgba(var(--lk-coral-a),.4),0 0 0 5px var(--lk-bar)}
   html[data-flow-theme][data-flow-look="new"] #flow-tabbar .fn-cap .fn-i{width:26px;height:26px;stroke-width:2.6}
-  html[data-flow-theme][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar .fn-cap .fn-knob{transform:rotate(45deg)}
+  html[data-flow-theme][data-flow-look="new"].fn-cap-open #flow-tabbar .fn-cap .fn-knob{transform:rotate(45deg)}
 }
 
 /* ---- the + menu: a stack of pills above the + ---- */
@@ -2829,7 +2829,7 @@ html[data-flow-theme][data-flow-look="new"] #today-feed :is(.flow-td-row.done .b
   html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="sleep"]::before{background:#8FA8FF}
   html[data-flow-theme][data-flow-look="new"] #flow-capture:not(.note) .fn-grid button[data-fn-cap="doc"]::before{background:#F2A7C3}
   /* The bar stays above the menu, so the turned + closes it. */
-  html[data-flow-theme][data-flow-look="new"] body:has(#flow-capture.on:not(.note)) #flow-tabbar{z-index:970}
+  html[data-flow-theme][data-flow-look="new"].fn-cap-open #flow-tabbar{z-index:970}
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3947,7 +3947,8 @@ html[data-flow-look="new"] #today-feed .lk-bt .bt-train .bt-i{width:15px;height:
 #flow-hud .hud-agn{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}
 #flow-hud .hud-ag small{font-size:10.5px;color:rgba(170,200,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #flow-hud .hud-st{position:absolute;top:9px;right:9px;width:8px;height:8px;border-radius:50%;background:#6cf0b2;box-shadow:0 0 8px rgba(108,240,178,.7)}
-#flow-hud .hud-st[data-st="working"]{background:#7fd8ff;animation:fw-ear 1.2s ease-out infinite}
+#flow-hud .hud-st[data-st="working"]{background:#7fd8ff;animation:fw-blink 1.2s ease-in-out infinite}
+@keyframes fw-blink{0%,100%{opacity:1}50%{opacity:.35}}
 #flow-hud .hud-st[data-st="paused"]{background:#ffd36b}
 #flow-hud .hud-st[data-st="offline"]{background:rgba(170,200,255,.35);box-shadow:none}
 #flow-hud .hud-unread{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff6b3d;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
@@ -4076,7 +4077,11 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 .lk-say.ear{position:relative}
 .lk-say.lk-wake{position:relative;opacity:.9}
 .lk-say.lk-wake svg{display:none}
-.lk-say.ear::after{content:"";position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:#3fd6c6;box-shadow:0 0 0 0 rgba(63,214,198,.6);animation:fw-ear 2.4s ease-out infinite}
+/* The ear dot is still. It used to pulse a growing shadow: a shadow cannot
+   be moved by the graphics card, so the page restyled and repainted sixty
+   times a second for as long as the wake word was on — which is always. On
+   the Mac's engine that alone kept the app busy while nothing happened. */
+.lk-say.ear::after{content:"";position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:#3fd6c6;box-shadow:0 0 0 2px rgba(63,214,198,.22)}
 @keyframes fw-ear{0%{box-shadow:0 0 0 0 rgba(63,214,198,.55)}70%{box-shadow:0 0 0 7px rgba(63,214,198,0)}100%{box-shadow:0 0 0 0 rgba(63,214,198,0)}}
 @media (prefers-reduced-motion:reduce){.lk-say.ear::after{animation:none}}
 

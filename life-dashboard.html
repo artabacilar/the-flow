@@ -125,7 +125,10 @@ html:not(.flow-ready) body{visibility:hidden;}
 #flow-splash .fs-bar{width:180px;height:3px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;}
 #flow-splash .fs-bar i{display:block;height:100%;width:38%;border-radius:3px;background:#17bb92;animation:fsSlide 1.05s ease-in-out infinite;}
 @keyframes fsSlide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}
-html.flow-ready #flow-splash{opacity:0;pointer-events:none;}
+/* Gone, not just see-through: an invisible full-screen layer over the whole
+   app, with its bar still sliding, kept the Mac compositing every frame. */
+html.flow-ready #flow-splash{opacity:0;pointer-events:none;visibility:hidden;transition:opacity .35s ease,visibility 0s linear .36s;}
+html.flow-ready #flow-splash .fs-bar i{animation:none;}
 @media (prefers-reduced-motion: reduce){ #flow-splash .fs-bar i{animation:none;width:100%;opacity:.5;} }
 
 /* ── Header ── */
