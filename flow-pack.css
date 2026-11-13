@@ -4314,6 +4314,8 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-grp>.hud-ic{position:absolute;right:-4px;top:4px}
 /* live voice */
 #flow-say .sy-golive{display:inline-flex;align-items:center;gap:6px}
+#flow-say .sy-hear{min-width:44px;font-weight:800;letter-spacing:.04em}
+#flow-say .sy-hear.tr{color:#ffd9d0;border-color:rgba(255,120,90,.6)}
 #flow-say .sy-golive.on{background:#2fa8ff;color:#021022;border-color:#2fa8ff;box-shadow:0 0 14px rgba(47,168,255,.5)}
 #flow-say.sy-islive .sy-mic{opacity:.55}
 /* the email review, one at a time */
@@ -4375,7 +4377,7 @@ html.hud-on #flow-say .sy-mic.on{background:#2fa8ff;color:#021022}
 #flow-hud .hud-page hr,#flow-hud .hud-page :is(.flow-card,.panel) > * + *{border-color:rgba(110,170,255,.14)}
 
 /* the console: the same controls — outlined cyan, Go a lit cyan key */
-html.hud-on #flow-say :is(.sy-doc,.sy-kb,.sy-golive,.sy-mic){background:rgba(40,120,255,.12)!important;border:1px solid rgba(110,170,255,.35)!important;color:#bfe9ff!important;box-shadow:none!important;border-radius:12px!important}
+html.hud-on #flow-say :is(.sy-doc,.sy-kb,.sy-golive,.sy-mic,.sy-hear){background:rgba(40,120,255,.12)!important;border:1px solid rgba(110,170,255,.35)!important;color:#bfe9ff!important;box-shadow:none!important;border-radius:12px!important}
 html.hud-on #flow-say :is(.sy-doc,.sy-kb,.sy-golive,.sy-mic):hover{background:rgba(40,120,255,.28)!important;border-color:#7fd8ff!important}
 html.hud-on #flow-say :is(.sy-mic.on,.sy-golive.on,.sy-kb[aria-pressed="true"]){background:#2fa8ff!important;border-color:#7fd8ff!important;color:#021022!important;box-shadow:0 0 18px rgba(47,168,255,.45)!important}
 html.hud-on #flow-say [data-say="send"]{background:linear-gradient(180deg,#5cc8ff,#2a8cff)!important;border:1px solid #9fe4ff!important;color:#021022!important;border-radius:12px!important;box-shadow:0 0 18px rgba(47,168,255,.4)!important;font-weight:800;letter-spacing:.06em}

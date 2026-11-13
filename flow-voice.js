@@ -85,7 +85,14 @@
   /* The recogniser wants a BCP-47 tag, and the app only knows 'en' or 'tr'.
      Ask the engine for the locale it already keeps per language rather than
      maintaining a second table that can disagree with the first. */
+  /* The language he is heard in, chosen on the device (EN / TR beside Talk):
+     the recogniser listens in one language at a time, and one tuned for
+     English hears "İGDAŞ" as "Nida". Unset: the app's own language. */
+  function hearPref() { try { var v = localStorage.getItem('flow:hear'); return v === 'tr' || v === 'en' ? v : ''; } catch (e) { return ''; } }
   function locale() {
+    var h = hearPref();
+    if (h === 'tr') return 'tr-TR';
+    if (h === 'en') { try { var e0 = window.FlowI18n; if (e0 && e0.lang === 'en') { var m0 = (e0.languages() || []).filter(function (l) { return l.code === 'en'; })[0]; if (m0 && m0.locale) return m0.locale; } } catch (x) {} return 'en-GB'; }
     try {
       var e = window.FlowI18n;
       if (e) {
@@ -785,6 +792,9 @@
     } catch (e) {}
   }
 
+  Voice.hear = function () { var h = hearPref(); if (h) return h; try { return String(locale()).slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en'; } catch (e) { return 'en'; } };
+  Voice.setHear = function (lang) { try { localStorage.setItem('flow:hear', lang === 'tr' ? 'tr' : 'en'); } catch (e) {} };
+  Voice.locale = locale;
   window.FlowVoice = Voice;
 
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot);

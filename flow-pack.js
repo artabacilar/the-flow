@@ -14358,7 +14358,7 @@ const Say = {
             '<div class="sy-memadd"><input type="text" id="sy-mem-in" maxlength="200" placeholder="e.g. I train Monday, Wednesday and Friday" autocomplete="off"><button type="button" class="flow-btn sm" data-say="memadd">Add</button></div>' +
             '<div class="sy-ex sy-premium"></div>' +
           '</details>' +
-          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-kb" data-say="kb" aria-pressed="false" title="Type">' + Nav.svg('chat') + '<span>Type</span></button><button type="button" class="flow-btn sy-golive" data-say="live" aria-pressed="false" title="Live voice: he listens after every answer until you stop it">' + Nav.svg('mic') + '<span>Live</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
+          '<div class="ra-row ra-end"><button type="button" class="flow-btn sy-doc" data-say="doc" aria-label="From a document" title="From a document">' + Nav.svg('doc') + '<span>Document</span></button><button type="button" class="flow-btn sy-kb" data-say="kb" aria-pressed="false" title="Type">' + Nav.svg('chat') + '<span>Type</span></button><button type="button" class="flow-btn sy-hear" data-say="hear" title="The language he listens in — tap to switch English / Türkçe"><span class="sy-hear-l">EN</span></button><button type="button" class="flow-btn sy-golive" data-say="live" aria-pressed="false" title="Live voice: he listens after every answer until you stop it">' + Nav.svg('mic') + '<span>Live</span></button><button type="button" class="flow-btn sy-mic" data-say="listen"></button><button type="button" class="flow-btn primary" data-say="send">Go</button></div>' +
         '</div>' +
         '<div class="sy-plan" hidden></div>' +
       '</div>';
@@ -14378,6 +14378,7 @@ const Say = {
       if (a === 'send') return Say.send();
       if (a === 'doc') return Say.pickFile();
       if (a === 'live') return Say.toggleLive();
+      if (a === 'hear') return Say.toggleHear();
       if (a === 'kb') return Say.kb();
       if (a === 'again') return Say.again();
       if (a === 'do') return Say.apply();
@@ -14477,9 +14478,30 @@ const Say = {
       });
     } catch (e) {}
     Say.el = wrap;
+    try { Say.paintHear(); } catch (e) {}
     return wrap;
   },
   state(t) { const el = Say.el && Say.el.querySelector('.sy-state'); if (el) el.textContent = t || ''; },
+  /* English or Türkçe: what the recogniser listens for. Kept per device. A
+     turn already listening starts again in the new language. */
+  hearNow() { try { return window.FlowVoice && FlowVoice.hear ? FlowVoice.hear() : 'en'; } catch (e) { return 'en'; } },
+  paintHear() {
+    const h = Say.hearNow();
+    document.querySelectorAll('[data-say="hear"]').forEach((b) => { const l = b.querySelector('.sy-hear-l'); if (l) l.textContent = h === 'tr' ? 'TR' : 'EN'; b.setAttribute('aria-label', h === 'tr' ? 'Dinleme dili: Türkçe. İngilizceye geçmek için dokunun.' : 'Listening in English. Tap for Turkish.'); b.classList.toggle('tr', h === 'tr'); });
+  },
+  toggleHear() {
+    const next = Say.hearNow() === 'tr' ? 'en' : 'tr';
+    try { FlowVoice.setHear(next); } catch (e) {}
+    Say.paintHear();
+    Say.state(next === 'tr' ? 'Türkçe dinliyorum.' : 'Listening in English.');
+    try {
+      if (window.FlowVoice && FlowVoice.listening) {
+        const mine = !FlowVoice.sink;
+        FlowVoice.cancel();
+        if (mine) setTimeout(() => { try { Say.listen(); } catch (e) {} }, 350);
+      }
+    } catch (e) {}
+  },
   /* The Mac app: a Microphone choice under Voice and manners, listing what
      this Mac has. Hidden wherever the shell cannot choose (browser, iPhone). */
   async mics() {
@@ -17892,7 +17914,7 @@ const Wake = {
   },
   names() {
     let n = ''; try { n = String(Say.name() || '').replace(/\./g, '').trim().toLowerCase(); } catch (e) {}
-    const list = ['jarvis', 'jervis', 'javis', 'charvis', 'jarvas', 'jarviz', 'travis', 'jarvi', 'jarves'];
+    const list = ['jarvis', 'jervis', 'javis', 'charvis', 'jarvas', 'jarviz', 'travis', 'jarvi', 'jarves', 'carvis', 'cervis', 'carviz', 'cervıs', 'jarvıs', 'carvıs'];
     if (n && list.indexOf(n) < 0 && /^[\p{L} ]{2,24}$/u.test(n)) list.push(n.replace(/[.*+?^${}()|[\]\\]/g, ''));
     /* "Hey Sarah" — the team answer to their first names too (while the
        command centre is open, where they live). */
@@ -17900,7 +17922,7 @@ const Wake = {
     return list;
   },
   re() { return new RegExp('(?:^|[^\\p{L}])(?:hey|hi|ok|okay|yo|hello|hay|hei|ey|eh|a)[\\s,.!]+(?:' + Wake.names().join('|') + ')(?![\\p{L}])[\\s,.!?]*', 'iu'); },
-  OVER: /(?:^|[^\p{L}])(?:over and out|over)[\s.!?,]*$/iu,
+  OVER: /(?:^|[^\p{L}])(?:over and out|over|ovır|ovar)[\s.!?,]*$/iu,
   free() {
     try { return !Say.busy && !Say.waiting && !Speech.speaking() && !(Say.el && Say.el.getAttribute('data-sy') === 'thinking'); } catch (e) { return true; }
   },
