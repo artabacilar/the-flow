@@ -579,6 +579,32 @@ window.__fail = function (code) {
   ok('after a pause it ends the turn itself and the words land in the field', pz.mid.listening && pz.mid.stops === 0 && !pz.after.listening && pz.after.stops === 1 && pz.after.value === 'call the venue', pz);
   ok('ordinary dictation is not ended by a pause', pz.plain.listening && pz.plain.stops === 1, pz.plain);
   await c7.close();
+  /* English or Türkçe: the language the phone's recogniser is asked for */
+  const c8 = await b.newContext({ locale: 'en-GB' });
+  await c8.addInitScript(`
+    window.__locs = [];
+    window.Capacitor = { Plugins: { FlowBridge: {
+      voiceStart: async (a) => { window.__locs.push(a && a.locale); return { ok: true }; },
+      voiceStop: async () => { setTimeout(() => window.__flowVoiceEvent('end', {}), 20); return {}; },
+      voiceCancel: async () => ({}),
+      voicePermission: async () => ({ mic: 'granted', speech: 'granted' }), voiceRequest: async () => ({ mic: 'granted', speech: 'granted' })
+    } } };
+  `);
+  const p8 = await c8.newPage();
+  await p8.goto(H + '/', { waitUntil: 'load' }); await p8.waitForTimeout(2600);
+  const lang = await p8.evaluate(async () => {
+    const V = window.FlowVoice; const t = document.createElement('textarea'); document.body.appendChild(t); t.focus();
+    const before = V.hear();
+    V.start(t); await new Promise((r) => setTimeout(r, 200)); V.cancel();
+    V.setHear('tr'); const mid = V.hear();
+    V.start(t); await new Promise((r) => setTimeout(r, 200)); V.cancel();
+    V.setHear('en');
+    V.start(t); await new Promise((r) => setTimeout(r, 200)); V.cancel();
+    let stored = null; try { stored = localStorage.getItem('flow:hear'); } catch (e) {}
+    return { before, mid, locs: window.__locs.slice(), stored };
+  });
+  ok('English by default; Türkçe asks the phone for tr-TR; back to English after', lang.before === 'en' && lang.mid === 'tr' && lang.locs[0] !== 'tr-TR' && lang.locs[1] === 'tr-TR' && /^en/.test(lang.locs[2]) && lang.stored === 'en', lang);
+  await c8.close();
 
   console.log('\n— press to talk, press to stop —');
   const man = await p.evaluate(async () => {
