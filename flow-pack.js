@@ -7303,7 +7303,7 @@ const Auth = {
     el.className = 'flow-x';
     el.innerHTML = `
       <div class="fa-card">
-        <div class="fa-brand">The <b>Flow</b></div>
+        <div class="fa-brand"><img class="fa-logo" src="/icon-192.png" alt="">The <b>Flow</b></div>
         <!-- What the app is, before anyone has used it. Not a slogan about
              the software — the idea the software exists to carry out. -->
         <blockquote class="fa-creed">
@@ -7518,7 +7518,7 @@ const Auth = {
     el.className = 'flow-x';
     el.innerHTML = `
       <div class="fa-card">
-        <div class="fa-brand">The <b>Flow</b></div>
+        <div class="fa-brand"><img class="fa-logo" src="/icon-192.png" alt="">The <b>Flow</b></div>
         <h2 class="fa-h">Your recovery codes</h2>
         <p class="fa-sub">These are the way back in if you ever forget your password. Each one works once. Put them somewhere that is not this browser — printed, or in a password manager alongside the password itself.</p>
         <pre class="flow-code" id="fc-list">${codes.map(c => esc(c)).join('\n')}</pre>
@@ -7587,7 +7587,7 @@ const Auth = {
     el.className = 'flow-x';
     el.innerHTML = `
       <div class="fa-card">
-        <div class="fa-brand">The <b>Flow</b></div>
+        <div class="fa-brand"><img class="fa-logo" src="/icon-192.png" alt="">The <b>Flow</b></div>
         <h2 class="fa-h">Set a new password</h2>
         <p class="fa-sub">This link works once and stops working 30 minutes after it was sent. Setting a password here also signs you out everywhere else.</p>
         <div class="fa-err" id="fa-err" hidden></div>

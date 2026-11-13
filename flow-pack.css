@@ -529,6 +529,7 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
   box-shadow: 0 30px 80px rgba(0,0,0,.6);
 }
 #flow-auth .fa-brand, #flow-codes .fa-brand { font-size: 21px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 22px; color: var(--f-ink-2); }
+#flow-auth .fa-brand .fa-logo, #flow-codes .fa-brand .fa-logo { width: 30px; height: 30px; border-radius: 8px; vertical-align: -8px; margin-right: 10px; }
 #flow-auth .fa-brand b, #flow-codes .fa-brand b { font-weight: 800; color: var(--f-ink); }
 #flow-auth .fa-h, #flow-codes .fa-h { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
 #flow-auth .fa-sub, #flow-codes .fa-sub { margin: 0 0 20px; font-size: 12.5px; line-height: 1.55; color: var(--f-muted); }
@@ -1008,8 +1009,9 @@ html[data-flow-theme="bloom"] .flow-today-actions > .flow-today-primary {
   #flow-side::-webkit-scrollbar{display:none;}
 
   .fn-brand{display:flex;align-items:center;gap:10px;padding:4px 9px 14px;}
-  .fn-brand .fn-mark{width:26px;height:26px;border-radius:8px;flex:0 0 auto;
-    background:linear-gradient(150deg,var(--accent),var(--purple));}
+  /* The app's own logo — the rings, as on the Dock. */
+  .fn-brand .fn-mark{width:26px;height:26px;border-radius:7px;flex:0 0 auto;
+    background:#0d1a3a url(/icon-192.png) center/cover no-repeat;}
   .fn-brand .fn-nm{font-size:14.5px;font-weight:800;letter-spacing:-0.02em;
     white-space:nowrap;overflow:hidden;}
 
