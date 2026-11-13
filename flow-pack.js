@@ -9261,6 +9261,61 @@ const Refresh = {
     window.addEventListener('error', (ev) => { try { note({ msg: String(ev.message || '').slice(0, 200), src: String(ev.filename || '').split('/').pop().slice(0, 60) + ':' + (ev.lineno || 0), tab: Nav.current && Nav.current() }); } catch (e) {} });
     window.addEventListener('unhandledrejection', (ev) => { try { const r = ev.reason; note({ msg: 'promise: ' + String(r && r.message || r).slice(0, 200), tab: Nav.current && Nav.current() }); } catch (e) {} });
   },
+  /* Where it lags, measured on the device that lags. A Mac app cannot be
+     profiled from outside, so the page notes it itself: every time the page
+     froze for more than 120 ms (a timer that came back late), and every
+     tap or key whose screen did not update within 120 ms — with the page
+     open and what was touched (a class name, never text). Kept in the
+     account like the error log, last sixty, so it can be read from anywhere. */
+  stalls() {
+    if (Refresh._stallOn) return;
+    Refresh._stallOn = true;
+    const buf = [];
+    let t = null, lastAct = '', lastActAt = 0;
+    const where = () => { try { return (Nav.current && Nav.current()) || ''; } catch (e) { return ''; } };
+    const what = (el) => {
+      try {
+        if (!el || !el.closest) return '';
+        const x = el.closest('[id],[class],[data-fn-side],[data-hud]') || el;
+        return (x.tagName || '').toLowerCase() + (x.id ? '#' + x.id : '') + (x.getAttribute && x.getAttribute('data-fn-side') ? '[' + x.getAttribute('data-fn-side') + ']' : '') + (typeof x.className === 'string' && x.className ? '.' + x.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+      } catch (e) { return ''; }
+    };
+    const flush = async () => {
+      t = null;
+      if (!buf.length) return;
+      try {
+        const log = (await DB.get('flow:diag:stalls', [])) || [];
+        const ua = (navigator.userAgent || '').slice(0, 80), app = !!(window.FlowMac || (window.webkit && window.webkit.messageHandlers && !/Safari\//.test(navigator.userAgent)));
+        buf.splice(0).forEach((e) => log.push(Object.assign({ ua, app }, e)));
+        await DB.set('flow:diag:stalls', log.slice(-60));
+      } catch (e) {}
+    };
+    const note = (e) => {
+      e.at = new Date().toISOString(); e.page = where(); e.hud = !!(window.FlowHud && FlowHud.on);
+      if (Date.now() - lastActAt < 3000) e.after = lastAct;
+      buf.push(e); if (buf.length > 20) buf.shift();
+      if (!t) t = setTimeout(flush, 15000);
+    };
+    /* the page frozen: a 500 ms timer that came back late, while visible */
+    let last = performance.now();
+    setInterval(() => {
+      const now = performance.now(), late = now - last - 500; last = now;
+      if (late > 150 && document.visibilityState === 'visible') note({ kind: 'freeze', ms: Math.round(late) });
+    }, 500);
+    document.addEventListener('visibilitychange', () => { last = performance.now(); });
+    /* a tap or key: how long until the screen could show the answer */
+    const input = (ev) => {
+      if (!ev.isTrusted) return;
+      const t0 = ev.timeStamp && ev.timeStamp > 1e12 ? performance.now() : (ev.timeStamp || performance.now());
+      const desc = ev.type + ' ' + what(ev.target);
+      lastAct = desc; lastActAt = Date.now();
+      requestAnimationFrame(() => setTimeout(() => {
+        const ms = performance.now() - t0;
+        if (ms > 120 && document.visibilityState === 'visible') note({ kind: 'input', ms: Math.round(ms), on: desc });
+      }, 0));
+    };
+    ['pointerdown', 'keydown'].forEach((k) => document.addEventListener(k, input, { capture: true, passive: true }));
+  },
   /* Why the last reloads happened, kept in the account so a loop on one
      device can be read from another. The host writes the reason to
      sessionStorage just before it reloads; this picks it up after. */
@@ -9335,6 +9390,7 @@ const Refresh = {
     try { window.__FLOW_SYNC_GAP_MS = Refresh.QUIET_MS; } catch (e) {}
     try { Refresh.watchVersion(); } catch (e) {}
     try { Refresh.errors(); } catch (e) {}
+    try { Refresh.stalls(); } catch (e) {}
     (async () => { try { if (window.__FLOW_ALL_READY) await window.__FLOW_ALL_READY; } catch (e) {} await new Promise((r) => setTimeout(r, 800)); Refresh.diag().catch(() => {}); })();
     const ind = Refresh.indicator();
     /* A finger: pull down from the top. The page does not bounce while the
