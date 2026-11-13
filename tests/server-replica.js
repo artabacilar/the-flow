@@ -143,6 +143,8 @@ const server=http.createServer(async(req,res)=>{
       res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css; charset=utf-8':'application/javascript; charset=utf-8',
         'Cache-Control':'public, max-age=31536000, immutable'});
       return res.end(fs.readFileSync(f));}
+    /* The logo, as production serves it. */
+    if(p==='/icon-192.png'||p==='/icon-512.png'){res.writeHead(200,{'Content-Type':'image/png'});return res.end(fs.readFileSync(path.join(path.dirname(DASH_PATH),p.slice(1))));}
     if(p==='/'||p==='/index.html'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(shell());}
     if(p==='/api/meetings/pull'){
       if(!meetings||!connectMod) return json(res,503,{error:'This build has no meetings module.'});
