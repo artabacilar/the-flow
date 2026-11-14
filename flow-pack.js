@@ -15943,6 +15943,12 @@ const Hud = {
   PAGES: { today: ['today'], focus: ['northstar', 'quad', 'compass', 'abko', 'dtc'], body: ['training', 'sleep', 'habits'], record: ['journal', 'finance', 'ask'], settings: ['settings'] },
   PAGE_LABEL: { today: 'Today', focus: 'Plan', body: 'Body', record: 'Record', settings: 'Settings' },
   VIEWS: ['projects', 'setup', 'memory', 'skills', 'scripts', 'efficiency'],
+  /* A group's pages less the ones taken out of the menu (Settings → sections):
+     a retired Work or Side Project tab stays out of the chips too. */
+  pageTabs(group) {
+    const all = Hud.PAGES[group] || []; let hid = []; try { hid = Sections.hiddenNow(); } catch (e) {}
+    const left = all.filter((t) => hid.indexOf(t) < 0); return left.length ? left : all;
+  },
   pageGroup(tab) { for (const g of Object.keys(Hud.PAGES)) if (Hud.PAGES[g].indexOf(tab) >= 0) return g; return null; },
   /* Back to J.A.R.V.I.S.: the day round the orb, no page, no room. */
   home() {
@@ -15957,7 +15963,7 @@ const Hud = {
     if (!Hud.merged()) { Hud.close(); try { Nav.go(tab || group); } catch (e) {} return; }
     if (!Hud.PAGES[group]) group = Hud.pageGroup(group) || Hud.pageGroup(tab);
     if (!group) return;
-    tab = tab && Hud.PAGES[group].indexOf(tab) >= 0 ? tab : (Hud.pageLast[group] || Hud.PAGES[group][0]);
+    { const vis = Hud.pageTabs(group); tab = tab && Hud.PAGES[group].indexOf(tab) >= 0 ? tab : (Hud.pageLast[group] && vis.indexOf(Hud.pageLast[group]) >= 0 ? Hud.pageLast[group] : vis[0]); }
     Hud.pageLast[group] = tab;
     if (Team.sel) { Team.sel = null; Say.agent = null; Team.adding = false; Team.editing = null; try { Say.history = []; Say.logPaint(); Say.chatResume(); const k = Say.el && Say.el.querySelector('.sy-k'); if (k) k.textContent = Say.title(); } catch (e) {} }
     Hud.page = { group, tab };
@@ -15975,7 +15981,7 @@ const Hud = {
     Hud.mounting = false;
     const sec = document.getElementById('tab-' + tab);
     const col = Hud.el.querySelector('.hud-pagecol'); if (!col) return;
-    const tabs = Hud.PAGES[group];
+    const tabs = Hud.pageTabs(group).concat(Hud.pageTabs(group).indexOf(tab) < 0 ? [tab] : []);
     col.innerHTML = '<div class="hud-pgh"><div class="hud-pgr"><span class="hud-pgl">' + esc(Hud.PAGE_LABEL[group] || group) + (tabs.length === 1 ? '' : ' · ' + esc(Nav.label(tab))) + '</span>' +
       '<span class="hud-pgact"><button type="button" class="hud-tab hud-pgask" data-hud="pageask" data-i18n="off">Ask ' + esc((() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.') + '</button>' +
       '<button type="button" class="hud-ic hud-pgx" data-hud="pageclose" aria-label="Back to the command centre">×</button></span></div>' +
