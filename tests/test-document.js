@@ -163,12 +163,48 @@ function zipOf(files) {
   ok('the one left out was not added twice, and the habit is there', after.dup === 1 && after.habit, after);
   ok('and the sheet is gone', !after.sheet);
 
-  console.log('\n— from the + menu it opens straight into the picker, and only in Simple —');
+  console.log('\n— into a project, and onto Trello —');
+  const orgPosts = [], trelloAdds = [];
+  const ORG = { ok: true, me: { owner: true }, companies: [{ id: 'cA', name: 'ABKO' }], brands: [{ id: 'bD', name: 'Davines', company: 'cA' }],
+    projects: [{ id: 'prD', name: 'DAVINES', company: 'cA', brand: 'bD', status: 'active', people: [], counts: { total: 0 } }, { id: 'prX', name: 'Loose one', company: '', brand: '', status: 'active', people: [], counts: { total: 0 } }], people: [], tasks: [] };
+  await p.route('**/api/team/org', async (rt) => {
+    if (rt.request().method() === 'POST') { orgPosts.push(JSON.parse(rt.request().postData() || '{}')); return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }); }
+    rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ORG) });
+  });
+  await p.route('**/api/connect/trello/**', async (rt) => {
+    const u = rt.request().url();
+    if (/\/boards/.test(u)) return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ boards: [{ id: 'b'.repeat(24), name: 'Growth' }] }) });
+    if (/\/lists/.test(u)) return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [{ id: 'l'.repeat(24), name: 'Next up' }] }) });
+    if (/\/add/.test(u)) { trelloAdds.push(JSON.parse(rt.request().postData() || '{}')); return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, added: 2 }) }); }
+    rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
+  polls = 0;
+  await p.evaluate(async () => { await Flow.Settings.set('newLook', true); Flow.Settings.reflect(); window.FlowTodayLook.applyLook(); try { localStorage.removeItem('flow:docdest'); } catch (e) {} });
+  await p.evaluate(() => FlowSay.open({ quiet: true })); await p.waitForTimeout(300);
+  await p.evaluate(() => { window.FlowTrello.connected = () => true; });
+  await p.setInputFiles('#flow-say #sy-file', { name: 'growth.pdf', mimeType: 'application/pdf', buffer: PDF });
+  await p.waitForTimeout(4800);
+  const dest = await p.evaluate(() => { const s = document.querySelector('#flow-say [data-say-dest="project"]'); return s ? { opts: [...s.options].map((o) => o.textContent), groups: [...s.querySelectorAll('optgroup')].map((g) => g.label) } : null; });
+  ok('a document\'s Priorities can go to My week or a project, by company and brand', dest && dest.opts[0] === 'My week (Today)' && dest.groups.join('|') === 'ABKO|Not in a company' && dest.opts.indexOf('Davines › DAVINES') > 0, dest);
+  await p.selectOption('#flow-say [data-say-dest="project"]', 'prD');
+  await p.selectOption('#flow-say [data-say-dest="board"]', 'b'.repeat(24)); await p.waitForTimeout(500);
+  await p.selectOption('#flow-say [data-say-dest="list"]', 'l'.repeat(24));
+  ok('with Trello connected: a board, then its lists', await p.evaluate(() => [...document.querySelectorAll('#flow-say [data-say-dest="list"] option')].map((o) => o.textContent).join('|') === 'Pick a list|Next up'));
+  await p.evaluate(() => { document.querySelectorAll('#flow-say .sy-card')[3] && document.querySelectorAll('#flow-say .sy-card')[3].querySelector('[data-say="drop"]').click(); });
+  await p.click('#flow-say [data-say="do"]'); await p.waitForTimeout(1500);
+  const tasks = orgPosts.filter((x) => x.op === 'task');
+  const inWeek = await p.evaluate(() => { const all = []; Object.keys(cData.rocks).forEach((k) => (cData.rocks[k] || []).forEach((r) => all.push(r.title))); return all.filter((t) => t === 'Book the hall').length; });
+  ok('to a project: each Priority becomes that project\'s task, with its day and its note naming the document', tasks.length === 3 && tasks.every((t) => t.project === 'prD') && tasks[0].title === 'Send the signed contract' && tasks[0].due === tomorrow && /p\. 2/.test(tasks[0].note) && /From growth\.pdf/.test(tasks[0].note), tasks);
+  ok('and not on the week as well', inWeek === 1, inWeek);
+  ok('and the same items go to the Trello list, with the day and where they came from', trelloAdds.length === 1 && trelloAdds[0].list === 'l'.repeat(24) && trelloAdds[0].cards.length === 3 && trelloAdds[0].cards[0].due === tomorrow && /From growth\.pdf/.test(trelloAdds[0].cards[0].desc), trelloAdds);
+  ok('the Trello board and list are remembered on the device', await p.evaluate(() => JSON.parse(localStorage.getItem('flow:docdest') || '{}').list === 'l'.repeat(24)));
+  await p.unroute('**/api/team/org'); await p.unroute('**/api/connect/trello/**');
+
   const fromMenu = await p.evaluate(() => {
     let clicked = 0;
     FlowSay.build(); const i = document.querySelector('#flow-say #sy-file'); const orig = i.click; i.click = () => { clicked++; };
     FlowSay.open({ file: true });
-    const r = { open: !!document.querySelector('#flow-say.on'), clicked, listening: !!(window.FlowVoice && FlowVoice.listening) };
+    const r = { open: !!document.querySelector('#flow-say.on'), clicked, listening: !!(window.FlowVoice && FlowVoice.listening && !FlowVoice.sink), ear: !!(window.FlowVoice && FlowVoice.sink) };
     i.click = orig; FlowSay.close();
     return r;
   });

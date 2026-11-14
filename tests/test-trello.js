@@ -22,6 +22,7 @@ const ME = 'a'.repeat(24), OTHER = 'b'.repeat(24);
 const B1 = '1'.repeat(24), B2 = '2'.repeat(24), B3 = '3'.repeat(24);
 const C1 = 'c1'.padEnd(24, '0'), C2 = 'c2'.padEnd(24, '0'), C3 = 'c3'.padEnd(24, '0'), C4 = 'c4'.padEnd(24, '0'), C5 = 'c5'.padEnd(24, '0');
 const K1 = 'd1'.padEnd(24, '0'), K2 = 'd2'.padEnd(24, '0'), K3 = 'd3'.padEnd(24, '0');
+const L1 = 'a'.repeat(23) + '1', L2 = 'a'.repeat(23) + '2';
 const TOKEN = 'ATTAgoodtoken0123456789abcdef0123456789abcdef';
 
 (async () => {
@@ -56,14 +57,16 @@ const TOKEN = 'ATTAgoodtoken0123456789abcdef0123456789abcdef';
     ] }]);
     if (p === '/boards/' + B2 + '/checklists') return res([]);
     if (/^\/cards\//.test(p) && o.method === 'PUT') return res({ ok: true });
+    if (p === '/boards/' + B1 + '/lists') return res([{ id: L1, name: 'To do' }, { id: L2, name: 'Doing' }]);
+    if (p === '/cards' && o.method === 'POST') return res({ id: ('c' + calls.length).padEnd(24, '0').replace(/[^a-f0-9]/g, 'a').slice(0, 24), shortUrl: 'https://trello.com/c/new' });
     return { ok: false, status: 404, json: async () => ({}) };
   };
   const send = () => ({ status: 0, body: '', headers: {}, writeHead(s, h) { this.status = s; this.headers = h || {}; }, end(b) { this.body = b || ''; } });
   const json = (res, s, obj) => { res.status = s; res.body = JSON.stringify(obj); };
-  const call = async (pth, method, body, extra) => {
+  const call = async (pth, method, body, extra, qs) => {
     const r = send();
     await conn.handle(Object.assign({ method, headers: { host: 'theflow.today', 'x-forwarded-proto': 'https' } }, extra || {}), r,
-      { path: pth, query: new URLSearchParams(), me, raw: st, json, fetch: fakeFetch, readBody: async () => JSON.stringify(body || {}) });
+      { path: pth, query: new URLSearchParams(qs || ''), me, raw: st, json, fetch: fakeFetch, readBody: async () => JSON.stringify(body || {}) });
     let j = {}; try { j = JSON.parse(r.body || '{}'); } catch (e) {}
     return { status: r.status, j, body: r.body, headers: r.headers };
   };
@@ -134,6 +137,21 @@ const TOKEN = 'ATTAgoodtoken0123456789abcdef0123456789abcdef';
   ok('an id that is not a Trello id never reaches Trello', r.status === 400 && !calls.some((c) => c.o.method === 'PUT'));
   r = await call('/api/connect/trello/done', 'GET');
   ok('done is a POST', r.status === 405);
+
+  /* new cards: from a document, a meeting, J.A.R.V.I.S. */
+  r = await call('/api/connect/trello/lists', 'GET', null, null, 'board=' + B1);
+  ok('the lists of a board, to choose where new cards go', r.status === 200 && r.j.lists.map((l) => l.name).join('|') === 'To do|Doing', r.j);
+  r = await call('/api/connect/trello/lists', 'GET', null, null, 'board=../members');
+  ok('a board that is not a Trello id is refused', r.status === 400);
+  calls.length = 0;
+  r = await call('/api/connect/trello/add', 'POST', { list: L1, cards: [{ name: 'Update privacy policy', due: '2026-11-21', desc: 'p. 19 · week 3' }, { name: '  ', due: '' }, { name: 'No date' }] });
+  const posts = calls.filter((c) => c.o.method === 'POST' && new URL(c.u).pathname === '/1/cards');
+  const q0 = posts[0] && new URL(posts[0].u).searchParams;
+  ok('cards are added to the chosen list, with the day and the note; blank ones skipped', r.status === 200 && r.j.added === 2 && posts.length === 2 && q0.get('idList') === L1 && q0.get('name') === 'Update privacy policy' && q0.get('due') === '2026-11-21T12:00:00.000Z' && q0.get('desc') === 'p. 19 · week 3' && !new URL(posts[1].u).searchParams.get('due'), r.j);
+  r = await call('/api/connect/trello/add', 'POST', { list: 'nope', cards: [{ name: 'x' }] });
+  ok('adding needs a real list', r.status === 400);
+  r = await call('/api/connect/trello/add', 'GET');
+  ok('adding is a POST', r.status === 405);
 
   r = await call('/api/connect/trello/return', 'GET', null);
   ok('the return page needs no session, is not cached, and sends no referrer', r.status === 200 && /no-store/.test(r.headers['Cache-Control']) && r.headers['Referrer-Policy'] === 'no-referrer' && /\/api\/connect\/trello\/key/.test(r.body));
