@@ -13986,6 +13986,7 @@ const Org = {
     const sel = (name, opts, cur) => '<select class="hud-sel" data-team-pjset="' + name + '" data-id="' + esc(p.id) + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
     let h = '<div class="org-title"><h2 data-i18n="off">' + esc(p.name) + '</h2>' + (own ? sel('health', [['on_track', 'On track'], ['at_risk', 'At risk'], ['blocked', 'Blocked']], p.health) + sel('status', [['active', 'Active'], ['paused', 'Paused'], ['done', 'Done']], p.status) +
       Org.mover(p) : '<em class="hud-pjh" data-h="' + esc(p.health) + '">' + esc(Team.PJH[p.health] || 'On track') + '</em>') + '</div>';
+    if (own) h += '<div class="org-docrow"><button type="button" class="hud-btn ghost" data-hud="orgfromdoc" data-id="' + esc(p.id) + '">' + Nav.svg('doc') + '<span>From a document</span></button><span class="org-lbl">A PDF, Word, Excel or a photo — its action items become this project\'s tasks</span></div>';
     if (own) h += Org.newcoForm() + Org.newbrForm();
     if (p.state) h += '<p class="hud-pjstate" data-i18n="off"><b>Where it stands.</b> ' + esc(p.state) + '</p>';
     /* who is on it */
@@ -14100,6 +14101,7 @@ const Org = {
     if (a === 'orggo') { const c = b.getAttribute('data-company'), pr = b.getAttribute('data-project'), br = b.getAttribute('data-brand'); if (!pr && c !== Org.nav.company) Org.tab = 'projects'; Org.go({ company: c || null, brand: br || null, project: pr || null }); return; }
     if (a === 'orgbredit') { Org.adding = Org.adding === 'bredit' ? '' : 'bredit'; Hud.paint(); return; }
     if (a === 'orgbrremove') { if (!confirm('Remove this brand? Its projects stay, in the company.')) return; const br = Org.d.brands.find((x) => x.id === id); await Org.after(await Team.post('/api/team/org', { op: 'brand', id, remove: true })); Org.go({ company: br ? br.company : null }); return; }
+    if (a === 'orgfromdoc') { Say.docProject = id; try { Say.open(); } catch (e) {} Say.pickFile(); return; }
     if (a === 'orgpjdel') {
       const p = Org.d.projects.find((x) => x.id === id); if (!p) return;
       if (!confirm('Delete "' + p.name + '"' + (p.counts.total ? ' and its ' + p.counts.total + ' task' + (p.counts.total === 1 ? '' : 's') : '') + '? This cannot be undone.')) return;
@@ -14370,6 +14372,7 @@ const Say = {
     wrap.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { e.preventDefault(); Say.document(f); } });
     wrap.addEventListener('paste', (e) => { const it = e.clipboardData && [...e.clipboardData.items].find((x) => x.kind === 'file'); if (it) { const f = it.getAsFile(); if (f) { e.preventDefault(); Say.document(f); } } });
     wrap.addEventListener('submit', (e) => { const f = e.target.closest('form[data-say-form="chatfind"]'); if (!f) return; e.preventDefault(); e.stopPropagation(); Say.chatFind(f.q.value); });
+    wrap.addEventListener('change', (e) => { const d = e.target.closest && e.target.closest('[data-say-dest]'); if (d) Say.destChange(d); });
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-say]'); if (!b) return;
       const a = b.getAttribute('data-say');
@@ -15288,7 +15291,8 @@ const Say = {
       if (!r.ok || !j.job) { Say.state(j.error || ('That file did not go through (' + r.status + '). Try again.')); return; }
       const out = await Say.pollDocument(j.job, name);
       Say.history.push({ role: 'user', text: name }, { role: 'assistant', text: out.say });
-      Say.plan = { say: out.say, actions: out.actions };
+      Say.plan = { say: out.say, actions: out.actions, doc: true };
+      await Say.destLoad();
       Say.paintPlan();
       Say.speak(out.say);
     } catch (e) { Say.state((e && e.message) || 'That did not work. Try again.'); }
@@ -15459,6 +15463,50 @@ const Say = {
     if (a.type === 'assign') { const who = Org.personName(a.person) || a.name || a.person; return '<div class="sy-card">' + head('Task for ' + who, '') + '<input class="flow-in" data-sy-edit="title" data-i="' + i + '" value="' + esc(a.title) + '">' + (Org.projectName(a.project) ? '<div class="sy-note" data-i18n="off">' + esc(Org.projectName(a.project)) + '</div>' : '') + Say.dayChips(i, a.date) + '</div>'; }
     return '';
   },
+  /* ---- where a document's work goes ----
+     Your week (as before), or a company's project — ABKO › Davines › … —
+     as that project's tasks; and, with Trello connected, also as cards on a
+     list you pick. The Trello board and list are remembered on the device;
+     a project page's "From a document" opens with that project chosen. */
+  dest: { project: '', board: '', list: '' }, docProject: '', tBoards: null, tLists: {},
+  async destLoad() {
+    let keep = {}; try { keep = JSON.parse(localStorage.getItem('flow:docdest') || '{}') || {}; } catch (e) {}
+    Say.dest = { project: Say.docProject || '', board: keep.board || '', list: keep.list || '' }; Say.docProject = '';
+    try { await Org.load(true); } catch (e) {}
+    try {
+      if (Trello.connected()) {
+        if (!Say.tBoards) { const r = await fetch('/api/connect/trello/boards', { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => ({})); Say.tBoards = r.ok && Array.isArray(j.boards) ? j.boards : []; }
+        if (Say.dest.board && !Say.tBoards.some((b) => b.id === Say.dest.board)) { Say.dest.board = ''; Say.dest.list = ''; }
+        if (Say.dest.board) await Say.destLists(Say.dest.board);
+      }
+    } catch (e) { Say.tBoards = Say.tBoards || []; }
+  },
+  async destLists(board) {
+    if (!board || Say.tLists[board]) return;
+    try { const r = await fetch('/api/connect/trello/lists?board=' + encodeURIComponent(board), { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json().catch(() => ({})); Say.tLists[board] = r.ok && Array.isArray(j.lists) ? j.lists : []; } catch (e) { Say.tLists[board] = []; }
+  },
+  destHtml() {
+    const D = Org.d || {}, cs = D.companies || [], bs = D.brands || [], ps = (D.projects || []).filter((p) => p.status !== 'done');
+    const label = (p) => { const br = bs.find((b) => b.id === p.brand); return (br ? br.name + ' › ' : '') + p.name; };
+    const opt = (v, l, cur) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>';
+    const groups = cs.map((c) => { const mine = ps.filter((p) => p.company === c.id).sort((a, b) => label(a).localeCompare(label(b))); return mine.length ? '<optgroup label="' + esc(c.name) + '">' + mine.map((p) => opt(p.id, label(p), Say.dest.project)).join('') + '</optgroup>' : ''; }).join('') +
+      (ps.some((p) => !p.company) ? '<optgroup label="Not in a company">' + ps.filter((p) => !p.company).map((p) => opt(p.id, p.name, Say.dest.project)).join('') + '</optgroup>' : '');
+    let h = '<div class="sy-dest"><label><span>Put them in</span><select class="flow-in" data-say-dest="project">' + opt('', 'My week (Today)', Say.dest.project) + groups + '</select></label>';
+    if (Trello.connected()) {
+      const boards = Say.tBoards || [], lists = Say.tLists[Say.dest.board] || [];
+      h += '<label><span>Also on Trello</span><select class="flow-in" data-say-dest="board">' + opt('', 'No', Say.dest.board) + boards.map((b) => opt(b.id, b.name, Say.dest.board)).join('') + '</select>' +
+        (Say.dest.board ? '<select class="flow-in" data-say-dest="list">' + opt('', 'Pick a list', Say.dest.list) + lists.map((l) => opt(l.id, l.name, Say.dest.list)).join('') + '</select>' : '') + '</label>';
+    } else h += '<div class="sy-note">Connect Trello under Settings → Connections to send these there too.</div>';
+    return h + '</div>';
+  },
+  async destChange(el) {
+    const k = el.getAttribute('data-say-dest'), v = el.value;
+    if (k === 'project') Say.dest.project = v;
+    if (k === 'board') { Say.dest.board = v; Say.dest.list = ''; if (v) await Say.destLists(v); }
+    if (k === 'list') Say.dest.list = v;
+    try { localStorage.setItem('flow:docdest', JSON.stringify({ board: Say.dest.board, list: Say.dest.list })); } catch (e) {}
+    if (k === 'board') Say.paintPlan();
+  },
   paintPlan() {
     Say.logPaint();
     const box = Say.el.querySelector('.sy-plan');
@@ -15468,6 +15516,7 @@ const Say = {
     box.innerHTML =
       '<div class="sy-heard" data-i18n="off">“' + esc(Say.said) + '”</div>' +
       (Say.plan.say ? '<div class="sy-say" data-i18n="off">' + esc(Say.plan.say) + '</div>' : '') +
+      (Say.plan.doc && Say.plan.actions.some((a) => a.type === 'rock') ? Say.destHtml() : '') +
       '<div class="sy-cards">' + Say.plan.actions.map((a, i) => Say.card(a, i)).join('') + '</div>' +
       (n && Say.spoken && Say.handsFree() ? '<div class="sy-ex">Say “yes” to do it, “no” to leave it — or say what to change.</div>' : '') +
       '<div class="ra-row ra-end"><button type="button" class="flow-btn" data-say="again">' + Nav.svg('mic') + '<span>Say again</span></button>' +
@@ -15484,12 +15533,22 @@ const Say = {
     const { c, hb, S } = Say.host();
     const roles = (c && Array.isArray(c.roles)) ? c.roles : [];
     let open = null, did = 0, journal = false, handed = '';
+    const dest = Say.plan.doc ? Say.dest : null, toProject = dest && dest.project ? dest.project : '', cards = [];
+    let inProject = 0, onTrello = 0;
     Say.busy = true;
     try {
       for (const a of Say.plan.actions) {
         try {
           if (a.type === 'rock') {
-            const d = Say.day(a.date) || new Date(); const title = String(a.title || '').trim(); if (!title || typeof addRock !== 'function') continue;
+            const d = Say.day(a.date) || new Date(); const title = String(a.title || '').trim(); if (!title) continue;
+            if (dest && dest.list) cards.push({ name: title.slice(0, 300), due: a.date || '', desc: [a.note || '', Say.said ? 'From ' + Say.said : ''].filter(Boolean).join('\n') });
+            if (toProject) {
+              const r = await fetch('/api/team/org', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ op: 'task', project: toProject, title: title.slice(0, 500), due: a.date || '', note: [a.note || '', Say.said ? 'From ' + Say.said : ''].filter(Boolean).join('\n') }) });
+              if (r.ok) { did++; inProject++; }
+              continue;
+            }
+            if (typeof addRock !== 'function') continue;
             addRock(title.slice(0, 200), roles[0] || '', (d.getDay() + 6) % 7, a.time || '', weekId(d), { note: a.note || '', prio: 'med' });
             did++;
           } else if (a.type === 'habit') {
@@ -15523,6 +15582,15 @@ const Say = {
           else if (a.type === 'assign') { const j = await Org.assign(a); if (j && j.ok) did++; }
         } catch (e) { console.warn('[Flow] say', a.type, e); }
       }
+      if (cards.length && dest && dest.list) {
+        try {
+          const r = await fetch('/api/connect/trello/add', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ list: dest.list, cards }) });
+          const j = await r.json().catch(() => ({})); if (r.ok) onTrello = j.added || 0; else toast(j.error || 'Trello did not take them.', 'bad', 2600);
+          if (onTrello) { try { Trello.load(true); } catch (e) {} }
+        } catch (e) { toast('Trello could not be reached.', 'bad', 2600); }
+      }
+      if (inProject) { try { await Org.after({ ok: true }); } catch (e) {} const pn = Org.projectName(toProject); toast(inProject + ' task' + (inProject === 1 ? '' : 's') + ' in ' + pn + (onTrello ? ' · ' + onTrello + ' on Trello' : ''), null, 2600); }
+      else if (onTrello) toast(onTrello + ' card' + (onTrello === 1 ? '' : 's') + ' on Trello', null, 2200);
       if (journal) { await Journal.save(); try { Journal.rerender(); } catch (e) {} }
       try { if (typeof renderToday === 'function') renderToday(); } catch (e) {}
       try { TodayLook.paint(); } catch (e) {}

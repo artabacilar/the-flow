@@ -4707,3 +4707,14 @@ html:not(.hud-on) #flow-hush{background:var(--lk-ink,#111);color:var(--lk-bg,#ff
 #flow-hud .org-prctl .org-move{flex:1;min-width:0}
 #flow-hud .org-del{padding:6px 10px;font-size:12px;color:#ff9d90;border-color:rgba(255,122,107,.35)}
 #flow-hud .org-br .org-coh small{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(170,200,255,.55)}
+
+/* where a document's work goes: a project, and/or Trello */
+#flow-say .sy-dest{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin:6px 0 12px;padding:12px;border:1px solid var(--border,rgba(255,255,255,.12));border-radius:14px}
+#flow-say .sy-dest label{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1 1 220px}
+#flow-say .sy-dest label span{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+#flow-say .sy-dest select{width:100%;min-width:0}
+#flow-say .sy-dest label select + select{margin-top:6px}
+#flow-say .sy-dest .sy-note{flex:1 1 100%;margin:0}
+.org-docrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
+.org-docrow .hud-btn{display:inline-flex;align-items:center;gap:6px}
+.org-docrow .hud-btn svg{width:15px;height:15px}

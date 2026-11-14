@@ -280,8 +280,8 @@ const PROVIDERS = {
     keyUrl: (req) => trelloAuthUrl(req),
     needs: () => !!trelloKey(),
     verify: verifyTrello,
-    actions: { items: trelloItems, boards: trelloBoards, prefs: trelloPrefs, done: trelloDone },
-    oneAccount: ['boards', 'prefs', 'done']
+    actions: { items: trelloItems, boards: trelloBoards, prefs: trelloPrefs, done: trelloDone, lists: trelloLists, add: trelloAdd },
+    oneAccount: ['boards', 'prefs', 'done', 'lists', 'add']
   }
 };
 
@@ -988,6 +988,40 @@ async function trelloDone(pv, rec, ctx) {
     return { status: 200, body: { ok: true, id, done } };
   }
   return { status: 400, body: { error: 'That is not a Trello card or checklist item.' } };
+}
+
+/* The lists of one board, for choosing where new cards go. */
+async function trelloLists(pv, rec, ctx) {
+  const board = String(ctx.query.get('board') || '');
+  if (!TRELLO_ID.test(board)) return { status: 400, body: { error: 'Pick a board.' } };
+  const lists = await trelloCall(rec.key, '/boards/' + board + '/lists', ctx, 'GET', { filter: 'open', fields: 'name' });
+  return { status: 200, body: { lists: (lists || []).map((l) => ({ id: l.id, name: String(l.name || '') })) } };
+}
+
+/* New cards on a list — what a document, a meeting or J.A.R.V.I.S. turned
+   into work. Name, an optional due date (a day; noon, so no time zone moves
+   it to the day before) and a description. At most 60 at a time. */
+const TRELLO_MAX_ADD = 60;
+async function trelloAdd(pv, rec, ctx) {
+  if (!ctx.req || ctx.req.method !== 'POST') return { status: 405, body: { error: 'POST' } };
+  let body = {};
+  try { body = JSON.parse((await ctx.readBody(ctx.req)) || '{}'); } catch (e) {}
+  const list = String(body.list || '');
+  if (!TRELLO_ID.test(list)) return { status: 400, body: { error: 'Pick a Trello list.' } };
+  const cards = (Array.isArray(body.cards) ? body.cards : []).slice(0, TRELLO_MAX_ADD);
+  const made = [];
+  for (const c of cards) {
+    const name = String((c && c.name) || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (!name) continue;
+    const q = { idList: list, name, pos: 'bottom' };
+    const due = String((c && c.due) || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(due)) q.due = due + 'T12:00:00.000Z';
+    const desc = String((c && c.desc) || '').slice(0, 4000);
+    if (desc) q.desc = desc;
+    const j = await trelloCall(rec.key, '/cards', ctx, 'POST', q);
+    made.push({ id: 'c:' + j.id, name, url: String(j.shortUrl || '') });
+  }
+  return { status: 200, body: { ok: true, added: made.length, cards: made } };
 }
 
 function trelloReturnPage() {
