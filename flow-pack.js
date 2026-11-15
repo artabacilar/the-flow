@@ -44,6 +44,17 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const prettyDate = (s) => { const d = parseISO(s); return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`; };
 
+/* Class changes that only touch the DOM when something actually changes.
+   classList.add() of a class already there, or remove() of one that is not,
+   still rewrites the class attribute (the DOM standard's "update steps") —
+   a mutation every observer hears and, on Safari's engine, a restyle. The
+   command centre repaints often; these keep its repaints from looking like
+   changes. (toggle(name, force) is already a no-op when nothing changes.) */
+const Cls = {
+  on(el, ...names) { if (el) for (const c of names) if (!el.classList.contains(c)) el.classList.add(c); },
+  off(el, ...names) { if (el) for (const c of names) if (el.classList.contains(c)) el.classList.remove(c); }
+};
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -9296,13 +9307,26 @@ const Refresh = {
       buf.push(e); if (buf.length > 20) buf.shift();
       if (!t) t = setTimeout(flush, 15000);
     };
-    /* the page frozen: a 500 ms timer that came back late, while visible */
-    let last = performance.now();
+    /* The page frozen: a 500 ms timer that came back late, while visible.
+       Not every late timer is a freeze. A Mac window behind others, or an
+       app the phone has put to sleep, still reports itself "visible" while
+       the system slows its timers to one a second (late ≈ 500 ms, every
+       tick) or stops them (late = the whole time away). Those are left out:
+       a tick while the window is not in front, a lateness of more than ten
+       seconds, and a run of ticks each about 500 ms late. */
+    let last = performance.now(), prevLate = 0;
+    const throttled = (x) => x > 380 && x < 640;
     setInterval(() => {
       const now = performance.now(), late = now - last - 500; last = now;
-      if (late > 150 && document.visibilityState === 'visible') note({ kind: 'freeze', ms: Math.round(late) });
+      const was = prevLate; prevLate = late;
+      if (late <= 150 || document.visibilityState !== 'visible') return;
+      let front = true; try { front = document.hasFocus(); } catch (e) {}
+      if (!front || late > 10000) return;
+      if (throttled(late) && throttled(was)) return;
+      note({ kind: 'freeze', ms: Math.round(late) });
     }, 500);
-    document.addEventListener('visibilitychange', () => { last = performance.now(); });
+    document.addEventListener('visibilitychange', () => { last = performance.now(); prevLate = 0; });
+    window.addEventListener('focus', () => { last = performance.now(); prevLate = 0; });
     /* a tap or key: how long until the screen could show the answer */
     const input = (ev) => {
       if (!ev.isTrusted) return;
@@ -13784,10 +13808,10 @@ const Hush = {
     Hush.hide();
     try { Track.hit('hush'); } catch (e) {}
   },
-  hide() { clearInterval(Hush.t); Hush.t = 0; if (Hush.el) Hush.el.hidden = true; document.documentElement.classList.remove('jv-talking'); },
+  hide() { clearInterval(Hush.t); Hush.t = 0; if (Hush.el) Hush.el.hidden = true; Cls.off(document.documentElement, 'jv-talking'); },
   watch() {
     if (!document.body) return;
-    Hush.build().hidden = false; document.documentElement.classList.add('jv-talking'); Hush.quietSince = 0;
+    Hush.build().hidden = false; Cls.on(document.documentElement, 'jv-talking'); Hush.quietSince = 0;
     if (Hush.t) return;
     Hush.t = setInterval(() => {
       if (Speech.speaking()) { Hush.quietSince = 0; return; }
@@ -13842,12 +13866,12 @@ const Org = {
   bar(c) { return '<i class="hud-pjbar"><b style="width:' + (c.total ? Math.round(c.done / c.total * 100) : 0) + '%"></b></i>'; },
   faces(ids) { return '<span class="org-faces">' + ids.slice(0, 6).map((id) => { const p = Org.d.people.find((x) => x.id === id); return p ? '<i title="' + esc(p.name) + '" data-i18n="off">' + esc(Org.ini(p.name)) + '</i>' : ''; }).join('') + (ids.length > 6 ? '<i>+' + (ids.length - 6) + '</i>' : '') + '</span>'; },
   paint() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Org.d && !Org.loading) { Org.loading = true; Org.load(true).then(() => { Org.loading = false; if (Hud.on && Team.sel === 'projects') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Projects';
-    Hud.el.querySelector('.hud-brand span').textContent = 'Your companies, their projects, and the people on them';
-    if (Org.classic && Org.d && Org.d.me.owner) { Hud.el.classList.remove('hud-orgview'); Team.paintProjects(); const l = Hud.el.querySelector('.hud-left'); if (l) l.insertAdjacentHTML('afterbegin', '<div class="org-back"><button type="button" class="hud-btn ghost" data-hud="orgclassic">← Back to your companies</button></div>'); return; }
-    Hud.el.classList.add('hud-orgview');
+    Hud.brand('b', 'Projects');
+    Hud.brand('span', 'Your companies, their projects, and the people on them');
+    if (Org.classic && Org.d && Org.d.me.owner) { Cls.off(Hud.el, 'hud-orgview'); Team.paintProjects(); const l = Hud.el.querySelector('.hud-left'); if (l) l.insertAdjacentHTML('afterbegin', '<div class="org-back"><button type="button" class="hud-btn ghost" data-hud="orgclassic">← Back to your companies</button></div>'); return; }
+    Cls.on(Hud.el, 'hud-orgview');
     /* the clock repaints the room every half minute: never under someone typing */
     const ae = document.activeElement;
     if (!Org.force && ae && ae.closest && ae.closest('#flow-hud .org') && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
@@ -14583,7 +14607,7 @@ const Say = {
     Say.state('');
     const hi = Say.el.querySelector('.sy-hello'); if (hi) { hi.textContent = Say.helloLine(); hi.classList.remove('quiet'); }
     Say.mode('idle'); Say.memPaint(); Say.mics().catch(() => {});
-    Say.el.classList.add('on'); document.documentElement.classList.add('say-on');
+    Say.el.classList.add('on'); Cls.on(document.documentElement, 'say-on');
     Say.kbOpen = false; Say.dockWatch(); Say.dockSync(); try { Hud.caption('clear'); } catch (e) {}
     const own = Say.el.querySelector('[data-say-own]'); if (own) own.checked = Say.own();
     Say.paintMic();
@@ -14628,7 +14652,7 @@ const Say = {
     /* In Advanced the console is part of the command centre: it settles, it
        does not go away. */
     if (Hud.on && Hud.merged()) { Say.state(''); Say.settle(); return; }
-    Say.el.classList.remove('on'); document.documentElement.classList.remove('say-on', 'hud-dock');
+    Say.el.classList.remove('on'); Cls.off(document.documentElement, 'say-on', 'hud-dock');
     try { if (Hud.on) Hud.close(true); } catch (e) {}
   },
   /* On a phone the command centre's console is a dock: one row of buttons
@@ -14639,7 +14663,7 @@ const Say = {
   dockable() { try { return !!Hud.on && window.innerWidth <= 900; } catch (e) { return false; } },
   dockSync() {
     const root = document.documentElement;
-    if (!Say.el || !Say.dockable()) { root.classList.remove('hud-dock'); return; }
+    if (!Say.el || !Say.dockable()) { Cls.off(root, 'hud-dock'); return; }
     const plan = Say.el.querySelector('.sy-plan'), showing = plan && !plan.hidden;
     const on = !Say.kbOpen && !showing;
     root.classList.toggle('hud-dock', on);
@@ -15686,10 +15710,10 @@ const Hud = {
     Hud.build();
     const merged = Hud.merged();
     Hud.el.classList.toggle('hud-merge', merged);
-    if (!merged) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); }
+    if (!merged) { Hud.unmount(); Hud.page = null; Cls.off(Hud.el, 'hud-pagemode'); }
     Hud.on = true;
-    document.documentElement.classList.add('hud-on');
-    Hud.el.classList.add('on');
+    Cls.on(document.documentElement, 'hud-on');
+    Cls.on(Hud.el, 'on');
     Hud.paint(); Hud.paintNav();
     try { Hud.alignWatch(); Hud.align(); } catch (e) {}
     try { Say.open({ idle: true }); } catch (e) {}
@@ -15706,10 +15730,10 @@ const Hud = {
     /* In Advanced the command centre is the app: × and Esc go back to
        J.A.R.V.I.S., they do not close anything. */
     if (Hud.merged() && !force) { Hud.home(); return; }
-    Hud.unmount(); Hud.page = null; if (Hud.el) Hud.el.classList.remove('hud-pagemode');
+    Hud.unmount(); Hud.page = null; if (Hud.el) Cls.off(Hud.el, 'hud-pagemode');
     Hud.on = false;
-    document.documentElement.classList.remove('hud-on', 'hud-axis', 'hud-axis-narrow', 'hud-paged', 'hud-ask');
-    if (Hud.el) Hud.el.classList.remove('on');
+    Cls.off(document.documentElement, 'hud-on', 'hud-axis', 'hud-axis-narrow', 'hud-paged', 'hud-ask');
+    if (Hud.el) Cls.off(Hud.el, 'on');
     cancelAnimationFrame(Hud.raf); Hud.raf = 0; clearTimeout(Hud.nap); Hud.nap = 0; clearInterval(Hud.timer);
     try { Team.select(null, true); clearTimeout(Team.watchT); Team.openId = null; } catch (e) {}
     if (!fromSay) { try { Say.close(); } catch (e) {} }
@@ -15758,6 +15782,9 @@ const Hud = {
      DOM is left alone — no mutation storm, no re-translation, no re-layout,
      and whatever the person had open or typed in a panel stays. */
   set(sel, html) { const el = Hud.el && Hud.el.querySelector(sel); return Hud.setEl(el, html); },
+  /* The room's name in the top bar: written only when it changes (setting
+     textContent replaces the node, a mutation on every repaint otherwise). */
+  brand(which, text) { const el = Hud.el && Hud.el.querySelector('.hud-brand ' + which); text = String(text == null ? '' : text); if (el && el.textContent !== text) el.textContent = text; },
   setEl(el, html) {
     if (!el) return false;
     if (el.__html === html && (html === '' ? !el.firstChild : !!el.firstChild)) return false;
@@ -15783,7 +15810,7 @@ const Hud = {
   },
   paintNow() {
     if (!Hud.el) return;
-    if (Team.sel !== 'projects') Hud.el.classList.remove('hud-orgview');
+    if (Team.sel !== 'projects') Cls.off(Hud.el, 'hud-orgview');
     const nm = (() => { try { return Say.name(); } catch (e) { return ''; } })() || 'J.A.R.V.I.S.';
     /* One of the team selected: their workspace, not the day. */
     if (Team.sel === 'memory') { try { Team.paintMemory(); } catch (e) { console.warn('[Flow] memory', e); } return; }
@@ -15792,10 +15819,10 @@ const Hud = {
     if (Team.sel === 'efficiency') { try { Team.paintEfficiency(); } catch (e) { console.warn('[Flow] efficiency', e); } return; }
     if (Team.sel === 'projects') { try { Org.paint(); } catch (e) { console.warn('[Flow] projects', e); } return; }
     if (Team.sel === 'setup') { try { Team.paintSetup(); } catch (e) { console.warn('[Flow] setup', e); } return; }
-    Hud.el.classList.remove('hud-memview', 'hud-orgview');
+    Cls.off(Hud.el, 'hud-memview', 'hud-orgview');
     if (Team.sel && Team.sel !== 'jarvis') { try { Team.paintAgent(); } catch (e) { console.warn('[Flow] team', e); } return; }
-    Hud.el.querySelector('.hud-brand b').textContent = nm;
-    Hud.el.querySelector('.hud-brand span').textContent = 'Command centre';
+    Hud.brand('b', nm);
+    Hud.brand('span', 'Command centre');
     const B = TodayBeta, t = B.todayO();
     let rocks = []; try { rocks = B.rocksOn(t).slice().sort((a, b) => (a.done - b.done) || B.byTime(a, b)); } catch (e) {}
     const open = rocks.filter((r) => !r.done);
@@ -15823,11 +15850,18 @@ const Hud = {
     Hud.set('.hud-right', team + cal + body + money);
     try { Team.watch(); } catch (e) {}
   },
+  /* Every second: one text node's characters change, nothing else. Setting
+     textContent replaced the node (a childList mutation that woke every
+     page-wide observer) and rewrote the date sixty times a minute. Not at
+     all while the window is hidden. */
   clock() {
-    if (!Hud.el) return;
+    if (!Hud.el || document.hidden) return;
     const d = new Date(), p = (n) => String(n).padStart(2, '0');
-    Hud.el.querySelector('.hud-time').textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
-    Hud.el.querySelector('.hud-date').textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    const node = (sel) => { const b = Hud.el.querySelector('.hud-clock ' + sel); if (!b) return null; if (!b.__t || b.__t.parentNode !== b) { b.textContent = ''; b.__t = b.appendChild(document.createTextNode('')); } return b.__t; };
+    const t = node('.hud-time'), ds = node('.hud-date');
+    const tv = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    if (t && t.data !== tv) t.data = tv;
+    if (ds && (Hud.dateFor !== d.toDateString() || !ds.data)) { Hud.dateFor = d.toDateString(); const dv = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }); if (ds.data !== dv) ds.data = dv; }
   },
   /* What the orb is doing, from what he is doing. */
   state() {
@@ -15949,29 +15983,43 @@ const Hud = {
   /* One axis. The orb's column is the centre of the room; the console is
      placed on the same line, at its width, so the two always stack exactly —
      with the rail on the left, a page or a room open, at any window size. */
-  align() {
+  align() { Hud.alignCls(); Hud.alignMeasure(); },
+  /* A page of his life (Today, Plan, Body, Record, Settings) is the page
+     alone, full width, as the Flow always was: no orb, no strip of the
+     team, and J.A.R.V.I.S. only when he is asked or is talking. Classes only:
+     no measuring. */
+  alignCls() {
     const root = document.documentElement;
-    /* A page of his life (Today, Plan, Body, Record, Settings) is the page
-       alone, full width, as the Flow always was: no orb, no strip of the
-       team, and J.A.R.V.I.S. only when he is asked or is talking. */
     const paged = !!(Hud.on && Hud.el && (Hud.el.classList.contains('hud-pagemode') || Hud.el.classList.contains('hud-orgview')));
     root.classList.toggle('hud-paged', paged);
-    if (!paged) root.classList.remove('hud-ask');
+    if (!paged) Cls.off(root, 'hud-ask');
+  },
+  /* Where the orb's column is, for the console to sit on the same axis.
+     Measured from a ResizeObserver, which runs after the browser has laid
+     the page out: reading the position there costs nothing. It used to be
+     measured on the next animation frame after every change of the room,
+     which made the browser lay the whole page out early — and then again,
+     for the frame — on every tap. */
+  alignMeasure() {
+    const root = document.documentElement;
     const c = Hud.on && Hud.el && Hud.el.querySelector('.hud-core');
     const r = c && c.offsetParent !== null ? c.getBoundingClientRect() : null;
-    if (!r || !r.width || window.innerWidth <= 900) { root.classList.remove('hud-axis', 'hud-axis-narrow'); return; }
+    if (!r || !r.width || window.innerWidth <= 900) { Cls.off(root, 'hud-axis', 'hud-axis-narrow'); return; }
     const cx = Math.round(r.left + r.width / 2), cw = Math.round(r.width);
     if (Hud.axis !== cx + ':' + cw) { Hud.axis = cx + ':' + cw; root.style.setProperty('--hud-cx', cx + 'px'); root.style.setProperty('--hud-cw', cw + 'px'); }
-    root.classList.add('hud-axis');
+    Cls.on(root, 'hud-axis');
     root.classList.toggle('hud-axis-narrow', cw < 520);
   },
   alignWatch() {
     if (Hud.aligned) return; Hud.aligned = true;
-    const go = () => { if (Hud.alignRaf) return; Hud.alignRaf = requestAnimationFrame(() => { Hud.alignRaf = 0; Hud.align(); }); };
-    try { const ro = new ResizeObserver(go); ro.observe(Hud.el); const c = Hud.el.querySelector('.hud-core'); if (c) ro.observe(c); Hud.ro = ro; } catch (e) {}
-    window.addEventListener('resize', go);
-    try { new MutationObserver(go).observe(Hud.el, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
-    go();
+    /* the column changes size (the window, a room or a page opening, the
+       rail): measured after layout, in the observer's own callback */
+    try { const ro = new ResizeObserver(() => { if (Hud.on) Hud.alignMeasure(); }); ro.observe(Hud.el); const c = Hud.el.querySelector('.hud-core'); if (c) ro.observe(c); Hud.ro = ro; } catch (e) {}
+    /* the column only moves (same width, new place): rare — a frame later */
+    window.addEventListener('resize', () => { if (Hud.alignRaf || !Hud.on) return; Hud.alignRaf = requestAnimationFrame(() => { Hud.alignRaf = 0; Hud.alignMeasure(); }); });
+    /* the room's classes: only a real change, not a rewrite to the same */
+    let was = Hud.el.className;
+    try { new MutationObserver(() => { if (Hud.el.className === was) return; was = Hud.el.className; Hud.alignCls(); }).observe(Hud.el, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
   },
   /* The words under the orb: what was said to him (live, while it is
      being said), and what he said back. Tap them to open the whole log. */
@@ -16020,7 +16068,7 @@ const Hud = {
   pageGroup(tab) { for (const g of Object.keys(Hud.PAGES)) if (Hud.PAGES[g].indexOf(tab) >= 0) return g; return null; },
   /* Back to J.A.R.V.I.S.: the day round the orb, no page, no room. */
   home() {
-    Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); Team.openId = null;
+    Hud.unmount(); Hud.page = null; Cls.off(Hud.el, 'hud-pagemode'); Team.openId = null;
     if (Say.agent) { Team.select(null).then(() => Hud.paintNav()).catch(() => {}); } else { Team.sel = null; Team.adding = false; Team.editing = null; Team.paintRail(); Hud.paint(); }
     Hud.paintNav();
   },
@@ -16035,7 +16083,7 @@ const Hud = {
     Hud.pageLast[group] = tab;
     if (Team.sel) { Team.sel = null; Say.agent = null; Team.adding = false; Team.editing = null; try { Say.history = []; Say.logPaint(); Say.chatResume(); const k = Say.el && Say.el.querySelector('.sy-k'); if (k) k.textContent = Say.title(); } catch (e) {} }
     Hud.page = { group, tab };
-    Hud.el.classList.add('hud-pagemode');
+    Cls.on(Hud.el, 'hud-pagemode');
     Hud.mount(group, tab);
     Team.paintRail(); Hud.paint(); Hud.paintNav();
     /* on a phone the page sits under the orb: bring its top into view */
@@ -16045,7 +16093,12 @@ const Hud = {
   mount(group, tab) {
     Hud.unmount();
     Hud.mounting = true;
-    try { const p = Nav.pill(tab); if (p) p.click(); } catch (e) {}
+    /* Opening the page behind the scenes scrolls the window to the top —
+       a forced layout of the whole document for a window nobody sees while
+       the command centre covers it. Not while mounting. */
+    const scroll = window.scrollTo;
+    try { window.scrollTo = function () {}; const p = Nav.pill(tab); if (p) p.click(); } catch (e) {}
+    finally { window.scrollTo = scroll; }
     Hud.mounting = false;
     const sec = document.getElementById('tab-' + tab);
     const col = Hud.el.querySelector('.hud-pagecol'); if (!col) return;
@@ -16088,7 +16141,7 @@ const Hud = {
   /* The look changed (or the app has just started): Advanced lives in the
      command centre, Simple does not. */
   sync() {
-    if (Hud.merged()) { if (!(Auth.user)) return; if (!Hud.on) Hud.open(); else { Hud.el.classList.add('hud-merge'); Hud.paintNav(); Team.paintRail(); Hud.paint(); } }
+    if (Hud.merged()) { if (!(Auth.user)) return; if (!Hud.on) Hud.open(); else { Cls.on(Hud.el, 'hud-merge'); Hud.paintNav(); Team.paintRail(); Hud.paint(); } }
     else if (Hud.on && Hud.el && Hud.el.classList.contains('hud-merge')) Hud.close(false, true);
   },
   boot() {
@@ -16185,7 +16238,7 @@ const Team = {
   /* ---- choosing one ---- */
   async select(id, quiet) {
     /* Memory is a view, not a person: the conversation stays where it is. */
-    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup' || id === 'projects') { Team.sel = id; Team.adding = false; Team.editing = null; if (Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); } if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); } return; }
+    if (id === 'memory' || id === 'skills' || id === 'scripts' || id === 'efficiency' || id === 'setup' || id === 'projects') { Team.sel = id; Team.adding = false; Team.editing = null; if (Hud.page) { Hud.unmount(); Hud.page = null; Cls.off(Hud.el, 'hud-pagemode'); } if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); } return; }
     const next = id && id !== 'jarvis' ? id : null;
     if ((Say.agent || null) === next && !quiet) return;
     Say.agent = next; Team.sel = id || null; Team.adding = false; Team.editing = null; if (!quiet) Team.openId = null;
@@ -16206,7 +16259,7 @@ const Team = {
       Team.markSeen(next);
     } else { Say.history = []; Say.chatResume(); }
     try { Say.logPaint(); } catch (e) {}
-    if (next && Hud.page) { Hud.unmount(); Hud.page = null; Hud.el.classList.remove('hud-pagemode'); }
+    if (next && Hud.page) { Hud.unmount(); Hud.page = null; Cls.off(Hud.el, 'hud-pagemode'); }
     if (!quiet) { Team.paintRail(); Hud.paint(); Hud.paintNav(); }
   },
   afterReply(id, j) {
@@ -16270,8 +16323,8 @@ const Team = {
   },
   paintAgent() {
     const a = Team.agent(Team.sel); if (!a) { Team.sel = null; Hud.paint(); return; }
-    Hud.el.querySelector('.hud-brand b').textContent = a.name;
-    Hud.el.querySelector('.hud-brand span').textContent = a.role;
+    Hud.brand('b', a.name);
+    Hud.brand('span', a.role);
     const use = (Team.data.usage || {})[a.id] || { calls: 0, in: 0, out: 0 };
     const who = Hud.panel('agent', 'Agent', '<div class="hud-who"><i class="hud-av big">' + esc(a.avatar || a.name.charAt(0)) + '</i><div><b data-i18n="off">' + esc(a.name) + '</b><small>' + esc(a.role) + '</small>' + Team.badge(a) + '</div></div>' +
       '<label class="hud-opt"><span>Model</span>' + Team.modelSelect(a) + '</label>' +
@@ -16840,10 +16893,10 @@ const Team = {
     return '<div class="hud-mi' + (open ? ' open' : '') + (it.status === 'superseded' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="memopen" data-key="' + esc(key) + '"><span data-i18n="off">' + esc(it.text) + '</span><small data-i18n="off">' + esc(meta) + '</small>' + Team.memBadge(it) + '</button>' + body + '</div>';
   },
   paintMemory() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.mem && !Team.memLoading) { Team.memLoading = true; Team.loadMem().then(() => { Team.memLoading = false; if (Hud.on && Team.sel === 'memory') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Memory';
-    Hud.el.querySelector('.hud-brand span').textContent = 'What the team knows, and where it came from';
+    Hud.brand('b', 'Memory');
+    Hud.brand('span', 'What the team knows, and where it came from');
     const M = Team.mem || { items: [], counts: {}, log: [], proposals: [] };
     const items = (M.items || []).filter((it) => Team.memFilter === 'superseded' ? it.status === 'superseded' : Team.memFilter === 'rules' ? (it.kind === 'rule' || it.kind === 'procedure') : Team.memFilter === 'all' ? true : it.status !== 'superseded');
     const search = '<form class="hud-msearch" data-team="memsearch"><input type="search" name="q" value="' + esc(Team.memQ || '') + '" placeholder="Search facts, rules, instructions…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
@@ -17096,10 +17149,10 @@ const Team = {
     if (waiting) Team.suTimer = setTimeout(async () => { await Team.loadSu(true); if (Hud.on && Team.sel === 'setup') Hud.paint(); }, 2500);
   },
   paintSetup() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.su && !Team.suLoading) { Team.suLoading = true; Team.loadSu().then(() => { Team.suLoading = false; if (Hud.on && Team.sel === 'setup') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Setup';
-    Hud.el.querySelector('.hud-brand span').textContent = 'From nothing to the first piece of work the team did for you';
+    Hud.brand('b', 'Setup');
+    Hud.brand('span', 'From nothing to the first piece of work the team did for you');
     const V = Team.su;
     if (!V || !V.steps.length) { Hud.set('.hud-left', Hud.panel('susteps', 'Steps', '<p class="hud-sub">Looking…</p>')); Hud.set('.hud-right', ''); Team.paintRail(); return; }
     if (!Team.suStep || !V.steps.some((s) => s.id === Team.suStep)) Team.suStep = V.current;
@@ -17224,10 +17277,10 @@ const Team = {
   PJH: { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked' },
   PJT: { queued: 'Queued', running: 'Working', awaiting_info: 'Has a question', awaiting_approval: 'Needs your yes', done: 'Done', failed: 'Did not finish', cancelled: 'Cancelled' },
   paintProjects() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.pj && !Team.pjLoading) { Team.pjLoading = true; Team.loadPj().then(() => { Team.pjLoading = false; if (Hud.on && Team.sel === 'projects') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Projects';
-    Hud.el.querySelector('.hud-brand span').textContent = 'What J.A.R.V.I.S. is running for you — from your meetings, with the team on it';
+    Hud.brand('b', 'Projects');
+    Hud.brand('span', 'What J.A.R.V.I.S. is running for you — from your meetings, with the team on it');
     const P = Team.pj, list = (P && P.projects) || [];
     const card = (p) => '<button type="button" class="hud-pj' + (Team.pjOpen === p.id ? ' sel' : '') + (p.status !== 'active' ? ' quiet' : '') + '" data-hud="pjopen" data-id="' + esc(p.id) + '">' +
       '<span class="hud-pjn" data-i18n="off">' + esc(p.name) + '</span>' +
@@ -17299,10 +17352,10 @@ const Team = {
   EFK: { 'memory.conflict': 'Memory', 'context.heavy': 'Context', 'skills.duplicate': 'Skills', 'skills.missing': 'Skills', 'skills.unclear': 'Skills', 'reads.repeated': 'Repeated reads', 'scripts.candidate': 'Automation', 'calls.handover': 'Model calls', 'calls.retries': 'Retries', 'corrections.repeated': 'Corrections' },
   money(u) { return '$' + (Math.round((u || 0) * 100) / 100).toFixed(2); },
   paintEfficiency() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.ef && !Team.efLoading) { Team.efLoading = true; Team.loadEf().then(() => { Team.efLoading = false; if (Hud.on && Team.sel === 'efficiency') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Efficiency';
-    Hud.el.querySelector('.hud-brand span').textContent = 'Where the team wastes effort — the evidence, the proposed change, and proof it helped';
+    Hud.brand('b', 'Efficiency');
+    Hud.brand('span', 'Where the team wastes effort — the evidence, the proposed change, and proof it helped');
     const E = Team.ef; const M = E && E.metrics; const T = M && M.total;
     const kpi = (l, v, s) => '<div class="hud-kpi"><b data-i18n="off">' + esc(v) + '</b><span>' + l + '</span>' + (s ? '<small data-i18n="off">' + esc(s) + '</small>' : '') + '</div>';
     const nums = !T ? '<p class="hud-sub">Looking…</p>' : '<div class="hud-kpis">' + kpi('tasks', T.runs, T.okRate + '% done · ' + T.failed + ' failed') + kpi('model calls', T.calls, 'plan ' + T.planCalls + ' · hand-over ' + T.reviewCalls) + kpi('tokens', T.tokens.toLocaleString('en-GB'), 'est. ' + Team.money(T.usd) + ' (list prices)') + kpi('retries', T.retries, T.reads + ' page reads') + kpi('interventions', T.interventions, T.questions + ' questions · ' + T.handoffs + ' hand-overs · ' + T.edited + ' edited · ' + T.declined + ' declined') + kpi('by script / skill', T.scripted + ' / ' + T.skilled, M.scripts.runs + ' automation run' + (M.scripts.runs === 1 ? '' : 's') + ', ' + M.scripts.modelCalls + ' model call' + (M.scripts.modelCalls === 1 ? '' : 's')) + '</div><p class="hud-sub">Last ' + E.days + ' days. Costs are estimates from list prices; the providers\' invoices are the truth. Hosting is included in the server plan and not metered per task.</p>';
@@ -17393,10 +17446,10 @@ const Team = {
     return '<div class="hud-mi' + (open ? ' open' : '') + (s.status !== 'active' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="scopen" data-id="' + esc(s.id) + '"><span data-i18n="off">⚙ ' + esc(s.name) + '</span><small data-i18n="off">' + esc(Team.cut(s.purpose, 100)) + ' · ' + esc(meta) + '</small><em class="hud-badge" data-st="' + (s.status === 'active' ? (s.untested ? 'awaiting' : 'working') : s.status === 'paused' ? 'awaiting' : 'not_built') + '">' + esc(s.status === 'active' ? (s.untested ? 'Untested' : 'Ready') : s.status) + '</em></button></div>';
   },
   paintScripts() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.sc && !Team.scLoading) { Team.scLoading = true; Team.loadSc().then(() => { Team.scLoading = false; if (Hud.on && Team.sel === 'scripts') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Automations';
-    Hud.el.querySelector('.hud-brand span').textContent = 'Routine work done by scripts — the same rules every time, no model unless judgment is needed';
+    Hud.brand('b', 'Automations');
+    Hud.brand('span', 'Routine work done by scripts — the same rules every time, no model unless judgment is needed');
     const S = Team.sc || { items: [], runs: [], counts: {}, ops: [] };
     const items = (S.items || []).filter((s) => Team.scFilter === 'all' ? true : s.status === (Team.scFilter || 'active'));
     const search = '<form class="hud-msearch" data-team="scsearch"><input type="search" name="q" value="' + esc(Team.scQ || '') + '" placeholder="Search automations…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
@@ -17565,11 +17618,11 @@ const Team = {
     return '<div class="hud-mi' + (open ? ' open' : '') + (s.status !== 'active' ? ' old' : '') + '"><button type="button" class="hud-mih" data-hud="skopen" data-id="' + esc(s.id) + '"><span data-i18n="off">' + esc(s.name) + '</span><small data-i18n="off">' + esc(Team.cut(s.purpose, 110)) + ' · ' + esc(meta) + '</small>' + Team.skBadge(s) + '</button></div>';
   },
   paintSkills() {
-    Hud.el.classList.add('hud-memview');
+    Cls.on(Hud.el, 'hud-memview');
     if (!Team.sk && !Team.skLoading) { Team.skLoading = true; Team.loadSk().then(() => { Team.skLoading = false; if (Hud.on && Team.sel === 'skills') Hud.paint(); }); }
     if (!Team.sc && !Team.scLoading) { Team.scLoading = true; Team.loadSc().then(() => { Team.scLoading = false; if (Hud.on && Team.sel === 'skills') Hud.paint(); }); }
-    Hud.el.querySelector('.hud-brand b').textContent = 'Skills';
-    Hud.el.querySelector('.hud-brand span').textContent = 'How the team does recurring work — taught once, followed every time';
+    Hud.brand('b', 'Skills');
+    Hud.brand('span', 'How the team does recurring work — taught once, followed every time');
     const S = Team.sk || { items: [], counts: {}, proposals: [] };
     const items = (S.items || []).filter((s) => Team.skFilter === 'all' ? true : s.status === (Team.skFilter || 'active'));
     const search = '<form class="hud-msearch" data-team="sksearch"><input type="search" name="q" value="' + esc(Team.skQ || '') + '" placeholder="Search skills…" aria-label="Search"><button type="submit" class="hud-btn">Search</button></form>' +
@@ -19416,14 +19469,17 @@ const Nav = {
        the right — the row read as broken rather than scrollable. Center the
        active pill, and only paint the edge fade when there is actually more
        to scroll to. */
-    /* Measured on the next frame, after the browser has laid the new page
-       out anyway — reading offsets here forced that layout three times over. */
-    if (!Nav.segRaf) Nav.segRaf = requestAnimationFrame(() => {
+    /* Measured once the new page has been drawn: reading offsets at the
+       start of the next frame made the browser lay the whole page out
+       early, and then again for the frame — on every tap. After the frame
+       the layout is already done and reading it is free. */
+    if (!Nav.segRaf) Nav.segRaf = requestAnimationFrame(() => setTimeout(() => {
       Nav.segRaf = 0;
+      if (!seg.isConnected || seg.style.display === 'none') return;
       const on = seg.querySelector('button.on');
-      if (on) seg.scrollLeft = Math.max(0, on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2);
+      if (on) { const x = Math.max(0, on.offsetLeft - (seg.clientWidth - on.offsetWidth) / 2); if (Math.abs(seg.scrollLeft - x) > 1) seg.scrollLeft = x; }
       seg.classList.toggle('fn-overflow', seg.scrollWidth > seg.clientWidth + 4);
-    });
+    }, 0));
   },
 
   /* ---- header tools: search and the avatar ------------------------------ */

@@ -4718,3 +4718,16 @@ html:not(.hud-on) #flow-hush{background:var(--lk-ink,#111);color:var(--lk-bg,#ff
 .org-docrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
 .org-docrow .hud-btn{display:inline-flex;align-items:center;gap:6px}
 .org-docrow .hud-btn svg{width:15px;height:15px}
+
+/* ── Nothing is drawn under the command centre (15 Nov) ──
+   The command centre is opaque and covers the whole window, but the app
+   under it — the header, the side bar, the open page — was still styled,
+   laid out and painted on every change: ~1,000 elements on a full account
+   that nobody can see, paid for again on each tap on Safari's engine.
+   Hidden and skipped while it is open. A page opened inside the command
+   centre is moved into it, so it is not a child of body and stays drawn.
+   The remembered size keeps the page's height (and the scroll position)
+   for when the command centre closes. */
+html.hud-on body > :is(.header, #flow-side, .section, #flow-ptr){
+  visibility:hidden;content-visibility:hidden;contain-intrinsic-size:auto 100px auto 100vh
+}
