@@ -108,17 +108,27 @@
 
   var ATTRS = ['placeholder', 'title', 'aria-label', 'aria-placeholder', 'alt', 'data-empty', 'data-ph'];
 
+  /* Within one pass, what each element was found to be (skipped or not) is
+     remembered: a pass over a panel asked the same question of the same
+     ancestors once per text node in it — the walk up the tree, again and
+     again. Forgotten at the end of the pass, since the page changes. */
+  var SK = null;
   function skipped(el, attrsOnly) {
+    var seen = [];
+    var res = false;
     for (var n = el; n && n.nodeType === 1; n = n.parentNode) {
       /* A box somebody types into is never translated — but its placeholder
          and its label for a screen reader are the app's words, not theirs. */
-      if (SKIP_TAGS[n.nodeName] && !(attrsOnly && n === el && (n.nodeName === 'INPUT' || n.nodeName === 'TEXTAREA'))) return true;
-      if (n.isContentEditable) return true;
+      if (SKIP_TAGS[n.nodeName] && !(attrsOnly && n === el && (n.nodeName === 'INPUT' || n.nodeName === 'TEXTAREA'))) { res = true; break; }
+      if (SK && !(attrsOnly && n === el) && SK.has(n)) { res = SK.get(n); break; }
+      if (n.isContentEditable) { res = true; break; }
       var f = n.getAttribute && n.getAttribute('data-i18n');
-      if (f === 'off') return true;
-      if (f === 'on') return false;
+      if (f === 'off') { res = true; break; }
+      if (f === 'on') { res = false; break; }
+      if (!(attrsOnly && n === el)) seen.push(n);
     }
-    return false;
+    if (SK) for (var i = 0; i < seen.length; i++) SK.set(seen[i], res);
+    return res;
   }
 
   function isChrome(el) {
@@ -464,7 +474,15 @@
      a pass is what stops the observer from chasing its own tail. */
   var pending = null;
 
+  /* In English with no vocabulary there is nothing to do to new text: the
+     app writes English. (Going back to English from another language is a
+     full repaint, which restores what was translated.) Watching every
+     change anyway walked each new panel, text node by text node, on every
+     tap. */
+  function idle() { return !active && !VOCAB; }
+
   function onMutations(records) {
+    if (idle()) return;
     for (var i = 0; i < records.length; i++) {
       var r = records[i];
       if (r.type === 'childList') {
@@ -490,11 +508,14 @@
     pending = null;
     var batch = q;
     q = [];
-    for (var i = 0; i < batch.length; i++) {
-      var n = batch[i];
-      if (!n.isConnected) continue;
-      walk(n);
-    }
+    SK = typeof Map === 'function' ? new Map() : null;
+    try {
+      for (var i = 0; i < batch.length; i++) {
+        var n = batch[i];
+        if (!n.isConnected) continue;
+        walk(n);
+      }
+    } finally { SK = null; }
     if (observer) observer.takeRecords();
   }
 
@@ -510,7 +531,8 @@
   /* ------------------------------------------------------------ full pass */
 
   function repaint() {
-    walk(document.documentElement);
+    SK = typeof Map === 'function' ? new Map() : null;
+    try { walk(document.documentElement); } finally { SK = null; }
     if (document.title) {
       var t = active ? translate(document.title) : untranslate(document.title);
       if (t) document.title = t;
