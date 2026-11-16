@@ -228,6 +228,17 @@ enum WatchAPI {
         struct Task: Decodable, Identifiable { let id: String; let title: String; let status: String; let agent: String; let question: String? }
         struct Done: Decodable, Identifiable { let id: String; let title: String; let agent: String; let result: String? }
         struct Counts: Decodable { let approvals: Int; let inFlight: Int; let asking: Int }
+        /// Each agent and what it is doing: "free", "working" or "waiting" (for you).
+        struct Agent: Decodable, Identifiable { let id: String; let name: String; let role: String; let state: String; let note: String?; let waiting: Int? }
+        /// A task from a meeting, waiting for a yes before it goes on the board.
+        struct Proposal: Decodable, Identifiable { let id: String; let title: String; let from: String? }
+        /// An app open right now on another device: "mac", "iphone" or "web".
+        struct Device: Decodable, Identifiable { let kind: String; let speaking: Bool; var id: String { kind } }
+        let team: [Agent]?
+        let proposals: [Proposal]?
+        let devices: [Device]?
+        let focus: Bool?
+        let paused: Bool?
         let assistant: String
         let approvals: [Approval]
         let mail: Mail?

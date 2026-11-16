@@ -45,7 +45,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if Shots.on { TodayView(onUnlinked: {}) }
-            else if linked { TodayView(onUnlinked: { linked = false }) }
+            else if linked { JarvisHome(onUnlinked: { linked = false }) }
             else { PairView(onLinked: { linked = true }) }
         }
     }
@@ -1072,5 +1072,531 @@ extension WatchDay {
             ],
             week: .init(id: "2026-W44", done: 3, total: 8, more: 3),
             updated: "", lang: Words.lang)
+    }
+}
+
+// MARK: - J.A.R.V.I.S. on the wrist: four screens
+//
+// The command centre in miniature: speak, approve, stop. 1 Talk (the orb),
+// 2 Needs you (what waits for a yes), 3 Team (who is doing what, Pause all),
+// 4 Devices (stop him talking on the Mac, open on the iPhone, focus).
+// Today, add by voice and the rest stay one tap away, under the status line.
+
+enum JV {
+    static let bg = Color(red: 0.027, green: 0.051, blue: 0.106)
+    static let card = Color(red: 0.055, green: 0.110, blue: 0.220)
+    static let line = Color(red: 0.133, green: 0.251, blue: 0.424)
+    static let glow = Color(red: 0.353, green: 0.659, blue: 1.0)
+    static let cyan = Color(red: 0.435, green: 0.765, blue: 1.0)
+    static let text = Color(red: 0.902, green: 0.941, blue: 1.0)
+    static let soft = Color(red: 0.812, green: 0.902, blue: 1.0)
+    static let muted = Color(red: 0.498, green: 0.592, blue: 0.722)
+    static let blue1 = Color(red: 0.424, green: 0.769, blue: 1.0)
+    static let blue2 = Color(red: 0.227, green: 0.608, blue: 1.0)
+    static let ink = Color(red: 0.012, green: 0.078, blue: 0.157)
+    static let orange = Color(red: 1.0, green: 0.416, blue: 0.239)
+    static let amber = Color(red: 1.0, green: 0.702, blue: 0.251)
+    static let green = Color(red: 0.373, green: 0.890, blue: 0.631)
+    static let button2 = Color(red: 0.047, green: 0.102, blue: 0.200)
+    static let line2 = Color(red: 0.165, green: 0.290, blue: 0.471)
+}
+
+struct JVBackground: View {
+    var body: some View {
+        ZStack {
+            JV.bg
+            RadialGradient(colors: [Color(red: 0.118, green: 0.275, blue: 0.549).opacity(0.5), Color.clear],
+                           center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 160)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+struct JVLabel: View {
+    let text: String
+    var color: Color = JV.cyan
+    var body: some View {
+        Text(text.uppercased()).font(.system(size: 11, weight: .bold)).tracking(2.2).foregroundColor(color).lineLimit(1)
+    }
+}
+
+struct JVPrimary: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(JV.ink)
+            .frame(maxWidth: .infinity, minHeight: 32)
+            .background(Capsule().fill(LinearGradient(colors: [JV.blue1, JV.blue2], startPoint: .top, endPoint: .bottom)))
+            .overlay(Capsule().stroke(Color(red: 0.561, green: 0.824, blue: 1.0), lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+struct JVSecondary: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(JV.soft)
+            .frame(maxWidth: .infinity, minHeight: 32)
+            .background(Capsule().fill(JV.button2))
+            .overlay(Capsule().stroke(JV.line2, lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// A square tile for the device controls.
+struct JVTile: ButtonStyle {
+    var primary = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: primary ? .bold : .semibold))
+            .foregroundColor(primary ? JV.ink : JV.soft)
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .background(RoundedRectangle(cornerRadius: 14).fill(primary
+                ? AnyShapeStyle(LinearGradient(colors: [JV.blue1, JV.blue2], startPoint: .top, endPoint: .bottom))
+                : AnyShapeStyle(JV.button2)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(primary ? Color(red: 0.561, green: 0.824, blue: 1.0) : JV.line2, lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+struct JVCard: ViewModifier {
+    var edge: Color = JV.line
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(JV.card.opacity(0.85)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(edge, lineWidth: 1))
+    }
+}
+extension View {
+    func jvCard(_ edge: Color = JV.line) -> some View { modifier(JVCard(edge: edge)) }
+}
+
+struct JVAvatar: View {
+    let name: String
+    var size: CGFloat = 26
+    var body: some View {
+        Text(String(name.prefix(1)).uppercased())
+            .font(.system(size: size * 0.45, weight: .bold))
+            .foregroundColor(Color(red: 0.024, green: 0.082, blue: 0.188))
+            .frame(width: size, height: size)
+            .background(Circle().fill(RadialGradient(colors: [Color(red: 0.659, green: 0.863, blue: 1.0), Color(red: 0.227, green: 0.525, blue: 1.0)],
+                                                     center: UnitPoint(x: 0.35, y: 0.3), startRadius: 0, endRadius: size * 0.7)))
+    }
+}
+
+struct JVBadge: View {
+    let n: Int
+    var body: some View {
+        Text("\(n)").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+            .background(Capsule().fill(JV.orange))
+    }
+}
+
+/// The orb from the command centre: a turning sphere of points inside its
+/// ring, two bright arcs, the tick-marked dial. Drawn at 15 frames a second,
+/// only while it is on screen.
+struct JVOrb: View {
+    var size: CGFloat = 96
+    var body: some View {
+        TimelineView(.periodic(from: Date(), by: 1.0 / 15.0)) { tl in
+            Canvas { ctx, sz in
+                JVOrb.draw(ctx, sz, t: tl.date.timeIntervalSinceReferenceDate)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    static let points: [SIMD3<Double>] = (0..<140).map { i in
+        let n = 140.0
+        let y = 1 - 2 * (Double(i) + 0.5) / n
+        let rr = (1 - y * y).squareRoot()
+        let th = Double(i) * Double.pi * (3 - (5.0).squareRoot())
+        return SIMD3<Double>(cos(th) * rr, y, sin(th) * rr)
+    }
+
+    static func draw(_ ctx: GraphicsContext, _ sz: CGSize, t: Double) {
+        let cx = Double(sz.width) / 2, cy = Double(sz.height) / 2
+        let R = min(Double(sz.width), Double(sz.height)) / 2
+        func pt(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: CGFloat(x), y: CGFloat(y)) }
+        var ticks = Path()
+        for k in 0..<60 {
+            let a = Double(k) / 60 * 2 * Double.pi
+            let r1 = R * 0.9, r2 = R * (k % 5 == 0 ? 0.99 : 0.94)
+            ticks.move(to: pt(cx + r1 * cos(a), cy + r1 * sin(a)))
+            ticks.addLine(to: pt(cx + r2 * cos(a), cy + r2 * sin(a)))
+        }
+        ctx.stroke(ticks, with: .color(Color(red: 0.24, green: 0.435, blue: 0.69).opacity(0.75)), lineWidth: 0.8)
+        let rr = R * 0.74
+        ctx.stroke(Path(ellipseIn: CGRect(x: CGFloat(cx - R * 0.82), y: CGFloat(cy - R * 0.82), width: CGFloat(R * 1.64), height: CGFloat(R * 1.64))),
+                   with: .color(Color(red: 0.141, green: 0.275, blue: 0.478)), lineWidth: 0.8)
+        ctx.stroke(Path(ellipseIn: CGRect(x: CGFloat(cx - rr), y: CGFloat(cy - rr), width: CGFloat(rr * 2), height: CGFloat(rr * 2))),
+                   with: .color(Color(red: 0.173, green: 0.333, blue: 0.569)), lineWidth: 1)
+        let spin = t * 0.25
+        for (start, len) in [(-2.0, 0.85), (1.2, 0.6)] {
+            var arc = Path()
+            arc.addArc(center: pt(cx, cy), radius: CGFloat(rr), startAngle: .radians(start + spin), endAngle: .radians(start + spin + len), clockwise: false)
+            ctx.stroke(arc, with: .color(JV.glow), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+        let rot = t * 0.35, tilt = 0.35, r = R * 0.58
+        for p in points {
+            let x2 = p.x * cos(rot) + p.z * sin(rot)
+            let z2 = -p.x * sin(rot) + p.z * cos(rot)
+            let y3 = p.y * cos(tilt) - z2 * sin(tilt)
+            let z3 = p.y * sin(tilt) + z2 * cos(tilt)
+            let d = (z3 + 1) / 2
+            let s = 0.45 + 0.95 * d
+            let rect = CGRect(x: CGFloat(cx + x2 * r - s), y: CGFloat(cy + y3 * r - s), width: CGFloat(s * 2), height: CGFloat(s * 2))
+            ctx.fill(Path(ellipseIn: rect), with: .color(Color(red: 0.486, green: 0.761, blue: 1.0).opacity(0.2 + 0.75 * d)))
+        }
+    }
+}
+
+/// Up and down between the screens on watchOS 10 and later; side to side before.
+struct JVPaging: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(watchOS 10.0, *) { content.tabViewStyle(.verticalPage) }
+        else { content.tabViewStyle(.page) }
+    }
+}
+
+/// What the four screens share: the day, the team, and one action at a time.
+@MainActor final class JarvisHub: ObservableObject {
+    @Published var day: WatchDay? = WatchStore.lastDay
+    @Published var team: WatchAPI.Team?
+    @Published var note: String?
+    @Published var said: String?
+    @Published var busy = Set<String>()
+    var unlinked: () -> Void = {}
+
+    var late: [WatchDay.Rock] { (day?.rocks ?? []).filter { $0.overdue && !$0.done } }
+    var needCount: Int { (team?.approvals.count ?? 0) + (team?.proposals?.count ?? 0) + late.count }
+    var name: String { (day?.assistant?.isEmpty == false ? day?.assistant : nil) ?? team?.assistant ?? "J.A.R.V.I.S." }
+
+    func load() async {
+        do { day = try await WatchAPI.today(); note = nil }
+        catch WatchAPI.Failure.unlinked { unlinked(); return }
+        catch { note = (error as? LocalizedError)?.errorDescription }
+        do { team = try await WatchAPI.team() }
+        catch WatchAPI.Failure.unlinked { unlinked() }
+        catch {}
+    }
+
+    func teamAct(_ body: [String: Any], key: String) async {
+        guard !busy.contains(key) else { return }
+        busy.insert(key)
+        defer { busy.remove(key) }
+        do {
+            let t = try await WatchAPI.teamAct(body)
+            team = t; note = nil; said = t.said
+            WKInterfaceDevice.current().play(.success)
+        } catch WatchAPI.Failure.unlinked { unlinked() }
+        catch {
+            note = (error as? LocalizedError)?.errorDescription
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+
+    func dayAct(_ body: [String: Any], key: String) async {
+        guard !busy.contains(key) else { return }
+        busy.insert(key)
+        defer { busy.remove(key) }
+        do {
+            day = try await WatchAPI.act(body); note = nil
+            WKInterfaceDevice.current().play(.success)
+        } catch WatchAPI.Failure.unlinked { unlinked() }
+        catch {
+            note = (error as? LocalizedError)?.errorDescription
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+}
+
+struct JarvisHome: View {
+    let onUnlinked: () -> Void
+    @StateObject private var hub = JarvisHub()
+    @Environment(\.scenePhase) private var phase
+
+    var body: some View {
+        TabView {
+            JVTalkPage(hub: hub, onUnlinked: onUnlinked)
+            JVNeedsPage(hub: hub)
+            JVTeamPage(hub: hub, onUnlinked: onUnlinked)
+            JVDevicesPage(hub: hub)
+        }
+        .modifier(JVPaging())
+        .background(JVBackground())
+        .task {
+            hub.unlinked = onUnlinked
+            while !Task.isCancelled {
+                await hub.load()
+                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+            }
+        }
+        .onChange(of: phase) { p in if p == .active { Task { await hub.load() } } }
+    }
+}
+
+/// 1 — Talk: the orb, one button, and the one line that matters most.
+struct JVTalkPage: View {
+    @ObservedObject var hub: JarvisHub
+    let onUnlinked: () -> Void
+    @State private var question: Heard?
+    @State private var askAgain = false
+    @State private var showToday = false
+
+    var body: some View {
+        ZStack {
+            JVBackground()
+            VStack(spacing: 5) {
+                JVLabel(text: hub.name)
+                JVOrb(size: 92)
+                Text(Words.t("SAY “HEY \(hub.name)”", "“HEY \(hub.name)” DEYİN"))
+                    .font(.system(size: 8, weight: .semibold)).tracking(1.4).foregroundColor(JV.muted).lineLimit(1).minimumScaleFactor(0.7)
+                Button { talk() } label: { Label(Words.t("Talk", "Konuş"), systemImage: "mic.fill") }
+                    .buttonStyle(JVPrimary())
+                Button { showToday = true } label: { statusLine }
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+        }
+        .sheet(item: $question, onDismiss: {
+            guard askAgain else { return }
+            askAgain = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { talk() }
+        }) { q in
+            AskView(question: q.text, name: hub.name, onUnlinked: { onUnlinked() }, again: { askAgain = true })
+        }
+        .sheet(isPresented: $showToday, onDismiss: { Task { await hub.load() } }) { TodayView(onUnlinked: { onUnlinked() }) }
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        HStack(spacing: 6) {
+            if let r = hub.late.first {
+                Text(r.title).font(.system(size: 12)).foregroundColor(JV.text).lineLimit(1)
+                Spacer(minLength: 2)
+                Text(Words.t("LATE · \(hub.late.count)", "GECİKEN · \(hub.late.count)")).font(.system(size: 9, weight: .bold)).tracking(1).foregroundColor(JV.amber)
+            } else if let n = hub.day?.next {
+                Text(n.title).font(.system(size: 12)).foregroundColor(JV.text).lineLimit(1)
+                Spacer(minLength: 2)
+                Text(Words.t("NEXT", "SIRADA")).font(.system(size: 9, weight: .bold)).tracking(1).foregroundColor(JV.cyan)
+            } else {
+                Text(Words.t("Today", "Bugün")).font(.system(size: 12)).foregroundColor(JV.text)
+                Spacer(minLength: 2)
+                Text("\(hub.day?.openToday ?? 0)").font(.system(size: 11, weight: .bold)).foregroundColor(JV.cyan)
+            }
+        }
+        .jvCard()
+    }
+
+    private func talk() {
+        let opened = Dictate.ask { said in
+            if let said = said { question = Heard(text: said) }
+        }
+        if !opened { question = Heard(text: "") }
+    }
+}
+
+/// One thing waiting for a yes: a line about where it came from, the thing
+/// itself, and two buttons.
+struct JVNeedCard: View {
+    let kicker: String
+    var kickerColor: Color = JV.muted
+    let title: String
+    let yes: String
+    let no: String
+    let busy: Bool
+    var edge: Color = JV.line
+    let onYes: () -> Void
+    let onNo: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(kicker.uppercased()).font(.system(size: 9, weight: .bold)).tracking(1.4).foregroundColor(kickerColor).lineLimit(1)
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundColor(JV.text).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Button(yes, action: onYes).buttonStyle(JVPrimary())
+                Button(no, action: onNo).buttonStyle(JVSecondary())
+            }
+            .disabled(busy)
+            .opacity(busy ? 0.5 : 1)
+        }
+        .jvCard(edge)
+    }
+}
+
+/// 2 — Needs you: agent work to approve, tasks from meetings, what is late.
+struct JVNeedsPage: View {
+    @ObservedObject var hub: JarvisHub
+
+    var body: some View {
+        ZStack {
+            JVBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        JVLabel(text: Words.t("Needs you", "Sizi bekliyor"))
+                        Spacer()
+                        if hub.needCount > 0 { JVBadge(n: hub.needCount) }
+                    }
+                    .padding(.horizontal, 4)
+                    if let n = hub.note { Text(n).font(.system(size: 11)).foregroundColor(JV.amber) }
+                    ForEach(hub.team?.approvals ?? []) { a in
+                        JVNeedCard(kicker: a.agent, title: a.summary, yes: Words.t("Approve", "Onayla"), no: Words.t("Decline", "Reddet"),
+                                   busy: hub.busy.contains(a.id),
+                                   onYes: { Task { await hub.teamAct(["op": "approve", "id": a.id], key: a.id) } },
+                                   onNo: { Task { await hub.teamAct(["op": "decline", "id": a.id], key: a.id) } })
+                    }
+                    ForEach(hub.team?.proposals ?? []) { p in
+                        JVNeedCard(kicker: p.from.map { Words.t("From ", "Toplantı: ") + $0 } ?? Words.t("From a meeting", "Toplantıdan"),
+                                   title: p.title, yes: Words.t("Add", "Ekle"), no: Words.t("Skip", "Geç"),
+                                   busy: hub.busy.contains(p.id),
+                                   onYes: { Task { await hub.teamAct(["op": "proposal", "id": p.id, "yes": true], key: p.id) } },
+                                   onNo: { Task { await hub.teamAct(["op": "proposal", "id": p.id, "yes": false], key: p.id) } })
+                    }
+                    ForEach(hub.late) { r in
+                        JVNeedCard(kicker: Words.t("Late", "Gecikmiş") + (r.day.map { " · " + $0 } ?? ""), kickerColor: JV.amber,
+                                   title: r.title, yes: Words.t("Done", "Tamam"), no: Words.t("Tomorrow", "Yarın"),
+                                   busy: hub.busy.contains(r.id), edge: Color(red: 0.353, green: 0.227, blue: 0.071),
+                                   onYes: { Task { await hub.dayAct(["action": "rock", "id": r.id, "done": true], key: r.id) } },
+                                   onNo: { Task { await hub.dayAct(["action": "move", "id": r.id, "to": "tomorrow"], key: r.id) } })
+                    }
+                    if hub.needCount == 0 {
+                        Text(Words.t("Nothing waits for you.", "Sizi bekleyen bir şey yok."))
+                            .font(.system(size: 12)).foregroundColor(JV.muted).jvCard()
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+}
+
+/// 3 — Team: who is doing what, and the one switch that stops them all.
+struct JVTeamPage: View {
+    @ObservedObject var hub: JarvisHub
+    let onUnlinked: () -> Void
+    @State private var more = false
+
+    var body: some View {
+        ZStack {
+            JVBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    JVLabel(text: Words.t("The team", "Ekip")).padding(.horizontal, 4)
+                    if let s = hub.said, !s.isEmpty { Text(s).font(.system(size: 11)).foregroundColor(JV.soft).padding(.horizontal, 4) }
+                    ForEach(hub.team?.team ?? []) { a in row(a) }
+                    let paused = hub.team?.paused == true
+                    Button {
+                        Task { await hub.teamAct(["op": "pause", "paused": !paused], key: "pause") }
+                    } label: {
+                        Label(paused ? Words.t("Resume all", "Devam ettir") : Words.t("Pause all", "Hepsini durdur"),
+                              systemImage: paused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(JVSecondary())
+                    .disabled(hub.busy.contains("pause"))
+                    .padding(.top, 2)
+                    Button { more = true } label: { Text(Words.t("Email, briefing, ask the team", "E-posta, özet, ekibe sor")) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11)).foregroundColor(JV.cyan)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .sheet(isPresented: $more, onDismiss: { Task { await hub.load() } }) { TeamView(onUnlinked: { onUnlinked() }) }
+    }
+
+    private func row(_ a: WatchAPI.Team.Agent) -> some View {
+        HStack(spacing: 8) {
+            JVAvatar(name: a.name)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(a.name).font(.system(size: 13, weight: .semibold)).foregroundColor(JV.text).lineLimit(1)
+                Text(sub(a)).font(.system(size: 10)).foregroundColor(JV.muted).lineLimit(1)
+            }
+            Spacer(minLength: 2)
+            if (a.waiting ?? 0) > 0 { JVBadge(n: a.waiting ?? 0) }
+            else if a.state == "working" { Circle().fill(JV.green).frame(width: 7, height: 7).accessibilityLabel(Words.t("Working", "Çalışıyor")) }
+        }
+        .jvCard(a.state == "working" ? JV.glow : JV.line)
+    }
+
+    private func sub(_ a: WatchAPI.Team.Agent) -> String {
+        switch a.state {
+        case "working": return (a.note?.isEmpty == false ? a.note! : Words.t("working", "çalışıyor"))
+        case "waiting": return Words.t("waiting for you", "sizi bekliyor")
+        default: return a.role + " · " + Words.t("free", "boşta")
+        }
+    }
+}
+
+/// 4 — Devices: the apps open on the Mac and the iPhone, and what the watch
+/// can make them do.
+struct JVDevicesPage: View {
+    @ObservedObject var hub: JarvisHub
+
+    private var devices: [WatchAPI.Team.Device] { hub.team?.devices ?? [] }
+    private var speaker: WatchAPI.Team.Device? { devices.first { $0.speaking } }
+    private func nameOf(_ kind: String) -> String {
+        switch kind { case "mac": return "Mac"; case "iphone": return "iPhone"; default: return Words.t("the browser", "tarayıcı") }
+    }
+
+    var body: some View {
+        ZStack {
+            JVBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 7) {
+                    JVLabel(text: Words.t("Your devices", "Cihazların")).padding(.horizontal, 4)
+                    HStack(spacing: 8) {
+                        Image(systemName: speaker != nil ? "speaker.wave.2.fill" : "dot.radiowaves.left.and.right")
+                            .font(.system(size: 14)).foregroundColor(JV.cyan)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(status).font(.system(size: 12, weight: .semibold)).foregroundColor(JV.text).lineLimit(2)
+                            if hub.team?.focus == true { Text(Words.t("Focus is on", "Odak açık")).font(.system(size: 10)).foregroundColor(JV.green) }
+                        }
+                    }
+                    .jvCard(speaker != nil ? JV.glow : JV.line)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                        Button { send("stop", speaker?.kind ?? "any") } label: { tile(Words.t("Stop talking", "Sustur"), "stop.fill") }
+                            .buttonStyle(JVTile(primary: true))
+                        let focusing = hub.team?.focus == true
+                        Button { send(focusing ? "unfocus" : "focus", "any") } label: {
+                            tile(focusing ? Words.t("Stop focus", "Odağı bitir") : Words.t("Start focus", "Odaklan"), "timer")
+                        }
+                        .buttonStyle(JVTile())
+                        Button { send("open", "iphone") } label: { tile(Words.t("Open on iPhone", "iPhone'da aç"), "iphone") }
+                            .buttonStyle(JVTile())
+                        Button { send("open", "mac") } label: { tile(Words.t("Open on Mac", "Mac'te aç"), "desktopcomputer") }
+                            .buttonStyle(JVTile())
+                    }
+                    .disabled(hub.busy.contains("remote"))
+                    if let s = hub.said, !s.isEmpty { Text(s).font(.system(size: 11)).foregroundColor(JV.soft).padding(.horizontal, 4) }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private var status: String {
+        if let s = speaker { return Words.t("Speaking on ", "Konuşuyor: ") + nameOf(s.kind) }
+        if devices.isEmpty { return Words.t("No other device open", "Başka açık cihaz yok") }
+        return devices.map { nameOf($0.kind) }.joined(separator: " · ") + Words.t(" · open", " · açık")
+    }
+
+    private func tile(_ text: String, _ icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 15))
+            Text(text).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func send(_ cmd: String, _ target: String) {
+        Task { await hub.teamAct(["op": "remote", "cmd": cmd, "target": target], key: "remote") }
     }
 }
