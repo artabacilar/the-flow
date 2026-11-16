@@ -156,6 +156,25 @@ const memStore = (init) => { const m = Object.assign({}, init); return { m, get:
   const say = await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'say', text: '/team', lang: 'en' } });
   const sayB = await say.json().catch(() => ({}));
   ok('a dictated message goes to J.A.R.V.I.S. like a chat message and the team comes back with his reply', say.status() === 200 && /J\.A\.R\.V\.I\.S\./.test(sayB.said || '') && Array.isArray(sayB.approvals), { s: say.status(), said: (sayB.said || '').slice(0, 80) });
+  /* the four screens: the team and the switch, meeting tasks, the other devices */
+  ok('the team view also carries each agent and what it is doing, the switch, proposals, devices and focus', Array.isArray(tmB.team) && tmB.team.some((a) => a.id === 'jarvis' && /^(free|working|waiting)$/.test(a.state)) && Array.isArray(tmB.proposals) && Array.isArray(tmB.devices) && typeof tmB.focus === 'boolean' && typeof tmB.paused === 'boolean', { team: tmB.team, keys: Object.keys(tmB) });
+  const pz = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'pause', paused: true } })).json();
+  const pz2 = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'pause', paused: false } })).json();
+  ok('Pause all from the wrist stops everyone, and resumes', pz.paused === true && pz2.paused === false, { a: pz.paused, b: pz2.paused });
+  const seen0 = await p.evaluate(async () => (await (await fetch('/api/team/remote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: 'mac', speaking: true, since: Date.now() }) })).json()));
+  const dv = await (await watch.request.get(H + '/api/watch/team?lang=en', { headers: auth })).json();
+  ok('an open app says it is there and speaking; the watch sees it', seen0.ok && dv.devices.some((d) => d.kind === 'mac' && d.speaking === true), dv.devices);
+  const stp = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'remote', cmd: 'stop', target: 'mac' } })).json();
+  const got3 = await p.evaluate(async (since) => (await (await fetch('/api/team/remote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: 'mac', speaking: true, since }) })).json()), seen0.now - 1);
+  const other = await p.evaluate(async (since) => (await (await fetch('/api/team/remote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: 'iphone', speaking: false, since }) })).json()), seen0.now - 1);
+  ok('"Stop talking" reaches the Mac it was meant for, and not the iPhone', stp.said === 'Quiet.' && got3.cmds.some((c) => c.cmd === 'stop') && !other.cmds.some((c) => c.cmd === 'stop'), { got3, other });
+  const fo = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'remote', cmd: 'focus' } })).json();
+  const fo2 = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'remote', cmd: 'unfocus' } })).json();
+  ok('focus starts and stops from the wrist, on the account', fo.focus === true && fo2.focus === false, { a: fo.focus, b: fo2.focus });
+  const rb = await (await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'remote', cmd: 'format-disk' } })).json().catch(() => ({}));
+  ok('a command it does not know is refused', /Unknown command/.test(rb.error || ''), rb);
+  const pr = await watch.request.post(H + '/api/watch/team', { headers: auth, data: { op: 'proposal', id: 'nothing', yes: true } });
+  ok('a meeting task that is not waiting cannot be approved', pr.status() === 400);
   const Q = await pair('watchos', 'Series 9');
   await p.evaluate(async (code) => fetch('/api/flow/watch/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }), Q.code);
   const got2 = await (await poll(Q.id)).json();
