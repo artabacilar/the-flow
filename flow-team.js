@@ -617,6 +617,15 @@ async function handle(p, req, res, ctx) {
     json(res, 200, { ok: true, paused: b.paused === true }); return true;
   }
 
+  /* An open app (Mac, iPhone, browser) says it is there, and whether he is
+     speaking, and picks up what the watch asked of it: stop talking, open,
+     focus. */
+  if (p === '/api/team/remote' && req.method === 'POST') {
+    const b = await body();
+    const cmds = await remotePoll(ctx, String(b.device || ''), b.speaking === true, Number(b.since) || 0);
+    json(res, 200, { ok: true, cmds, now: Date.now() }); return true;
+  }
+
   if (p === '/api/team/say' && req.method === 'POST') {
     const b = await body();
     const r = await sayTo(ctx, String(b.agent || ''), block(b.text, 6000), b.lang === 'tr' ? 'tr' : 'en');
@@ -2105,9 +2114,57 @@ module.exports.rank = rank;
  * few lines — and four actions. Nothing here is a guess about what was
  * approved: an approval is an id the server made, a send is a hash.
  * ====================================================================== */
+/* ---- the watch steers the other devices ----
+   team:remote = { cmds: [{ id, cmd, target, at }], devices: { mac|iphone|web: { at, speaking } } }.
+   A command lives two minutes; a device counts as there for ninety seconds
+   after it last asked. Presence is written only when it changes or once a
+   minute, so an app left open all day costs reads, not writes. */
+const REMOTE = 'team:remote', REMOTE_TTL = 120000, REMOTE_SEEN = 90000;
+const REMOTE_DEVICES = ['mac', 'iphone', 'web'], REMOTE_CMDS = ['stop', 'open', 'focus', 'unfocus'];
+async function remoteGet(ctx) {
+  const v = await ctx.get(REMOTE);
+  const o = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  return { cmds: Array.isArray(o.cmds) ? o.cmds : [], devices: o.devices && typeof o.devices === 'object' ? o.devices : {} };
+}
+async function remoteSend(ctx, cmd, target) {
+  if (REMOTE_CMDS.indexOf(cmd) < 0) return false;
+  const t = REMOTE_DEVICES.indexOf(target) >= 0 ? target : 'any';
+  const r = await remoteGet(ctx); const now = Date.now();
+  r.cmds = r.cmds.filter((c) => now - c.at < REMOTE_TTL).concat([{ id: 'r' + now.toString(36) + crypto.randomBytes(3).toString('hex'), cmd, target: t, at: now }]).slice(-20);
+  await ctx.set(REMOTE, r); return true;
+}
+async function remotePoll(ctx, device, speaking, since) {
+  const r = await remoteGet(ctx); const now = Date.now();
+  const dev = REMOTE_DEVICES.indexOf(device) >= 0 ? device : '';
+  if (dev) {
+    const was = r.devices[dev];
+    if (!was || !!was.speaking !== speaking || now - was.at > 60000) { r.devices[dev] = { at: now, speaking }; await ctx.set(REMOTE, r); }
+    else was.at = now;
+  }
+  return r.cmds.filter((c) => c.at > since && now - c.at < REMOTE_TTL && (c.target === 'any' || c.target === dev)).map((c) => ({ id: c.id, cmd: c.cmd, at: c.at }));
+}
+function remoteDevices(r) {
+  const now = Date.now();
+  return REMOTE_DEVICES.filter((k) => r.devices[k] && now - r.devices[k].at < REMOTE_SEEN).map((k) => ({ kind: k, speaking: !!r.devices[k].speaking }));
+}
+
 async function watchView(ctx, lang) {
   const [list, tl, ap] = await Promise.all([agents(ctx), tasks(ctx), approvals(ctx)]);
   const name = (id) => (list.find((a) => a.id === id) || {}).name || id;
+  /* the four screens: each agent and what it is doing, the switch, the
+     meeting tasks waiting for a yes, which device is where, focus */
+  const live = (t) => !/^(done|failed|cancelled)$/.test(t.status);
+  const team = list.filter((a) => !a.archived).map((a) => {
+    const mine = tl.filter((t) => t.agent === a.id && live(t));
+    const waiting = ap.filter((x) => x.status === 'pending' && x.agent === a.id).length + mine.filter((t) => t.status === 'awaiting_info').length;
+    const working = mine.find((t) => /^(queued|running)$/.test(t.status));
+    return { id: a.id, name: str(a.name, 40), role: str(a.role, 40), state: waiting ? 'waiting' : working ? 'working' : 'free', note: working ? str(working.title, 60) : '', waiting };
+  });
+  let proposals = [];
+  try { const o = await orgMod.load(ctx); proposals = o.tasks.filter((t) => t.pending).slice(-6).reverse().map((t) => ({ id: t.id, title: str(t.title, 120), from: str(t.source && t.source.title, 60) })); } catch (e) {}
+  let devices = []; try { devices = remoteDevices(await remoteGet(ctx)); } catch (e) {}
+  let focus = false; try { const f = await ctx.get('flow:focus'); focus = !!(f && f.run && !f.run.paused); } catch (e) {}
+  const paused = (await ctx.get('team:paused')) === true;
   const pending = ap.filter((x) => x.status === 'pending').slice(0, 6).map((x, i) => ({ id: x.id, n: i + 1, summary: str(x.summary, 120), to: str(x.detail && x.detail.to, 80), agent: name(x.agent), kind: x.kind, excerpt: str(x.detail && (x.detail.body || x.detail.text), 220) }));
   const open = tl.filter((t) => !/^(done|failed|cancelled)$/.test(t.status)).slice(-6).reverse().map((t) => ({ id: t.id, title: str(t.title, 80), status: t.status, agent: name(t.agent), question: t.status === 'awaiting_info' ? str(t.question, 160) : '' }));
   const recent = tl.filter((t) => t.status === 'done' && !t.seen).slice(-3).reverse().map((t) => ({ id: t.id, title: str(t.title, 80), agent: name(t.agent), result: str(t.result, 220) }));
@@ -2116,7 +2173,7 @@ async function watchView(ctx, lang) {
   let brief = [];
   try { const L = localParts(await userTz(ctx), new Date()); brief = String(await briefingText(ctx, L, lang === 'tr' ? 'tr' : 'en')).split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 6); } catch (e) {}
   const j = list.find((a) => a.id === 'jarvis');
-  return { ok: true, assistant: (j && j.name) || 'J.A.R.V.I.S.', approvals: pending, mail: mailCur, mailQueue, tasks: open, recent, brief, counts: { approvals: ap.filter((x) => x.status === 'pending').length, inFlight: tl.filter((t) => /^(queued|running)$/.test(t.status)).length, asking: tl.filter((t) => t.status === 'awaiting_info').length }, at: Date.now() };
+  return { ok: true, assistant: (j && j.name) || 'J.A.R.V.I.S.', approvals: pending, mail: mailCur, mailQueue, tasks: open, recent, brief, team, proposals, devices, focus, paused, counts: { approvals: ap.filter((x) => x.status === 'pending').length, inFlight: tl.filter((t) => /^(queued|running)$/.test(t.status)).length, asking: tl.filter((t) => t.status === 'awaiting_info').length }, at: Date.now() };
 }
 async function watchAct(ctx, uid, b) {
   const op = String(b.op || '');
@@ -2129,6 +2186,33 @@ async function watchAct(ctx, uid, b) {
   if (op === 'mailsend') { const r = await mail.approve(ctx, mailDeps(), String(b.id || ''), String(b.hash || ''), { who: 'watch', via: 'watch' }); return r.error ? { error: r.error, stale: !!r.stale } : { ok: true, said: 'Sent — accepted by the email provider. Delivery is confirmed separately.' }; }
   if (op === 'mailskip') { const r = await mail.skip(ctx, mailDeps(), String(b.id || ''), 'from the watch'); return r.error ? { error: r.error } : { ok: true, said: 'Not sent.' }; }
   if (op === 'answer') { const w = (await tasks(ctx)).find((t) => t.id === String(b.id || '') && t.status === 'awaiting_info'); if (!w) return { error: 'Nobody is waiting on that answer.' }; await patchTask(ctx, w.id, (x) => { x.answer = str(b.text, 600); x.status = 'queued'; x.seen = true; }); kick(uid, ctx); return { ok: true, said: 'Passed on.' }; }
+  if (op === 'pause') {
+    const on = b.paused === true;
+    await ctx.set('team:paused', on); await log(ctx, 'team', on ? 'Everything paused, from the watch.' : 'Resumed, from the watch.');
+    return { ok: true, said: on ? 'Everyone has stopped.' : 'Back to work.' };
+  }
+  if (op === 'proposal') {
+    const o = await orgMod.load(ctx); const t = o.tasks.find((x) => x.id === String(b.id || '') && x.pending);
+    if (!t) return { error: 'That one is already decided.' };
+    if (b.yes === true) { t.pending = false; t.upd = Date.now(); (t.log = Array.isArray(t.log) ? t.log : []).push({ at: Date.now(), who: 'watch', what: 'approved' }); }
+    else o.tasks = o.tasks.filter((x) => x !== t);
+    await ctx.set('team:org', o);
+    return { ok: true, said: b.yes === true ? 'On the board.' : 'Left out.' };
+  }
+  if (op === 'remote') {
+    const cmd = String(b.cmd || '');
+    if (cmd === 'focus' || cmd === 'unfocus') {
+      /* the focus clock lives with the account: started or stopped here, every device shows it */
+      const f = (await ctx.get('flow:focus')) || {}; const d = f && typeof f === 'object' ? f : {};
+      d.sessions = Array.isArray(d.sessions) ? d.sessions : [];
+      const r = d.run;
+      if (cmd === 'focus') { if (!r) d.run = { startedAt: Date.now(), accum: 0, paused: false }; else if (r.paused) { r.paused = false; r.startedAt = Date.now(); } }
+      else if (r) { const ms = (r.accum || 0) + (r.paused || !r.startedAt ? 0 : Date.now() - r.startedAt); const min = Math.round(ms / 60000); const L = localParts(await userTz(ctx), new Date()); if (min > 0) d.sessions.push({ d: L.date, min, at: Date.now() }); d.run = null; }
+      await ctx.set('flow:focus', d);
+    }
+    if (!(await remoteSend(ctx, cmd, String(b.target || 'any')))) return { error: 'Unknown command.' };
+    return { ok: true, said: cmd === 'stop' ? 'Quiet.' : cmd === 'focus' ? 'Focus started.' : cmd === 'unfocus' ? 'Focus stopped.' : 'Opening it.' };
+  }
   if (op === 'say') {
     const ch = channelsLib();
     if (!ch || !ch.converse) return { error: 'The team is not available here.' };

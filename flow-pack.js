@@ -13821,6 +13821,40 @@ const Hush = {
   }
 };
 window.FlowHush = Hush;
+/* ── The watch steers this device ──
+   While the app is open and on screen it tells the server it is here (and
+   whether he is speaking), and picks up what the watch asked: stop talking,
+   open the conversation, start or stop focus. Every 10 s, every 4 s while
+   he speaks so "Stop" lands at once; nothing at all while hidden. */
+const Remote = {
+  since: Date.now(), t: 0, off: false,
+  device() {
+    try { if (window.FlowMac || (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.flowMac)) return 'mac'; } catch (e) {}
+    try { if (window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === 'ios') return 'iphone'; } catch (e) {}
+    return 'web';
+  },
+  speaking() { try { return Speech.speaking(); } catch (e) { return false; } },
+  later(ms) { clearTimeout(Remote.t); if (!Remote.off) Remote.t = setTimeout(Remote.tick, ms); },
+  async tick() {
+    if (document.visibilityState !== 'visible') { Remote.later(10000); return; }
+    const speaking = Remote.speaking();
+    try {
+      const r = await fetch('/api/team/remote', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: Remote.device(), speaking, since: Remote.since }) });
+      if (r.status === 401 || r.status === 403 || r.status === 404) { Remote.off = true; return; }
+      const j = await r.json().catch(() => null);
+      if (j && Array.isArray(j.cmds)) for (const c of j.cmds) { Remote.since = Math.max(Remote.since, c.at || 0); await Remote.run(c.cmd); }
+    } catch (e) {}
+    Remote.later(Remote.speaking() ? 4000 : 10000);
+  },
+  async run(cmd) {
+    if (cmd === 'stop') { try { Hush.now(); } catch (e) { try { Speech.stop(); } catch (x) {} } return; }
+    if (cmd === 'open') { try { if (window.FlowHud && Hud.merged && Hud.merged()) Hud.open(); else Say.open(); } catch (e) {} return; }
+    if (cmd === 'focus' || cmd === 'unfocus') { try { Focus.data = null; await Focus.load(); Focus.paint(); } catch (e) {} }
+  },
+  boot() { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Remote.later(300); }); Remote.later(6000); }
+};
+window.FlowRemote = Remote;
+try { Remote.boot(); } catch (e) {}
 /* ── The organisation: companies → projects → people and their tasks ──
    Projects in the command centre is a page you drill into: your companies
    (ABKO, Revelle AI, Yuum…), then a company's projects and people, then a
