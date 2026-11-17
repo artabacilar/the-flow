@@ -862,6 +862,7 @@ async function friendCodes(uid) {
 }
 
 /* ---------- the protected store ------------------------------------------ */
+let sigsChecked = false, sigsOff = false;
 function protect(store) {
   raw = store;
   /* The OAuth server needs the un-namespaced store and the same session
@@ -903,10 +904,41 @@ function protect(store) {
     },
     async all() {
       if (!uid()) return {};
-      const everything = await store.all();
-      const p = pre(), out = {};
+      const p = pre();
+      const everything = typeof store.allPrefix === 'function' ? await store.allPrefix(p) : await store.all();
+      const out = {};
       for (const k of Object.keys(everything || {})) {
         if (k.indexOf(p) === 0) out[k.slice(p.length)] = everything[k];
+      }
+      return out;
+    },
+    /* Just these sections of this account, for /api/some. */
+    async mget(keys) {
+      if (!uid()) return {};
+      const p = pre();
+      if (typeof store.mget !== 'function') { const mine = await this.all(), o = {}; for (const k of keys) if (mine[k] != null) o[k] = mine[k]; return o; }
+      const got = await store.mget(keys.map(k => p + k)), out = {};
+      for (const k of keys) if (got[p + k] != null) out[k] = got[p + k];
+      return out;
+    },
+    /* Fingerprints only, taken where the data is. null = this backend cannot,
+       and the caller hashes all() itself. Checked once against the slow way:
+       if the database's sha1 ever disagreed with ours, every device would
+       refetch every section on every open, so it switches itself off. */
+    async sigs() {
+      if (!uid() || typeof store.sigsPrefix !== 'function' || sigsOff) return null;
+      const p = pre();
+      const got = await store.sigsPrefix(p), out = {};
+      for (const k of Object.keys(got || {})) if (k.indexOf(p) === 0) out[k.slice(p.length)] = got[k];
+      if (!sigsChecked) {
+        const ks = Object.keys(out);
+        if (ks.length) {
+          const probe = ks.slice(0, 3), vals = await this.mget(probe);
+          const crypto = require('crypto');
+          const ok = probe.every(k => vals[k] == null || out[k] === crypto.createHash('sha1').update(String(vals[k])).digest('base64').slice(0, 10));
+          sigsChecked = true;
+          if (!ok) { sigsOff = true; return null; }
+        }
       }
       return out;
     },
@@ -1697,7 +1729,7 @@ async function gate(req, res) {
         return v;
       },
       async all() {
-        const everything = await raw.all();
+        const everything = typeof raw.allPrefix === 'function' ? await raw.allPrefix(pre) : await raw.all();
         const out = {};
         Object.keys(everything || {}).forEach(k => {
           if (k.indexOf(pre) === 0) out[k.slice(pre.length)] = everything[k];

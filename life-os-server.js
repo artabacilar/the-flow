@@ -97,6 +97,33 @@ if (UP_URL && UP_TOK) {
     async bulk(obj) { const cmds = Object.keys(obj).map((k) => ['SET', k, obj[k]]); if (cmds.length) await pipeline(cmds); },
     async count() { const keys = (await cmd(['KEYS', 'ld_*'])) || []; return keys.length; },
     async keys(pattern) { return (await cmd(['KEYS', pattern])) || []; },
+    /* One account's sections, not the whole database's. all() above lists
+       every `ld_*` key of every person and downloads all of it, and the
+       signed-in store then threw away everyone else's — on every open. The
+       datacentre is 2 ms away; the cost was the megabytes, not the distance. */
+    async allPrefix(pre) {
+      const keys = (await cmd(['KEYS', globEsc(pre) + '*'])) || [];
+      if (!keys.length) return {};
+      const vals = await cmd(['MGET', ...keys]);
+      const o = {}; keys.forEach((k, i) => { if (vals[i] != null) o[k] = vals[i]; });
+      return o;
+    },
+    async mget(keys) {
+      if (!keys.length) return {};
+      const vals = await cmd(['MGET', ...keys]);
+      const o = {}; keys.forEach((k, i) => { if (vals[i] != null) o[k] = vals[i]; });
+      return o;
+    },
+    /* The manifest only needs a fingerprint of each section, and the database
+       can take it itself: the values never leave the datacentre. sha1hex of
+       the same bytes is the same sha1 sig() takes, so every signature a
+       device already holds still matches and nothing is fetched again. */
+    async sigsPrefix(pre) {
+      const out = await cmd(['EVAL', SIG_LUA, '0', globEsc(pre) + '*']);
+      const o = {};
+      for (let i = 0; i + 1 < (out || []).length; i += 2) o[out[i]] = hexSig(out[i + 1]);
+      return o;
+    },
   };
 } else {
   try {
@@ -116,6 +143,8 @@ if (UP_URL && UP_TOK) {
         return db.prepare('SELECT key FROM store').all()
           .map((r) => r.key).filter(globMatch(pattern));
       },
+      allPrefix(pre) { const o = {}; for (const r of db.prepare('SELECT key,value FROM store WHERE substr(key,1,?)=?').all(pre.length, pre)) o[r.key] = r.value; return o; },
+      mget(keys) { const o = {}; const q = db.prepare('SELECT value FROM store WHERE key=?'); for (const k of keys) { const r = q.get(k); if (r && r.value != null) o[k] = r.value; } return o; },
     };
   } catch (e) {
     const FILE = path.join(DATA_DIR, 'life-os-data.json');
@@ -129,6 +158,8 @@ if (UP_URL && UP_TOK) {
       bulk(obj) { Object.assign(mem, obj); persist(); },
       count() { return Object.keys(mem).length; },
       keys(pattern) { return Object.keys(mem).filter(globMatch(pattern)); },
+      allPrefix(pre) { const o = {}; for (const k in mem) if (k.indexOf(pre) === 0) o[k] = mem[k]; return o; },
+      mget(keys) { const o = {}; for (const k of keys) if (k in mem && mem[k] != null) o[k] = mem[k]; return o; },
     };
   }
 }
@@ -139,6 +170,14 @@ if (UP_URL && UP_TOK) {
  * metacharacters — an email address has a dot in it, and `.` matching any
  * character is how a purge for one person quietly matches another. So
  * everything but the star is escaped. */
+function globEsc(s) { return String(s).replace(/[*?[\]\\]/g, '\\$&'); }
+const SIG_LUA = "local out = {} " +
+  "for _, k in ipairs(redis.call('KEYS', ARGV[1])) do " +
+  "local v = redis.pcall('GET', k) " +
+  "if type(v) == 'string' then out[#out + 1] = k; out[#out + 1] = redis.sha1hex(v) end end " +
+  "return out";
+function hexSig(hex) { return Buffer.from(String(hex), 'hex').toString('base64').slice(0, 10); }
+
 function globMatch(pattern) {
   const rx = new RegExp('^' + String(pattern)
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -1075,6 +1114,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/manifest') {
+      if (typeof store.sigs === 'function') {
+        try { const fast = await store.sigs(); if (fast) return json(res, 200, fast); } catch (e) { /* fall through */ }
+      }
       const all = await store.all();
       const out = {};
       for (const k in all) out[k] = sig(all[k]);
@@ -1089,9 +1131,10 @@ const server = http.createServer(async (req, res) => {
       try { b = JSON.parse(await readBody(req) || '{}'); } catch (e) { return json(res, 400, { error: 'bad json' }); }
       const want = Array.isArray(b.keys) ? b.keys : [];
       if (!want.length) return json(res, 200, {});
-      const all = await store.all();
+      const names = want.filter(k => typeof k === 'string');
+      const all = typeof store.mget === 'function' ? await store.mget(names) : await store.all();
       const out = {};
-      want.forEach(k => { if (typeof k === 'string' && all[k] != null) out[k] = all[k]; });
+      names.forEach(k => { if (all[k] != null) out[k] = all[k]; });
       return json(res, 200, out);
     }
     if (p === '/api/get') return json(res, 200, { key: u.searchParams.get('key'), value: await store.get(u.searchParams.get('key')) });
