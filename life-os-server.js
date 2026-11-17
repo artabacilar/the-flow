@@ -170,6 +170,59 @@ if (UP_URL && UP_TOK) {
  * metacharacters — an email address has a dot in it, and `.` matching any
  * character is how a purge for one person quietly matches another. So
  * everything but the star is escaped. */
+/* What a device downloads when the app opens, and what it does not.
+   J.A.R.V.I.S.'s own records (team:*), receipt photos and the archive are
+   read by the server and fetched one at a time when a screen needs them
+   (/api/get); they never belonged in every open. Measured 17 Nov: 1.9 MB of
+   Artur's 2.9 MB was these. They stay exactly where they are, and in
+   /api/export, which is the backup. */
+const DEVICE_SKIP = /^(team:|flow:receipt:|archive:)/;
+function forDevice(o) {
+  const out = {};
+  for (const k of Object.keys(o || {})) if (!DEVICE_SKIP.test(k)) out[k] = o[k];
+  return out;
+}
+
+/* A full backup, then the automatic activity log older than `days` moves
+   from the journal to archive:ld_journal. Idempotent: run it again and it
+   only moves what has aged since, and never duplicates an entry. */
+async function tidy(store, opt) {
+  const days = Math.max(14, Number(opt && opt.days) || 60);
+  const cutoff = new Date(Date.now() - days * 864e5).toISOString();
+  const all = await store.all();
+  const parse = (v, d) => { try { const x = JSON.parse(v); return x == null ? d : x; } catch (e) { return d; } };
+  const journal = parse(all.ld_journal, []);
+  if (!Array.isArray(journal)) return { ok: false, error: 'The journal is not in the expected shape; nothing was changed.' };
+  const isLog = (e) => e && e.cat === 'planning' && typeof e.t === 'string' && e.t < cutoff;
+  const move = journal.filter(isLog), keep = journal.filter(e => !isLog(e));
+  const before = Math.round(String(all.ld_journal || '').length / 1024);
+  const report = { ok: true, days, journal: { entries: journal.length, moved: move.length, kept: keep.length, kbBefore: before, kbAfter: Math.round(JSON.stringify(keep).length / 1024) } };
+  if (opt && opt.dryRun) return Object.assign(report, { dryRun: true });
+  const day = new Date().toISOString().slice(0, 10);
+  /* One backup key per section, so no single write is the size of the
+     whole account (Upstash caps a request). A day's backup is taken once. */
+  const bpre = 'archive:backup:' + day + ':';
+  if (!Object.keys(all).some(k => k.indexOf(bpre) === 0)) {
+    const snap = {}; for (const k of Object.keys(all)) if (k.indexOf('archive:backup:') !== 0) snap[bpre + k] = all[k];
+    if (typeof store.bulk === 'function') {
+      const ks = Object.keys(snap);
+      for (let i = 0; i < ks.length; i += 20) { const part = {}; ks.slice(i, i + 20).forEach(k => part[k] = snap[k]); await store.bulk(part); }
+    } else for (const k of Object.keys(snap)) await store.set(k, snap[k]);
+  }
+  report.backup = bpre + '*';
+  if (move.length) {
+    const old = parse(all['archive:ld_journal'], []);
+    const seen = new Set((Array.isArray(old) ? old : []).map(e => e.t + '|' + e.txt));
+    const merged = (Array.isArray(old) ? old : []).concat(move.filter(e => !seen.has(e.t + '|' + e.txt)));
+    merged.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+    await store.set('archive:ld_journal', JSON.stringify(merged));
+    /* Written only after the archive holds them. */
+    await store.set('ld_journal', JSON.stringify(keep));
+    report.journal.archiveTotal = merged.length;
+  }
+  return report;
+}
+
 function globEsc(s) { return String(s).replace(/[*?[\]\\]/g, '\\$&'); }
 const SIG_LUA = "local out = {} " +
   "for _, k in ipairs(redis.call('KEYS', ARGV[1])) do " +
@@ -1068,7 +1121,23 @@ const server = http.createServer(async (req, res) => {
 
     // ── Data API ──
     if (p === '/api/status') return json(res, 200, { ok: true, engine: store.engine, file: store.file, keys: await store.count() });
-    if (p === '/api/all') return json(res, 200, await store.all());
+    if (p === '/api/all') return json(res, 200, forDevice(await store.all()));
+
+    /* ── The archive: kept, backed up, never downloaded on open ──
+       GET lists what is there and how big; POST /api/archive/tidy takes a
+       full backup of the account first, then moves the automatic activity
+       log older than 60 days out of the journal into archive:ld_journal.
+       Nothing is deleted. Each archived entry can be read with /api/get. */
+    if (p === '/api/archive' && req.method === 'GET') {
+      const all = await store.all();
+      const rows = Object.keys(all).filter(k => DEVICE_SKIP.test(k))
+        .map(k => ({ key: k, kb: Math.round(String(all[k]).length / 1024) })).sort((a, b) => b.kb - a.kb);
+      return json(res, 200, { kept: rows, note: 'Kept on the server and in backups; not downloaded when the app opens.' });
+    }
+    if (p === '/api/archive/tidy' && req.method === 'POST') {
+      let b = {}; try { b = JSON.parse(await readBody(req) || '{}'); } catch (e) {}
+      return json(res, 200, await tidy(store, { dryRun: !!b.dryRun, days: b.days }));
+    }
 
     /* ── What reaching the data costs ──
        "The app is slow" turned out to be one number nobody could see: the
@@ -1115,9 +1184,9 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/manifest') {
       if (typeof store.sigs === 'function') {
-        try { const fast = await store.sigs(); if (fast) return json(res, 200, fast); } catch (e) { /* fall through */ }
+        try { const fast = await store.sigs(); if (fast) return json(res, 200, forDevice(fast)); } catch (e) { /* fall through */ }
       }
-      const all = await store.all();
+      const all = forDevice(await store.all());
       const out = {};
       for (const k in all) out[k] = sig(all[k]);
       return json(res, 200, out);
@@ -1155,7 +1224,7 @@ const server = http.createServer(async (req, res) => {
       await store.bulk(clean);
       return json(res, 200, caught ? { ok: true, saved: Object.keys(clean).length, merged: ['ld_compass'] } : { ok: true, saved: Object.keys(clean).length });
     }
-    if (p === '/api/export') return json(res, 200, { exported: new Date().toISOString(), app: 'artur-life-dashboard-v2', data: await store.all() });
+    if (p === '/api/export') return json(res, 200, { exported: new Date().toISOString(), app: 'artur-life-dashboard-v2', data: (o => { for (const k of Object.keys(o)) if (k.indexOf('archive:backup:') === 0) delete o[k]; return o; })(await store.all()) });
 
     res.writeHead(404); res.end('Not found');
   } catch (err) { json(res, 500, { error: err.message }); }
