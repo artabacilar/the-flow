@@ -677,6 +677,13 @@ async function seedStarter(uid, name, lang) {
 }
 
 async function healOwner(uid) {
+  /* Runs on every /api/auth/me of the owner. Asking for the names under the
+     owner's prefix answers "already has data" without reading the contents
+     of every account in the database — which it did, on every open. */
+  if (typeof raw.keys === 'function') {
+    const own = await raw.keys(globEsc(nsPrefix(uid)) + '*');
+    if (own && own.length) return 0;
+  }
   const all = await raw.all();
   const names = Object.keys(all || {});
   const mine = nsPrefix(uid);
@@ -863,6 +870,9 @@ async function friendCodes(uid) {
 
 /* ---------- the protected store ------------------------------------------ */
 let sigsChecked = false, sigsOff = false;
+/* A day's full backup (archive:backup:<day>:<key>) is read only by name. */
+const isBackup = (k) => /(^|:)archive:backup:/.test(k);
+const globEsc = (s) => String(s).replace(/[*?[\]\\]/g, '\\$&');
 function protect(store) {
   raw = store;
   /* The OAuth server needs the un-namespaced store and the same session
@@ -905,10 +915,10 @@ function protect(store) {
     async all() {
       if (!uid()) return {};
       const p = pre();
-      const everything = typeof store.allPrefix === 'function' ? await store.allPrefix(p) : await store.all();
+      const everything = typeof store.allPrefix === 'function' ? await store.allPrefix(p, isBackup) : await store.all();
       const out = {};
       for (const k of Object.keys(everything || {})) {
-        if (k.indexOf(p) === 0) out[k.slice(p.length)] = everything[k];
+        if (k.indexOf(p) === 0 && !isBackup(k)) out[k.slice(p.length)] = everything[k];
       }
       return out;
     },
@@ -942,7 +952,11 @@ function protect(store) {
       }
       return out;
     },
+    /* Names only: counting sections does not need their contents. */
     async count() {
+      if (typeof store.keys === 'function' && uid()) {
+        return (await store.keys(globEsc(pre()) + '*')).filter(k => !isBackup(k)).length;
+      }
       const mine = await this.all();
       return Object.keys(mine).length;
     }
@@ -1729,7 +1743,7 @@ async function gate(req, res) {
         return v;
       },
       async all() {
-        const everything = typeof raw.allPrefix === 'function' ? await raw.allPrefix(pre) : await raw.all();
+        const everything = typeof raw.allPrefix === 'function' ? await raw.allPrefix(pre, isBackup) : await raw.all();
         const out = {};
         Object.keys(everything || {}).forEach(k => {
           if (k.indexOf(pre) === 0) out[k.slice(pre.length)] = everything[k];

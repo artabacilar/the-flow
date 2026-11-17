@@ -101,8 +101,9 @@ if (UP_URL && UP_TOK) {
        every `ld_*` key of every person and downloads all of it, and the
        signed-in store then threw away everyone else's — on every open. The
        datacentre is 2 ms away; the cost was the megabytes, not the distance. */
-    async allPrefix(pre) {
-      const keys = (await cmd(['KEYS', globEsc(pre) + '*'])) || [];
+    async allPrefix(pre, skip) {
+      let keys = (await cmd(['KEYS', globEsc(pre) + '*'])) || [];
+      if (skip) keys = keys.filter(k => !skip(k));
       if (!keys.length) return {};
       const vals = await cmd(['MGET', ...keys]);
       const o = {}; keys.forEach((k, i) => { if (vals[i] != null) o[k] = vals[i]; });
@@ -143,7 +144,7 @@ if (UP_URL && UP_TOK) {
         return db.prepare('SELECT key FROM store').all()
           .map((r) => r.key).filter(globMatch(pattern));
       },
-      allPrefix(pre) { const o = {}; for (const r of db.prepare('SELECT key,value FROM store WHERE substr(key,1,?)=?').all(pre.length, pre)) o[r.key] = r.value; return o; },
+      allPrefix(pre, skip) { const o = {}; for (const r of db.prepare('SELECT key,value FROM store WHERE substr(key,1,?)=?').all(pre.length, pre)) if (!skip || !skip(r.key)) o[r.key] = r.value; return o; },
       mget(keys) { const o = {}; const q = db.prepare('SELECT value FROM store WHERE key=?'); for (const k of keys) { const r = q.get(k); if (r && r.value != null) o[k] = r.value; } return o; },
     };
   } catch (e) {
@@ -158,7 +159,7 @@ if (UP_URL && UP_TOK) {
       bulk(obj) { Object.assign(mem, obj); persist(); },
       count() { return Object.keys(mem).length; },
       keys(pattern) { return Object.keys(mem).filter(globMatch(pattern)); },
-      allPrefix(pre) { const o = {}; for (const k in mem) if (k.indexOf(pre) === 0) o[k] = mem[k]; return o; },
+      allPrefix(pre, skip) { const o = {}; for (const k in mem) if (k.indexOf(pre) === 0 && (!skip || !skip(k))) o[k] = mem[k]; return o; },
       mget(keys) { const o = {}; for (const k of keys) if (k in mem && mem[k] != null) o[k] = mem[k]; return o; },
     };
   }
@@ -202,7 +203,9 @@ async function tidy(store, opt) {
   /* One backup key per section, so no single write is the size of the
      whole account (Upstash caps a request). A day's backup is taken once. */
   const bpre = 'archive:backup:' + day + ':';
-  if (!Object.keys(all).some(k => k.indexOf(bpre) === 0)) {
+  /* Backups are left out of all() (they would double every read), so ask
+     for one by name. */
+  if ((await store.get(bpre + 'ld_journal')) == null) {
     const snap = {}; for (const k of Object.keys(all)) if (k.indexOf('archive:backup:') !== 0) snap[bpre + k] = all[k];
     if (typeof store.bulk === 'function') {
       const ks = Object.keys(snap);
@@ -226,8 +229,9 @@ async function tidy(store, opt) {
 function globEsc(s) { return String(s).replace(/[*?[\]\\]/g, '\\$&'); }
 const SIG_LUA = "local out = {} " +
   "for _, k in ipairs(redis.call('KEYS', ARGV[1])) do " +
+  "if not string.find(k, ':archive:backup:', 1, true) then " +
   "local v = redis.pcall('GET', k) " +
-  "if type(v) == 'string' then out[#out + 1] = k; out[#out + 1] = redis.sha1hex(v) end end " +
+  "if type(v) == 'string' then out[#out + 1] = k; out[#out + 1] = redis.sha1hex(v) end end end " +
   "return out";
 function hexSig(hex) { return Buffer.from(String(hex), 'hex').toString('base64').slice(0, 10); }
 
