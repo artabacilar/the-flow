@@ -156,6 +156,54 @@ const put = (who, key, value) => as(who, '/api/set', { method: 'POST', body: JSO
     const man3 = (await as('artur', '/api/manifest')).json || {};
     ok('the changed one moved', man3.ld_week !== man.ld_week);
     ok('the others did not', man3.ld_journal === man.ld_journal);
+
+    console.log('\n— what a device downloads —');
+    await put('artur', 'team:tasks', JSON.stringify([{ id: 't1', result: 'z'.repeat(50000) }]));
+    await put('artur', 'flow:receipt:abc', 'data:image/jpeg;base64,' + 'A'.repeat(40000));
+    await put('artur', 'flow:settings', JSON.stringify({ newLook: true }));
+    const all2 = (await as('artur', '/api/all')).json || {};
+    const man4 = (await as('artur', '/api/manifest')).json || {};
+    ok('the app\'s own sections still come down', all2.ld_week && all2['flow:settings'] && man4['flow:settings'], Object.keys(all2));
+    ok('J.A.R.V.I.S.\'s records and receipt photos do not', !all2['team:tasks'] && !all2['flow:receipt:abc'] && !man4['team:tasks'] && !man4['flow:receipt:abc'], Object.keys(man4));
+    const g = (await as('artur', '/api/get?key=team:tasks')).json || {};
+    ok('but they are still there, one at a time', String(g.value).indexOf('zzzz') > 0);
+    const ex = (await as('artur', '/api/export')).json || {};
+    ok('and in the backup export', ex.data && ex.data['team:tasks'] && ex.data['flow:receipt:abc'] && ex.data.ld_week);
+
+    console.log('\n— tidying the journal —');
+    const day = (n) => new Date(Date.now() - n * 864e5).toISOString();
+    const jr = [
+      { t: day(200), cat: 'planning', txt: '✅ Big rock done: old one' },
+      { t: day(100), cat: 'planning', txt: '✏️ Big rock changed: old two' },
+      { t: day(100), cat: 'training', txt: 'Legs, heavy' },
+      { t: day(100), cat: 'mood', txt: 'Good day' },
+      { t: day(10), cat: 'planning', txt: '✅ Big rock done: recent' }
+    ];
+    await put('artur', 'ld_journal', JSON.stringify(jr));
+    const dry = (await as('artur', '/api/archive/tidy', { method: 'POST', body: JSON.stringify({ dryRun: true }) })).json || {};
+    const still = JSON.parse(((await as('artur', '/api/get?key=ld_journal')).json || {}).value || '[]');
+    ok('a dry run says what would move and moves nothing', dry.journal && dry.journal.moved === 2 && still.length === 5, dry);
+    const t1 = (await as('artur', '/api/archive/tidy', { method: 'POST', body: '{}' })).json || {};
+    const j2 = JSON.parse(((await as('artur', '/api/get?key=ld_journal')).json || {}).value || '[]');
+    const ar = JSON.parse(((await as('artur', '/api/get?key=archive:ld_journal')).json || {}).value || '[]');
+    ok('only the old automatic log moved', j2.length === 3 && j2.every(e => e.cat !== 'planning' || e.txt.indexOf('recent') > 0), j2);
+    ok('your own entries stay, however old', j2.some(e => e.cat === 'training') && j2.some(e => e.cat === 'mood'));
+    ok('the moved entries are in the archive', ar.length === 2 && ar[0].txt.indexOf('old one') > 0, ar);
+    const bp = String(t1.backup || '').replace(/\*$/, '');
+    const bj = JSON.parse(((await as('artur', '/api/get?key=' + encodeURIComponent(bp + 'ld_journal'))).json || {}).value || '[]');
+    const bt = ((await as('artur', '/api/get?key=' + encodeURIComponent(bp + 'team:tasks'))).json || {}).value;
+    ok('a full backup was taken first, with the journal as it was', bp && bj.length === 5 && String(bt).indexOf('zzzz') > 0, t1);
+    const t2 = (await as('artur', '/api/archive/tidy', { method: 'POST', body: '{}' })).json || {};
+    const ar2 = JSON.parse(((await as('artur', '/api/get?key=archive:ld_journal')).json || {}).value || '[]');
+    ok('running it again duplicates nothing', t2.journal.moved === 0 && ar2.length === 2, t2);
+    const man5 = (await as('artur', '/api/manifest')).json || {};
+    const ex2 = (await as('artur', '/api/export')).json || {};
+    ok('the archive is not downloaded on open', !Object.keys(man5).some(k => k.indexOf('archive:') === 0), Object.keys(man5));
+    ok('the export keeps the archive but not a copy of every backup', ex2.data['archive:ld_journal'] && !Object.keys(ex2.data).some(k => k.indexOf('archive:backup:') === 0));
+    const list = (await as('artur', '/api/archive')).json || {};
+    ok('the archive can be listed', Array.isArray(list.kept) && list.kept.some(r => r.key === 'team:tasks'), list);
+    const samJ = (await as('sam', '/api/get?key=archive:ld_journal')).json || {};
+    ok('and it is nobody else\'s', !samJ.value);
   } finally {
     srv.kill(); upstash.close();
     if (fail && err) console.log(err.slice(-1500));
