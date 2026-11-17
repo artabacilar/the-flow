@@ -50,7 +50,8 @@ function run(a) {
     if (evalBroken) throw new Error('ERR unknown command');
     if (!/sha1hex/.test(a[1])) throw new Error('ERR unexpected script');
     const r = glob(a[3]), out = [];
-    for (const k of Object.keys(db).filter(k => r.test(k))) {
+    if (!/archive:backup:', 1, true/.test(a[1])) throw new Error('ERR script does not skip backups');
+    for (const k of Object.keys(db).filter(k => r.test(k) && k.indexOf(':archive:backup:') < 0)) {
       out.push(k, crypto.createHash('sha1').update(Buffer.from(db[k], 'utf8')).digest('hex'));
     }
     return out;
@@ -200,6 +201,24 @@ const put = (who, key, value) => as(who, '/api/set', { method: 'POST', body: JSO
     const ex2 = (await as('artur', '/api/export')).json || {};
     ok('the archive is not downloaded on open', !Object.keys(man5).some(k => k.indexOf('archive:') === 0), Object.keys(man5));
     ok('the export keeps the archive but not a copy of every backup', ex2.data['archive:ld_journal'] && !Object.keys(ex2.data).some(k => k.indexOf('archive:backup:') === 0));
+    console.log('\n— the backup costs nothing on the way past —');
+    log.length = 0;
+    await as('artur', '/api/all');
+    const artPre = Object.keys(db).find(k => /^ld_u[^:]+:ld_week$/.test(k)).replace(/ld_week$/, '');
+    const ownCount = Object.keys(db).filter(k => k.indexOf(artPre) === 0 && k.indexOf(':archive:backup:') < 0).length;
+    const mg = log.filter(l => /^MGET/.test(l)).map(l => +l.split(' ')[1]);
+    ok('all() does not download the backup', mg.length === 1 && mg[0] === ownCount, { mg, ownCount });
+    log.length = 0;
+    await as('artur', '/api/auth/me');
+    ok('opening the app does not read every account', !log.some(l => /^MGET/.test(l)) && !log.includes('KEYS ld_*'), log);
+    log.length = 0;
+    const st = (await as('artur', '/api/status')).json || {};
+    ok('the section count reads names, not contents', st.keys > 3 && !log.some(l => /^MGET/.test(l)), { st, log });
+    const t3 = (await as('artur', '/api/archive/tidy', { method: 'POST', body: '{}' })).json || {};
+    const bkeys = Object.keys(db).filter(k => k.indexOf(':archive:backup:') > 0);
+    const before3 = bkeys.length;
+    await as('artur', '/api/archive/tidy', { method: 'POST', body: '{}' });
+    ok('one backup a day, not one per run', t3.ok && Object.keys(db).filter(k => k.indexOf(':archive:backup:') > 0).length === before3, before3);
     const list = (await as('artur', '/api/archive')).json || {};
     ok('the archive can be listed', Array.isArray(list.kept) && list.kept.some(r => r.key === 'team:tasks'), list);
     const samJ = (await as('sam', '/api/get?key=archive:ld_journal')).json || {};
