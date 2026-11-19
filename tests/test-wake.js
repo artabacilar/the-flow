@@ -107,6 +107,16 @@ window.__say = function (text, isFinal) {
   await p.waitForTimeout(2600);
   ok('the unasked follow-up window lapses if nothing is said', await p.evaluate(async () => { FlowWake.until = Date.now() - 1; FlowWake.lastWords = 0; FlowWake.tick(); return FlowWake.phase === 'idle'; }));
 
+  console.log('\n— another app in front (a call, a video) —');
+  await p.evaluate(() => { FlowSay.close(); window.dispatchEvent(new Event('blur')); });
+  await p.waitForTimeout(300);
+  ok('switching to another app hands the microphone back', await p.evaluate(() => !FlowWake.mine && !(FlowVoice.listening && FlowVoice.sink)));
+  await p.waitForTimeout(1500);
+  ok('and it stays closed while that app is in front', await p.evaluate(() => !FlowWake.mine && !(FlowVoice.listening && FlowVoice.sink)));
+  await p.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await p.waitForTimeout(300);
+  ok('coming back opens the ear again', await p.evaluate(() => FlowWake.mine && FlowVoice.listening && !!FlowVoice.sink));
+
   console.log('\n— with it off, Talk is back —');
   await p.evaluate(async () => { FlowSay.close(); await Flow.Settings.set('asstWake', false); FlowWake.tick(); FlowSay.open({ idle: true }); FlowSay.paintMic(); });
   await p.waitForTimeout(300);
