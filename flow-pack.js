@@ -15951,7 +15951,10 @@ const Hud = {
     const idle = st === 'idle';
     const quiet = Hud.quietUntil - Date.now(); if (quiet > 0) { Hud.later(quiet + 20); return; }
     let away = false; try { away = idle && !document.hasFocus(); } catch (e) {}
-    const every = away ? Hud.FRAME_AWAY : idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY;
+    /* Behind another app the orb holds still — not a few frames a second:
+       a call or a video in front gets the whole machine. Focus wakes it. */
+    if (away) { Hud.later(1000); return; }
+    const every = idle ? Hud.FRAME_IDLE : Hud.FRAME_BUSY;
     const wait = every - (now - (Hud.lastDraw || 0));
     if (wait > 2) { if (wait > 12) Hud.later(wait - 8); else Hud.raf = requestAnimationFrame(Hud.frame); return; }
     if (idle) Hud.later(every - 8); else Hud.raf = requestAnimationFrame(Hud.frame);
@@ -16050,6 +16053,7 @@ const Hud = {
        rail): measured after layout, in the observer's own callback */
     try { const ro = new ResizeObserver(() => { if (Hud.on) Hud.alignMeasure(); }); ro.observe(Hud.el); const c = Hud.el.querySelector('.hud-core'); if (c) ro.observe(c); Hud.ro = ro; } catch (e) {}
     /* the column only moves (same width, new place): rare — a frame later */
+    window.addEventListener('focus', () => { try { Hud.wake(); } catch (e) {} });
     window.addEventListener('resize', () => { if (Hud.alignRaf || !Hud.on) return; Hud.alignRaf = requestAnimationFrame(() => { Hud.alignRaf = 0; Hud.alignMeasure(); }); });
     /* the room's classes: only a real change, not a rewrite to the same */
     let was = Hud.el.className;
@@ -18095,9 +18099,18 @@ const Wake = {
     if (Wake.mine) { Wake.mine = false; try { if (FlowVoice.listening && FlowVoice.sink) FlowVoice.cancel(); } catch (e) {} }
     clearTimeout(Wake.overT);
   },
+  /* Another app is in front (a call, a video, anything): the ear closes and
+     the microphone goes back to the system. Listening for his name held the
+     mic open the whole time the window was there — on the iPhone that puts
+     the audio into record mode and ducks every other sound, on the Mac it
+     keeps an audio engine and a recogniser running and restarting under a
+     FaceTime or Zoom call. Followed by window focus and blur rather than
+     polled, so it only ever closes on a real switch away. */
+  away: false,
   tick() {
     if (!Wake.on()) { if (Wake.mine) Wake.release(); Wake.phase = 'off'; Wake.paint(); return; }
     if (Wake.phase === 'off') Wake.phase = 'idle';
+    if (Wake.away) { if (Wake.mine) Wake.release(); Wake.paint(); return; }
     const free = Wake.free();
     /* While he is speaking the ear stays open for one thing only — his name.
        "Hey J.A.R.V.I.S." over him stops him and he listens (check below);
@@ -18211,6 +18224,8 @@ const Wake = {
     } catch (e) {}
     setInterval(() => { try { Wake.tick(); } catch (e) {} }, 1200);
     document.addEventListener('visibilitychange', () => { try { Wake.tick(); } catch (e) {} });
+    window.addEventListener('blur', () => { Wake.away = true; try { Wake.tick(); } catch (e) {} });
+    window.addEventListener('focus', () => { Wake.away = false; try { Wake.tick(); } catch (e) {} });
   }
 };
 window.FlowWake = Wake;
